@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "dev-hooks",
+  "version": "1.0.0",
+  "description": "Polyglot dev-workflow hooks for Claude Code.",
+  "owner": {
+    "name": "Mick Zijdel",
+    "email": "claude@mickzijdel.com",
+    "url": "https://github.com/mickzijdel"
+  },
+  "plugins": [
+    {
+      "name": "dev-hooks",
+      "displayName": "Dev Hooks",
+      "description": "Auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, and multi-session plan reminders.",
+      "source": {
+        "source": "github",
+        "repo": "mickzijdel/dev-hooks",
+        "ref": "main"
+      },
+      "category": "workflow",
+      "version": "1.0.0",
+      "author": {
+        "name": "Mick Zijdel",
+        "email": "claude@mickzijdel.com",
+        "url": "https://github.com/mickzijdel"
+      },
+      "homepage": "https://github.com/mickzijdel/dev-hooks",
+      "keywords": ["hooks", "linting", "testing", "automation", "workflow"]
+    }
+  ]
+}
