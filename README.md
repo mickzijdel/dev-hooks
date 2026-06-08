@@ -10,6 +10,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 |-------|--------|---------|
 | `PostToolUse` (`Write`\|`Edit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. Advisory only, never blocks; fires once per session per ecosystem. |
+| `PostToolUse` (`Write`\|`Edit`) | `dockerfile-reminder.sh` | When Claude writes a `Dockerfile`/`Containerfile`, run **hadolint** on it and feed the findings (or a clean pass) back to Claude, plus a layer-ordering nudge that points at the `dockerfile` skill. If hadolint isn't installed, falls back to a once-per-session ordering/gotchas reminder. Advisory only — reports every time, never blocks. |
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `SessionStart` | `dev-env-reminder.sh` | If the repo is **yours** and the dev-env standard applies but isn't met (missing `mise`/`hk`/CI/`gitleaks`, or behind the version stamp), nudge Claude to flag it and offer the `dev-env-setup` skill. Advisory only — never edits. Owner-gated (see env vars below); opt out per repo. |
@@ -32,6 +33,7 @@ secrets-workflow helpers adapted from [Nate Berkopec's dotfiles](https://github.
 | `self-rate` | Before returning uncertain work — scores it on a calibrated scale, then tightens overclaims to match. |
 | `weekly-automation-review` | Weekly cadence — reviews recent activity and recommends 1–2 repetitive tasks to automate; runs as a scheduled Monday remote agent. |
 | `dev-env-setup` | Auditing/setting up a repo against my dev-env standard (mise + hk pre-commit + CI + gitleaks, version-tracked via `DEV_ENV_VERSION`). Paired with the `dev-env-reminder` hook; trimmed from Nate Berkopec's `dev-env-setup` (kept/dropped rationale in the skill). |
+| `dockerfile` | Writing/editing a Dockerfile — cache-friendly layer ordering (least→most frequently changed) and common gotchas (pinning, multi-stage, `.dockerignore`, non-root, exec-form `CMD`). Paired with the `dockerfile-reminder` hook; delegates linting to `hadolint`. |
 | `github-readme` | Creating/revising a GitHub README — section order, onboarding flow, runnable quickstart, plus an audit script and advanced GFM features. |
 | `humanizer` | Removing tells of AI-generated writing — em-dash overuse, rule-of-three, promotional tone, etc. (based on Wikipedia's "Signs of AI writing"). |
 | `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
@@ -92,6 +94,14 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   nudges Claude to look up current versions itself (training data goes stale). It fires at
   most once per session per ecosystem (python/js/ruby/lockfile), tracked via a marker under
   `${TMPDIR:-/tmp}/dev-hooks-latest-deps/`. Silence it with `DEV_HOOKS_LATEST_DEPS=false`
+  (in `.claude/settings.local.json` `"env"`).
+- `dockerfile-reminder.sh` runs [`hadolint`](https://github.com/hadolint/hadolint) on each
+  `Dockerfile`/`Containerfile` Claude writes and reports the findings (or a clean pass) back
+  to Claude, plus a layer-ordering nudge pointing at the `dockerfile` skill. It's report-only:
+  it surfaces results every time but never blocks the write — Claude decides whether to fix.
+  If `hadolint` isn't installed it can't lint, so it falls back to a once-per-session
+  ordering/gotchas reminder (tracked via a marker under `${TMPDIR:-/tmp}/dev-hooks-dockerfile/`)
+  and suggests installing hadolint. Silence the whole hook with `DEV_HOOKS_DOCKERFILE=false`
   (in `.claude/settings.local.json` `"env"`).
 - Hooks require `jq` (used to parse hook input) and, for `verify-work.sh` and
   `memory-reminder.sh`, `python3`.

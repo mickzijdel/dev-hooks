@@ -29,6 +29,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/latest-deps-reminder.sh\"",
             "statusMessage": "Checking dependency versions are current..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dockerfile-reminder.sh\"",
+            "statusMessage": "Checking Dockerfile layer ordering..."
           }
         ]
       }
