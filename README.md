@@ -1,6 +1,6 @@
 # dev-hooks
 
-A Claude Code plugin bundling eight polyglot, project-agnostic dev-workflow hooks plus a
+A Claude Code plugin bundling eleven polyglot, project-agnostic dev-workflow hooks plus a
 set of thinking-tool skills. Each hook script detects the project's own toolchain
 (Ruby/Rails, JavaScript/TypeScript, Python) — there is nothing to configure.
 
@@ -11,7 +11,10 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `PostToolUse` (`Write`\|`Edit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
 | `PostToolUse` (`Write`\|`Edit`) | `dockerfile-reminder.sh` | When Claude writes a `Dockerfile`/`Containerfile`, run **hadolint** on it and feed the findings (or a clean pass) back to Claude, plus a layer-ordering nudge that points at the `dockerfile` skill. If hadolint isn't installed, falls back to a once-per-session ordering/gotchas reminder. Advisory only — reports every time, never blocks. |
+| `PostToolUse` (`Write`\|`Edit`) | `secret-plaintext-reminder.sh` | When Claude writes what looks like a plaintext secret **value** (a named `API_KEY`/`SECRET`/`TOKEN`/`PASSWORD` assignment to a real literal, a private-key block, or an AWS key id), nudge it to migrate to fnox via the `env-to-fnox` skill instead of committing the value. Fires at write time (before `gitleaks` would at commit). Env-var refs and obvious placeholders are ignored. Advisory only, never blocks; fires once per session. |
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
+| `Stop` | `debug-leftover-reminder.sh` | On stop, flag debug statements Claude **newly introduced** this session (`console.log`/`debugger`, `binding.pry`/`byebug`/Ruby `p`, `breakpoint()`/`pdb`) — diffed against `HEAD` so pre-existing lines are ignored — and feed them back (exit 2) to strip before finishing. Test files excluded. Fires at most once per session. |
+| `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files and low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`). Fires at most once per session. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `SessionStart` | `dev-env-reminder.sh` | If the repo is **yours** and the dev-env standard applies but isn't met (missing `mise`/`hk`/CI/`gitleaks`, or behind the version stamp), nudge Claude to flag it and offer the `dev-env-setup` skill. Advisory only — never edits. Owner-gated (see env vars below); opt out per repo. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
@@ -105,8 +108,30 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   ordering/gotchas reminder (tracked via a marker under `${TMPDIR:-/tmp}/dev-hooks-dockerfile/`)
   and suggests installing hadolint. Silence the whole hook with `DEV_HOOKS_DOCKERFILE=false`
   (in `.claude/settings.local.json` `"env"`).
-- Hooks require `jq` (used to parse hook input) and, for `verify-work.sh` and
-  `memory-reminder.sh`, `python3`.
+- `secret-plaintext-reminder.sh` is reminder-only — it never blocks the write and never reads
+  anything beyond the content Claude just wrote. Detection is deliberately conservative
+  (named `KEY`/`SECRET`/`TOKEN`/`PASSWORD`-style assignments to a real literal, private-key
+  blocks, AWS key ids); env-var references (`process.env`, `os.environ`, `${VAR}`) and obvious
+  placeholders are ignored, and `*.example`/`*.sample`/`*.template`/`fnox.toml`/lockfiles are
+  skipped. It fires at write time (before `gitleaks` would at commit) and points at the
+  `env-to-fnox` skill. Fires once per session, tracked via a marker under
+  `${TMPDIR:-/tmp}/dev-hooks-secrets/`. Silence it with `DEV_HOOKS_SECRETS=false` (in
+  `.claude/settings.local.json` `"env"`).
+- `debug-leftover-reminder.sh` only considers **newly-introduced** lines (added lines in
+  `git diff HEAD` plus the full contents of untracked files), so committed/pre-existing debug
+  statements are ignored — committing or removing the lines clears the nudge. It runs only in
+  a git repo, excludes test files, and fires at most once per session (its sentinel in the
+  transcript suppresses a re-fire). Silence it with `DEV_HOOKS_DEBUG_LEFTOVER=false` (in
+  `.claude/settings.local.json` `"env"`).
+- `missing-test-reminder.sh` only looks at files **newly added** this session (untracked or
+  staged-added), excludes test files and low-value targets (barrels, type defs, `*.config.*`,
+  migrations, `__init__.py`/`conftest.py`), and stays silent if a matching test already exists
+  anywhere in the tree. Runs only in a git repo; fires once per session (transcript sentinel).
+  It can false-positive on files that legitimately need no test — Claude is told to say so and
+  move on. Silence it with `DEV_HOOKS_MISSING_TEST=false` (in `.claude/settings.local.json`
+  `"env"`).
+- Hooks require `jq` (used to parse hook input) and, for `verify-work.sh`, `memory-reminder.sh`,
+  `debug-leftover-reminder.sh`, and `missing-test-reminder.sh`, `python3`.
 - The `github-readme` and `readability` skills bundle optional Python audit scripts
   (`scripts/*.py`, self-contained via [uv](https://docs.astral.sh/uv/) + PEP 723 inline
   metadata — run with `uv run scripts/<name>.py`); they only run when you invoke the skill

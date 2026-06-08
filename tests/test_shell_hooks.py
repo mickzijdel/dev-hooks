@@ -376,3 +376,222 @@ def test_verify_work_fires_when_no_tools_detected(tmp_path):
     r = run_hook("verify-work.sh", cwd=tmp_path)
     assert r.returncode == 2
     assert_json_with(r.stdout, "No test suite")
+
+
+# ── debug-leftover-reminder.sh ──────────────────────────────────────────────────────
+DEBUG_SENTINEL = "[debug-leftover] new debug statements detected this session"
+
+
+def test_debug_leftover_fires_on_new_debug_lines(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    breakpoint()\n    return 1\n")
+    (tmp_path / "bar.rb").write_text("def g\n  p x\nend\n")  # untracked code
+    r = run_hook(
+        "debug-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 2
+    payload = assert_json_with(r.stdout, "[debug-leftover]")
+    body = json.dumps(payload)
+    assert "foo.py" in body and "bar.rb" in body
+
+
+def test_debug_leftover_silent_for_preexisting_committed(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    breakpoint()\n")
+    run("add", "foo.py")
+    run("commit", "-q", "-m", "add foo")
+    # No new changes → the committed breakpoint() is pre-existing and ignored.
+    r = run_hook(
+        "debug-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_debug_leftover_silent_when_opted_out(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("breakpoint()\n")
+    r = run_hook(
+        "debug-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=base_env(DEV_HOOKS_DEBUG_LEFTOVER="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_debug_leftover_silent_when_already_prompted(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("breakpoint()\n")
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=1, extra_lines=[DEBUG_SENTINEL]
+    )
+    r = run_hook(
+        "debug-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_debug_leftover_ignores_test_files(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "test_foo.py").write_text("breakpoint()\n")  # a test file
+    r = run_hook(
+        "debug-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── secret-plaintext-reminder.sh ────────────────────────────────────────────────────
+def test_secret_plaintext_fires_once_per_session(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env"),
+                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+            },
+            "session_id": "s1",
+        }
+    )
+    first = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
+    assert first.returncode == 0
+    assert_json_with(first.stdout, "env-to-fnox")
+    # Marker now exists → second call for the same session stays silent.
+    second = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
+    assert second.returncode == 0
+    assert second.stdout.strip() == ""
+
+
+def test_secret_plaintext_silent_for_env_reference(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / "config.js"),
+                "content": "const API_KEY = process.env.API_KEY;\n",
+            },
+            "session_id": "s2",
+        }
+    )
+    r = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_secret_plaintext_silent_for_placeholder(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env"),
+                "content": 'API_KEY="your-key-here"\n',
+            },
+            "session_id": "s3",
+        }
+    )
+    r = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_secret_plaintext_silent_for_example_file(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env.example"),
+                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+            },
+            "session_id": "s4",
+        }
+    )
+    r = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_secret_plaintext_silent_when_opted_out(tmp_path):
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env"),
+                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+            },
+            "session_id": "s5",
+        }
+    )
+    r = run_hook(
+        "secret-plaintext-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── missing-test-reminder.sh ────────────────────────────────────────────────────────
+MISSING_TEST_SENTINEL = "[missing-test] new source files without tests this session"
+
+
+def test_missing_test_fires_for_untested_new_file(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")  # new, no test
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[missing-test]")
+
+
+def test_missing_test_silent_when_test_present(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "test_foo.py").write_text("def test_f():\n    assert True\n")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_silent_when_opted_out(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=base_env(DEV_HOOKS_MISSING_TEST="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_silent_when_already_prompted(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=1, extra_lines=[MISSING_TEST_SENTINEL]
+    )
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""

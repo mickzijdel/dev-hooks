@@ -34,6 +34,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dockerfile-reminder.sh\"",
             "statusMessage": "Checking Dockerfile layer ordering..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/secret-plaintext-reminder.sh\"",
+            "statusMessage": "Checking for plaintext secrets..."
           }
         ]
       }
@@ -51,6 +56,16 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-work.sh\"",
             "timeout": 120,
             "statusMessage": "Verifying tests and linters..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/debug-leftover-reminder.sh\"",
+            "statusMessage": "Checking for leftover debug statements..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/missing-test-reminder.sh\"",
+            "statusMessage": "Checking new source files have tests..."
           },
           {
             "type": "command",
