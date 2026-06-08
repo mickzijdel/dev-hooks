@@ -1,8 +1,8 @@
 # dev-hooks
 
-A Claude Code plugin bundling four polyglot, project-agnostic dev-workflow hooks. Each
-script detects the project's own toolchain (Ruby/Rails, JavaScript/TypeScript, Python) —
-there is nothing to configure.
+A Claude Code plugin bundling five polyglot, project-agnostic dev-workflow hooks plus a
+set of thinking-tool skills. Each hook script detects the project's own toolchain
+(Ruby/Rails, JavaScript/TypeScript, Python) — there is nothing to configure.
 
 ## What's included
 
@@ -12,6 +12,7 @@ there is nothing to configure.
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
+| `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 
 ## Install
 

@@ -36,6 +36,11 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-work.sh\"",
             "timeout": 120,
             "statusMessage": "Verifying tests and linters..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review-reminder.sh\"",
+            "statusMessage": "Checking whether a code review ran this session..."
           }
         ]
       }
