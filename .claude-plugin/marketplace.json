@@ -12,7 +12,7 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, multi-session plan reminders, end-of-session memory-capture reminders, and dev-env-standard reminders — plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review), a dev-env-setup skill (mise + hk + CI + gitleaks standard, version-tracked), and writing/content and secrets-workflow skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability, env-to-fnox).",
+      "description": "Auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, multi-session plan reminders, end-of-session memory-capture reminders, and dev-env-standard reminders — plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review), a dev-env-setup skill (mise + hk + CI + gitleaks + project-docs standard, version-tracked), and writing/content and secrets-workflow skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability, env-to-fnox).",
       "source": {
         "source": "github",
         "repo": "mickzijdel/dev-hooks",

@@ -133,6 +133,31 @@ as npm-distributed Rust platform packages — no clean mise backend). Project de
 
 ---
 
+## v2 → v3 (project docs with pinned versions)
+
+v3 requires a **README.md** and a **CLAUDE.md** at the repo root, both recording the current
+versions of the project's key packages (main framework, Tailwind, Bootstrap, …). The checker now
+reports `has_readme` / `has_claude` and flags `needs-upgrade` when either is absent on a v3 repo.
+To reach v3:
+
+1. **Ensure both docs exist.** Run the checker and read `has_readme` / `has_claude`. For each that
+   is `0`, **dispatch a subagent** (the `Task` tool) to write it — don't write them inline. See the
+   "Project docs (README + CLAUDE.md)" section in `../SKILL.md` for the full brief. The essentials:
+   - **Read key-package versions from the resolved manifests/lockfiles** (`uv.lock`/`pyproject.toml`,
+     `Gemfile.lock`, `package.json`) — never from memory.
+   - **README.md** via the `dev-hooks:github-readme` skill, with a tech-stack section listing those
+     packages **and their pinned versions**.
+   - **CLAUDE.md** with run/test/lint instructions mirroring the hk/mise setup, plus the same
+     key-package-versions list.
+2. **If both already exist,** only refresh the version numbers if they're visibly stale vs. the
+   manifests. The `latest-deps-reminder` hook keeps them current on later manifest edits, so this is
+   a one-time bootstrap.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "3"` in `mise.toml`.
+4. **Verify:** `bash scripts/dev_env_check.sh .` → `status=compliant` with `has_readme=1`
+   `has_claude=1`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

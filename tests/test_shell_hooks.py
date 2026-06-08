@@ -86,6 +86,65 @@ def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     assert_json_with(r.stdout, "[dev-env]")
 
 
+# ── dev_env_check.sh (skill checker) ────────────────────────────────────────────────
+CHECKER = ROOT / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
+
+
+def run_checker(target):
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(target)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    out = {}
+    for line in r.stdout.splitlines():
+        if "=" in line and not line.startswith("# "):
+            key, _, value = line.partition("=")
+            out[key] = value
+    return out
+
+
+def make_v3_compliant_repo(path, *, readme=True, claude=True):
+    """Build a repo that satisfies everything the checker enforces at v3 except
+    optionally the README/CLAUDE.md docs."""
+    (path / "pyproject.toml").write_text("[project]\nname='x'\n")  # python stack
+    (path / "mise.toml").write_text(
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "3"\n'
+    )
+    (path / "mise.lock").write_text("")
+    (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
+    wf = path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("name: ci\non: push\n")
+    if readme:
+        (path / "README.md").write_text("# x\n")
+    if claude:
+        (path / "CLAUDE.md").write_text("# project instructions\n")
+
+
+def test_checker_v3_compliant_with_docs(tmp_path):
+    make_v3_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["has_readme"] == "1"
+    assert out["has_claude"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_v3_needs_upgrade_without_readme(tmp_path):
+    make_v3_compliant_repo(tmp_path, readme=False)
+    out = run_checker(tmp_path)
+    assert out["has_readme"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
+def test_checker_v3_needs_upgrade_without_claude(tmp_path):
+    make_v3_compliant_repo(tmp_path, claude=False)
+    out = run_checker(tmp_path)
+    assert out["has_claude"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────
 def test_latest_deps_fires_once_per_session(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
@@ -98,10 +157,36 @@ def test_latest_deps_fires_once_per_session(tmp_path):
     first = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
     assert first.returncode == 0
     assert_json_with(first.stdout, "stale")
+    # Manifest edits also nudge keeping the human-facing docs in sync.
+    assert_json_with(first.stdout, "README.md")
+    assert_json_with(first.stdout, "CLAUDE.md")
     # Marker now exists → second call for same session+category stays silent.
     second = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
     assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+def test_latest_deps_gemfile_nudges_docs(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
+    payload = json.dumps(
+        {"tool_input": {"file_path": str(tmp_path / "Gemfile")}, "session_id": "g1"}
+    )
+    r = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "README.md")
+    assert_json_with(r.stdout, "CLAUDE.md")
+
+
+def test_latest_deps_lockfile_omits_docs_nudge(tmp_path):
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
+    payload = json.dumps(
+        {"tool_input": {"file_path": str(tmp_path / "uv.lock")}, "session_id": "l1"}
+    )
+    r = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
+    assert r.returncode == 0
+    # Lockfiles are regenerated, not where versions are authored → no docs trailer.
+    assert "README.md" not in r.stdout
+    assert "Regenerate" in r.stdout or "regenerate" in r.stdout
 
 
 def test_latest_deps_silent_for_non_manifest(tmp_path):

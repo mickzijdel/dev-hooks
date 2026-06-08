@@ -1,10 +1,11 @@
 ---
 name: dev-env-setup
-version: 2.0.0
+version: 3.0.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
-  pre-commit hook running linters/tests + gitleaks, and a GitHub Actions workflow that
-  mirrors those checks) and set it up or upgrade it. Use when a repo of Mick's is missing
+  pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
+  mirrors those checks, and project docs — README.md + CLAUDE.md recording pinned
+  package versions) and set it up or upgrade it. Use when a repo of Mick's is missing
   the standard setup, when the dev-env-reminder hook flags a gap, when the user mentions
   hk/mise/gitleaks/"my dev setup", or when starting a new repo. Tracks a standard version
   via DEV_ENV_VERSION in mise.toml and upgrades behind repos using references/upgrade-guide.md.
@@ -15,6 +16,7 @@ allowed-tools:
   - Bash
   - Grep
   - Glob
+  - Task
   - AskUserQuestion
 ---
 
@@ -23,9 +25,9 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v2)
+## The standard (v3)
 
-A repo is **compliant at v2** when it has all of:
+A repo is **compliant at v3** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
@@ -41,6 +43,13 @@ A repo is **compliant at v2** when it has all of:
   so they run in `hk run check` and CI but **not** on pre-commit.
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR.
+- **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
+  recording the **current versions of the project's key packages** (main framework, Tailwind,
+  Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
+  enforces that both files exist; keeping the version numbers accurate is the writer's job (the
+  `latest-deps-reminder` hook nudges Claude to update them on every manifest edit). If either
+  doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
+  "Project docs (README + CLAUDE.md)".
 
 Per-stack checks (see `references/templates/`). **When each runs:** linters + large-file on
 pre-commit; dead-code + duplication in `check`/CI only.
@@ -156,12 +165,19 @@ proposing additions.
    audits per the v0 → v1 section.) **Also audit the existing workflow's Actions** and bump any
    that are behind latest (same recipe below).
 
-5. **Repo ownership.** If the repo is Mick's, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
+5. **Ensure project docs (README.md + CLAUDE.md)** — required from v3. The checker reports
+   `has_readme` / `has_claude`. If either is missing (or, on a substantive setup/upgrade, looks
+   stale), **dispatch a subagent** (via `Task`) to write it rather than doing it inline — see
+   "Project docs (README + CLAUDE.md)" below for the exact brief. The docs must record the
+   current versions of the project's key packages, read from the manifests/lockfiles you just
+   set up (not from memory).
+
+6. **Repo ownership.** If the repo is Mick's, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
    is someone else's repo you only contribute to, do **not** commit them — add `hk.pkl` and
    `mise.toml` to `.git/info/exclude` instead. (This mirrors the dev-env-reminder hook's
    ownership rule.)
 
-6. **Verify** (do this, don't assume):
+7. **Verify** (do this, don't assume):
 
    > **`mise trust` first (gate on the user).** A freshly written or cloned `mise.toml` is
    > untrusted, so `mise install` fails with "Config files … are not trusted" until you run
@@ -176,8 +192,37 @@ proposing additions.
    hk run check            # all steps, including gitleaks, must pass
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → status=compliant
    ```
-   Confirm `mise.lock` is present and committed. Run the project's own tests too
-   (`uv run pytest` / `bin/rails test`). Report real output.
+   Confirm `mise.lock` is present and committed, and that `README.md` + `CLAUDE.md` exist
+   (`has_readme=1 has_claude=1`). Run the project's own tests too (`uv run pytest` /
+   `bin/rails test`). Report real output.
+
+## Project docs (README + CLAUDE.md)
+
+From v3, a compliant repo has both a **README.md** and a **CLAUDE.md** at its root, and both
+record the **current versions of the project's key packages** (main framework, Tailwind,
+Bootstrap, etc.). Humans read the README; Claude reads CLAUDE.md — and both drift from the
+manifests fast, so the version numbers are the point.
+
+**When a doc is missing, dispatch a subagent to write it** (use the `Task` tool — don't write
+these inline; doc-writing is a self-contained job and the README in particular benefits from a
+focused pass). Give the subagent this brief:
+
+- **Read the real versions first.** Pull key-package versions from the resolved manifests/
+  lockfiles in this repo — `uv.lock`/`pyproject.toml`, `Gemfile.lock`, `package.json` — **never
+  from memory** (training data goes stale). For a Rails app that means Rails, Ruby, and any
+  CSS/JS framework (Tailwind, Bootstrap, Hotwire/Turbo); for Python, the framework + Python
+  version; for a JS app, the framework + Tailwind/Bootstrap.
+- **README.md** — use the **[[github-readme]]** skill for structure and tone. Include a short
+  "Built with" / tech-stack section listing those key packages **with their pinned versions**.
+- **CLAUDE.md** — project instructions for Claude: how to run the app, test, and lint (mirror the
+  hk/mise setup just written), plus the same key-package-versions list so Claude doesn't guess.
+  If a `/init` exists in the environment it's a fine starting point, but the versions must come
+  from the manifests.
+- **Keep both in sync** with each other and with the manifests; updating both is preferred.
+
+If both docs already exist, leave them — only refresh the version numbers if they're visibly
+stale relative to the manifests. The `latest-deps-reminder` hook keeps them current on
+subsequent manifest edits, so this skill only bootstraps them.
 
 ## Keeping GitHub Actions current
 

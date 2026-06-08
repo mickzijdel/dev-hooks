@@ -15,6 +15,8 @@
 #   has_ci           1 if any .github/workflows/* present
 #   has_gitleaks     1 if hk.pkl references gitleaks
 #   has_lockfile     1 if mise.lock present (required from standard v2)
+#   has_readme       1 if a README (README.md/README/…) is present (required from standard v3)
+#   has_claude       1 if CLAUDE.md present (required from standard v3)
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
 #   stack            python | ruby | shell | unknown
@@ -76,6 +78,16 @@ has_gitleaks=0
 has_lockfile=0
 { [ -f "$DIR/mise.lock" ] || [ -f "$DIR/.mise.lock" ]; } && has_lockfile=1
 
+# Project docs (v3): a README (any common form) and a CLAUDE.md at the repo root.
+has_readme=0
+if find "$DIR" -maxdepth 1 -type f -iname 'readme*' 2>/dev/null | grep -q .; then
+  has_readme=1
+fi
+has_claude=0
+if find "$DIR" -maxdepth 1 -type f -iname 'claude.md' 2>/dev/null | grep -q .; then
+  has_claude=1
+fi
+
 repo_version=0
 if [ -n "$MISE_FILE" ]; then
   v="$(grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$MISE_FILE" 2>/dev/null | head -n1 | tr -dc '0-9')"
@@ -87,7 +99,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -101,6 +113,8 @@ has_hk=$has_hk
 has_ci=$has_ci
 has_gitleaks=$has_gitleaks
 has_lockfile=$has_lockfile
+has_readme=$has_readme
+has_claude=$has_claude
 repo_version=$repo_version
 current_version=$current_version
 stack=$stack
@@ -110,6 +124,6 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or mise.lock missing (has_lockfile=$has_lockfile). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
