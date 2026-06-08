@@ -179,6 +179,36 @@ When upgrading an existing repo, list each Action with its current vs. latest ve
 the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
 to check, rather than guessing a version.
 
+## Ruby: Bundler cooldown
+
+For any Ruby/Rails repo, add `cooldown: 4` to the `rubygems.org` source declaration in the
+`Gemfile` (requires Bundler ≥ 4.0.13). Bundler refuses to resolve to a gem version until it
+has been public for at least 4 days — a supply-chain defence against the window when a
+compromised account ships a malicious release and any immediate `bundle install` picks it up:
+
+```ruby
+source "https://rubygems.org", cooldown: 4
+
+gem "rails"
+# ...
+```
+
+Committing this to the Gemfile means every developer and CI run enforce the same window
+automatically. An existing `Gemfile.lock` is always honoured as-is, so adding cooldown never
+disturbs already-locked versions.
+
+For machine-wide coverage across all projects, also set the global default if it is not set already:
+
+```bash
+bundle config set --global cooldown 4
+```
+
+This writes `BUNDLE_COOLDOWN: "4"` to `~/.bundle/config`. The per-project Gemfile `cooldown:`
+takes precedence over the global setting, so individual repos can still override it
+(e.g. `cooldown: 0` to take a fresh release immediately when upgrading urgently).
+
+**Source:** [RubyGems blog, Jun 2026](https://blog.rubygems.org/2026/06/03/cooldown-let-new-gems-be-vetted.html)
+
 ## Notes
 
 - The version stamp is the single source of truth in `references/../VERSION`; the reminder hook
