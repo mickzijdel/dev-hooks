@@ -59,8 +59,10 @@ jobs:
           bundler-cache: true
       - name: Dead code (debride)
         run: bundle exec debride .
-      - name: Duplication (flay)
-        run: bundle exec flay .
+      - name: Duplication (flay — Ruby structural, advisory)
+        run: bundle exec flay . || true   # flay exits 0 anyway; surfaces structural clones
+      - name: Duplication (jscpd — polyglot gate)
+        run: npx --yes jscpd@latest .   # config in .jscpd.json; gates JS/CSS/SCSS/ERB + Ruby verbatim
       - name: Large files
         run: |
           limit=512000

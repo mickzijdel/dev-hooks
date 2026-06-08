@@ -28,8 +28,11 @@ hooks {
         fix = true
         steps = linters
     }
-    // `check` adds the noisier audits (dead-code via debride, structural duplication via flay)
-    // on top of the linters. They run here (and in CI) but NOT on pre-commit.    // Add `flay` and `debride` to the Gemfile dev group.
+    // `check` adds the noisier audits on top of the linters — they run here (and in CI) but NOT
+    // on pre-commit. Duplication uses two complementary tools: flay (Ruby AST/structural,
+    // advisory — exits 0, surfaces renamed clones) and jscpd (token-based, polyglot — the
+    // enforcing gate that also covers JS/CSS/SCSS/ERB). Add `flay` and `debride` to the Gemfile
+    // dev group; jscpd runs via npx (needs `node`, see mise.toml) and reads `.jscpd.json`.
     ["check"] {
         steps = (linters) {
             ["debride"] {
@@ -39,6 +42,10 @@ hooks {
             ["flay"] {
                 glob = "**/*.rb"
                 check = "bundle exec flay ."
+            }
+            ["jscpd"] {
+                glob = List("**/*.rb", "**/*.erb", "**/*.js", "**/*.css", "**/*.scss")
+                check = "npx --yes jscpd@latest ."
             }
         }
     }

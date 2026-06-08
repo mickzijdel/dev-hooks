@@ -38,14 +38,19 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
    - **python**: `vulture` (`uv run vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' .`,
      plus extensionless PEP 723 scripts via the `git ls-files ':!*.py' | … shebang` snippet) +
      `jscpd` (`npx --yes jscpd@latest .`, config in `.jscpd.json`)
-   - **ruby**: `debride` (`bundle exec debride .`) + `flay` (`bundle exec flay .`)
+   - **ruby**: `debride` (`bundle exec debride .`) + `flay` (`bundle exec flay .`, Ruby
+     structural, advisory) + `jscpd` (`npx --yes jscpd@latest .`, polyglot gate over
+     `.rb`/`.erb`/`.js`/`.css`/`.scss`, config in `.jscpd.json`)
    - **shell**: same `vulture` (via `uvx`) + `jscpd` over `**/*.sh` and `**/*.py`
 4. **Tools/deps:**
-   - mise `[tools]`: `gitleaks = "latest"`; python + shell also add `node = "latest"` (for the
-     `npx` that runs jscpd — jscpd is **not** a mise tool, see note below).
+   - mise `[tools]`: `gitleaks = "latest"`; python + shell + **ruby** also add `node = "latest"`
+     (for the `npx` that runs jscpd — jscpd is **not** a mise tool, see note below).
    - python dev deps: add `vulture`. ruby Gemfile dev group: add `flay`, `debride`.
-   - copy `templates/.jscpd.json` to the repo root (python + shell): `minTokens 70`,
+   - copy `templates/.jscpd.json` to the repo root (**all stacks**): `minTokens 70`,
      `threshold 0`, `reporters ["ai","threshold"]`, `gitignore true`.
+   - **Ruby/Rails Node cost:** adding jscpd means a Node dependency in the repo — accepted
+     because a Rails app's JS/CSS/SCSS/ERB also needs duplication coverage (flay only parses
+     Ruby). See the "Duplication: flay vs jscpd" note in `../SKILL.md`.
 5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
    (`gitleaks/gitleaks-action@v2`, `fetch-depth: 0`) and an `audit` job (dead-code + duplication
    + a large-file guard step).

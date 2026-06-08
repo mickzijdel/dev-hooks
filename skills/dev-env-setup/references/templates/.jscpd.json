@@ -3,5 +3,13 @@
   "threshold": 0,
   "reporters": ["ai", "threshold"],
   "gitignore": true,
-  "ignore": ["**/__pycache__/**", "**/.venv/**", "**/node_modules/**"]
+  "ignore": [
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/db/schema.rb",
+    "**/db/structure.sql",
+    "**/app/assets/builds/**"
+  ]
 }

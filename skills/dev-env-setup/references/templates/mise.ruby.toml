@@ -2,7 +2,10 @@
 hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
-# Ruby itself is pinned via .ruby-version + bundler, not mise.
+node = "latest"   # provides npx, used to run jscpd (polyglot duplication: JS/CSS/SCSS/ERB + Ruby)
+# Ruby itself is pinned via .ruby-version + bundler, not mise. jscpd is NOT a mise tool — it's a
+# Rust binary shipped via npm optional platform packages that npx resolves but the mise npm
+# backend does not. flay + debride are Gemfile dev-group gems.
 
 [env]
 # dev-env standard version this repo targets (dev-hooks:dev-env-setup). Do not

@@ -28,9 +28,9 @@ implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rai
 A repo is **compliant at v1** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
-  and (Python/shell) `node` (to run jscpd via `npx`); `[env]` carries the version stamp
-  `DEV_ENV_VERSION = "1"`.
-- **`.jscpd.json`** (Python/shell) — duplication config: `minTokens 70`, `threshold 0`,
+  and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
+  `npx`); `[env]` carries the version stamp `DEV_ENV_VERSION = "1"`.
+- **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
   `reporters ["ai","threshold"]`, `gitignore true`.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus
   `gitleaks` and `check-added-large-files`** (`Builtins.*`), and wires `pre-commit`
@@ -45,7 +45,7 @@ pre-commit; dead-code + duplication in `check`/CI only.
 | Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (check/CI) | Duplication (check/CI) |
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
-| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `flay` |
+| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
 
 > Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) are noisy by nature, so they
@@ -60,6 +60,22 @@ pre-commit; dead-code + duplication in `check`/CI only.
 > `[tool.ruff] extend-include`; jscpd keys off extensions, so duplication on extensionless
 > scripts isn't auto-covered. To auto-fix clones, agents can run
 > `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
+
+### Duplication: flay vs jscpd (why Ruby runs both)
+
+**flay** parses Ruby to an AST and hashes subtrees, so it catches **structural** duplication even
+when identifiers, literals, or whitespace differ (renamed clones) — and verbatim Ruby too. But it
+only understands Ruby (`.rb`/`.erb`), and it **exits 0** (advisory; great for refactoring sweeps,
+useless as a gate). **jscpd** is a **token-based** (Rabin-Karp) detector across 200+ formats: it
+catches verbatim copy-paste in **any** language and **gates** CI via its `threshold` reporter.
+
+A Rails app is polyglot — Stimulus JS, CSS/SCSS, ERB markup all carry duplication that flay can't
+parse — so **Ruby/Rails runs both**: jscpd as the cross-language enforcing gate (incl. Ruby
+verbatim), flay as advisory Ruby structural depth. **Python/shell run jscpd only** (no
+widely-used AST dup detector for Python; pylint's duplicate-code is token-ish and heavy). The cost
+is that jscpd needs Node, so Ruby repos gain a Node dependency — acceptable because Rails already
+ships JS/CSS worth checking. flay can be promoted from advisory to a hard gate later via a
+`--mass` threshold wrapper if wanted.
 
 **Claude Code plugin repos** (and any script-bundle repo) carry two extra requirements:
 
@@ -106,12 +122,13 @@ proposing additions.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
-   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (Python/shell) `.jscpd.json` → repo root.
+   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json` → repo root.
    Adjust specifics (default branch name, Python version, extra source globs for extensionless
    CLIs like `bin/foo` — add them to `hk.pkl` globs and `[tool.ruff] extend-include`). The templates
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
    the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
-   Gemfile dev group (Python/shell mise pulls `node`; jscpd runs via `npx`). **For a
+   Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
+   incl. Ruby). **For a
    shell/plugin repo**, also add the [`readoc`]-style dev project (`pyproject.plugin.toml` →
    `pyproject.toml`, fill in the name) and a `tests/` suite (`test_scripts.example.py` as a
    starting point) so every bundled script is exercised, and give each Python script the
