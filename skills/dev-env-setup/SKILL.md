@@ -153,7 +153,14 @@ proposing additions.
    ownership rule.)
 
 6. **Verify** (do this, don't assume):
+
+   > **`mise trust` first (gate on the user).** A freshly written or cloned `mise.toml` is
+   > untrusted, so `mise install` fails with "Config files … are not trusted" until you run
+   > `mise trust` once for the repo. Trusting a config lets it run arbitrary task/env code, so
+   > **ask the user to approve before running `mise trust`** — don't auto-trust.
+
    ```bash
+   mise trust             # one-time, only after the user approves (see note above)
    mise install            # provision hk, pkl, gitleaks, etc. (verifies against mise.lock)
    mise lock               # ensure mise.lock carries all-platform checksums; commit it
    hk install              # install the git hooks
