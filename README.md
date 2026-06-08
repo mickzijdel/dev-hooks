@@ -19,8 +19,8 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 
 On-demand "thinking tools" and writing/content helpers you invoke as slash commands (or that I
 reach for when the trigger fits). The first group are critique/decision/automation workflows
-distilled from the `#ai-productivity-digest` tips; the second group are writing/content skills
-adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles).
+distilled from the `#ai-productivity-digest` tips; the second group are writing/content and
+secrets-workflow helpers adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles).
 
 | Skill | Use when |
 |-------|----------|
@@ -32,10 +32,12 @@ adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles
 | `github-readme` | Creating/revising a GitHub README — section order, onboarding flow, runnable quickstart, plus an audit script and advanced GFM features. |
 | `humanizer` | Removing tells of AI-generated writing — em-dash overuse, rule-of-three, promotional tone, etc. (based on Wikipedia's "Signs of AI writing"). |
 | `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
+| `env-to-fnox` | Migrating a project's plaintext `.env` to [fnox](https://fnox.jdx.dev) — references in a committed `fnox.toml`, real values in a vault (defaults to Bitwarden Secrets Manager). |
 
 > `github-readme`, `humanizer`, and `readability` are adapted **verbatim** from
 > [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles) (credit to Nate; each
-> `SKILL.md` links back to its source). `humanizer` is additionally based on
+> `SKILL.md` links back to its source). `env-to-fnox` is adapted from the same source with the
+> provider switched from 1Password to Bitwarden. `humanizer` is additionally based on
 > [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
 > (WikiProject AI Cleanup).
 
