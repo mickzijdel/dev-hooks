@@ -92,11 +92,14 @@ proposing additions.
    [`readoc`]-style dev project (`pyproject.plugin.toml` → `pyproject.toml`, fill in the name) and
    a `tests/` suite (`test_scripts.example.py` as a starting point) so every bundled script is
    exercised, and give each Python script the `uv run --script` shebang + PEP 723 block.
+   **Before writing the workflow, pin every GitHub Action to its current latest version** —
+   the template versions are a snapshot and go stale. See "Keeping GitHub Actions current".
 
 4. **Upgrade — apply the guide.** Read [`references/upgrade-guide.md`](references/upgrade-guide.md)
    and apply every section **strictly newer** than `repo_version`, in order. Then set
    `DEV_ENV_VERSION` in `mise.toml` to `current_version`. (Most existing repos are v0 → v1:
-   add the stamp + the gitleaks step + a gitleaks CI job.)
+   add the stamp + the gitleaks step + a gitleaks CI job.) **Also audit the existing workflow's
+   Actions** and bump any that are behind latest (same recipe below).
 
 5. **Repo ownership.** If the repo is Mick's, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
    is someone else's repo you only contribute to, do **not** commit them — add `hk.pkl` and
@@ -111,6 +114,28 @@ proposing additions.
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → status=compliant
    ```
    Run the project's own tests too (`uv run pytest` / `bin/rails test`). Report real output.
+
+## Keeping GitHub Actions current
+
+The `uses:` versions in `references/templates/ci.*.yml` are a snapshot from when the template
+was written — they drift. **Whenever you write or touch a workflow** (fresh setup *and*
+upgrade), check every Action against its latest release and pin to the latest major tag.
+
+For each `uses: OWNER/REPO@vX`, find the current latest tag and bump it:
+
+```bash
+# Latest published release tag for an action (e.g. v4.2.1):
+gh release view --repo actions/checkout --json tagName -q .tagName
+# Fallback if the action publishes no GitHub Releases — newest version tag:
+gh api repos/actions/checkout/tags --jq '.[].name' | grep -E '^v[0-9]' | sort -V | tail -1
+```
+
+Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this for the Actions
+in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
+`actions/upload-artifact`, `gitleaks/gitleaks-action` — and any others a repo already uses.
+When upgrading an existing repo, list each Action with its current vs. latest version and bump
+the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
+to check, rather than guessing a version.
 
 ## Notes
 

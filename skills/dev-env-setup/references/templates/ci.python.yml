@@ -1,3 +1,5 @@
+# Action versions below are a snapshot — verify each `uses:` is at its latest before
+# copying (see SKILL.md › "Keeping GitHub Actions current").
 name: ci
 
 on:
