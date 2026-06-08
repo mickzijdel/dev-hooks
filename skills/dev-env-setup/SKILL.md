@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 1.0.0
+version: 2.0.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, and a GitHub Actions workflow that
@@ -23,13 +23,15 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v1)
+## The standard (v2)
 
-A repo is **compliant at v1** when it has all of:
+A repo is **compliant at v2** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[env]` carries the version stamp `DEV_ENV_VERSION = "1"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "2"`.
+- **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
+  are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
   `reporters ["ai","threshold"]`, `gitignore true`.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus
@@ -134,7 +136,9 @@ proposing additions.
    starting point) so every bundled script is exercised, and give each Python script the
    `uv run --script` shebang + PEP 723 block. **Before writing the workflow, pin every GitHub
    Action to its current latest version** — the template versions are a snapshot and go stale.
-   See "Keeping GitHub Actions current".
+   See "Keeping GitHub Actions current". After the tools are written, generate the lockfile
+   (`mise install && mise lock`) and **commit `mise.lock`** — see "Lockfile & supply-chain
+   verification".
 
 4. **Upgrade — apply the guide.** Read [`references/upgrade-guide.md`](references/upgrade-guide.md)
    and apply every section **strictly newer** than `repo_version`, in order. Then set
@@ -150,12 +154,14 @@ proposing additions.
 
 6. **Verify** (do this, don't assume):
    ```bash
-   mise install            # provision hk, pkl, gitleaks, etc.
+   mise install            # provision hk, pkl, gitleaks, etc. (verifies against mise.lock)
+   mise lock               # ensure mise.lock carries all-platform checksums; commit it
    hk install              # install the git hooks
    hk run check            # all steps, including gitleaks, must pass
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → status=compliant
    ```
-   Run the project's own tests too (`uv run pytest` / `bin/rails test`). Report real output.
+   Confirm `mise.lock` is present and committed. Run the project's own tests too
+   (`uv run pytest` / `bin/rails test`). Report real output.
 
 ## Keeping GitHub Actions current
 
@@ -174,10 +180,43 @@ gh api repos/actions/checkout/tags --jq '.[].name' | grep -E '^v[0-9]' | sort -V
 
 Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this for the Actions
 in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
-`actions/upload-artifact`, `gitleaks/gitleaks-action` — and any others a repo already uses.
+`actions/upload-artifact`, `gitleaks/gitleaks-action`, `jdx/mise-action` — and any others a repo
+already uses.
 When upgrading an existing repo, list each Action with its current vs. latest version and bump
 the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
 to check, rather than guessing a version.
+
+## Lockfile & supply-chain verification
+
+The mise toolchain is pinned reproducibly via a committed **`mise.lock`** plus
+`[settings] lockfile = true` in `mise.toml`. Tools stay spec'd `"latest"`; the lock records what
+that resolved to, so every machine and CI install the same artifacts and verify them.
+
+Three layers (the latter two apply per the tool's aqua-registry entry — most registry tools, incl.
+`gitleaks`, are aqua-backed):
+
+- **Checksums** (always) — mise stores each artifact's SHA per OS/arch in `mise.lock` and re-checks
+  on every install; a mismatch fails the install. Defends against tampered/swapped downloads.
+- **Cosign signatures** — verifies the artifact was signed by the project's expected (keyless/OIDC)
+  identity. Defends against a forged release.
+- **SLSA provenance / attestations** — verifies the artifact was built by the expected pipeline from
+  the expected source. Defends against a compromised build system.
+
+**Day-to-day flow:**
+
+| Action | Command | Effect |
+|--------|---------|--------|
+| Reproduce | `mise install` | installs exactly what `mise.lock` says, verifying checksums |
+| Record | `mise lock` | backfills all-platform checksums for the current specs |
+| Upgrade | `mise upgrade` | re-resolves `"latest"`, rewrites `mise.lock` — commit the diff |
+
+So upgrades are explicit (`mise upgrade` + a reviewable `mise.lock` diff) rather than silent drift,
+while the spec stays `"latest"` so the `latest-deps-reminder` hook still nudges toward current
+versions. **Commit `mise.lock`** alongside `mise.toml`.
+
+**Gap:** this covers only mise-managed tools. The `npx --yes jscpd@latest` audit step stays unpinned
+(jscpd 5.x ships only as npm-distributed Rust platform packages — no clean mise backend); project
+deps lock separately via `uv.lock` / `Gemfile.lock`.
 
 ## Ruby: Bundler cooldown
 
@@ -224,8 +263,8 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
 - **Ignore `.env` / `.env.local`.** The gitleaks step is the safety net; `.gitignore` is the
   first line — keep both. But **commit `fnox.toml`** in solo repos (it holds secret *references*,
   not values); gitignore it only in repos shared with others. See [[env-to-fnox]].
-- **Commit lockfiles, don't ignore them** (`uv.lock`, `Gemfile.lock`). The standard pins tools
-  for reproducibility; a library-flavored default that drops lockfiles defeats that.
+- **Commit lockfiles, don't ignore them** (`mise.lock`, `uv.lock`, `Gemfile.lock`). The standard
+  pins tools for reproducibility; a library-flavored default that drops lockfiles defeats that.
 - **`mise.local.toml` is the ignorable one; `mise.toml` is committed** — the `DEV_ENV_VERSION`
   stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
 - **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.

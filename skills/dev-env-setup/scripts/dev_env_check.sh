@@ -14,6 +14,7 @@
 #   has_hk           1 if hk.pkl present
 #   has_ci           1 if any .github/workflows/* present
 #   has_gitleaks     1 if hk.pkl references gitleaks
+#   has_lockfile     1 if mise.lock present (required from standard v2)
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
 #   stack            python | ruby | shell | unknown
@@ -54,7 +55,11 @@ fi
 has_mise=0
 MISE_FILE=""
 for f in mise.toml .mise.toml mise.local.toml; do
-  if [ -f "$DIR/$f" ]; then has_mise=1; MISE_FILE="$DIR/$f"; break; fi
+  if [ -f "$DIR/$f" ]; then
+    has_mise=1
+    MISE_FILE="$DIR/$f"
+    break
+  fi
 done
 
 has_hk=0
@@ -68,6 +73,9 @@ fi
 has_gitleaks=0
 [ "$has_hk" = 1 ] && grep -qi 'gitleaks' "$DIR/hk.pkl" && has_gitleaks=1
 
+has_lockfile=0
+{ [ -f "$DIR/mise.lock" ] || [ -f "$DIR/.mise.lock" ]; } && has_lockfile=1
+
 repo_version=0
 if [ -n "$MISE_FILE" ]; then
   v="$(grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$MISE_FILE" 2>/dev/null | head -n1 | tr -dc '0-9')"
@@ -79,7 +87,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ]; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -92,6 +100,7 @@ has_mise=$has_mise
 has_hk=$has_hk
 has_ci=$has_ci
 has_gitleaks=$has_gitleaks
+has_lockfile=$has_lockfile
 repo_version=$repo_version
 current_version=$current_version
 stack=$stack
@@ -100,7 +109,7 @@ EOF
 
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
-  needs-setup)    echo "# Needs setup ($stack): missing mise=$((1-has_mise)) hk=$((1-has_hk)) ci=$((1-has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade)  echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks). See references/upgrade-guide.md." ;;
-  compliant)      echo "# Compliant ($stack) at v$repo_version." ;;
+  needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or mise.lock missing (has_lockfile=$has_lockfile). See references/upgrade-guide.md." ;;
+  compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac

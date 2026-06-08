@@ -80,6 +80,59 @@ PEP 723 inline metadata on every Python script. See the "Claude Code plugin repo
 
 ---
 
+## v1 → v2 (mise lockfile + supply-chain verification)
+
+v2 adds a committed `mise.lock` so the mise toolchain installs reproducibly and with checksum
+verification (aqua-backed tools also bring Cosign / SLSA). Tools stay spec'd `"latest"`; the lock
+just records what that resolved to. To reach v2:
+
+1. **Turn on the lockfile.** Add to `mise.toml`:
+   ```toml
+   [settings]
+   lockfile = true
+   ```
+2. **Generate and commit `mise.lock`.**
+   ```bash
+   mise install   # resolves "latest", writes mise.lock for this platform
+   mise lock       # backfills checksums for the other common platforms (linux/mac × arch)
+   ```
+   Commit `mise.lock`. From now on `mise install` re-verifies every artifact against it.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "2"` in `mise.toml`.
+4. **Shell stack only — pin CI's shellcheck/shfmt via mise.** The CI `lint` job otherwise uses the
+   runner's preinstalled shellcheck (drifts from local). Switch it to install via mise and add an
+   `shfmt` check (pin the action to its current latest — see SKILL.md › "Keeping GitHub Actions
+   current"):
+   ```yaml
+   lint:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v6
+       - uses: jdx/mise-action@v2   # installs shellcheck/shfmt honoring mise.lock
+       - name: Run shellcheck
+         run: |
+           shopt -s globstar nullglob
+           shellcheck **/*.sh
+       - name: Check formatting (shfmt)
+         run: shfmt -d .
+   ```
+   Leave the Ruby/Python CI as-is: their tools come from the trusted, cached `setup-ruby` /
+   `setup-uv` actions and don't run through mise in CI.
+5. **Verify:** `mise install` re-verifies checksums clean; `mise.lock` is committed (`git status`);
+   `bash scripts/dev_env_check.sh .` → `status=compliant` with `has_lockfile=1`.
+
+**Lockfile vs. "latest" — how upgrades work:** `mise install` reproduces the locked versions
+(same on laptop and CI). To pick up newer releases, run `mise upgrade`, which re-resolves `"latest"`
+and rewrites `mise.lock`; commit the diff (e.g. `hk 1.46.0 → 1.47.0` with changed hashes) as an
+intentional, reviewable bump. The `latest-deps-reminder` hook still nudges toward current versions —
+the lock just makes each bump explicit instead of silent drift.
+
+**Scope:** v2 covers only mise-managed tools (`hk`, `pkl`, `gitleaks`, `node`, `uv`, `ruff`,
+`shellcheck`, `shfmt`). The `npx --yes jscpd@latest` audit step stays unpinned (jscpd 5.x ships only
+as npm-distributed Rust platform packages — no clean mise backend). Project deps already lock via
+`uv.lock` / `Gemfile.lock`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
