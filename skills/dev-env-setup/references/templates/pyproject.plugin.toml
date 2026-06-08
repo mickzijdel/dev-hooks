@@ -1,0 +1,30 @@
+# Dev-tooling manifest only (readoc-style). The plugin's scripts/CLIs stay
+# self-contained — Python ones use PEP 723 inline deps and run via `uv run --script`
+# (shebang: #!/usr/bin/env -S uv run --script). This file exists purely so contributors
+# get a reproducible test/lint environment; it declares no runtime dependencies and is
+# never built or installed (package = false).
+[project]
+name = "PLUGIN_NAME"
+version = "0.0.0"
+description = "Dev tooling for the PLUGIN_NAME Claude Code plugin."
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    # Mirror here any libraries the bundled scripts declare in their PEP 723 blocks,
+    # so the test environment can import/run them.
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+# Scripts that live without a .py extension (e.g. bin/foo, hooks/scripts/bar) aren't
+# discovered by directory traversal — include them explicitly.
+extend-include = ["bin/*", "hooks/scripts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

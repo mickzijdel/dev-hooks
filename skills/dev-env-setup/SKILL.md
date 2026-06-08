@@ -39,7 +39,21 @@ Per-stack checks (see `references/templates/`):
 |-------|---------|-------|---------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks |
 | Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks |
-| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | test suite for bundled scripts | gitleaks |
+| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks |
+
+**Claude Code plugin repos** (and any script-bundle repo) carry two extra requirements:
+
+1. **All bundled scripts are tested.** Follow [`readoc`]'s setup: a **dev-only**
+   `pyproject.toml` (`[tool.uv] package = false`, deps in `[dependency-groups] dev`, see
+   `references/templates/pyproject.plugin.toml`) and a `tests/` suite that runs each
+   script/CLI/hook **as a subprocess** and asserts on real output
+   (`references/templates/test_scripts.example.py`). The `pytest` hk step + the CI `test`
+   job run it. No script ships without a test exercising it.
+2. **Python scripts use uv + PEP 723 inline metadata.** Each Python script is self-contained:
+   shebang `#!/usr/bin/env -S uv run --script` and a `# /// script … # ///` block declaring
+   `requires-python` + `dependencies`, run via `uv run`. No repo-level runtime deps; mirror the
+   script's libs into the dev group so tests can import them. (Mixed shell + Python is fine —
+   shell via `shellcheck`/`shfmt`, Python via uv/PEP 723.)
 
 **Applicability:** the standard applies to a repo with a recognized stack
 (`pyproject.toml`/`Gemfile`/`package.json`) **or** any scripts (`*.sh`, `bin/*`, `*.py`) —
@@ -74,7 +88,10 @@ proposing additions.
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
    `ci.<stack>.yml` → `.github/workflows/ci.yml`. Adjust specifics (default branch name,
    Python version, extra source globs like `readoc`'s `bin/readoc`). The templates already
-   include `DEV_ENV_VERSION` and gitleaks.
+   include `DEV_ENV_VERSION` and gitleaks. **For a shell/plugin repo**, also add the
+   readoc-style dev project (`pyproject.plugin.toml` → `pyproject.toml`, fill in the name) and
+   a `tests/` suite (`test_scripts.example.py` as a starting point) so every bundled script is
+   exercised, and give each Python script the `uv run --script` shebang + PEP 723 block.
 
 4. **Upgrade — apply the guide.** Read [`references/upgrade-guide.md`](references/upgrade-guide.md)
    and apply every section **strictly newer** than `repo_version`, in order. Then set

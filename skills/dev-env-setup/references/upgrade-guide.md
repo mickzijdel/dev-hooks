@@ -40,6 +40,12 @@ it, but **no gitleaks step and no version stamp**). To reach v1:
 A repo with **no** dev-env setup at all goes straight to the full v1 layout — copy
 `templates/{mise,hk,ci}.<stack>.*` and fill in stack specifics.
 
+**Claude Code plugin / script-bundle repos** additionally need (part of v1): a readoc-style
+dev-only `pyproject.toml` (`templates/pyproject.plugin.toml`), a `tests/` suite running each
+bundled script as a subprocess (`templates/test_scripts.example.py`), and `uv run --script` +
+PEP 723 inline metadata on every Python script. See the "Claude Code plugin repos" section in
+`../SKILL.md`.
+
 ---
 
 ## Adding a future version

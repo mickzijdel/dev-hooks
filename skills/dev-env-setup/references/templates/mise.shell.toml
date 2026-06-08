@@ -4,6 +4,7 @@ pkl = "latest"
 gitleaks = "latest"
 shellcheck = "latest"
 shfmt = "latest"
+uv = "latest"     # runs PEP 723 scripts (`uv run --script`) and the pytest suite
 ruff = "latest"   # for any *.py scripts in the repo
 
 [env]
