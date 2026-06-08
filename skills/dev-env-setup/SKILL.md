@@ -155,7 +155,7 @@ Committing this to the Gemfile means every developer and CI run enforce the same
 automatically. An existing `Gemfile.lock` is always honoured as-is, so adding cooldown never
 disturbs already-locked versions.
 
-For machine-wide coverage across all projects, also set the global default:
+For machine-wide coverage across all projects, also set the global default if it is not set already:
 
 ```bash
 bundle config set --global cooldown 4
