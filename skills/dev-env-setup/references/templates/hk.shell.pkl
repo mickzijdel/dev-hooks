@@ -42,10 +42,11 @@ hooks {
                 glob = "**/*.py"
                 check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null)"
             }
-            // Duplication. jscpd 5.x via npx; config in `.jscpd.json`. (See hk.python.pkl.)
+            // Duplication. jscpd 5.x via npx; config in `.jscpd.json`. `-f` scopes to code
+            // formats (no config equivalent) so docs/yaml aren't flagged. (See SKILL.md › jscpd note.)
             ["jscpd"] {
                 glob = List("**/*.sh", "**/*.py")
-                check = "npx --yes jscpd@latest ."
+                check = "npx --yes jscpd@latest . -f python,bash"
             }
         }
     }

@@ -33,7 +33,7 @@ A repo is **compliant at v2** when it has all of:
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
-  `reporters ["ai","threshold"]`, `gitignore true`.
+  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus
   `gitleaks` and `check-added-large-files`** (`Builtins.*`), and wires `pre-commit`
   (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. The **`check` hook additionally
@@ -54,10 +54,19 @@ pre-commit; dead-code + duplication in `check`/CI only.
 > live in the `check` hook + CI, never on pre-commit. Thresholds are tunable — see
 > `references/upgrade-guide.md`.
 >
-> **jscpd** runs via `npx --yes jscpd@latest` (its v5 Rust engine ships through npm optional
-> platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading
-> `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone output) and the
-> **`threshold`** reporter (CI gate). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
+> **jscpd** runs via `npx --yes jscpd@latest` (its v5 Rust engine — the `cpd` binary — ships
+> through npm optional platform packages that `npx` resolves but the mise `npm:` backend
+> doesn't), reading `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone
+> output) and the **`threshold`** reporter (CI gate).
+>
+> Configuring exclusions:
+> - **Exclude paths** with `ignorePattern` (a glob array) in `.jscpd.json`. (Plain `ignore` has
+>   no effect; `gitignore: true` already skips gitignored paths.)
+> - **Restrict which file types are scanned** with `-f` on the command — there is no config
+>   option for it, and without it jscpd also scans markdown/yaml/json and trips `threshold 0` on
+>   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
+>   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
+>   (Ruby). Add `ignorePattern` on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
 > `vulture` also scans tracked files with a python/uv shebang; `ruff` needs them added to
 > `[tool.ruff] extend-include`; jscpd keys off extensions, so duplication on extensionless
 > scripts isn't auto-covered. To auto-fix clones, agents can run

@@ -60,7 +60,9 @@ jobs:
           files=$( { git ls-files '*.py'; git ls-files | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null; } | sort -u )
           if [ -n "$files" ]; then uvx vulture --min-confidence 80 $files; else echo "no python files, skipping"; fi
       - name: Duplication (jscpd)
-        run: npx --yes jscpd@latest .   # config in .jscpd.json (ai + threshold reporters)
+        # -f scopes to code formats (no config equivalent); .jscpd.json carries
+        # minTokens/threshold/reporters/gitignore/ignorePattern.
+        run: npx --yes jscpd@latest . -f python,bash
       - name: Large files
         run: |
           limit=512000

@@ -1,7 +1,7 @@
 {
   "name": "dev-hooks",
   "description": "Polyglot dev-workflow hooks for Claude Code (auto-lint on edit, verify tests/linters before stopping, stack-aware skill reminders, multi-session plan reminders, review-before-finishing reminders, end-of-session memory-capture reminders, dev-env-standard reminders, Dockerfile hadolint-lint-on-write) plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review), a dev-env-setup skill (mise + hk + CI + gitleaks standard, version-tracked), a dockerfile skill (cache-friendly layer ordering + gotchas), and writing/content and secrets-workflow skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability, env-to-fnox).",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "author": {
     "name": "Mick Zijdel"
   },

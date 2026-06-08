@@ -3,7 +3,7 @@
   "threshold": 0,
   "reporters": ["ai", "threshold"],
   "gitignore": true,
-  "ignore": [
+  "ignorePattern": [
     "**/__pycache__/**",
     "**/.venv/**",
     "**/node_modules/**",

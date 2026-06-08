@@ -43,9 +43,11 @@ hooks {
                 glob = "**/*.rb"
                 check = "bundle exec flay ."
             }
+            // `-f` scopes to code formats (no config equivalent) so docs/configs aren't flagged;
+            // `.jscpd.json` `ignorePattern` excludes generated db/schema.rb etc. (See SKILL.md › jscpd note.)
             ["jscpd"] {
                 glob = List("**/*.rb", "**/*.erb", "**/*.js", "**/*.css", "**/*.scss")
-                check = "npx --yes jscpd@latest ."
+                check = "npx --yes jscpd@latest . -f ruby,erb,javascript,typescript,css,scss,sass,vue"
             }
         }
     }

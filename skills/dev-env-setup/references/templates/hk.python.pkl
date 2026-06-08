@@ -45,10 +45,11 @@ hooks {
             }
             // Duplication. jscpd 5.x via npx (the npm `cpd` binary needs platform packages
             // that npx resolves but the mise npm backend does not). Config in `.jscpd.json`
-            // (ai + threshold reporters; threshold 0 = fail on any clone).
+            // (ai + threshold reporters; threshold 0 = fail on any clone). `-f python` scopes
+            // to code (no config equivalent) so docs/configs aren't flagged. (See SKILL.md › jscpd note.)
             ["jscpd"] {
                 glob = "**/*.py"
-                check = "npx --yes jscpd@latest ."
+                check = "npx --yes jscpd@latest . -f python"
             }
         }
     }
