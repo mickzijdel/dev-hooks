@@ -15,9 +15,8 @@ grep DEV_ENV_VERSION mise.toml   # absent ⇒ treat as v0
 
 ## v0 → v1 (baseline)
 
-v0 = "has hk + mise + CI but predates this standard" (e.g. `bedlam-bacs`, `readoc`,
-`booking-overview` as they exist today: ruff/pytest or rubocop/rails-test via hk, CI mirroring
-it, but **no gitleaks step and no version stamp**). To reach v1:
+v0 = "has hk + mise + CI but predates this standard" (ruff/pytest or rubocop/rails-test via hk,
+CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
 
 1. **Add the version stamp.** Add to `mise.toml`:
    ```toml
@@ -40,8 +39,8 @@ it, but **no gitleaks step and no version stamp**). To reach v1:
 A repo with **no** dev-env setup at all goes straight to the full v1 layout — copy
 `templates/{mise,hk,ci}.<stack>.*` and fill in stack specifics.
 
-**Claude Code plugin / script-bundle repos** additionally need (part of v1): a readoc-style
-dev-only `pyproject.toml` (`templates/pyproject.plugin.toml`), a `tests/` suite running each
+**Claude Code plugin / script-bundle repos** additionally need (part of v1): a dev-only
+`pyproject.toml` (`templates/pyproject.plugin.toml`), a `tests/` suite running each
 bundled script as a subprocess (`templates/test_scripts.example.py`), and `uv run --script` +
 PEP 723 inline metadata on every Python script. See the "Claude Code plugin repos" section in
 `../SKILL.md`.

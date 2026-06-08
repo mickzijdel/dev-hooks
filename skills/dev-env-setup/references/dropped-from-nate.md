@@ -2,7 +2,10 @@
 
 These are the parts of [Nate Berkopec's `dev-env-setup` skill](https://github.com/nateberkopec/dotfiles/tree/main/files/home/.claude/skills/dev-env-setup)
 that the `dev-hooks:dev-env-setup` standard deliberately **left out** of v1, because none of
-my current repos (`bedlam-bacs`, `readoc`, `booking-overview`, `vischeck`) use them. Kept here
+my current repos ([bedlam-bacs](https://github.com/EdinburghUniversityTheatreCompany/bacs-tool),
+[readoc](https://github.com/mickzijdel/readoc),
+[booking-overview](https://github.com/mickzijdel/booking-overview),
+[vischeck](https://github.com/mickzijdel/vischeck)) use them. Kept here
 so I can consider adopting them later — each would likely become a future `vN` entry in
 [upgrade-guide.md](upgrade-guide.md).
 

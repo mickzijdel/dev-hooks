@@ -87,9 +87,9 @@ proposing additions.
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
    `ci.<stack>.yml` → `.github/workflows/ci.yml`. Adjust specifics (default branch name,
-   Python version, extra source globs like `readoc`'s `bin/readoc`). The templates already
-   include `DEV_ENV_VERSION` and gitleaks. **For a shell/plugin repo**, also add the
-   readoc-style dev project (`pyproject.plugin.toml` → `pyproject.toml`, fill in the name) and
+   Python version, extra source globs for extensionless CLIs like `bin/foo`). The templates
+   already include `DEV_ENV_VERSION` and gitleaks. **For a shell/plugin repo**, also add the
+   [`readoc`]-style dev project (`pyproject.plugin.toml` → `pyproject.toml`, fill in the name) and
    a `tests/` suite (`test_scripts.example.py` as a starting point) so every bundled script is
    exercised, and give each Python script the `uv run --script` shebang + PEP 723 block.
 
