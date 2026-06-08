@@ -1,11 +1,11 @@
 {
   "name": "dev-hooks",
-  "description": "Polyglot dev-workflow hooks for Claude Code: auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, and multi-session plan reminders.",
-  "version": "1.0.0",
+  "description": "Polyglot dev-workflow hooks for Claude Code (auto-lint on edit, verify tests/linters before stopping, stack-aware skill reminders, multi-session plan reminders, review-before-finishing reminders) plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review) and writing/content skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability).",
+  "version": "1.1.0",
   "author": {
     "name": "Mick Zijdel"
   },
   "repository": "https://github.com/mickzijdel/dev-hooks",
   "license": "MIT",
-  "keywords": ["hooks", "linting", "testing", "automation", "workflow"]
+  "keywords": ["hooks", "linting", "testing", "automation", "workflow", "skills", "critique", "premortem", "review", "writing", "readme", "readability"]
 }

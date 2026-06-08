@@ -14,6 +14,30 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 
+## Skills
+
+On-demand "thinking tools" and writing/content helpers you invoke as slash commands (or that I
+reach for when the trigger fits). The first group are critique/decision/automation workflows
+distilled from the `#ai-productivity-digest` tips; the second group are writing/content skills
+adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles).
+
+| Skill | Use when |
+|-------|----------|
+| `but-for-real` | About to claim something is done/fixed/working — forces re-reading the real code, running it, and separating verified from assumed. |
+| `premortem` | Before committing to a non-trivial plan — imagines it already failed and works backward to failure modes, hidden assumptions, and a revised plan. |
+| `board` | You want hard, independent critique — convenes a panel of real parallel advisor subagents, then a chairman synthesizes. |
+| `self-rate` | Before returning uncertain work — scores it on a calibrated scale, then tightens overclaims to match. |
+| `weekly-automation-review` | Weekly cadence — reviews recent activity and recommends 1–2 repetitive tasks to automate; runs as a scheduled Monday remote agent. |
+| `github-readme` | Creating/revising a GitHub README — section order, onboarding flow, runnable quickstart, plus an audit script and advanced GFM features. |
+| `humanizer` | Removing tells of AI-generated writing — em-dash overuse, rule-of-three, promotional tone, etc. (based on Wikipedia's "Signs of AI writing"). |
+| `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
+
+> `github-readme`, `humanizer`, and `readability` are adapted **verbatim** from
+> [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles) (credit to Nate; each
+> `SKILL.md` links back to its source). `humanizer` is additionally based on
+> [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
+> (WikiProject AI Cleanup).
+
 ## Install
 
 Direct from GitHub:
@@ -46,3 +70,5 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
 - `verify-work.sh` only runs inside a git repo and only when relevant code files have
   changed; it no-ops otherwise.
 - Hooks require `jq` (used to parse hook input) and, for `verify-work.sh`, `python3`.
+- The `github-readme` and `readability` skills bundle optional `ruby` audit scripts
+  (`scripts/*.rb`); they only run when you invoke the skill and ask for the audit.
