@@ -23,18 +23,46 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
    [env]
    DEV_ENV_VERSION = "1"
    ```
-2. **Add gitleaks to hk.** Add the import and a gitleaks step to `hk.pkl`:
+2. **Add gitleaks + large-file to hk `linters`.** Add the import and two builtin steps to
+   `hk.pkl` (large-file runs on pre-commit; gitleaks runs everywhere):
    ```pkl
    import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
    // inside the `linters` mapping:
    ["gitleaks"] = Builtins.gitleaks
+   ["check-added-large-files"] = Builtins.check_added_large_files
    ```
    (Match the `amends` version already pinned in the file; bump both together if you like.)
-3. **Add `gitleaks` to mise tools:** `gitleaks = "latest"` under `[tools]`.
-4. **Add a gitleaks job to CI** mirroring the hook (see `templates/ci.*.yml` — the
-   `gitleaks/gitleaks-action@v2` job with `fetch-depth: 0`).
-5. **Verify:** `mise install && hk install && hk run check` (gitleaks must run clean), then
-   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+3. **Add the dead-code + duplication audits to the `check` hook only** (noisy, so NOT on
+   pre-commit). Change `["check"] { steps = linters }` to amend `linters` with the per-stack
+   audit steps (see `templates/hk.<stack>.pkl`):
+   - **python**: `vulture` (`uv run vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' .`,
+     plus extensionless PEP 723 scripts via the `git ls-files ':!*.py' | … shebang` snippet) +
+     `jscpd` (`npx --yes jscpd@latest .`, config in `.jscpd.json`)
+   - **ruby**: `debride` (`bundle exec debride .`) + `flay` (`bundle exec flay .`)
+   - **shell**: same `vulture` (via `uvx`) + `jscpd` over `**/*.sh` and `**/*.py`
+4. **Tools/deps:**
+   - mise `[tools]`: `gitleaks = "latest"`; python + shell also add `node = "latest"` (for the
+     `npx` that runs jscpd — jscpd is **not** a mise tool, see note below).
+   - python dev deps: add `vulture`. ruby Gemfile dev group: add `flay`, `debride`.
+   - copy `templates/.jscpd.json` to the repo root (python + shell): `minTokens 70`,
+     `threshold 0`, `reporters ["ai","threshold"]`, `gitignore true`.
+5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
+   (`gitleaks/gitleaks-action@v2`, `fetch-depth: 0`) and an `audit` job (dead-code + duplication
+   + a large-file guard step).
+6. **Verify:** `mise install && hk install && hk run check` (gitleaks + audits run clean), then
+   confirm `hk run pre-commit --all` does **not** run vulture/jscpd/flay/debride (only linters +
+   large-file), then `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+**jscpd note (v5):** jscpd 5.x ships its engine as a Rust binary via npm *optional* platform
+packages. `npx --yes jscpd@latest` resolves them; the mise `npm:` backend does **not**, so jscpd
+runs via `npx` (needs `node`), not as a pinned mise tool. It uses the **`ai`** reporter
+(token-efficient clone output for agents) and the **`threshold`** reporter (exit 1 when
+duplication exceeds `threshold`). To auto-fix clones, agents can install jscpd's refactoring
+skill: `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
+
+Thresholds are tunable in `.jscpd.json` (`minTokens`, `threshold`) and on the CLI:
+`--min-confidence` (vulture), `--mass` (flay), and the `limit` in the CI large-file guard
+(default 500 KB).
 
 A repo with **no** dev-env setup at all goes straight to the full v1 layout — copy
 `templates/{mise,hk,ci}.<stack>.*` and fill in stack specifics.

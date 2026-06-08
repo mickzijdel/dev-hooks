@@ -14,6 +14,8 @@ local linters = new Mapping<String, Step> {
     }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks
+    // Block accidentally-committed large files. hk builtin.
+    ["check-added-large-files"] = Builtins.check_added_large_files
 }
 
 hooks {
@@ -26,7 +28,18 @@ hooks {
         fix = true
         steps = linters
     }
+    // `check` adds the noisier audits (dead-code via debride, structural duplication via flay)
+    // on top of the linters. They run here (and in CI) but NOT on pre-commit.    // Add `flay` and `debride` to the Gemfile dev group.
     ["check"] {
-        steps = linters
+        steps = (linters) {
+            ["debride"] {
+                glob = "**/*.rb"
+                check = "bundle exec debride ."
+            }
+            ["flay"] {
+                glob = "**/*.rb"
+                check = "bundle exec flay ."
+            }
+        }
     }
 }

@@ -27,19 +27,39 @@ implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rai
 
 A repo is **compliant at v1** when it has all of:
 
-- **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), and
-  `gitleaks`; `[env]` carries the version stamp `DEV_ENV_VERSION = "1"`.
-- **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus a
-  `gitleaks` step** (`Builtins.gitleaks`), and wires `pre-commit` (`fix = true`,
-  `stash = "git"`), `fix`, and `check` hooks.
-- **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks on push/PR.
+- **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
+  and (Python/shell) `node` (to run jscpd via `npx`); `[env]` carries the version stamp
+  `DEV_ENV_VERSION = "1"`.
+- **`.jscpd.json`** (Python/shell) — duplication config: `minTokens 70`, `threshold 0`,
+  `reporters ["ai","threshold"]`, `gitignore true`.
+- **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus
+  `gitleaks` and `check-added-large-files`** (`Builtins.*`), and wires `pre-commit`
+  (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. The **`check` hook additionally
+  runs the audits** (dead-code + duplication) — these are amended onto the `check` steps only,
+  so they run in `hk run check` and CI but **not** on pre-commit.
+- **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
+  `audit` job (dead-code + duplication + a large-file guard), on push/PR.
 
-Per-stack checks (see `references/templates/`):
-| Stack | Linters | Tests | Secrets |
-|-------|---------|-------|---------|
-| Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks |
-| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks |
-| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks |
+Per-stack checks (see `references/templates/`). **When each runs:** linters + large-file on
+pre-commit; dead-code + duplication in `check`/CI only.
+| Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (check/CI) | Duplication (check/CI) |
+|-------|---------|-------|---------|------------|-----------|-------------|
+| Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
+| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `flay` |
+| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
+
+> Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) are noisy by nature, so they
+> live in the `check` hook + CI, never on pre-commit. Thresholds are tunable — see
+> `references/upgrade-guide.md`.
+>
+> **jscpd** runs via `npx --yes jscpd@latest` (its v5 Rust engine ships through npm optional
+> platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading
+> `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone output) and the
+> **`threshold`** reporter (CI gate). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
+> `vulture` also scans tracked files with a python/uv shebang; `ruff` needs them added to
+> `[tool.ruff] extend-include`; jscpd keys off extensions, so duplication on extensionless
+> scripts isn't auto-covered. To auto-fix clones, agents can run
+> `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
 
 **Claude Code plugin repos** (and any script-bundle repo) carry two extra requirements:
 
@@ -86,20 +106,25 @@ proposing additions.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
-   `ci.<stack>.yml` → `.github/workflows/ci.yml`. Adjust specifics (default branch name,
-   Python version, extra source globs for extensionless CLIs like `bin/foo`). The templates
-   already include `DEV_ENV_VERSION` and gitleaks. **For a shell/plugin repo**, also add the
-   [`readoc`]-style dev project (`pyproject.plugin.toml` → `pyproject.toml`, fill in the name) and
-   a `tests/` suite (`test_scripts.example.py` as a starting point) so every bundled script is
-   exercised, and give each Python script the `uv run --script` shebang + PEP 723 block.
-   **Before writing the workflow, pin every GitHub Action to its current latest version** —
-   the template versions are a snapshot and go stale. See "Keeping GitHub Actions current".
+   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (Python/shell) `.jscpd.json` → repo root.
+   Adjust specifics (default branch name, Python version, extra source globs for extensionless
+   CLIs like `bin/foo` — add them to `hk.pkl` globs and `[tool.ruff] extend-include`). The templates
+   already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
+   the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
+   Gemfile dev group (Python/shell mise pulls `node`; jscpd runs via `npx`). **For a
+   shell/plugin repo**, also add the [`readoc`]-style dev project (`pyproject.plugin.toml` →
+   `pyproject.toml`, fill in the name) and a `tests/` suite (`test_scripts.example.py` as a
+   starting point) so every bundled script is exercised, and give each Python script the
+   `uv run --script` shebang + PEP 723 block. **Before writing the workflow, pin every GitHub
+   Action to its current latest version** — the template versions are a snapshot and go stale.
+   See "Keeping GitHub Actions current".
 
 4. **Upgrade — apply the guide.** Read [`references/upgrade-guide.md`](references/upgrade-guide.md)
    and apply every section **strictly newer** than `repo_version`, in order. Then set
-   `DEV_ENV_VERSION` in `mise.toml` to `current_version`. (Most existing repos are v0 → v1:
-   add the stamp + the gitleaks step + a gitleaks CI job.) **Also audit the existing workflow's
-   Actions** and bump any that are behind latest (same recipe below).
+   `DEV_ENV_VERSION` in `mise.toml` to `current_version`. (Existing v0 repos — hk/mise/CI that
+   predate this standard — add the stamp + gitleaks + large-file + the dead-code/duplication
+   audits per the v0 → v1 section.) **Also audit the existing workflow's Actions** and bump any
+   that are behind latest (same recipe below).
 
 5. **Repo ownership.** If the repo is Mick's, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
    is someone else's repo you only contribute to, do **not** commit them — add `hk.pkl` and

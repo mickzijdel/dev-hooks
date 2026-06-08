@@ -1,0 +1,7 @@
+{
+  "minTokens": 70,
+  "threshold": 0,
+  "reporters": ["ai", "threshold"],
+  "gitignore": true,
+  "ignore": ["**/__pycache__/**", "**/.venv/**", "**/node_modules/**"]
+}
