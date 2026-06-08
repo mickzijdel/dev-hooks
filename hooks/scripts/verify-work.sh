@@ -28,7 +28,7 @@ if [ "$HAS_RUBY" = "1" ]; then
     TOOLS_RAN=1
     out=$(bundle exec rubocop --no-color 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== RuboCop ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== RuboCop ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 
@@ -37,14 +37,14 @@ if [ "$HAS_RUBY" = "1" ]; then
     TOOLS_RAN=1
     out=$(bin/rails test 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== Minitest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== Minitest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   # RSpec (if no Rails test runner)
   elif [ -f ".rspec" ] || [ -d "spec" ]; then
     TOOLS_RAN=1
     out=$(bundle exec rspec 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== RSpec ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== RSpec ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 fi
@@ -56,25 +56,27 @@ if [ "$HAS_PYTHON" = "1" ]; then
     TOOLS_RAN=1
     out=$(ruff check . 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== ruff ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== ruff ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 
   # pytest
-  if command -v pytest >/dev/null 2>&1 && \
-     ([ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]); then
+  if command -v pytest >/dev/null 2>&1 &&
+    ([ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]); then
     TOOLS_RAN=1
     out=$(pytest 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== pytest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== pytest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 fi
 
 # ── JavaScript / TypeScript ───────────────────────────────────────────────────
 if [ "$HAS_JS" = "1" ]; then
-  if [ -f "pnpm-lock.yaml" ]; then PM="pnpm"
-  elif [ -f "yarn.lock" ]; then PM="yarn"
+  if [ -f "pnpm-lock.yaml" ]; then
+    PM="pnpm"
+  elif [ -f "yarn.lock" ]; then
+    PM="yarn"
   else PM="npm"; fi
 
   # ESLint
@@ -82,17 +84,17 @@ if [ "$HAS_JS" = "1" ]; then
     TOOLS_RAN=1
     out=$($PM exec eslint . 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== ESLint ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== ESLint ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 
   # JS tests (only if a "test" script exists in package.json)
   if [ -f "package.json" ] && python3 -c \
-     "import json; d=json.load(open('package.json')); exit(0 if 'test' in d.get('scripts',{}) else 1)" 2>/dev/null; then
+    "import json; d=json.load(open('package.json')); exit(0 if 'test' in d.get('scripts',{}) else 1)" 2>/dev/null; then
     TOOLS_RAN=1
     out=$($PM test 2>&1)
     if [ $? -ne 0 ]; then
-      printf '=== JS Tests ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >> "$TMPFILE"
+      printf '=== JS Tests ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 fi
@@ -121,7 +123,7 @@ if [ -s "$TMPFILE" ]; then
   exit 2
 elif [ "$TOOLS_RAN" = "0" ]; then
   # No tools detected — remind Claude to check manually
-  printf '' > "$TMPFILE"
+  printf '' >"$TMPFILE"
   emit_json "$TMPFILE" "No test suite or linter was auto-detected, but code files were modified. If this project has tests or a linter, please run them now to verify your changes before finishing."
   exit 2
 fi

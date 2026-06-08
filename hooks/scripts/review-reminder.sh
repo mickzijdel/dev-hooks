@@ -30,7 +30,8 @@ SENTINEL="[review-reminder] code review not yet run this session"
 # review invocations rather than grepping raw text, to avoid false positives.
 ALREADY=0
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  ALREADY=$(python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
+  ALREADY=$(
+    python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
 import sys, json
 
 path, sentinel = sys.argv[1], sys.argv[2]
@@ -87,7 +88,7 @@ except OSError:
 
 print(1 if found else 0)
 PYEOF
-)
+  )
 fi
 
 [ "$ALREADY" = "1" ] && exit 0

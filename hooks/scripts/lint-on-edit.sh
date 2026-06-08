@@ -14,7 +14,8 @@ find_root() {
   d=$1
   while [ "$d" != "/" ]; do
     if [ -e "$d/Gemfile" ] || [ -e "$d/package.json" ] || [ -e "$d/pyproject.toml" ] || [ -d "$d/.git" ]; then
-      echo "$d"; return
+      echo "$d"
+      return
     fi
     d=$(dirname "$d")
   done
@@ -26,8 +27,12 @@ find_root() {
 # executes (covers sane npm / pnpm / bun installs uniformly). Fallback for a
 # broken/native .bin stub (e.g. biome's symlink mangled by a cross-platform
 # install): the package runner matching this project's lockfile.
+# NOTE: currently unused — the JS/TS arm below calls the .bin tools directly. Kept (and
+# the dead-code check silenced) pending a decision to route those calls through it.
+# shellcheck disable=SC2329
 run_js() {
-  local tool=$1; shift
+  local tool=$1
+  shift
   local bin="$ROOT/node_modules/.bin/$tool"
   [ -e "$bin" ] || return 0
   if [ -x "$bin" ] && "$bin" --version >/dev/null 2>&1; then
@@ -48,7 +53,7 @@ cd "$ROOT" || exit 0
 
 case "$FILE" in
   # ── Ruby ────────────────────────────────────────────────────────────────────
-  *.rb|*.rake)
+  *.rb | *.rake)
     if [ -f Gemfile ] && grep -q rubocop Gemfile.lock 2>/dev/null; then
       bundle exec rubocop -a --force-exclusion "$FILE" >/dev/null 2>&1
     elif [ -f Gemfile ] && grep -q "standard " Gemfile.lock 2>/dev/null; then
@@ -76,15 +81,16 @@ case "$FILE" in
     ;;
 
   # ── JS / TS / styles / data ──────────────────────────────────────────────────
-  *.js|*.jsx|*.ts|*.tsx|*.vue|*.mjs|*.cjs|*.css|*.scss|*.json|*.md|*.yaml|*.yml)
+  *.js | *.jsx | *.ts | *.tsx | *.vue | *.mjs | *.cjs | *.css | *.scss | *.json | *.md | *.yaml | *.yml)
     BIN="$ROOT/node_modules/.bin"
     if [ -f biome.json ] || [ -f biome.jsonc ]; then
       [ -x "$BIN/biome" ] && "$BIN/biome" check --write "$FILE" >/dev/null 2>&1
     else
       [ -x "$BIN/prettier" ] && "$BIN/prettier" --write --ignore-unknown "$FILE" >/dev/null 2>&1
       case "$FILE" in
-        *.js|*.jsx|*.ts|*.tsx|*.vue|*.mjs|*.cjs)
-          [ -x "$BIN/eslint" ] && "$BIN/eslint" --fix "$FILE" >/dev/null 2>&1 ;;
+        *.js | *.jsx | *.ts | *.tsx | *.vue | *.mjs | *.cjs)
+          [ -x "$BIN/eslint" ] && "$BIN/eslint" --fix "$FILE" >/dev/null 2>&1
+          ;;
       esac
     fi
     ;;
@@ -92,9 +98,11 @@ case "$FILE" in
   # ── Python (best-effort: tools are not global) ───────────────────────────────
   *.py)
     if [ -x "$ROOT/.venv/bin/ruff" ]; then
-      "$ROOT/.venv/bin/ruff" check --fix "$FILE" >/dev/null 2>&1; "$ROOT/.venv/bin/ruff" format "$FILE" >/dev/null 2>&1
+      "$ROOT/.venv/bin/ruff" check --fix "$FILE" >/dev/null 2>&1
+      "$ROOT/.venv/bin/ruff" format "$FILE" >/dev/null 2>&1
     elif command -v ruff >/dev/null 2>&1; then
-      ruff check --fix "$FILE" >/dev/null 2>&1; ruff format "$FILE" >/dev/null 2>&1
+      ruff check --fix "$FILE" >/dev/null 2>&1
+      ruff format "$FILE" >/dev/null 2>&1
     elif [ -x "$ROOT/.venv/bin/black" ]; then
       "$ROOT/.venv/bin/black" "$FILE" >/dev/null 2>&1
     elif command -v black >/dev/null 2>&1; then

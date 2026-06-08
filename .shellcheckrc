@@ -1,0 +1,9 @@
+# Follow `source`d files so shared hook helpers are checked too. Paths in
+# `# shellcheck source=...` directives resolve relative to the script's own directory.
+external-sources=true
+source-path=SCRIPTDIR
+
+# Drop two low-value style checks (kept everything warning+ and the rest of style/info):
+#   SC2181 — "check exit code directly" (the `if [ $? -ne 0 ]` idiom reads fine here)
+#   SC2235 — "use { ..; } instead of (..)" subshell micro-optimisation
+disable=SC2181,SC2235

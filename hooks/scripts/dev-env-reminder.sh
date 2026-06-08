@@ -55,7 +55,7 @@ is_owned() {
   # Commit-share heuristic: >=80% of last-month commits are mine.
   local email="${DEV_HOOKS_DEVENV_EMAIL:-mickzijdel@live.nl}"
   local total mine
-  total=$(git log --since="1 month ago" --pretty=%ae 2>/dev/null | grep -c . )
+  total=$(git log --since="1 month ago" --pretty=%ae 2>/dev/null | grep -c .)
   if [ "${total:-0}" -gt 0 ]; then
     mine=$(git log --since="1 month ago" --pretty=%ae 2>/dev/null | grep -cFx "$email")
     [ $((mine * 100)) -ge $((total * 80)) ] && return 0

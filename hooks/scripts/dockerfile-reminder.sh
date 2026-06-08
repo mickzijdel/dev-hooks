@@ -10,20 +10,15 @@
 #
 # Opt out per repo/user with DEV_HOOKS_DOCKERFILE=false (in .claude settings "env").
 
-case "${DEV_HOOKS_DOCKERFILE:-}" in
-  false|0|no|off) exit 0 ;;
-esac
-
-INPUT=$(cat 2>/dev/null)
-FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-[ -z "$FILE" ] && exit 0
-SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // "nosession"' 2>/dev/null)
-
-BASE=$(basename "$FILE")
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+# Sets INPUT, FILE, SESSION, BASE (or exits 0 on opt-out / missing file_path).
+reminder_init DEV_HOOKS_DOCKERFILE
 
 # Match Dockerfiles by basename: Dockerfile, Dockerfile.prod, app.dockerfile, Containerfile.
 case "$BASE" in
-  Dockerfile|Dockerfile.*|*.Dockerfile|*.dockerfile|Containerfile|Containerfile.*) ;;
+  Dockerfile | Dockerfile.* | *.Dockerfile | *.dockerfile | Containerfile | Containerfile.*) ;;
   *) exit 0 ;;
 esac
 
@@ -55,6 +50,6 @@ MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-dockerfile"
 mkdir -p "$MARKER_DIR" 2>/dev/null
 MARKER="$MARKER_DIR/${SESSION}"
 [ -e "$MARKER" ] && exit 0
-: > "$MARKER" 2>/dev/null
+: >"$MARKER" 2>/dev/null
 
 emit "You just wrote $BASE. $ORDERING$HADOLINT_HINT"

@@ -1,0 +1,56 @@
+// dev-env standard (dev-hooks:dev-env-setup) — version tracked via DEV_ENV_VERSION in mise.toml.
+// For shell-heavy repos and Claude Code plugins (hooks/scripts/*.sh, bin/*, *.py).
+amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    ["shellcheck"] = Builtins.shellcheck
+    ["shfmt"] = Builtins.shfmt
+    ["ruff-check"] {
+        glob = "**/*.py"
+        check = "ruff check --force-exclude {{ files }}"
+        fix = "ruff check --force-exclude --fix {{ files }}"
+    }
+    ["ruff-format"] {
+        glob = "**/*.py"
+        check = "ruff format --force-exclude --diff {{ files }}"
+        fix = "ruff format --force-exclude {{ files }}"
+    }
+    // Secret scanning (defense-in-depth alongside fnox). hk builtin.
+    ["gitleaks"] = Builtins.gitleaks
+    // Block accidentally-committed large files. hk builtin.
+    ["check-added-large-files"] = Builtins.check_added_large_files
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    // `check` adds the noisier audits (dead-code via vulture on any .py, duplication via jscpd)
+    // on top of the linters. They run here (and in CI) but NOT on pre-commit.
+    ["check"] {
+        steps = (linters) {
+            // Scans `.` (all *.py, excluding .venv/build) plus any extensionless tracked file
+            // with a python/uv shebang (PEP 723 CLIs like bin/foo).
+            ["vulture"] {
+                glob = "**/*.py"
+                check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null)"
+            }
+            // Duplication. jscpd 5.x via npx; config in `.jscpd.json`. Restricted to the
+            // code formats (`-f python,bash`): this plugin's only non-code files are CI/skill
+            // template scaffolding and doc tables that are duplicative by design, and jscpd
+            // 5.x (Rust) ignores the config `ignore` list, so format restriction is how we
+            // scope it to real code.
+            ["jscpd"] {
+                glob = List("**/*.sh", "**/*.py")
+                check = "npx --yes jscpd@latest . -f python,bash"
+            }
+        }
+    }
+}

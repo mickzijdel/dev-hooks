@@ -38,7 +38,8 @@ TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/nul
 # ── Gates 2 & 3: one transcript pass ─────────────────────────────────────────────
 # Prints "skip" if the sentinel is already present (already prompted), otherwise the
 # integer count of human turns (user messages that aren't pure tool_result records).
-RESULT=$(python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
+RESULT=$(
+  python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
 import sys, json
 
 path, sentinel = sys.argv[1], sys.argv[2]
@@ -85,7 +86,7 @@ PYEOF
 [ "$RESULT" = "skip" ] && exit 0
 # Non-numeric (shouldn't happen) or below threshold → trivial session, stay silent.
 case "$RESULT" in
-  ''|*[!0-9]*) exit 0 ;;
+  '' | *[!0-9]*) exit 0 ;;
 esac
 [ "$RESULT" -lt "$MIN_TURNS" ] && exit 0
 
