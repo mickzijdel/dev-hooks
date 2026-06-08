@@ -1,0 +1,26 @@
+Readability audit: doc.md
+
+Metrics
+  Words: 70
+  Sentences: 2
+  Paragraphs: 3
+  Flesch-Kincaid grade: 26.5
+  Avg words/sentence: 35.0
+  Avg words/paragraph: 23.3
+  Long sentences (>25 words): 100.0%
+  Long paragraphs (>120 words): 0.0%
+  Headings: 1
+  List items: 0
+
+Checks
+  [FAIL] Flesch-Kincaid grade <= 10.0 — 26.5 (maximum 10.0)
+  [FAIL] Average sentence length <= 20 words — 35.0 (maximum 20)
+  [FAIL] Long-sentence ratio <= 15% — 100.0% (maximum 0.15)
+  [PASS] Long-paragraph ratio <= 20% — 0.0%
+  [PASS] Lead paragraph <= 60 words — 3
+
+Comparison to main
+  Grade change: +19.6
+  Sentence-length change: +19.6 words
+  Long-sentence change: +85.7%
+  Long-paragraph change: +0.0%

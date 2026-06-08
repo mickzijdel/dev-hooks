@@ -1,0 +1,20 @@
+Readability audit: tests/fixtures/sample_readme.md
+
+Metrics
+  Words: 76
+  Sentences: 5
+  Paragraphs: 10
+  Flesch-Kincaid grade: 8.7
+  Avg words/sentence: 15.2
+  Avg words/paragraph: 7.6
+  Long sentences (>25 words): 0.0%
+  Long paragraphs (>120 words): 0.0%
+  Headings: 5
+  List items: 3
+
+Checks
+  [PASS] Flesch-Kincaid grade <= 10.0 — 8.7
+  [PASS] Average sentence length <= 20 words — 15.2
+  [PASS] Long-sentence ratio <= 15% — 0.0%
+  [PASS] Long-paragraph ratio <= 20% — 0.0%
+  [PASS] Lead paragraph <= 60 words — 2

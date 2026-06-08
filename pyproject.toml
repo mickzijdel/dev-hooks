@@ -1,0 +1,26 @@
+# Dev-tooling manifest only (readoc-style). The plugin's scripts/CLIs stay
+# self-contained — the Python ones use PEP 723 inline deps and run via `uv run --script`
+# (shebang: #!/usr/bin/env -S uv run --script). This file exists purely so contributors
+# get a reproducible test/lint environment; it declares no runtime dependencies and is
+# never built or installed (package = false).
+[project]
+name = "dev-hooks"
+version = "0.0.0"
+description = "Dev tooling for the dev-hooks Claude Code plugin."
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "vulture",   # dead-code audit; run via `uvx vulture`
+    # The bundled Python scripts are stdlib-only (PEP 723 deps = []), so there is
+    # nothing extra to mirror here for the test environment to import.
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

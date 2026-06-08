@@ -1,0 +1,17 @@
+gr_sample	2
+gr_sample_strict	2
+gr_bad	2
+gr_bad_strict	2
+gr_missing	1
+ra_prose	0
+ra_prose_tg9	0
+ra_readme	0
+ra_missing	1
+fk_prose	0
+fk_stdin	0
+fk_missing	1
+vp_prose	0
+vp_stdin	0
+ra_branch	2
+fk_branch	0
+vp_branch	0

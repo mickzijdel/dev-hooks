@@ -42,19 +42,19 @@ Core rules:
 Use the bundled script for deterministic checks:
 
 ```bash
-ruby scripts/readability_audit.rb <file>
+uv run scripts/readability_audit.py <file>
 ```
 
 Optional comparison to baseline branch:
 
 ```bash
-ruby scripts/readability_audit.rb <file> --branch main
+uv run scripts/readability_audit.py <file> --branch main
 ```
 
 Optional grade target (default is 10):
 
 ```bash
-ruby scripts/readability_audit.rb <file> --target-grade 9
+uv run scripts/readability_audit.py <file> --target-grade 9
 ```
 
 The script reports:
@@ -67,11 +67,11 @@ The script reports:
 Supplemental scripts are available when a narrower check is useful:
 
 ```bash
-ruby scripts/flesch_kincaid.rb <file> [branch]
-ruby scripts/vocabulary_profiler.rb <file> [branch]
+uv run scripts/flesch_kincaid.py <file> [branch]
+uv run scripts/vocabulary_profiler.py <file> [branch]
 ```
 
-Use `flesch_kincaid.rb` for a simple grade-only check. Use `vocabulary_profiler.rb` to estimate how much copy uses common top-1000 English words; it is backed by `scripts/top1000.txt`.
+Use `flesch_kincaid.py` for a simple grade-only check. Use `vocabulary_profiler.py` to estimate how much copy uses common top-1000 English words; it is backed by `scripts/top1000.txt`.
 
 Treat these scripts as guardrails, not substitutes for human judgment.
 

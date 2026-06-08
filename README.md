@@ -105,8 +105,10 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   (in `.claude/settings.local.json` `"env"`).
 - Hooks require `jq` (used to parse hook input) and, for `verify-work.sh` and
   `memory-reminder.sh`, `python3`.
-- The `github-readme` and `readability` skills bundle optional `ruby` audit scripts
-  (`scripts/*.rb`); they only run when you invoke the skill and ask for the audit.
+- The `github-readme` and `readability` skills bundle optional Python audit scripts
+  (`scripts/*.py`, self-contained via [uv](https://docs.astral.sh/uv/) + PEP 723 inline
+  metadata — run with `uv run scripts/<name>.py`); they only run when you invoke the skill
+  and ask for the audit.
 - The `dev-env-setup` skill applies a [mise](https://mise.jdx.dev)/[hk](https://hk.jdx.dev)
   standard, so the repos it sets up depend on `mise`, `hk`, `pkl`, `gitleaks` (and
   `shellcheck`/`shfmt` for shell repos) — all provisioned via the generated `mise.toml`. The

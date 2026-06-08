@@ -55,13 +55,13 @@ Use this order by default (adapt as needed):
 Run the bundled checker:
 
 ```bash
-ruby scripts/github_readme_audit.rb README.md
+uv run scripts/github_readme_audit.py README.md
 ```
 
 Strict mode (stronger section expectations):
 
 ```bash
-ruby scripts/github_readme_audit.rb README.md --strict
+uv run scripts/github_readme_audit.py README.md --strict
 ```
 
 The script checks for:
