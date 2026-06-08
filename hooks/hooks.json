@@ -41,6 +41,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review-reminder.sh\"",
             "statusMessage": "Checking whether a code review ran this session..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/memory-reminder.sh\"",
+            "statusMessage": "Checking for session learnings worth remembering..."
           }
         ]
       }

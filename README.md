@@ -1,6 +1,6 @@
 # dev-hooks
 
-A Claude Code plugin bundling five polyglot, project-agnostic dev-workflow hooks plus a
+A Claude Code plugin bundling six polyglot, project-agnostic dev-workflow hooks plus a
 set of thinking-tool skills. Each hook script detects the project's own toolchain
 (Ruby/Rails, JavaScript/TypeScript, Python) — there is nothing to configure.
 
@@ -13,6 +13,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
+| `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
 
 ## Skills
 
@@ -69,6 +70,12 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
 
 - `verify-work.sh` only runs inside a git repo and only when relevant code files have
   changed; it no-ops otherwise.
-- Hooks require `jq` (used to parse hook input) and, for `verify-work.sh`, `python3`.
+- `memory-reminder.sh` targets Claude Code's file-based memory feature. It stays a no-op
+  unless you set `DEV_HOOKS_MEMORY=1` or have already used memory somewhere (it detects any
+  existing `~/.claude/projects/*/memory/` dir), so it's safe for installers who don't use
+  memory. It only nudges Claude to capture learnings — it never writes memory or edits
+  CLAUDE.md itself, and Claude is told to save nothing when there's nothing durable.
+- Hooks require `jq` (used to parse hook input) and, for `verify-work.sh` and
+  `memory-reminder.sh`, `python3`.
 - The `github-readme` and `readability` skills bundle optional `ruby` audit scripts
   (`scripts/*.rb`); they only run when you invoke the skill and ask for the audit.

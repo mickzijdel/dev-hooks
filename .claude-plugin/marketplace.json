@@ -12,7 +12,7 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, and multi-session plan reminders — plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review) and writing/content skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability).",
+      "description": "Auto-lint files on edit, verify tests/linters before stopping, stack-aware skill reminders on session start, multi-session plan reminders, and end-of-session memory-capture reminders — plus thinking-tool skills (but-for-real, premortem, board, self-rate, weekly-automation-review) and writing/content skills adapted from Nate Berkopec's dotfiles (github-readme, humanizer, readability).",
       "source": {
         "source": "github",
         "repo": "mickzijdel/dev-hooks",
