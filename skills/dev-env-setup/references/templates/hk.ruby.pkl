@@ -1,0 +1,32 @@
+// dev-env standard (dev-hooks:dev-env-setup) — version tracked via DEV_ENV_VERSION in mise.toml.
+amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    ["rubocop"] {
+        glob = "**/*.rb"
+        check = "bin/rubocop"
+        fix = "bin/rubocop -A"
+    }
+    ["test"] {
+        glob = "**/*.rb"
+        check = "bin/rails test"
+    }
+    // Secret scanning (defense-in-depth alongside fnox). hk builtin.
+    ["gitleaks"] = Builtins.gitleaks
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+}

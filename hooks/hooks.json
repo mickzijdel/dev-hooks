@@ -6,6 +6,11 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-stack-skills.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dev-env-reminder.sh\"",
+            "statusMessage": "Checking repo against your dev-env standard..."
           }
         ]
       }
