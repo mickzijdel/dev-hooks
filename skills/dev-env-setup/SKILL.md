@@ -186,6 +186,21 @@ to check, rather than guessing a version.
 - Never auto-run this from a hook — it's invoked by Mick (or offered by the reminder), and it
   writes commit-tracked config, so confirm before committing.
 
+### `.gitignore`
+
+The standard ships **no `.gitignore` template** — Claude's defaults are usually right. Just
+check these gotchas, where the default may be wrong or the standard's tooling expects something:
+
+- **Ignore `.env` / `.env.local`.** The gitleaks step is the safety net; `.gitignore` is the
+  first line — keep both. But **commit `fnox.toml`** in solo repos (it holds secret *references*,
+  not values); gitignore it only in repos shared with others. See [[env-to-fnox]].
+- **Commit lockfiles, don't ignore them** (`uv.lock`, `Gemfile.lock`). The standard pins tools
+  for reproducibility; a library-flavored default that drops lockfiles defeats that.
+- **`mise.local.toml` is the ignorable one; `mise.toml` is committed** — the `DEV_ENV_VERSION`
+  stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
+- **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
+  The default already covers this; just don't un-ignore it.
+
 [`bedlam-bacs`]: https://github.com/EdinburghUniversityTheatreCompany/bacs-tool
 [`readoc`]: https://github.com/mickzijdel/readoc
 [`booking-overview`]: https://github.com/mickzijdel/booking-overview
