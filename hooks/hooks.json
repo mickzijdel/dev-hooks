@@ -24,6 +24,11 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-on-edit.sh\"",
             "timeout": 60,
             "statusMessage": "Linting changed file..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/latest-deps-reminder.sh\"",
+            "statusMessage": "Checking dependency versions are current..."
           }
         ]
       }
