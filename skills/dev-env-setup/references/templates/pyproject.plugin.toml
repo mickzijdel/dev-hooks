@@ -23,9 +23,11 @@ dev = [
 package = false
 
 [tool.ruff]
-# Scripts that live without a .py extension (e.g. bin/foo, hooks/scripts/bar) aren't
-# discovered by directory traversal — include them explicitly.
-extend-include = ["bin/*", "hooks/scripts/*"]
+# Extensionless Python scripts (e.g. bin/foo) aren't discovered by `ruff check .`.
+# List the *Python* ones explicitly so a bare `ruff check .` covers them. Do NOT use a
+# blanket "bin/*" if bin/ also holds shell scripts — ruff would try to parse those as
+# Python and fail. (hk/CI lint these via shebang detection regardless of this setting.)
+extend-include = ["bin/your-python-cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

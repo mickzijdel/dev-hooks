@@ -13,13 +13,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v2   # installs shellcheck/shfmt honoring mise.lock (same versions as pre-commit)
+      - uses: jdx/mise-action@v2   # installs shellcheck/shfmt/ruff/uv honoring mise.lock (same versions as pre-commit)
       - name: Run shellcheck
+        # *.sh/*.bash plus extensionless shell scripts detected by shebang (bin/foo,
+        # hooks) — mirrors the hk `shellcheck-scripts` step so CI and pre-commit agree.
         run: |
-          shopt -s globstar nullglob
-          shellcheck **/*.sh
+          files=$( { git ls-files '*.sh' '*.bash'; git ls-files ':!*.sh' ':!*.bash' | xargs -r grep -lE '^#!.*\b(ba)?sh\b' 2>/dev/null; } | sort -u )
+          if [ -n "$files" ]; then shellcheck $files; else echo "no shell files, skipping"; fi
       - name: Check formatting (shfmt)
+        # shfmt's directory walk already detects extensionless shell scripts by shebang,
+        # so `.` covers bin/foo + hooks too.
         run: shfmt -d .
+      - name: Run ruff (Python incl. extensionless PEP 723 scripts)
+        # *.py plus extensionless python/uv scripts detected by shebang — mirrors the hk
+        # ruff-*-scripts steps. (No-op if the repo has no Python.)
+        run: |
+          files=$( { git ls-files '*.py'; git ls-files ':!*.py' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null; } | sort -u )
+          if [ -n "$files" ]; then ruff check $files && ruff format --check $files; else echo "no python files, skipping"; fi
 
   test:
     runs-on: ubuntu-latest

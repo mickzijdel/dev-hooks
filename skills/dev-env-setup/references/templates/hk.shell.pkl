@@ -16,6 +16,30 @@ local linters = new Mapping<String, Step> {
         check = "ruff format --force-exclude --diff {{ files }}"
         fix = "ruff format --force-exclude {{ files }}"
     }
+    // --- Extensionless scripts (bin/foo, hooks) ----------------------------------
+    // CC-plugin / script repos keep their executables extensionless so they run as
+    // bare commands, so the *.sh / *.py globs above never match them. These companion
+    // steps detect such scripts by SHEBANG instead (same trick the `vulture` check
+    // step uses), so shellcheck/shfmt/ruff cover them with no per-repo glob editing.
+    // They carry no glob (so hk runs them whenever anything is staged) and ignore
+    // {{ files }} — the inner `git ls-files | grep -l` picks the real targets, and
+    // `xargs -r` no-ops when there are none (a repo with no extensionless scripts is
+    // unaffected). check-only by design: auto-fixing would need an explicit `stage`
+    // glob that extensionless paths can't express cleanly, so a flagged script is
+    // fixed by hand (or `ruff check --fix` / `shfmt -w`). They run full-tree, not
+    // incremental — fine for the handful of scripts such a repo carries.
+    ["shellcheck-scripts"] {
+        check = "git ls-files ':!*.sh' ':!*.bash' | xargs -r grep -lE '^#!.*\\b(ba)?sh\\b' 2>/dev/null | xargs -r shellcheck"
+    }
+    ["shfmt-scripts"] {
+        check = "git ls-files ':!*.sh' ':!*.bash' ':!*.mksh' ':!*.bats' ':!*.zsh' | xargs -r grep -lE '^#!.*\\b(ba)?sh\\b' 2>/dev/null | xargs -r shfmt -d"
+    }
+    ["ruff-check-scripts"] {
+        check = "git ls-files ':!*.py' ':!*.pyi' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null | xargs -r ruff check --force-exclude"
+    }
+    ["ruff-format-scripts"] {
+        check = "git ls-files ':!*.py' ':!*.pyi' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null | xargs -r ruff format --force-exclude --diff"
+    }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks
     // Block accidentally-committed large files. hk builtin.

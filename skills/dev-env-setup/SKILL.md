@@ -76,10 +76,23 @@ pre-commit; dead-code + duplication in `check`/CI only.
 >   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
 >   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
 >   (Ruby). Add `ignorePattern` on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
-> `vulture` also scans tracked files with a python/uv shebang; `ruff` needs them added to
-> `[tool.ruff] extend-include`; jscpd keys off extensions, so duplication on extensionless
-> scripts isn't auto-covered. To auto-fix clones, agents can run
+> jscpd keys off extensions, so duplication on extensionless scripts isn't auto-covered. To
+> auto-fix clones, agents can run
 > `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
+
+> **Extensionless scripts (CC-plugin `bin/foo`, hooks) are linted by shebang — no glob
+> surgery needed.** hk's `shellcheck`/`shfmt`/`ruff` builtins match by extension (`**/*.sh`,
+> `**/*.py`), so they'd silently skip the extensionless executables plugin repos keep in
+> `bin/`. The shell template (`hk.shell.pkl`) therefore carries companion steps —
+> `shellcheck-scripts`, `shfmt-scripts`, `ruff-check-scripts`, `ruff-format-scripts` — that
+> detect such files by **shebang** (`git ls-files | xargs -r grep -lE '^#!.*…'`), the same way
+> the `vulture` step already does, and `ci.shell.yml` mirrors them. They're **check-only**
+> (a flagged script is fixed by hand or `ruff check --fix`/`shfmt -w`) and run full-tree.
+> So you no longer hand-add extensionless CLIs to hk globs. `[tool.ruff] extend-include` is
+> still worth setting (in `pyproject.toml`) to the **Python** extensionless scripts so a bare
+> `ruff check .` covers them too — list them explicitly, never a blanket `bin/*` (it would
+> make ruff try to parse a bash hook as Python). jscpd still keys off extensions, so verbatim
+> duplication in extensionless scripts remains uncovered (acceptable).
 
 ### Duplication: flay vs jscpd (why Ruby runs both)
 
@@ -143,8 +156,10 @@ proposing additions.
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
    `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json` → repo root.
-   Adjust specifics (default branch name, Python version, extra source globs for extensionless
-   CLIs like `bin/foo` — add them to `hk.pkl` globs and `[tool.ruff] extend-include`). The templates
+   Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
+   are covered automatically by the shell template's shebang companion steps — no hk-glob
+   surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless
+   note above). The templates
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
    the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
    Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
