@@ -8,6 +8,32 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-06-09 (Run 3)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits from before the 7-day window (May 30–June 1): `d2a00c5`, `9eadd66`, `837cb02`, `60afa1f`, `d47fa8a`, `1e7827f`, `7487651`, `425afcf`, `3f43c89`, `dab8552`, `6559bca`, `bb155de`, `b921367`, `a47f0d6`, `04db2c8`, `0ef0cb2`, `b50a9b8`, `afc320d`, `bc31bb1`, `f4c1ae8`, `5fed8f4`. All 7-day-window items (June 2–9) already logged in Runs 1 and 2. Outside-window commits evaluated as own-idea candidates.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — no new items since Run 2.
+
+PRs opened this run:
+- [#6 feat: dev-env standard v11 — mise upgrade cooldown + fix template version drift](https://github.com/mickzijdel/dev-hooks/pull/6)
+- rails-toolkit CSP section: **could not push** — GitHub integration lacked write access to rails-toolkit in this session; full content ready to apply.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Add `minimum_release_age = "4d"` to mise.toml `[settings]` | dotfiles commit `d2a00c5` ("Set mise minimum release age", May 30) | **Implement** | Extends the existing 4-day supply-chain cooldown to `mise upgrade`. PR #6 opened. |
+| Use `aube` as npm package manager for mise tools (`npm.package_manager = "aube"`) | dotfiles commits `bc31bb1`, `b50a9b8`, `afc320d` (May 31) | Deferred | Provenance-checking goal is already largely served by `minimum_release_age` (now v11) + `mise.lock` checksums/Cosign/SLSA. `npm.package_manager` is a mise experimental setting not yet stable. Revisit if it matures. |
+| Enable aube paranoid mode | dotfiles commit `a47f0d6` (May 31) | Deferred | Downstream of the aube adoption row above; same reasoning applies. |
+| Add Content Security Policy section to `rails-security` skill | Own idea (gap: Rails has built-in `config.content_security_policy` since 5.2 but rails-toolkit skill didn’t cover it) | **Implement** (blocked) | Wrote full section: initializer with nonce for Importmap, report-only rollout, common mistakes. Could not push — GitHub integration lacked write access to rails-toolkit in this session. |
+| Fix template version drift (DEV_ENV_VERSION `"9"` in templates vs VERSION `10`) | Own observation | **Implement** | Bundled into PR #6. |
+| Remove qmd from dotfiles | dotfiles commit `9eadd66` (June 1) | Out of scope | Personal quarto/qumd tooling; no bearing on dev-workflow hooks. |
+| Avoid opening apps during dotf run / Skip file associations in CI | dotfiles commits `7487651`, `60afa1f` (May 31) | Out of scope | Specific to Nate’s macOS dotfiles runner; no hook surface in dev-hooks. |
+| Update Pi todos extension from upstream | dotfiles commit `1e7827f` (May 31) | Out of scope | Pi personal agent tool; not applicable. |
+| Fix Pi OpenRouter env var reference | dotfiles commit `3f43c89` (May 31) | Out of scope | Pi personal agent tool; not applicable. |
+| Pin pi to a provenance-preserving release | dotfiles commit `6559bca` (May 31) | Out of scope | Pi personal agent; release-pinning strategy for pi has no generalizable surface. |
+| Run migrations during dotf run | dotfiles commit `5fed8f4` (May 31) | Out of scope | Specific to Nate’s `dotf run` automation workflow; dev-hooks has no equivalent runner. |
+
+---
+
 ## 2026-06-09 (Run 2)
 
 Sources scanned:
