@@ -224,6 +224,20 @@ def test_checker_no_fnox_suggestion_without_secrets(tmp_path):
     assert out["suggests_fnox"] == "0"
 
 
+@pytest.mark.parametrize("vendor_dir", [".venv", "node_modules", "vendor"])
+def test_checker_no_fnox_suggestion_from_vendored_dirs(tmp_path, vendor_dir):
+    # A vendored/dependency dir whose third-party source contains Settings./ENV[
+    # must NOT trigger the fnox nudge — only the repo's OWN source counts.
+    # Regression for the readoc false positive (installed python-docx/pymupdf
+    # under .venv matched the credential heuristic's grep).
+    make_compliant_repo(tmp_path)
+    vendored = tmp_path / vendor_dir / "lib" / "pkg"
+    vendored.mkdir(parents=True)
+    (vendored / "section.py").write_text("x = Settings.foo\ny = ENV['BAR']\n")
+    out = run_checker(tmp_path)
+    assert out["suggests_fnox"] == "0"
+
+
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────
 def test_latest_deps_fires_once_per_session(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
