@@ -5,6 +5,10 @@ Make sure to check all of the following and make sure they are up-to-date after 
 4. README.md
 5. CLAUDE.md
 6. tests/ — keep the pytest suite green and add coverage for behaviour you change
+7. when editing a skill, check **all** its template/reference files (e.g.
+   `skills/*/references/templates/`) — these mirror the standard the skill encodes and
+   drift out of sync silently (e.g. a version stamp bumped in one template but not its
+   siblings). Update every variant, not just the one you started with.
 
 Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool).
 
