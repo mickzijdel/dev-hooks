@@ -25,13 +25,14 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v10)
+## The standard (v11)
 
-A repo is **compliant at v10** when it has all of:
+A repo is **compliant at v11** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "10"`.
+  `npx`); `[settings] lockfile = true` and `minimum_release_age = "4d"`; `[env]` carries the
+  version stamp `DEV_ENV_VERSION = "11"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -358,6 +359,12 @@ versions. **Commit `mise.lock`** alongside `mise.toml`.
 5.x ships only as npm-distributed Rust platform packages — no clean mise backend); instead it
 tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note above). Project
 deps lock separately via `uv.lock` / `Gemfile.lock`.
+
+**Tool-upgrade cooldown (v11):** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
+supply-chain window to `mise upgrade`. When re-resolving `"latest"`, mise only considers tool
+versions published at least 4 days ago, giving the community time to catch and yank a malicious
+release before it lands here. `mise install` is unaffected — it always reproduces the exact
+version pinned in `mise.lock`.
 
 ## Dependency cooldown (supply-chain)
 
