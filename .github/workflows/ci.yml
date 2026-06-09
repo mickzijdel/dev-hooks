@@ -57,7 +57,7 @@ jobs:
         run: |
           # tracked .py + any tracked file with a python/uv shebang (e.g. bin/foo).
           # git ls-files excludes gitignored .venv automatically.
-          files=$( { git ls-files '*.py'; git ls-files | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null; } | sort -u )
+          files=$( { git ls-files '*.py'; git ls-files | while IFS= read -r f; do head -n1 "$f" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\n' "$f"; done; } | sort -u )
           if [ -n "$files" ]; then uvx vulture --min-confidence 80 $files; else echo "no python files, skipping"; fi
       - name: Duplication (jscpd)
         # -f python,bash scopes detection to real code; the repo's only other files are

@@ -25,7 +25,7 @@ local linters = new Mapping<String, Step> {
     // tracked file with a python/uv shebang (PEP 723 CLIs like bin/foo).
     ["vulture"] {
         glob = "**/*.py"
-        check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null)"
+        check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\\n' \"$f\"; done)"
     }
     // Duplication. jscpd 5.x via npx; config in `.jscpd.json`. Restricted to the code formats
     // (`-f python,bash`): this plugin's only non-code files are CI/skill template scaffolding
