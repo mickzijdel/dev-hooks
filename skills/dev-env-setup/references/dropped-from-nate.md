@@ -27,7 +27,7 @@ one new adoption (now v2 — see [upgrade-guide.md](upgrade-guide.md)).
 |---------|---------|-------|
 | **Lockfile (`mise lock`)** | **Adopted v2** | `mise.lock` + `lockfile = true` — reproducible, checksum-verified installs |
 | **Supply-chain security** (checksums/Cosign/SLSA) | **Adopted v2** | comes with the lockfile via the aqua backend; pairs with gitleaks + Bundler cooldown |
-| **GitHub/HTTP/S3 backends** | Skipped | only interesting to pin jscpd off `npx`; jscpd 5.x is npm-only Rust platform packages, no clean mise backend. Reconsider if jscpd ships standalone release binaries |
+| **GitHub/HTTP/S3 backends** | Skipped | only interesting to pin jscpd off `npx`; no clean mise backend today — see the "jscpd as a mise tool" note below for the tested backends and revisit triggers |
 | **Tool stubs** (`mise generate tool-stub`) | Skipped | niche; the committed `mise.toml` already provisions every tool |
 | **Task `sources`/`outputs`** | N/A | needs `[tasks]` (already dropped — see table above) |
 | **Typed task args (`usage`)** | N/A | needs `[tasks]` |
@@ -48,3 +48,25 @@ one new adoption (now v2 — see [upgrade-guide.md](upgrade-guide.md)).
   two tools depending on stack — see the "Duplication: flay vs jscpd" note in `../SKILL.md` for
   why Ruby/Rails runs both (flay for Ruby structure, jscpd for the polyglot JS/CSS/ERB gate) and
   Python/shell run jscpd only.
+
+### jscpd as a mise tool — deferred (tested 2026-06-09)
+
+Making jscpd a *proper, pinned mise tool* (instead of unpinned `npx --yes jscpd@latest`) would
+be nice, but every candidate backend was tested and none is worth adopting today:
+
+- **`npm:jscpd`** — installs in <1s but **fails at runtime**: `jscpd: Platform package
+  "cpd-linux-x64-gnu" not installed`. mise's `npm:` backend installs the wrapper package but not
+  jscpd 5.x's *optional platform packages* (which carry the actual Rust binary); `npx` resolves
+  optional deps, the mise npm backend does not. **Not viable.**
+- **`cargo:jscpd`** — **works fully**: compiles from source (~34s, cached after), installs
+  standalone `jscpd`/`cpd` binaries, honors `.jscpd.json` (verified `minTokens`/`threshold`,
+  catches a synthetic clone, exits 1). But mise does **not** auto-provide cargo — it requires a
+  **Rust toolchain** declared in `mise.toml` (or global on the host). Adding a whole Rust
+  toolchain to every repo (Python/shell/Ruby) purely to pin a duplication checker isn't worth it.
+- **`aqua:`/`ubi:`/`github:`** — jscpd's GitHub releases attach **no prebuilt binary assets**
+  (verified: no `browser_download_url` on the latest releases), so there's nothing to download.
+
+**Decision:** keep `npx --yes jscpd@latest`. **Revisit when** either (1) a repo already pins
+`rust` for another reason — then switch *that* repo to `cargo:jscpd`; or (2) jscpd starts
+attaching standalone release binaries to its GitHub releases — then use an `aqua`/`ubi` backend
+(prebuilt, no Rust toolchain).

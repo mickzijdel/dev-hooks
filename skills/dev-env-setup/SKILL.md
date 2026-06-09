@@ -66,7 +66,10 @@ pre-commit; dead-code + duplication in `check`/CI only.
 > **jscpd** runs via `npx --yes jscpd@latest` (its v5 Rust engine — the `cpd` binary — ships
 > through npm optional platform packages that `npx` resolves but the mise `npm:` backend
 > doesn't), reading `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone
-> output) and the **`threshold`** reporter (CI gate).
+> output) and the **`threshold`** reporter (CI gate). (Making it a real mise tool is deferred:
+> `cargo:jscpd` works but needs a Rust toolchain per repo, and there are no prebuilt release
+> binaries for an `aqua`/`ubi` backend — see `references/dropped-from-nate.md` for the tested
+> comparison and revisit triggers, 2026-06-09.)
 >
 > Configuring exclusions:
 > - **Exclude paths** with `ignorePattern` (a glob array) in `.jscpd.json`. (Plain `ignore` has
