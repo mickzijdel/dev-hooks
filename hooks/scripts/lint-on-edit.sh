@@ -27,9 +27,6 @@ find_root() {
 # executes (covers sane npm / pnpm / bun installs uniformly). Fallback for a
 # broken/native .bin stub (e.g. biome's symlink mangled by a cross-platform
 # install): the package runner matching this project's lockfile.
-# NOTE: currently unused — the JS/TS arm below calls the .bin tools directly. Kept (and
-# the dead-code check silenced) pending a decision to route those calls through it.
-# shellcheck disable=SC2329
 run_js() {
   local tool=$1
   shift
@@ -82,14 +79,13 @@ case "$FILE" in
 
   # ── JS / TS / styles / data ──────────────────────────────────────────────────
   *.js | *.jsx | *.ts | *.tsx | *.vue | *.mjs | *.cjs | *.css | *.scss | *.json | *.md | *.yaml | *.yml)
-    BIN="$ROOT/node_modules/.bin"
     if [ -f biome.json ] || [ -f biome.jsonc ]; then
-      [ -x "$BIN/biome" ] && "$BIN/biome" check --write "$FILE" >/dev/null 2>&1
+      run_js biome check --write "$FILE"
     else
-      [ -x "$BIN/prettier" ] && "$BIN/prettier" --write --ignore-unknown "$FILE" >/dev/null 2>&1
+      run_js prettier --write --ignore-unknown "$FILE"
       case "$FILE" in
         *.js | *.jsx | *.ts | *.tsx | *.vue | *.mjs | *.cjs)
-          [ -x "$BIN/eslint" ] && "$BIN/eslint" --fix "$FILE" >/dev/null 2>&1
+          run_js eslint --fix "$FILE"
           ;;
       esac
     fi
