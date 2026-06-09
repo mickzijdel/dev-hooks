@@ -270,6 +270,76 @@ def test_dockerfile_reminder_silent_when_opted_out(tmp_path):
     assert r.stdout.strip() == ""
 
 
+# ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
+def test_popover_reminder_fires_for_controller_filename(tmp_path):
+    ctrl = tmp_path / "tooltip_controller.js"
+    ctrl.write_text("import { Controller } from '@hotwired/stimulus'\n")
+    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p1"})
+    r = run_hook(
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "popovers-tooltips")
+
+
+def test_popover_reminder_fires_for_broad_class_match(tmp_path):
+    view = tmp_path / "index.html.erb"
+    view.write_text('<ul class="dropdown-menu hidden"><li>One</li></ul>\n')
+    payload = json.dumps({"tool_input": {"file_path": str(view)}, "session_id": "p2"})
+    r = run_hook(
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "off-screen")
+
+
+def test_popover_reminder_silent_for_unrelated_frontend_file(tmp_path):
+    app = tmp_path / "app.js"
+    app.write_text("console.log('hello')\n")
+    payload = json.dumps({"tool_input": {"file_path": str(app)}, "session_id": "p3"})
+    r = run_hook(
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_popover_reminder_silent_for_non_frontend_file(tmp_path):
+    py = tmp_path / "tooltip.py"  # popover-ish name but not a frontend extension
+    py.write_text('x = "tooltip"\n')
+    payload = json.dumps({"tool_input": {"file_path": str(py)}, "session_id": "p4"})
+    r = run_hook(
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_popover_reminder_silent_when_opted_out(tmp_path):
+    ctrl = tmp_path / "popover_controller.js"
+    ctrl.write_text("// popover\n")
+    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p5"})
+    r = run_hook(
+        "popover-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_POPOVER="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_popover_reminder_fires_once_per_session(tmp_path):
+    ctrl = tmp_path / "tooltip_controller.js"
+    ctrl.write_text("// tip\n")
+    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p6"})
+    env = base_env(TMPDIR=str(tmp_path))
+    first = run_hook("popover-reminder.sh", stdin=payload, env=env)
+    second = run_hook("popover-reminder.sh", stdin=payload, env=env)
+    assert first.returncode == 0 and second.returncode == 0
+    assert_json_with(first.stdout, "popovers-tooltips")
+    assert second.stdout.strip() == ""
+
+
 # ── lint-on-edit.sh ─────────────────────────────────────────────────────────────────
 def test_lint_on_edit_silent_without_file_path():
     r = run_hook("lint-on-edit.sh", stdin=json.dumps({}))
