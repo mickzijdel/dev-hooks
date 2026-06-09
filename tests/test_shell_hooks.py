@@ -105,8 +105,8 @@ def run_checker(target):
     return out
 
 
-def make_v6_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
-    """Build a repo that satisfies everything the checker enforces at v6 except
+def make_v7_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
+    """Build a repo that satisfies everything the checker enforces at v7 except
     optionally the README/CLAUDE.md docs or the uv cooldown."""
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -114,7 +114,7 @@ def make_v6_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
         pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
     (path / "pyproject.toml").write_text(pyproject)
     (path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "6"\n'
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "7"\n'
     )
     (path / "mise.lock").write_text("")
     (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
@@ -127,8 +127,8 @@ def make_v6_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
         (path / "CLAUDE.md").write_text("# project instructions\n")
 
 
-def test_checker_v6_compliant_with_docs(tmp_path):
-    make_v6_compliant_repo(tmp_path)
+def test_checker_v7_compliant_with_docs(tmp_path):
+    make_v7_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "1"
     assert out["has_claude"] == "1"
@@ -136,23 +136,23 @@ def test_checker_v6_compliant_with_docs(tmp_path):
     assert out["status"] == "compliant"
 
 
-def test_checker_v6_needs_upgrade_without_readme(tmp_path):
-    make_v6_compliant_repo(tmp_path, readme=False)
+def test_checker_v7_needs_upgrade_without_readme(tmp_path):
+    make_v7_compliant_repo(tmp_path, readme=False)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v6_needs_upgrade_without_claude(tmp_path):
-    make_v6_compliant_repo(tmp_path, claude=False)
+def test_checker_v7_needs_upgrade_without_claude(tmp_path):
+    make_v7_compliant_repo(tmp_path, claude=False)
     out = run_checker(tmp_path)
     assert out["has_claude"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v6_needs_upgrade_without_cooldown(tmp_path):
-    # A v6 Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
-    make_v6_compliant_repo(tmp_path, cooldown=False)
+def test_checker_v7_needs_upgrade_without_cooldown(tmp_path):
+    # A v7 Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
+    make_v7_compliant_repo(tmp_path, cooldown=False)
     out = run_checker(tmp_path)
     assert out["has_cooldown"] == "0"
     assert out["status"] == "needs-upgrade"
@@ -163,7 +163,7 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
     (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
     (tmp_path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "6"\n'
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "7"\n'
     )
     (tmp_path / "mise.lock").write_text("")
     (tmp_path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')

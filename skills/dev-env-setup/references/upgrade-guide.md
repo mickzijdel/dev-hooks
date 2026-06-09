@@ -52,8 +52,9 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
      because a Rails app's JS/CSS/SCSS/ERB also needs duplication coverage (flay only parses
      Ruby). See the "Duplication: flay vs jscpd" note in `../SKILL.md`.
 5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
-   (`gitleaks/gitleaks-action@v2`, `fetch-depth: 0`) and an `audit` job (dead-code + duplication
-   + a large-file guard step).
+   (`gitleaks/gitleaks-action@v3`, `fetch-depth: 0`, with `env: GITHUB_TOKEN:
+   ${{ secrets.GITHUB_TOKEN }}` — required to scan `pull_request` events, see v6 → v7) and an
+   `audit` job (dead-code + duplication + a large-file guard step).
 6. **Verify:** `mise install && hk install && hk run check` (gitleaks + audits run clean), then
    confirm `hk run pre-commit --all` does **not** run vulture/jscpd/flay/debride (only linters +
    large-file), then `bash scripts/dev_env_check.sh .` → `status=compliant`.
@@ -252,6 +253,33 @@ To reach v6:
 
 > **Future symmetry:** only uv is gated today. Enforcing the Ruby `Gemfile` cooldown (a simple
 > `cooldown:` grep) or a JS lockfile-keyed check could land in a later version if wanted.
+
+---
+
+## v6 → v7 (gitleaks PR scan needs GITHUB_TOKEN)
+
+`gitleaks/gitleaks-action` now hard-requires a `GITHUB_TOKEN` to scan **pull_request**
+events — it calls the GitHub API to enumerate the PR's commits. Without it the `gitleaks`
+job fails on every PR with `🛑 GITHUB_TOKEN is now required to scan pull requests` (push
+events are unaffected, so the gap stays hidden until the first PR). v7 also bumps the
+action major `@v2` → `@v3` to track its current release. To reach v7:
+
+1. **Add the token to the gitleaks job** in `.github/workflows/ci.yml` and bump the pin:
+   ```yaml
+     gitleaks:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v6
+           with:
+             fetch-depth: 0
+         - uses: gitleaks/gitleaks-action@v3
+           env:
+             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required to scan pull_request events
+   ```
+   The token is the auto-provisioned one — no secret to create. (See `templates/ci.*.yml`.)
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "7"` in `mise.toml`.
+3. **Verify:** open a PR (or re-run a PR check) — the `gitleaks` job scans instead of
+   failing on the missing token; `bash scripts/dev_env_check.sh .` → `status=compliant`.
 
 ---
 

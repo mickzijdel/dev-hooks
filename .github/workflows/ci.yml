@@ -39,6 +39,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required to scan pull_request events
 
   # Noisier audits — mirror the hk `check` hook (not run on pre-commit).
   audit:

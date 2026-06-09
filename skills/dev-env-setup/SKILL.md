@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v6)
+## The standard (v7)
 
-A repo is **compliant at v6** when it has all of:
+A repo is **compliant at v7** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "6"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "7"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -43,7 +43,10 @@ A repo is **compliant at v6** when it has all of:
   **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
   just the same set under one name that CI invokes.
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
-  `audit` job (dead-code + duplication + a large-file guard), on push/PR.
+  `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
+  uses `gitleaks-action@v3` and carries `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
+  (added in v7) — the action requires it to scan `pull_request` events, and fails the PR
+  without it.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
