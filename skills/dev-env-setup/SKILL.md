@@ -258,6 +258,11 @@ Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this 
 in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
 `actions/upload-artifact`, `gitleaks/gitleaks-action`, `jdx/mise-action` — and any others a repo
 already uses.
+Caveat: some actions don't publish a floating major tag for their newest release (e.g.
+`astral-sh/setup-uv` ships `v8.x` releases but only floats `@v1`…`@v7`), so `@v8` fails to
+resolve in CI. Always verify the chosen ref actually exists —
+`git ls-remote --tags --refs https://github.com/OWNER/REPO refs/tags/<ref>` — and if the floating
+major is missing, pin the exact latest release tag (e.g. `astral-sh/setup-uv@v8.2.0`) instead.
 When upgrading an existing repo, list each Action with its current vs. latest version and bump
 the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
 to check, rather than guessing a version.
