@@ -19,6 +19,7 @@ CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml"]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
 MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
+GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
 
 # Templates carrying shebang-based companion-step detectors for extensionless scripts.
 SHEBANG_DETECTOR_TEMPLATES = [
@@ -56,6 +57,18 @@ def test_shebang_detector_matches_line_one_only(name):
     )
     # The line-1-only form must be present.
     assert "head -n1" in text, f"{name} is missing the `head -n1` line-1 detector"
+
+
+def test_gitleaks_template_allowlists_gitignored_artifacts():
+    """The v10 .gitleaks.toml extends the default ruleset and allowlists the gitignored
+    runtime/secret PATHS — gitleaks `dir` scans the whole tree (no respect-gitignore flag),
+    so without this every commit fails on local .env/log/*.key. The allowlist must stay
+    path-scoped (these gitignored locations only) so app/config source is still scanned."""
+    text = GITLEAKS_TEMPLATE.read_text()
+    assert "useDefault = true" in text, "must extend the default ruleset"
+    # Allowlist must cover the gitignored secret/artifact paths the standard relies on.
+    for needle in (r"^\.env", "log/", r"config/credentials/.*\.key"):
+        assert needle in text, f".gitleaks.toml allowlist is missing {needle!r}"
 
 
 def test_skill_doc_matches_version_stamp():

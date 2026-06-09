@@ -352,6 +352,36 @@ tests, so vendored/generated code no longer triggers false "add a test" prompts.
 
 ---
 
+## v9 → v10 (gitleaks whole-tree allowlist + fnox nudge)
+
+The hk `gitleaks` step runs `gitleaks dir` over the **whole working tree** — `dir` has no
+respect-gitignore flag (verified with gitleaks 8.30.1), so it scans gitignored files too. In any
+real repo with a local `.env`, `log/`, `tmp/cache/`, or a Rails `config/credentials/*.key`, that
+means **every `git commit` fails** at the pre-commit hook and `hk run check` is permanently red,
+even though none of those files are tracked (so `gitleaks git` is clean and CI — which scans
+history — stays green, hiding the gap until a local commit). v10 ships a committed
+`.gitleaks.toml` allowlist that fixes it, and adds an advisory nudge toward [[env-to-fnox]] when a
+repo has plaintext secrets in use. To reach v10:
+
+1. **Copy `.gitleaks.toml`** (all stacks) from `references/templates/.gitleaks.toml` → repo root.
+   It `[extend]`s the default ruleset and allowlists the gitignored runtime/secret **paths**
+   (`.env`, `log/`, `tmp/`, `.venv/`, `node_modules/`, `vendor/`, `config/credentials/*.key`).
+   gitleaks auto-loads it from the scan root — no `--config` flag, no `hk.pkl`/CI change needed.
+   Keep any repo-specific allowlist entries already present. (Path-scoped to gitignored locations
+   only, so app/config **source** stays fully scanned — see SKILL.md › "gitleaks whole-tree
+   allowlist", including the `git add -f` caveat.)
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "10"` in `mise.toml`.
+3. **fnox nudge (advisory).** The checker now emits `suggests_fnox=1` when the repo has secrets in
+   use (a non-empty `.env`/`.env.local`, a Rails master key, or source references to credentials)
+   and no `fnox.toml`. If set, recommend the [[env-to-fnox]] skill to migrate the plaintext
+   secrets out of the repo. This never gates compliance.
+4. **Verify:** create a dummy `.env` with a fake key and a `log/test.log` with a JWT-shaped
+   string, then `hk run check` must **exit 0** ("no leaks found"); a real key hardcoded in
+   `app/`/source is still caught. Then `bash scripts/dev_env_check.sh .` →
+   `has_gitleaks_config=1` and `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

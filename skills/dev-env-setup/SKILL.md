@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v9)
+## The standard (v10)
 
-A repo is **compliant at v9** when it has all of:
+A repo is **compliant at v10** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "9"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "10"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -43,6 +43,13 @@ A repo is **compliant at v9** when it has all of:
   including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
   **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
   just the same set under one name that CI invokes.
+- **`.gitleaks.toml`** (all stacks) — a root allowlist file. The `gitleaks` step
+  (and CI's gitleaks-action) run `gitleaks dir` over the **whole working tree** — `dir` has no
+  respect-gitignore flag — so without this, any repo with a local `.env`, `log/`, `tmp/`, or a
+  Rails `config/credentials/*.key` fails every commit and `hk run check` stays red, even though
+  none of those are tracked. The file `[extend]`s the default ruleset and allowlists those
+  gitignored runtime/secret **paths only** (source stays fully scanned). gitleaks auto-loads it
+  from the scan root, so the hk builtin needs no `--config`. See "gitleaks whole-tree allowlist".
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
   uses `gitleaks-action@v3` and carries `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
@@ -185,7 +192,9 @@ proposing additions.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
-   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json` → repo root.
+   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json` **and
+   `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s whole-tree scan from
+   failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks whole-tree allowlist").
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
    are covered automatically by the shell template's shebang companion steps — no hk-glob
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless
@@ -222,7 +231,13 @@ proposing additions.
    `mise.toml` to `.git/info/exclude` instead. (This mirrors the dev-env-reminder hook's
    ownership rule.)
 
-7. **Verify** (do this, don't assume):
+7. **Nudge env-to-fnox if secrets are in use.** If the checker reports `suggests_fnox=1` (the repo
+   has a non-empty `.env`/`.env.local`, a Rails master key, or source references to credentials,
+   and no `fnox.toml` yet), surface it in the final report: recommend running the [[env-to-fnox]]
+   skill to migrate the plaintext secrets to fnox + Bitwarden Secrets Manager. Advisory only —
+   don't auto-run it, and it never blocks compliance.
+
+8. **Verify** (do this, don't assume):
 
    > **`mise trust` first (gate on the user).** A freshly written or cloned `mise.toml` is
    > untrusted, so `mise install` fails with "Config files … are not trusted" until you run
@@ -238,9 +253,11 @@ proposing additions.
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → status=compliant
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows  # every uses: pin resolves
    ```
-   Confirm `mise.lock` is present and committed, and that `README.md` + `CLAUDE.md` exist
-   (`has_readme=1 has_claude=1`). Run the project's own tests too (`uv run pytest` /
-   `bin/rails test`). Report real output.
+   Confirm `mise.lock` is present and committed, that `.gitleaks.toml` is at the root
+   (`has_gitleaks_config=1`), and that `README.md` + `CLAUDE.md` exist (`has_readme=1
+   has_claude=1`). A good `.gitleaks.toml` smoke test: with a local `.env`/`log/` present,
+   `hk run check` must still pass (no leaks found). Run the project's own tests too (`uv run
+   pytest` / `bin/rails test`). Report real output.
 
 ## Project docs (README + CLAUDE.md)
 
@@ -394,6 +411,29 @@ urgent upgrade. For one-off exceptions *inside* the window, uv has `exclude-newe
 [minimum release age across npm/pnpm/yarn (gist)](https://gist.github.com/mcollina/b294a6c39ee700d24073c0e5a4e93104) ·
 [cooldowns.dev](https://cooldowns.dev/)
 
+## gitleaks whole-tree allowlist (`.gitleaks.toml`)
+
+The hk `gitleaks` step (`["gitleaks"] = Builtins.gitleaks`) and CI's gitleaks-action both run
+`gitleaks dir`, which scans the **entire working tree** — `dir` has no respect-gitignore flag, so
+it reads gitignored files too. Without an allowlist, a local `.env`, `log/`, `tmp/cache/`, or a
+Rails `config/credentials/*.key` makes the scan fail on those gitignored artifacts, blocking every
+commit and keeping `hk run check` red (none of them are tracked, so CI — which scans history —
+still passes, masking the problem).
+
+`references/templates/.gitleaks.toml` is the fix: it `[extend]`s the default ruleset
+(`useDefault = true`) and `[allowlist]`s the gitignored runtime/secret **paths** (`.env`, `log/`,
+`tmp/`, `.venv/`, `node_modules/`, `vendor/`, `config/credentials/*.key`). gitleaks auto-loads
+`.gitleaks.toml` from the scan root, so the hk builtin and the CI action both pick it up with **no
+`--config` flag**. The allowlist is **path-scoped to gitignored locations only**, so a secret
+hardcoded in `app/`/source is still caught.
+
+**Caveat:** because CI's gitleaks-action reads the same file, a secret force-added (`git add -f`)
+into one of these paths wouldn't be caught by CI either. That's an accepted trade-off — the paths
+are gitignored, so defeating it takes a deliberate `-f` against `.gitignore`. The complementary
+path is to get the plaintext secret out of the repo entirely: when the checker detects secrets in
+use without a `fnox.toml`, it emits `suggests_fnox=1` and the setup/upgrade report nudges the
+[[env-to-fnox]] skill.
+
 ## Notes
 
 - The version stamp is the single source of truth in `references/../VERSION`; the reminder hook
@@ -409,6 +449,10 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
 - **Ignore `.env` / `.env.local`.** The gitleaks step is the safety net; `.gitignore` is the
   first line — keep both. But **commit `fnox.toml`** in solo repos (it holds secret *references*,
   not values); gitignore it only in repos shared with others. See [[env-to-fnox]].
+- **But `.env` must also be allowlisted in `.gitleaks.toml`** (committed, v10+) — `gitleaks dir`
+  scans gitignored files too, so the ignored `.env`/`log/`/`*.key` still trip the scan without the
+  allowlist. The same gitignored `.env` that this silences is what triggers the `suggests_fnox`
+  nudge toward [[env-to-fnox]]. See "gitleaks whole-tree allowlist".
 - **Commit lockfiles, don't ignore them** (`mise.lock`, `uv.lock`, `Gemfile.lock`). The standard
   pins tools for reproducibility; a library-flavored default that drops lockfiles defeats that.
 - **`mise.local.toml` is the ignorable one; `mise.toml` is committed** — the `DEV_ENV_VERSION`

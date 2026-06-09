@@ -107,16 +107,21 @@ def run_checker(target):
     return out
 
 
-def make_v9_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
-    """Build a repo that satisfies everything the checker enforces at v9 except
-    optionally the README/CLAUDE.md docs or the uv cooldown."""
+def make_compliant_repo(
+    path, *, readme=True, claude=True, cooldown=True, gitleaks_config=True
+):
+    """Build a repo that satisfies everything the checker enforces at the current standard
+    except optionally the README/CLAUDE.md docs, the uv cooldown, or the .gitleaks.toml
+    allowlist. Stamped at the current version (read from VERSION) so it stays compliant as
+    the standard advances."""
+    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
     if cooldown:
         pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
     (path / "pyproject.toml").write_text(pyproject)
     (path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "9"\n'
+        f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
     )
     (path / "mise.lock").write_text("")
     (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
@@ -127,48 +132,61 @@ def make_v9_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
         (path / "README.md").write_text("# x\n")
     if claude:
         (path / "CLAUDE.md").write_text("# project instructions\n")
+    if gitleaks_config:
+        (path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
 
 
-def test_checker_v9_compliant_with_docs(tmp_path):
-    make_v9_compliant_repo(tmp_path)
+def test_checker_compliant_with_docs(tmp_path):
+    make_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "1"
     assert out["has_claude"] == "1"
     assert out["has_cooldown"] == "1"
+    assert out["has_gitleaks_config"] == "1"
     assert out["status"] == "compliant"
 
 
-def test_checker_v9_needs_upgrade_without_readme(tmp_path):
-    make_v9_compliant_repo(tmp_path, readme=False)
+def test_checker_needs_upgrade_without_readme(tmp_path):
+    make_compliant_repo(tmp_path, readme=False)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v9_needs_upgrade_without_claude(tmp_path):
-    make_v9_compliant_repo(tmp_path, claude=False)
+def test_checker_needs_upgrade_without_claude(tmp_path):
+    make_compliant_repo(tmp_path, claude=False)
     out = run_checker(tmp_path)
     assert out["has_claude"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v9_needs_upgrade_without_cooldown(tmp_path):
-    # A v9 Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
-    make_v9_compliant_repo(tmp_path, cooldown=False)
+def test_checker_needs_upgrade_without_cooldown(tmp_path):
+    # A Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
+    make_compliant_repo(tmp_path, cooldown=False)
     out = run_checker(tmp_path)
     assert out["has_cooldown"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
+def test_checker_needs_upgrade_without_gitleaks_config(tmp_path):
+    # v10: a current-version repo missing .gitleaks.toml is flagged for upgrade.
+    make_compliant_repo(tmp_path, gitleaks_config=False)
+    out = run_checker(tmp_path)
+    assert out["has_gitleaks_config"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
+    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
     (tmp_path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "9"\n'
+        f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
     )
     (tmp_path / "mise.lock").write_text("")
     (tmp_path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
+    (tmp_path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
     wf = tmp_path / ".github" / "workflows"
     wf.mkdir(parents=True)
     (wf / "ci.yml").write_text("name: ci\non: push\n")
@@ -178,6 +196,32 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     assert out["stack"] == "ruby"
     assert out["has_cooldown"] == "1"
     assert out["status"] == "compliant"
+
+
+def test_checker_suggests_fnox_for_plaintext_env(tmp_path):
+    # A repo with a non-empty .env (KEY=value) and no fnox.toml → advisory suggests_fnox=1,
+    # and the advisory must not change status (the repo is otherwise compliant).
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".env").write_text("API_KEY=placeholder-not-a-secret\n")
+    out = run_checker(tmp_path)
+    assert out["suggests_fnox"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_no_fnox_suggestion_once_migrated(tmp_path):
+    # Same plaintext .env, but a fnox.toml is present → already migrated, no nudge.
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".env").write_text("API_KEY=placeholder-not-a-secret\n")
+    (tmp_path / "fnox.toml").write_text("[secrets]\n")
+    out = run_checker(tmp_path)
+    assert out["suggests_fnox"] == "0"
+
+
+def test_checker_no_fnox_suggestion_without_secrets(tmp_path):
+    # A compliant repo with no .env / credentials / secret references → no nudge.
+    make_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["suggests_fnox"] == "0"
 
 
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────

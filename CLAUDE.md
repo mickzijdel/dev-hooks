@@ -12,6 +12,8 @@ Make sure to check all of the following and make sure they are up-to-date after 
 
 Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool).
 
+Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
+
 ## Authoring hooks (`hooks/scripts/*.sh`)
 
 - **Embedded-python heredocs can't read piped stdin.** `python3 - <<'PYEOF'` consumes the
