@@ -283,6 +283,53 @@ action major `@v2` → `@v3` to track its current release. To reach v7:
 
 ---
 
+## v7 → v8 (shebang detector matches line 1 only)
+
+The companion steps that lint extensionless scripts (`bin/foo`, hooks) detect them by **shebang**.
+The detector used `git ls-files … | xargs -r grep -lE '^#!…' 2>/dev/null`, but `grep -lE '^#!…'`
+matches a `#!` line **anywhere** in a file, not just line 1. So a markdown/docs file with a fenced
+```` ```sh ```` block containing `#!/bin/bash` was misdetected as a script, and
+shellcheck/shfmt/ruff/vulture then tried to parse the prose as code and failed (e.g.
+`shfmt: a command can only contain words and redirects`). A shebang is only a shebang on line 1.
+v8 replaces each detector with a `head -n1` per-file check. To reach v8:
+
+1. **Fix the detectors in `hk.pkl` and `.github/workflows/ci.yml`.** In each companion step, replace
+   the `xargs -r grep -lE 'REGEX' 2>/dev/null` detector with a line-1-only `head -n1` loop. The
+   affected steps are `shellcheck-scripts`, `shfmt-scripts`, `ruff-check-scripts`,
+   `ruff-format-scripts`, and `vulture` (hk), plus the `shellcheck`, `ruff`, and `vulture` steps in
+   CI. The two shapes:
+
+   **Pipe form** (hk lint companion steps) — before:
+   ```sh
+   git ls-files <excludes> | xargs -r grep -lE 'REGEX' 2>/dev/null | xargs -r <tool>
+   ```
+   after:
+   ```sh
+   git ls-files <excludes> | while IFS= read -r f; do head -n1 "$f" 2>/dev/null | grep -qE 'REGEX' && printf '%s\n' "$f"; done | xargs -r <tool>
+   ```
+
+   **Subshell form** (vulture, hk + CI) — before:
+   ```sh
+   $(git ls-files <excludes> | xargs -r grep -lE 'REGEX' 2>/dev/null)
+   ```
+   after:
+   ```sh
+   $(git ls-files <excludes> | while IFS= read -r f; do head -n1 "$f" 2>/dev/null | grep -qE 'REGEX' && printf '%s\n' "$f"; done)
+   ```
+
+   In `hk.pkl` the `check` is a double-quoted pkl string, so escape the inner quotes as `\"$f\"` and
+   keep the doubled escapes (`\\b` in the regex, `\\n` in `printf '%s\\n'`). In `ci.yml` the detector
+   sits in a `run: |` block (plain shell) — no extra escaping. Copy the exact lines from
+   `templates/hk.<stack>.pkl` and `templates/ci.<stack>.yml`. (Ruby carries no shebang detectors, so
+   a Ruby repo only bumps the stamp.)
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "8"` in `mise.toml`.
+3. **Verify:** add a throwaway `docs.md` with a fenced ```` ```sh ```` block containing `#!/bin/bash`
+   and run `hk run check --all` — it must pass (the docs file is no longer misdetected as a script),
+   while a real extensionless script with a line-1 shebang is still linted. Then
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

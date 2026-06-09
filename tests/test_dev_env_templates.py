@@ -17,6 +17,14 @@ CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml"]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
 
+# Templates carrying shebang-based companion-step detectors for extensionless scripts.
+SHEBANG_DETECTOR_TEMPLATES = [
+    "hk.shell.pkl",
+    "hk.python.pkl",
+    "ci.shell.yml",
+    "ci.python.yml",
+]
+
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
 def test_gitleaks_job_pins_v3(name):
@@ -30,6 +38,21 @@ def test_gitleaks_job_passes_github_token(name):
     text = (TEMPLATES_DIR / name).read_text()
     # The token env must sit on the gitleaks step (the action reads it to enumerate PR commits).
     assert "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in text
+
+
+@pytest.mark.parametrize("name", SHEBANG_DETECTOR_TEMPLATES)
+def test_shebang_detector_matches_line_one_only(name):
+    """The companion-step shebang detector must read line 1 only (head -n1), not the
+    whole file. `grep -lE '^#!…'` matches a `#!` anywhere, so a shebang embedded in a
+    fenced code block in docs gets misdetected as a script and the linter chokes parsing
+    prose as code. Regression guard for that bug."""
+    text = (TEMPLATES_DIR / name).read_text()
+    # The buggy whole-file detector must be gone.
+    assert "grep -lE '^#!" not in text, (
+        f"{name} still uses the whole-file `grep -lE '^#!…'` detector"
+    )
+    # The line-1-only form must be present.
+    assert "head -n1" in text, f"{name} is missing the `head -n1` line-1 detector"
 
 
 def test_skill_doc_matches_version_stamp():

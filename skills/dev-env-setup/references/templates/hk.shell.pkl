@@ -22,23 +22,25 @@ local linters = new Mapping<String, Step> {
     // steps detect such scripts by SHEBANG instead (same trick the `vulture` check
     // step uses), so shellcheck/shfmt/ruff cover them with no per-repo glob editing.
     // They carry no glob (so hk runs them whenever anything is staged) and ignore
-    // {{ files }} — the inner `git ls-files | grep -l` picks the real targets, and
+    // {{ files }} — the inner `git ls-files | head -n1 … grep` picks the real targets by
+    // matching the shebang on LINE 1 ONLY (a `#!` inside a fenced code block in docs is
+    // not a shebang, so prose isn't misdetected as a script), and
     // `xargs -r` no-ops when there are none (a repo with no extensionless scripts is
     // unaffected). check-only by design: auto-fixing would need an explicit `stage`
     // glob that extensionless paths can't express cleanly, so a flagged script is
     // fixed by hand (or `ruff check --fix` / `shfmt -w`). They run full-tree, not
     // incremental — fine for the handful of scripts such a repo carries.
     ["shellcheck-scripts"] {
-        check = "git ls-files ':!*.sh' ':!*.bash' | xargs -r grep -lE '^#!.*\\b(ba)?sh\\b' 2>/dev/null | xargs -r shellcheck"
+        check = "git ls-files ':!*.sh' ':!*.bash' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*\\b(ba)?sh\\b' && printf '%s\\n' \"$f\"; done | xargs -r shellcheck"
     }
     ["shfmt-scripts"] {
-        check = "git ls-files ':!*.sh' ':!*.bash' ':!*.mksh' ':!*.bats' ':!*.zsh' | xargs -r grep -lE '^#!.*\\b(ba)?sh\\b' 2>/dev/null | xargs -r shfmt -d"
+        check = "git ls-files ':!*.sh' ':!*.bash' ':!*.mksh' ':!*.bats' ':!*.zsh' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*\\b(ba)?sh\\b' && printf '%s\\n' \"$f\"; done | xargs -r shfmt -d"
     }
     ["ruff-check-scripts"] {
-        check = "git ls-files ':!*.py' ':!*.pyi' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null | xargs -r ruff check --force-exclude"
+        check = "git ls-files ':!*.py' ':!*.pyi' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\\n' \"$f\"; done | xargs -r ruff check --force-exclude"
     }
     ["ruff-format-scripts"] {
-        check = "git ls-files ':!*.py' ':!*.pyi' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null | xargs -r ruff format --force-exclude --diff"
+        check = "git ls-files ':!*.py' ':!*.pyi' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\\n' \"$f\"; done | xargs -r ruff format --force-exclude --diff"
     }
     // --- Audits (dead-code + duplication) ---------------------------------------
     // These run on pre-commit too (not just `check`/CI): vulture is ~0.15s and jscpd
@@ -49,7 +51,7 @@ local linters = new Mapping<String, Step> {
     // tracked file with a python/uv shebang (PEP 723 CLIs like bin/foo).
     ["vulture"] {
         glob = "**/*.py"
-        check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | xargs -r grep -lE '^#!.*(python|uv run)' 2>/dev/null)"
+        check = "uvx vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\\n' \"$f\"; done)"
     }
     // Duplication. jscpd 5.x via npx; config in `.jscpd.json`. `-f` scopes to code formats
     // (no config equivalent) so docs/yaml aren't flagged. (See SKILL.md › jscpd note.)

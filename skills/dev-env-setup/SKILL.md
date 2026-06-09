@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v7)
+## The standard (v8)
 
-A repo is **compliant at v7** when it has all of:
+A repo is **compliant at v8** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "7"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "8"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -110,8 +110,12 @@ again in `check`/CI.
 > `**/*.py`), so they'd silently skip the extensionless executables plugin repos keep in
 > `bin/`. The shell template (`hk.shell.pkl`) therefore carries companion steps —
 > `shellcheck-scripts`, `shfmt-scripts`, `ruff-check-scripts`, `ruff-format-scripts` — that
-> detect such files by **shebang** (`git ls-files | xargs -r grep -lE '^#!.*…'`), the same way
-> the `vulture` step already does, and `ci.shell.yml` mirrors them. They're **check-only**
+> detect such files by **shebang on line 1 only** (`git ls-files | while read -r f; do head -n1
+> "$f" | grep -qE '^#!.*…' && printf '%s\n' "$f"; done`), the same way the `vulture` step already
+> does, and `ci.shell.yml` mirrors them. The `head -n1` matters: `grep -lE '^#!…'` would match a
+> `#!` line **anywhere** in a file, so a `#!/bin/bash` inside a fenced code block in docs would be
+> misdetected as a script and the linter would choke parsing prose as code — a shebang is only a
+> shebang on line 1. They're **check-only**
 > (a flagged script is fixed by hand or `ruff check --fix`/`shfmt -w`) and run full-tree.
 > So you no longer hand-add extensionless CLIs to hk globs. `[tool.ruff] extend-include` is
 > still worth setting (in `pyproject.toml`) to the **Python** extensionless scripts so a bare
