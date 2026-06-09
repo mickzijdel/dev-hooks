@@ -61,7 +61,13 @@ jobs:
         # -f python,bash scopes detection to real code; the repo's only other files are
         # template scaffolding / doc tables that duplicate by design, and jscpd 5.x ignores
         # the config `ignore` list. config (minTokens/threshold/reporters) in .jscpd.json.
-        run: npx --yes jscpd@latest . -f python,bash
+        # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
+        # (see hk.pkl / dev-env-setup SKILL.md › jscpd version policy) so local and CI gates agree.
+        run: |
+          cutoff=$(date -u -d '4 days ago' +%F)
+          ver=$(npx --before="$cutoff" --yes jscpd --version 2>/dev/null | awk 'END{print $NF}')
+          case "$ver" in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac
+          npx --yes jscpd@"$ver" . -f python,bash
       - name: Large files
         run: |
           limit=512000
