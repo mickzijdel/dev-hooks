@@ -105,12 +105,12 @@ def run_checker(target):
     return out
 
 
-def make_v4_compliant_repo(path, *, readme=True, claude=True):
-    """Build a repo that satisfies everything the checker enforces at v4 except
+def make_v5_compliant_repo(path, *, readme=True, claude=True):
+    """Build a repo that satisfies everything the checker enforces at v5 except
     optionally the README/CLAUDE.md docs."""
     (path / "pyproject.toml").write_text("[project]\nname='x'\n")  # python stack
     (path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "4"\n'
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "5"\n'
     )
     (path / "mise.lock").write_text("")
     (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
@@ -123,23 +123,23 @@ def make_v4_compliant_repo(path, *, readme=True, claude=True):
         (path / "CLAUDE.md").write_text("# project instructions\n")
 
 
-def test_checker_v4_compliant_with_docs(tmp_path):
-    make_v4_compliant_repo(tmp_path)
+def test_checker_v5_compliant_with_docs(tmp_path):
+    make_v5_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "1"
     assert out["has_claude"] == "1"
     assert out["status"] == "compliant"
 
 
-def test_checker_v4_needs_upgrade_without_readme(tmp_path):
-    make_v4_compliant_repo(tmp_path, readme=False)
+def test_checker_v5_needs_upgrade_without_readme(tmp_path):
+    make_v5_compliant_repo(tmp_path, readme=False)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v4_needs_upgrade_without_claude(tmp_path):
-    make_v4_compliant_repo(tmp_path, claude=False)
+def test_checker_v5_needs_upgrade_without_claude(tmp_path):
+    make_v5_compliant_repo(tmp_path, claude=False)
     out = run_checker(tmp_path)
     assert out["has_claude"] == "0"
     assert out["status"] == "needs-upgrade"

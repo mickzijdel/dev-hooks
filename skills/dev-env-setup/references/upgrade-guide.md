@@ -185,6 +185,42 @@ reach v4:
 
 ---
 
+## v4 → v5 (audits on pre-commit + jscpd cooldown)
+
+v5 moves the dead-code and duplication **audits onto pre-commit** (they previously ran in the
+`check` hook + CI only), so the class of failure where a commit passes pre-commit but fails CI's
+`audit` job is caught before push. The audits are fast warm (vulture ~0.15s, jscpd ~1s) and each is
+glob-gated, so a docs-only commit still skips them. v5 also gives jscpd a **version policy**: track
+latest on a **4-day cooldown** (the same supply-chain seasoning as the Bundler cooldown), floored
+at v5, and degrade gracefully when the npm registry is unreachable. To reach v5:
+
+1. **Move the audit steps into the `linters` mapping** in `hk.pkl`. Cut each audit out of the
+   `["check"] { steps = (linters) { … } }` amendment and paste it into the shared `linters`
+   mapping (just before `gitleaks`), then collapse the hook to `["check"] { steps = linters }`.
+   The audits per stack (see `templates/hk.<stack>.pkl`):
+   - **python / shell**: `vulture` (+ shell keeps it under `uvx`, python under `uv run`) and `jscpd`
+   - **ruby**: `debride`, `flay`, and `jscpd`
+
+   Since `pre-commit`, `fix`, and `check` all use `linters`, the audits now run on all three; each
+   keeps its `glob`, so it only fires when a matching file is staged.
+2. **Adopt the jscpd cooldown wrapper.** Replace each `npx --yes jscpd@latest . -f <fmts>` with the
+   cooldown + v5-floor + offline-graceful command (copy verbatim from `templates/hk.<stack>.pkl`,
+   keeping that stack's `-f` formats):
+   ```sh
+   cutoff=$(date -u -d '4 days ago' +%F 2>/dev/null || date -u -v-4d +%F); if curl -sf -m 3 https://registry.npmjs.org/ >/dev/null 2>&1; then ver=$(npx --before=$cutoff --yes jscpd --version 2>/dev/null | awk 'END{print $NF}'); case $ver in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac; npx --yes jscpd@$ver . -f <fmts>; elif npx --offline jscpd --version >/dev/null 2>&1; then npx --offline jscpd . -f <fmts>; else echo 'jscpd unavailable offline; skipping duplication check'; fi
+   ```
+   It resolves the newest jscpd published ≥4 days ago (`npx --before`); if that lands below the v5
+   floor (true while the v5 line is still <4 days old) it falls back to `latest`; offline it runs the
+   cached jscpd, and with no cache it warns and passes so a commit is never blocked.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "5"` in `mise.toml`.
+4. **Verify:** `hk run pre-commit --all` now runs the audits (vulture/jscpd, plus debride/flay on
+   Ruby) — they're no longer excluded; `hk run check --all` is the same set, green. Confirm the
+   jscpd step resolves a v5 release. Simulate offline (stub `npx`/`curl` to exit 1 on `PATH`) and
+   confirm the jscpd step prints `jscpd unavailable offline; skipping…` and exits `0`. Then
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

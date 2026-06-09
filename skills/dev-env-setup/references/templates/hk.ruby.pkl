@@ -12,6 +12,33 @@ local linters = new Mapping<String, Step> {
         glob = "**/*.rb"
         check = "bin/rails test"
     }
+    // --- Audits (dead-code + duplication) ---------------------------------------
+    // These run on pre-commit too (not just `check`/CI). Duplication uses two complementary
+    // tools: flay (Ruby AST/structural, advisory — exits 0, surfaces renamed clones) and jscpd
+    // (token-based, polyglot — the enforcing gate that also covers JS/CSS/SCSS/ERB). debride
+    // (dead methods) + flay are local `bundle exec` (fast, no network); jscpd runs via npx
+    // (needs `node`, see mise.toml) and reads `.jscpd.json`. Add `flay` and `debride` to the
+    // Gemfile dev group. Each carries a glob, so a docs-only commit skips them.
+    ["debride"] {
+        glob = "**/*.rb"
+        check = "bundle exec debride ."
+    }
+    ["flay"] {
+        glob = "**/*.rb"
+        check = "bundle exec flay ."
+    }
+    // `-f` scopes to code formats (no config equivalent) so docs/configs aren't flagged;
+    // `.jscpd.json` `ignorePattern` excludes generated db/schema.rb etc. (See SKILL.md › jscpd note.)
+    // Version policy: track latest with a 4-day cooldown (never run a release < 4 days old —
+    // supply-chain seasoning), floored at v5 (the major .jscpd.json targets) so it can't
+    // regress to v4 while v5 is still maturing. Online → resolve the newest version >= 4 days
+    // old (`npx --before`), fall back to `latest` when that lands below the v5 floor, then run
+    // it (the real gate — exit reflects duplication). Offline → run the cached jscpd. No cache
+    // + offline → warn and pass, so a commit is never blocked by an unreachable registry.
+    ["jscpd"] {
+        glob = List("**/*.rb", "**/*.erb", "**/*.js", "**/*.css", "**/*.scss")
+        check = "cutoff=$(date -u -d '4 days ago' +%F 2>/dev/null || date -u -v-4d +%F); if curl -sf -m 3 https://registry.npmjs.org/ >/dev/null 2>&1; then ver=$(npx --before=$cutoff --yes jscpd --version 2>/dev/null | awk 'END{print $NF}'); case $ver in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac; npx --yes jscpd@$ver . -f ruby,erb,javascript,typescript,css,scss,sass,vue; elif npx --offline jscpd --version >/dev/null 2>&1; then npx --offline jscpd . -f ruby,erb,javascript,typescript,css,scss,sass,vue; else echo 'jscpd unavailable offline; skipping duplication check'; fi"
+    }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks
     // Block accidentally-committed large files. hk builtin.
@@ -28,27 +55,9 @@ hooks {
         fix = true
         steps = linters
     }
-    // `check` adds the noisier audits on top of the linters — they run here (and in CI) but NOT
-    // on pre-commit. Duplication uses two complementary tools: flay (Ruby AST/structural,
-    // advisory — exits 0, surfaces renamed clones) and jscpd (token-based, polyglot — the
-    // enforcing gate that also covers JS/CSS/SCSS/ERB). Add `flay` and `debride` to the Gemfile
-    // dev group; jscpd runs via npx (needs `node`, see mise.toml) and reads `.jscpd.json`.
+    // `check` is the full suite CI runs. The audits (debride, flay, jscpd) now live in
+    // `linters`, so they already run on pre-commit; `check` is just the same set under one name.
     ["check"] {
-        steps = (linters) {
-            ["debride"] {
-                glob = "**/*.rb"
-                check = "bundle exec debride ."
-            }
-            ["flay"] {
-                glob = "**/*.rb"
-                check = "bundle exec flay ."
-            }
-            // `-f` scopes to code formats (no config equivalent) so docs/configs aren't flagged;
-            // `.jscpd.json` `ignorePattern` excludes generated db/schema.rb etc. (See SKILL.md › jscpd note.)
-            ["jscpd"] {
-                glob = List("**/*.rb", "**/*.erb", "**/*.js", "**/*.css", "**/*.scss")
-                check = "npx --yes jscpd@latest . -f ruby,erb,javascript,typescript,css,scss,sass,vue"
-            }
-        }
+        steps = linters
     }
 }

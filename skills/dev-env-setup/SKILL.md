@@ -27,20 +27,21 @@ implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rai
 
 ## The standard (v4)
 
-A repo is **compliant at v4** when it has all of:
+A repo is **compliant at v5** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "4"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "5"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
   `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`.
-- **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus
-  `gitleaks` and `check-added-large-files`** (`Builtins.*`), and wires `pre-commit`
-  (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. The **`check` hook additionally
-  runs the audits** (dead-code + duplication) — these are amended onto the `check` steps only,
-  so they run in `hk run check` and CI but **not** on pre-commit.
+- **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
+  audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
+  and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
+  including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
+  **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
+  just the same set under one name that CI invokes.
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
@@ -51,25 +52,38 @@ A repo is **compliant at v4** when it has all of:
   doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
   "Project docs (README + CLAUDE.md)".
 
-Per-stack checks (see `references/templates/`). **When each runs:** linters + large-file on
-pre-commit; dead-code + duplication in `check`/CI only.
-| Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (check/CI) | Duplication (check/CI) |
+Per-stack checks (see `references/templates/`). **When each runs:** every step — linters,
+large-file, and the dead-code + duplication audits — runs on pre-commit (each glob-gated) and
+again in `check`/CI.
+| Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
 | Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
 
-> Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) are noisy by nature, so they
-> live in the `check` hook + CI, never on pre-commit. Thresholds are tunable — see
+> Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) run on pre-commit alongside the
+> linters (each is glob-gated, so they only fire when a matching file is staged) and again in
+> `check`/CI. They're fast enough warm — vulture ~0.15s, jscpd ~1s (cooldown resolve + scan) — and
+> catching dead code / clones before push beats finding out in CI. Thresholds are tunable — see
 > `references/upgrade-guide.md`.
 >
-> **jscpd** runs via `npx --yes jscpd@latest` (its v5 Rust engine — the `cpd` binary — ships
-> through npm optional platform packages that `npx` resolves but the mise `npm:` backend
-> doesn't), reading `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone
-> output) and the **`threshold`** reporter (CI gate). (Making it a real mise tool is deferred:
-> `cargo:jscpd` works but needs a Rust toolchain per repo, and there are no prebuilt release
-> binaries for an `aqua`/`ubi` backend — see `references/dropped-from-nate.md` for the tested
-> comparison and revisit triggers, 2026-06-09.)
+> **jscpd** runs via `npx` (its v5 Rust engine — the `cpd` binary — ships through npm optional
+> platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading
+> `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone output) and the
+> **`threshold`** reporter (CI gate). (Making it a real mise tool is deferred: `cargo:jscpd` works
+> but needs a Rust toolchain per repo, and there are no prebuilt release binaries for an
+> `aqua`/`ubi` backend — see `references/dropped-from-nate.md` for the tested comparison and
+> revisit triggers, 2026-06-09.)
+>
+> **jscpd version policy (pre-commit + CI):** the step neither pins a fixed version nor calls
+> `@latest` blindly. It tracks latest with a **4-day cooldown** — the same supply-chain seasoning
+> as the [Bundler cooldown](#ruby-bundler-cooldown) below — via `npx --before=<4 days ago>`, which
+> resolves the newest release that has existed at least 4 days. It's **floored at v5** (the major
+> `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <4 days
+> old; if the cooldown pick is below the floor the step falls back to `latest`. It also **degrades
+> gracefully offline**: when the registry is unreachable it runs the cached jscpd, and when nothing
+> is cached it warns and passes rather than blocking the commit. The cooldown resolve costs one
+> registry round-trip (~0.9s) per commit that stages matching files.
 >
 > Configuring exclusions:
 > - **Exclude paths** with `ignorePattern` (a glob array) in `.jscpd.json`. (Plain `ignore` has
@@ -310,8 +324,9 @@ So upgrades are explicit (`mise upgrade` + a reviewable `mise.lock` diff) rather
 while the spec stays `"latest"` so the `latest-deps-reminder` hook still nudges toward current
 versions. **Commit `mise.lock`** alongside `mise.toml`.
 
-**Gap:** this covers only mise-managed tools. The `npx --yes jscpd@latest` audit step stays unpinned
-(jscpd 5.x ships only as npm-distributed Rust platform packages — no clean mise backend); project
+**Gap:** this covers only mise-managed tools. The `npx` jscpd audit step isn't mise-pinned (jscpd
+5.x ships only as npm-distributed Rust platform packages — no clean mise backend); instead it
+tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note above). Project
 deps lock separately via `uv.lock` / `Gemfile.lock`.
 
 ## Ruby: Bundler cooldown
