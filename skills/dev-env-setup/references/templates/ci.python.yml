@@ -85,5 +85,8 @@ jobs:
       - name: Large files
         run: |
           limit=512000
-          large=$(git ls-files | while read -r f; do s=$(stat -c%s "$f" 2>/dev/null || echo 0); [ "$s" -gt "$limit" ] && echo "$f ($s bytes)"; done)
+          large=$(git ls-files | while read -r f; do
+            s=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            if [ "$s" -gt "$limit" ]; then echo "$f ($s bytes)"; fi
+          done)
           if [ -n "$large" ]; then echo "Files exceed ${limit} bytes:"; echo "$large"; exit 1; fi

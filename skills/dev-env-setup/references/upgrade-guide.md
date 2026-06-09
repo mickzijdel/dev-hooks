@@ -158,6 +158,33 @@ To reach v3:
 
 ---
 
+## v3 → v4 (robust large-file CI guard)
+
+v4 fixes the `audit` job's "Large files" step, which failed under `bash -e` on **every** push
+where no file was oversized. Its `while`-loop body ended in `[ "$s" -gt "$limit" ] && echo …`, so
+on the final under-limit file the `[ … ]` test returned 1; that propagated through the loop and the
+enclosing `large=$(…)` command substitution, which then exited non-zero and tripped `set -e`. The
+guard therefore failed in the passing case (and only "passed" when it found an oversized file). To
+reach v4:
+
+1. **Patch the step.** In `.github/workflows/ci.yml`, replace the one-line
+   `large=$(… [ "$s" -gt "$limit" ] && echo … )` with the `if`-based form from
+   `references/templates/ci.*.yml`, so the loop's last command returns `0` when a file is within the
+   limit:
+   ```sh
+   large=$(git ls-files | while read -r f; do
+     s=$(stat -c%s "$f" 2>/dev/null || echo 0)
+     if [ "$s" -gt "$limit" ]; then echo "$f ($s bytes)"; fi
+   done)
+   ```
+   The real guard (`if [ -n "$large" ]; then … exit 1; fi`) is unchanged.
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "4"` in `mise.toml`.
+3. **Verify:** the snippet exits `0` with no output on a clean tree
+   (`bash -e -c '…'; echo "exit=$?"` → `exit=0`), and
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
