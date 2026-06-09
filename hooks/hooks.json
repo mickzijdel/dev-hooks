@@ -39,6 +39,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/secret-plaintext-reminder.sh\"",
             "statusMessage": "Checking for plaintext secrets..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-action-ref-reminder.sh\"",
+            "statusMessage": "Checking GitHub Actions refs resolve..."
           }
         ]
       }

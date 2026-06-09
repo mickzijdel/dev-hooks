@@ -595,3 +595,65 @@ def test_missing_test_silent_when_already_prompted(tmp_path):
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── ci-action-ref-reminder.sh (reminder-only; never hits the network) ────────────────
+def _workflow(tmp_path, name="ci.yml", body="      - uses: astral-sh/setup-uv@v8\n"):
+    wf = tmp_path / name
+    wf.write_text("jobs:\n  x:\n    steps:\n" + body)
+    return wf
+
+
+def test_ci_action_ref_fires_for_workflow(tmp_path):
+    wf = _workflow(tmp_path)
+    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c1"})
+    r = run_hook(
+        "ci-action-ref-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    # Points Claude at the bundled checker, not a network call by the hook itself.
+    assert_json_with(r.stdout, "check_action_refs.sh")
+
+
+def test_ci_action_ref_silent_for_yaml_without_uses(tmp_path):
+    plain = tmp_path / "config.yml"
+    plain.write_text("a: 1\nb: 2\n")
+    payload = json.dumps({"tool_input": {"file_path": str(plain)}, "session_id": "c2"})
+    r = run_hook(
+        "ci-action-ref-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_action_ref_silent_for_non_yaml(tmp_path):
+    other = tmp_path / "notes.txt"
+    other.write_text("uses: astral-sh/setup-uv@v8\n")  # not a .yml/.yaml file
+    payload = json.dumps({"tool_input": {"file_path": str(other)}, "session_id": "c3"})
+    r = run_hook(
+        "ci-action-ref-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_action_ref_silent_when_opted_out(tmp_path):
+    wf = _workflow(tmp_path)
+    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c4"})
+    r = run_hook(
+        "ci-action-ref-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_CI_ACTION_REFS="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_action_ref_fires_once_per_session(tmp_path):
+    wf = _workflow(tmp_path)
+    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c5"})
+    env = base_env(TMPDIR=str(tmp_path))
+    first = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
+    second = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
+    assert_json_with(first.stdout, "check_action_refs.sh")
+    assert second.stdout.strip() == ""

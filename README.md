@@ -12,6 +12,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `PostToolUse` (`Write`\|`Edit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
 | `PostToolUse` (`Write`\|`Edit`) | `dockerfile-reminder.sh` | When Claude writes a `Dockerfile`/`Containerfile`, run **hadolint** on it and feed the findings (or a clean pass) back to Claude, plus a layer-ordering nudge that points at the `dockerfile` skill. If hadolint isn't installed, falls back to a once-per-session ordering/gotchas reminder. Advisory only — reports every time, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`) | `secret-plaintext-reminder.sh` | When Claude writes what looks like a plaintext secret **value** (a named `API_KEY`/`SECRET`/`TOKEN`/`PASSWORD` assignment to a real literal, a private-key block, or an AWS key id), nudge it to migrate to fnox via the `env-to-fnox` skill instead of committing the value. Fires at write time (before `gitleaks` would at commit). Env-var refs and obvious placeholders are ignored. Advisory only, never blocks; fires once per session. |
+| `PostToolUse` (`Write`\|`Edit`) | `ci-action-ref-reminder.sh` | When Claude writes/edits a GitHub Actions workflow (a `*.yml`/`*.yaml` pinning `uses: owner/repo@ref`), nudge it to verify every ref actually **resolves on the remote** before finishing — an action can ship release tags (`v8.0.0`) without floating a `@v8` major, so a wrong pin passes locally but breaks CI at "Prepare all required actions". Points Claude at the bundled `check_action_refs.sh` (which does the `git ls-remote` check); the hook itself never hits the network. Advisory only, never blocks; fires once per session per file. |
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
 | `Stop` | `debug-leftover-reminder.sh` | On stop, flag debug statements Claude **newly introduced** this session (`console.log`/`debugger`, `binding.pry`/`byebug`/Ruby `p`, `breakpoint()`/`pdb`) — diffed against `HEAD` so pre-existing lines are ignored — and feed them back (exit 2) to strip before finishing. Test files excluded. Fires at most once per session. |
 | `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files and low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`). Fires at most once per session. |
@@ -117,6 +118,15 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   `env-to-fnox` skill. Fires once per session, tracked via a marker under
   `${TMPDIR:-/tmp}/dev-hooks-secrets/`. Silence it with `DEV_HOOKS_SECRETS=false` (in
   `.claude/settings.local.json` `"env"`).
+- `ci-action-ref-reminder.sh` is reminder-only — it never hits the network. It fires when
+  Claude writes a `*.yml`/`*.yaml` that pins a remote action (`uses: owner/repo@ref`) and points
+  Claude at the bundled `skills/dev-env-setup/scripts/check_action_refs.sh`, which does the
+  actual `git ls-remote` resolution and exits non-zero on any unresolved ref. That script
+  classifies each ref as `OK`/`FAIL`/`PIN` (commit SHA)/`SKIP` (remote unreachable — never a
+  failure), so offline runs don't false-alarm; you can also run it directly over a workflow or
+  `.github/workflows`. Fires once per session per file (marker under
+  `${TMPDIR:-/tmp}/dev-hooks-ci-action-refs/`). Silence it with `DEV_HOOKS_CI_ACTION_REFS=false`
+  (in `.claude/settings.local.json` `"env"`).
 - `debug-leftover-reminder.sh` only considers **newly-introduced** lines (added lines in
   `git diff HEAD` plus the full contents of untracked files), so committed/pre-existing debug
   statements are ignored — committing or removing the lines clears the nudge. It runs only in

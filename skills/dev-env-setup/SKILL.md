@@ -206,6 +206,7 @@ proposing additions.
    hk install              # install the git hooks
    hk run check            # all steps, including gitleaks, must pass
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → status=compliant
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows  # every uses: pin resolves
    ```
    Confirm `mise.lock` is present and committed, and that `README.md` + `CLAUDE.md` exist
    (`has_readme=1 has_claude=1`). Run the project's own tests too (`uv run pytest` /
@@ -266,6 +267,17 @@ major is missing, pin the exact latest release tag (e.g. `astral-sh/setup-uv@v8.
 When upgrading an existing repo, list each Action with its current vs. latest version and bump
 the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
 to check, rather than guessing a version.
+
+**Always verify the pins resolve before finishing.** After writing or bumping any `uses:` pin,
+run the bundled checker — it `git ls-remote`s every referenced action and fails on any ref that
+doesn't exist on the remote, catching the floating-major trap above before CI does:
+
+```bash
+bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows
+# → "N ok, 0 unresolved" and exit 0; any FAIL line is a pin that will break CI.
+```
+
+(The `ci-action-ref-reminder` hook nudges you to run this whenever a workflow is edited.)
 
 ## Lockfile & supply-chain verification
 
