@@ -382,6 +382,27 @@ repo has plaintext secrets in use. To reach v10:
 
 ---
 
+## v10 → v11 (mise upgrade cooldown)
+
+v11 adds `minimum_release_age = "4d"` to `[settings]` in `mise.toml`, extending the same 4-day
+supply-chain window to **mise tool upgrades** that the standard already applies to jscpd
+(`npx --before=<4 days ago>`) and project deps (Bundler, uv, npm cooldowns). With `mise.lock`
+committed, `mise install` always reproduces the locked versions — unaffected by this setting; it
+only prevents `mise upgrade` from resolving a tool version published in the last 4 days, giving the
+community time to catch and yank a malicious release before it lands. To reach v11:
+
+1. **Add `minimum_release_age` to `[settings]` in `mise.toml`:**
+   ```toml
+   [settings]
+   lockfile = true
+   minimum_release_age = "4d"   # ← add this line
+   ```
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "11"` in `mise.toml`.
+3. **Verify:** `mise install` still reproduces locked versions unchanged;
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
