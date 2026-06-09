@@ -17,6 +17,9 @@
 #   has_lockfile     1 if mise.lock present (required from standard v2)
 #   has_readme       1 if a README (README.md/README/…) is present (required from standard v3)
 #   has_claude       1 if CLAUDE.md present (required from standard v3)
+#   has_cooldown     1 if the uv dependency cooldown is set (Python: pyproject.toml [tool.uv]
+#                    exclude-newer; required from standard v6). Defaults to 1 for non-Python
+#                    stacks / repos without pyproject.toml, so it never blocks them.
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
 #   stack            python | ruby | shell | unknown
@@ -88,6 +91,14 @@ if find "$DIR" -maxdepth 1 -type f -iname 'claude.md' 2>/dev/null | grep -q .; t
   has_claude=1
 fi
 
+# Dependency cooldown (v6): a Python repo pins the uv cooldown in pyproject.toml
+# ([tool.uv] exclude-newer). Default to 1 so non-Python stacks / repos without a
+# pyproject.toml are never blocked on this axis (Ruby/JS cooldown is recommended, not gated).
+has_cooldown=1
+if [ "$stack" = "python" ] && [ -f "$DIR/pyproject.toml" ]; then
+  grep -qE '^[[:space:]]*exclude-newer[[:space:]]*=' "$DIR/pyproject.toml" || has_cooldown=0
+fi
+
 repo_version=0
 if [ -n "$MISE_FILE" ]; then
   v="$(grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$MISE_FILE" 2>/dev/null | head -n1 | tr -dc '0-9')"
@@ -99,7 +110,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -115,6 +126,7 @@ has_gitleaks=$has_gitleaks
 has_lockfile=$has_lockfile
 has_readme=$has_readme
 has_claude=$has_claude
+has_cooldown=$has_cooldown
 repo_version=$repo_version
 current_version=$current_version
 stack=$stack
@@ -124,6 +136,6 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac

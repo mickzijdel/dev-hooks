@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v4)
+## The standard (v6)
 
-A repo is **compliant at v5** when it has all of:
+A repo is **compliant at v6** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "5"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "6"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -51,6 +51,11 @@ A repo is **compliant at v5** when it has all of:
   `latest-deps-reminder` hook nudges Claude to update them on every manifest edit). If either
   doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
   "Project docs (README + CLAUDE.md)".
+- **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
+  `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until
+  they've been public long enough for a malicious release to be caught and yanked. The checker
+  enforces this on Python stacks; Ruby and JS repos get the same window via their own package
+  manager (recommended, not gated) — see "Dependency cooldown (supply-chain)".
 
 Per-stack checks (see `references/templates/`). **When each runs:** every step — linters,
 large-file, and the dead-code + duplication audits — runs on pre-commit (each glob-gated) and
@@ -77,7 +82,7 @@ again in `check`/CI.
 >
 > **jscpd version policy (pre-commit + CI):** the step neither pins a fixed version nor calls
 > `@latest` blindly. It tracks latest with a **4-day cooldown** — the same supply-chain seasoning
-> as the [Bundler cooldown](#ruby-bundler-cooldown) below — via `npx --before=<4 days ago>`, which
+> as the [dependency cooldowns](#dependency-cooldown-supply-chain) below — via `npx --before=<4 days ago>`, which
 > resolves the newest release that has existed at least 4 days. It's **floored at v5** (the major
 > `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <4 days
 > old; if the cooldown pick is below the floor the step falls back to `latest`. It also **degrades
@@ -329,35 +334,57 @@ versions. **Commit `mise.lock`** alongside `mise.toml`.
 tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note above). Project
 deps lock separately via `uv.lock` / `Gemfile.lock`.
 
-## Ruby: Bundler cooldown
+## Dependency cooldown (supply-chain)
 
-For any Ruby/Rails repo, add `cooldown: 4` to the `rubygems.org` source declaration in the
-`Gemfile` (requires Bundler ≥ 4.0.13). Bundler refuses to resolve to a gem version until it
-has been public for at least 4 days — a supply-chain defence against the window when a
-compromised account ships a malicious release and any immediate `bundle install` picks it up:
+Hold off on freshly-published package versions for **4 days** before resolving them. Most malicious
+releases (the 2026 Shai-Hulud npm waves, the axios / litellm incidents) are detected and yanked
+within hours-to-days of publication, so a short cooldown means you are never the one who installs a
+compromised version in the window before the community catches it. The standard already applies this
+to its own tooling — the jscpd audit step resolves via `npx --before=<4 days ago>` (see the jscpd
+version policy above) — and this section extends the same 4-day window to a repo's own runtime / dev
+dependencies.
 
-```ruby
-source "https://rubygems.org", cooldown: 4
+Set it **per repo** so every developer and CI run enforce the same window, and (if not already set)
+once **machine-wide** as a default. An existing lockfile (`Gemfile.lock`, `uv.lock`,
+`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) is honoured as-is, so adding a cooldown never
+disturbs already-locked versions — it only gates *new* resolutions.
 
-gem "rails"
-# ...
-```
+**Repo guard** — pick the row matching the repo's package manager (detect by lockfile):
 
-Committing this to the Gemfile means every developer and CI run enforce the same window
-automatically. An existing `Gemfile.lock` is always honoured as-is, so adding cooldown never
-disturbs already-locked versions.
+| Manager | Where | Setting (4-day window) |
+|---------|-------|------------------------|
+| **uv** (Python, ≥ 0.9.17) | `pyproject.toml` `[tool.uv]` | `exclude-newer = "4 days"` |
+| **Bundler** (Ruby, ≥ 4.0.13) | `Gemfile` source line | `source "https://rubygems.org", cooldown: 4` |
+| **npm** (≥ 11.10.0) | `.npmrc` | `min-release-age=4` |
+| **pnpm** (11+) | `pnpm-workspace.yaml` | `minimumReleaseAge: 5760` (minutes) |
+| **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
+| pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
 
-For machine-wide coverage across all projects, also set the global default if it is not set already:
+Only **uv** is checker-enforced for Python repos (see "The standard (v6)"); the rest are recommended
+and applied by the setup/upgrade flow when the matching lockfile is present. `exclude-newer` accepts
+a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
+so the window moves forward with the current date.
 
-```bash
-bundle config set --global cooldown 4
-```
+**Global guard (if missing)** — a machine-wide default so a repo that hasn't opted in still gets a
+floor:
 
-This writes `BUNDLE_COOLDOWN: "4"` to `~/.bundle/config`. The per-project Gemfile `cooldown:`
-takes precedence over the global setting, so individual repos can still override it
-(e.g. `cooldown: 0` to take a fresh release immediately when upgrading urgently).
+| Manager | Command | Writes |
+|---------|---------|--------|
+| uv | add `exclude-newer = "4 days"` to `~/.config/uv/uv.toml` | user uv config |
+| Bundler | `bundle config set --global cooldown 4` | `~/.bundle/config` (`BUNDLE_COOLDOWN`) |
+| npm | `npm config set min-release-age 4 --location=user` | `~/.npmrc` |
+| pnpm | `pnpm config set minimumReleaseAge 5760 --global` | `~/.config/pnpm/config.yaml` (pnpm 11 moved global settings to YAML) |
+| yarn | `yarn config set --home npmMinimalAgeGate 5760` | `~/.yarnrc.yml` |
 
-**Source:** [RubyGems blog, Jun 2026](https://blog.rubygems.org/2026/06/03/cooldown-let-new-gems-be-vetted.html)
+The per-repo setting takes precedence over the global one, so a repo can still override it — e.g.
+drop to `0` (or `cooldown: 0`, `exclude-newer` unset) to take a fresh release immediately during an
+urgent upgrade. For one-off exceptions *inside* the window, uv has `exclude-newer-package`, pnpm
+`minimumReleaseAgeExclude`, and yarn `npmPreapprovedPackages` (npm has no per-package exclude yet).
+
+**Sources:** [RubyGems blog, Jun 2026](https://blog.rubygems.org/2026/06/03/cooldown-let-new-gems-be-vetted.html) ·
+[uv `exclude-newer`](https://docs.astral.sh/uv/concepts/resolution/) ·
+[minimum release age across npm/pnpm/yarn (gist)](https://gist.github.com/mcollina/b294a6c39ee700d24073c0e5a4e93104) ·
+[cooldowns.dev](https://cooldowns.dev/)
 
 ## Notes
 

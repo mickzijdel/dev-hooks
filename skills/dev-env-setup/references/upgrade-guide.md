@@ -221,6 +221,40 @@ at v5, and degrade gracefully when the npm registry is unreachable. To reach v5:
 
 ---
 
+## v5 → v6 (dependency cooldowns)
+
+v6 adds a **4-day dependency cooldown** to a repo's own packages — the same supply-chain window the
+standard already applies to its jscpd tooling and that the Bundler cooldown gives Ruby. The **uv
+cooldown is checker-enforced** for Python repos; Ruby and JS cooldowns are recommended but not gated
+(the checker can't reliably tell which JS package manager a repo uses). See the
+"Dependency cooldown (supply-chain)" section in `../SKILL.md` for the full per-ecosystem reference.
+To reach v6:
+
+1. **Add the cooldown to the repo (the enforced part is uv).**
+   - **Python (uv)** — add to `pyproject.toml`:
+     ```toml
+     [tool.uv]
+     exclude-newer = "4 days"
+     ```
+     A rolling duration (not a fixed date) so the window moves with today. Urgent override for one
+     package: `exclude-newer-package = { foo = "0 days" }`. Then re-resolve: `uv lock` (an existing
+     lock is honoured as-is; the cooldown only gates *new* resolutions).
+   - **Ruby (Bundler ≥ 4.0.13)** — `source "https://rubygems.org", cooldown: 4` in the `Gemfile`.
+   - **JS** — `.npmrc` `min-release-age=4` (npm), `pnpm-workspace.yaml` `minimumReleaseAge: 5760`
+     (pnpm), or `.yarnrc.yml` `npmMinimalAgeGate: 5760` (yarn). Minutes for pnpm/yarn; 5760 = 4 days.
+2. **(Optional) set a machine-wide default if missing** so repos that haven't opted in still get a
+   floor — `bundle config set --global cooldown 4`, `npm config set min-release-age 4
+   --location=user`, `pnpm config set minimumReleaseAge 5760 --global`, or `exclude-newer = "4 days"`
+   in `~/.config/uv/uv.toml`. The per-repo setting overrides the global one.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "6"` in `mise.toml`.
+4. **Verify:** `bash scripts/dev_env_check.sh .` → `status=compliant` with `has_cooldown=1`
+   (Python repos), and `uv lock` still resolves under the cooldown.
+
+> **Future symmetry:** only uv is gated today. Enforcing the Ruby `Gemfile` cooldown (a simple
+> `cooldown:` grep) or a JS lockfile-keyed check could land in a later version if wanted.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
