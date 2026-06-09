@@ -8,6 +8,8 @@
     "**/.venv/**",
     "**/node_modules/**",
     "**/vendor/**",
+    "**/dist/**",
+    "**/build/**",
     "**/tests/fixtures/**",
     "**/tests/golden/**",
     "skills/dev-env-setup/references/templates/**"

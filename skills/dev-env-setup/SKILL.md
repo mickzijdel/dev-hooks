@@ -25,17 +25,18 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v8)
+## The standard (v9)
 
-A repo is **compliant at v8** when it has all of:
+A repo is **compliant at v9** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "8"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "9"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
-  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`.
+  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`
+  (vendored/generated dirs incl. `node_modules`, `vendor`, `dist`, `build`). The `missing-test-reminder` hook also reads this file to skip those dirs.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
   audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
   and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —

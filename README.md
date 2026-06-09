@@ -16,7 +16,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `PostToolUse` (`Write`\|`Edit`) | `ci-action-ref-reminder.sh` | When Claude writes/edits a GitHub Actions workflow (a `*.yml`/`*.yaml` pinning `uses: owner/repo@ref`), nudge it to verify every ref actually **resolves on the remote** before finishing — an action can ship release tags (`v8.0.0`) without floating a `@v8` major, so a wrong pin passes locally but breaks CI at "Prepare all required actions". Points Claude at the bundled `check_action_refs.sh` (which does the `git ls-remote` check); the hook itself never hits the network. Advisory only, never blocks; fires once per session per file. |
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
 | `Stop` | `debug-leftover-reminder.sh` | On stop, flag debug statements Claude **newly introduced** this session (`console.log`/`debugger`, `binding.pry`/`byebug`/Ruby `p`, `breakpoint()`/`pdb`) — diffed against `HEAD` so pre-existing lines are ignored — and feed them back (exit 2) to strip before finishing. Test files excluded. Fires at most once per session. |
-| `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files and low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`). Fires at most once per session. |
+| `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files, low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`), and vendored/generated code (dirs from the repo's `.jscpd.json`, plus minified `*.min.*`). Fires at most once per session. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `SessionStart` | `dev-env-reminder.sh` | If the repo is **yours** and the dev-env standard applies but isn't met (missing `mise`/`hk`/CI/`gitleaks`, or behind the version stamp), nudge Claude to flag it and offer the `dev-env-setup` skill. Advisory only — never edits. Owner-gated (see env vars below); opt out per repo. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
@@ -148,9 +148,13 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   transcript suppresses a re-fire). Silence it with `DEV_HOOKS_DEBUG_LEFTOVER=false` (in
   `.claude/settings.local.json` `"env"`).
 - `missing-test-reminder.sh` only looks at files **newly added** this session (untracked or
-  staged-added), excludes test files and low-value targets (barrels, type defs, `*.config.*`,
-  migrations, `__init__.py`/`conftest.py`), and stays silent if a matching test already exists
-  anywhere in the tree. Runs only in a git repo; fires once per session (transcript sentinel).
+  staged-added), excludes test files, low-value targets (barrels, type defs, `*.config.*`,
+  migrations, `__init__.py`/`conftest.py`), and vendored/generated code, and stays silent if a
+  matching test already exists anywhere in the tree. Vendored/generated dirs come from the repo's
+  own `.jscpd.json` `ignorePattern` at run time (falling back to a built-in default —
+  `node_modules`, `vendor`, `dist`, `build`, `app/assets/builds` — when the repo has no
+  `.jscpd.json`); minified files (`*.min.js` etc.) are always skipped. Runs only in a git repo;
+  fires once per session (transcript sentinel).
   It can false-positive on files that legitimately need no test — Claude is told to say so and
   move on. Silence it with `DEV_HOOKS_MISSING_TEST=false` (in `.claude/settings.local.json`
   `"env"`).

@@ -330,6 +330,28 @@ v8 replaces each detector with a `head -n1` per-file check. To reach v8:
 
 ---
 
+## v8 → v9 (exclude bundled output from duplication + test nudges)
+
+v9 adds `dist` and `build` to `.jscpd.json`'s `ignorePattern`, so bundled/compiled JS/CSS output
+(webpack/rollup/`dist/`, `app/assets/builds`, generic `build/`) is excluded from the duplication
+audit — generated artifacts aren't hand-written clones and only create noise. The same file is now
+also read by the `missing-test-reminder` hook (dev-hooks plugin): it skips any directory listed in
+the repo's `.jscpd.json` `ignorePattern` (plus minified `*.min.*` files) when nudging for missing
+tests, so vendored/generated code no longer triggers false "add a test" prompts. To reach v9:
+
+1. **Add `dist`/`build` to `.jscpd.json`** `ignorePattern` (all stacks):
+   ```json
+   "**/dist/**",
+   "**/build/**",
+   ```
+   Keep any repo-specific excludes already present. (`node_modules`/`vendor` were added back in v1.)
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "9"` in `mise.toml`.
+3. **Verify:** the jscpd audit still runs clean (`hk run check --all`); a new file under `dist/` or
+   `build/` no longer trips the duplication gate or the `missing-test-reminder` hook; then
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

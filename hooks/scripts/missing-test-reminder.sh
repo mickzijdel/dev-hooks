@@ -3,8 +3,11 @@
 # nudge it to add one (TDD / "Always Works"). Advisory — feeds back via exit 2; never edits.
 #
 # Only newly-added files are considered (untracked `??` or staged-added `A`); modifications
-# to existing files are ignored. Test files, and a few low-value-to-test files (package
-# barrels, type defs, config, migrations, __init__/conftest), are excluded to limit noise.
+# to existing files are ignored. Test files, a few low-value-to-test files (package
+# barrels, type defs, config, migrations, __init__/conftest), and vendored/generated code
+# are excluded to limit noise. Vendored/generated dirs come from the repo's own .jscpd.json
+# ignorePattern at run time (falling back to a built-in default when absent); minified
+# files (*.min.js etc.) are always skipped.
 #
 # Fires at most once per session via its own transcript sentinel (mirrors review-reminder),
 # so there is no Stop loop.
@@ -28,6 +31,7 @@ fi
 
 FINDINGS=$(
   python3 - <<'PYEOF'
+import json
 import os
 import re
 import subprocess
@@ -74,6 +78,44 @@ def is_low_value(path):
     return "migrate" in parts or "migrations" in parts or "db/migrate" in path
 
 
+# Vendored/generated directories. Kept in sync with the .jscpd.json template's
+# ignorePattern via tests/test_dev_env_templates.py; the runtime read below prefers the
+# repo's own .jscpd.json and falls back to this when the repo has none.
+DEFAULT_VENDOR_DIRS = {
+    "__pycache__",
+    ".venv",
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    "app/assets/builds",
+}
+
+
+def read_jscpd_dirs():
+    toplevel = git(["rev-parse", "--show-toplevel"]).strip()
+    if not toplevel:
+        return None
+    try:
+        with open(os.path.join(toplevel, ".jscpd.json")) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    dirs = set()
+    for pat in data.get("ignorePattern", []):
+        m = re.match(r"^\*\*/(.+)/\*\*$", pat)
+        if m:
+            dirs.add(m.group(1))
+    return dirs or None
+
+
+def is_vendored(path, dirs):
+    padded = "/" + path + "/"
+    if any(("/" + d + "/") in padded for d in dirs):
+        return True
+    return bool(re.search(r"\.min\.[A-Za-z]+$", os.path.basename(path)))
+
+
 def has_test(stem, ext, basenames):
     cands = set()
     if ext in PY_EXT:
@@ -92,6 +134,7 @@ all_files += git(["ls-files", "--others", "--exclude-standard"]).splitlines()
 basenames = {os.path.basename(f) for f in all_files if f}
 
 # Newly-added source files from porcelain status.
+vendor_dirs = read_jscpd_dirs() or DEFAULT_VENDOR_DIRS
 missing = []
 for line in git(["status", "--porcelain"]).splitlines():
     if not line:
@@ -105,6 +148,8 @@ for line in git(["status", "--porcelain"]).splitlines():
         path = path.split(" -> ", 1)[1]
     ext = os.path.splitext(path)[1]
     if ext not in TESTABLE or is_test_path(path) or is_low_value(path):
+        continue
+    if is_vendored(path, vendor_dirs):
         continue
     stem = os.path.splitext(os.path.basename(path))[0]
     if not has_test(stem, ext, basenames):

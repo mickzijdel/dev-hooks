@@ -6,6 +6,8 @@ PR), and the standard pins the action at its current major. A plain file-content
 enough — no subprocess needed — so the checks stay fast and offline.
 """
 
+import ast
+import json
 import re
 
 import pytest
@@ -16,6 +18,7 @@ TEMPLATES_DIR = ROOT / "skills" / "dev-env-setup" / "references" / "templates"
 CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml"]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
+MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
 
 # Templates carrying shebang-based companion-step detectors for extensionless scripts.
 SHEBANG_DETECTOR_TEMPLATES = [
@@ -61,3 +64,28 @@ def test_skill_doc_matches_version_stamp():
     header = re.search(r"^## The standard \(v(\d+)\)", SKILL_MD.read_text(), re.M)
     assert header is not None, "SKILL.md is missing the '## The standard (vN)' header"
     assert header.group(1) == version
+
+
+def _jscpd_dir_fragments(jscpd_json_path):
+    """Dir fragments from a .jscpd.json's `**/<dir>/**` ignorePattern entries (file-shaped
+    patterns like `**/db/schema.rb` are excluded)."""
+    data = json.loads(jscpd_json_path.read_text())
+    frags = set()
+    for pat in data.get("ignorePattern", []):
+        m = re.match(r"^\*\*/(.+)/\*\*$", pat)
+        if m:
+            frags.add(m.group(1))
+    return frags
+
+
+def test_missing_test_fallback_matches_jscpd_template():
+    """missing-test-reminder.sh reads each repo's .jscpd.json at run time, but falls back to a
+    hardcoded DEFAULT_VENDOR_DIRS when a repo has none. That fallback must stay identical to the
+    dirs the shipped .jscpd.json template ignores — otherwise the standard and the hook drift."""
+    template_dirs = _jscpd_dir_fragments(TEMPLATES_DIR / ".jscpd.json")
+    m = re.search(r"DEFAULT_VENDOR_DIRS = (\{[^}]*\})", MISSING_TEST_HOOK.read_text())
+    assert m is not None, "missing-test-reminder.sh is missing DEFAULT_VENDOR_DIRS"
+    hook_dirs = ast.literal_eval(m.group(1))
+    assert hook_dirs == template_dirs, (
+        f"hook fallback {hook_dirs} != .jscpd.json template dirs {template_dirs}"
+    )

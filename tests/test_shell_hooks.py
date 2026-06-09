@@ -10,6 +10,8 @@ import os
 import subprocess
 import time
 
+import pytest
+
 from conftest import HOOKS, ROOT, init_git_repo, make_transcript, requires_jq
 
 pytestmark = requires_jq
@@ -105,8 +107,8 @@ def run_checker(target):
     return out
 
 
-def make_v8_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
-    """Build a repo that satisfies everything the checker enforces at v8 except
+def make_v9_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
+    """Build a repo that satisfies everything the checker enforces at v9 except
     optionally the README/CLAUDE.md docs or the uv cooldown."""
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -114,7 +116,7 @@ def make_v8_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
         pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
     (path / "pyproject.toml").write_text(pyproject)
     (path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "8"\n'
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "9"\n'
     )
     (path / "mise.lock").write_text("")
     (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
@@ -127,8 +129,8 @@ def make_v8_compliant_repo(path, *, readme=True, claude=True, cooldown=True):
         (path / "CLAUDE.md").write_text("# project instructions\n")
 
 
-def test_checker_v8_compliant_with_docs(tmp_path):
-    make_v8_compliant_repo(tmp_path)
+def test_checker_v9_compliant_with_docs(tmp_path):
+    make_v9_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "1"
     assert out["has_claude"] == "1"
@@ -136,23 +138,23 @@ def test_checker_v8_compliant_with_docs(tmp_path):
     assert out["status"] == "compliant"
 
 
-def test_checker_v8_needs_upgrade_without_readme(tmp_path):
-    make_v8_compliant_repo(tmp_path, readme=False)
+def test_checker_v9_needs_upgrade_without_readme(tmp_path):
+    make_v9_compliant_repo(tmp_path, readme=False)
     out = run_checker(tmp_path)
     assert out["has_readme"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v8_needs_upgrade_without_claude(tmp_path):
-    make_v8_compliant_repo(tmp_path, claude=False)
+def test_checker_v9_needs_upgrade_without_claude(tmp_path):
+    make_v9_compliant_repo(tmp_path, claude=False)
     out = run_checker(tmp_path)
     assert out["has_claude"] == "0"
     assert out["status"] == "needs-upgrade"
 
 
-def test_checker_v8_needs_upgrade_without_cooldown(tmp_path):
-    # A v8 Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
-    make_v8_compliant_repo(tmp_path, cooldown=False)
+def test_checker_v9_needs_upgrade_without_cooldown(tmp_path):
+    # A v9 Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
+    make_v9_compliant_repo(tmp_path, cooldown=False)
     out = run_checker(tmp_path)
     assert out["has_cooldown"] == "0"
     assert out["status"] == "needs-upgrade"
@@ -163,7 +165,7 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
     (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
     (tmp_path / "mise.toml").write_text(
-        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "8"\n'
+        '[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "9"\n'
     )
     (tmp_path / "mise.lock").write_text("")
     (tmp_path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
@@ -698,6 +700,62 @@ def test_missing_test_silent_when_already_prompted(tmp_path):
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize("path", ["vendor/lib.js", "dist/bundle.js", "build/out.js"])
+def test_missing_test_silent_for_vendored_dirs(tmp_path, path):
+    # No .jscpd.json in the repo -> the hook's built-in DEFAULT_VENDOR_DIRS fallback applies.
+    # Stage the file so porcelain lists the individual path (git collapses *brand-new*
+    # untracked dirs to "vendor/", which would skip via the not-a-source-ext path instead and
+    # not exercise is_vendored's dir matching).
+    run = init_git_repo(tmp_path)
+    f = tmp_path / path
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("export const x = 1\n")
+    run("add", path)
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_silent_for_minified_file(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "app.min.js").write_text(
+        "var x=1\n"
+    )  # minified, hand-written test pointless
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path):
+    # The repo's own .jscpd.json drives the skip list: a dir it ignores is skipped, but a
+    # plain source file still fires (so the gate didn't over-broaden). Stage both files so the
+    # vendored path is listed individually (see note in the vendored-dirs test).
+    run = init_git_repo(tmp_path)
+    (tmp_path / ".jscpd.json").write_text(
+        json.dumps({"ignorePattern": ["**/thirdparty/**"]})
+    )
+    (tmp_path / "thirdparty").mkdir()
+    (tmp_path / "thirdparty" / "x.js").write_text("export const x = 1\n")
+    (tmp_path / "bar.py").write_text("def f():\n    return 1\n")
+    run("add", "thirdparty/x.js", "bar.py")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 2
+    assert "bar.py" in r.stdout
+    assert "thirdparty" not in r.stdout
 
 
 # ── ci-action-ref-reminder.sh (reminder-only; never hits the network) ────────────────
