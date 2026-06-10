@@ -30,8 +30,9 @@ implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rai
 A repo is **compliant at v12** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
-  and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "12"`.
+  and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
+  run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`;
+  `[env]` carries the version stamp `DEV_ENV_VERSION = "12"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -80,6 +81,7 @@ again in `check`/CI.
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
 | Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
+| JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
 
 > Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) run on pre-commit alongside the
@@ -120,7 +122,8 @@ again in `check`/CI.
 >   option for it, and without it jscpd also scans markdown/yaml/json and trips `threshold 0` on
 >   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
 >   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
->   (Ruby). Add `ignore` globs on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
+>   (Ruby), `-f javascript,typescript,css,scss` (JS/TypeScript). Add `ignore` globs on top to skip
+>   tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
 > jscpd keys off extensions, so duplication on extensionless scripts isn't auto-covered. To
 > auto-fix clones, agents can run
 > `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
@@ -200,7 +203,9 @@ proposing additions.
    - `needs-upgrade` → go to step 4 (upgrade).
 
 2. **Fresh setup — detect the stack** (the checker reports it) and confirm with the user if
-   ambiguous (e.g. a plugin that is also a Python package).
+   ambiguous (e.g. a plugin that is also a Python package). Recognized stacks: `pyproject.toml`
+   → `python`, `Gemfile` → `ruby`, `package.json` → `javascript`; scripts-only repos →
+   `shell`.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
@@ -214,7 +219,8 @@ proposing additions.
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
    the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
    Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
-   incl. Ruby). **For a
+   incl. Ruby); JS repos need no extra audit deps (jscpd runs via `npx`, `node` is already the
+   stack tool). **For a
    shell/plugin repo**, also add the [`readoc`]-style dev project (`pyproject.plugin.toml` →
    `pyproject.toml`, fill in the name) and a `tests/` suite (`test_scripts.example.py` as a
    starting point) so every bundled script is exercised, and give each Python script the

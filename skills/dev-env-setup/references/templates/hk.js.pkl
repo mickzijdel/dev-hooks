@@ -1,0 +1,44 @@
+// dev-env standard (dev-hooks:dev-env-setup) — version tracked via DEV_ENV_VERSION in mise.toml.
+// For JS/TypeScript repos.
+amends "package://github.com/jdx/hk/releases/download/v1.47.0/hk@1.47.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.47.0/hk@1.47.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    ["prettier"] {
+        glob = List("**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx", "**/*.astro", "**/*.css", "**/*.scss", "**/*.mdx", "**/*.json")
+        check = "npx prettier --check {{ files }}"
+        fix = "npx prettier --write {{ files }}"
+    }
+    // --- Audits (duplication) ---------------------------------------------------
+    // jscpd 5.x via npx; config in `.jscpd.json`. `-f` scopes to code formats
+    // (no config equivalent) so docs/yaml aren't flagged. (See dev-env-setup SKILL.md.)
+    // Version policy: track latest with a 4-day cooldown (never run a release < 4 days old —
+    // supply-chain seasoning), floored at v5. Online → resolve the newest version >= 4 days
+    // old (`npx --before`), fall back to `latest` when that lands below the v5 floor.
+    // Offline → run the cached jscpd. No cache + offline → warn and pass.
+    ["jscpd"] {
+        glob = List("**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx", "**/*.css", "**/*.scss")
+        check = "cutoff=$(date -u -d '4 days ago' +%F 2>/dev/null || date -u -v-4d +%F); if curl -sf -m 3 https://registry.npmjs.org/ >/dev/null 2>&1; then ver=$(npx --before=$cutoff --yes jscpd --version 2>/dev/null | awk 'END{print $NF}'); case $ver in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac; npx --yes jscpd@$ver . -f javascript,typescript,css,scss; elif npx --offline jscpd --version >/dev/null 2>&1; then npx --offline jscpd . -f javascript,typescript,css,scss; else echo 'jscpd unavailable offline; skipping duplication check'; fi"
+    }
+    // Secret scanning (defense-in-depth alongside fnox). hk builtin.
+    ["gitleaks"] = Builtins.gitleaks
+    // Block accidentally-committed large files. hk builtin.
+    ["check-added-large-files"] = Builtins.check_added_large_files
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    // `check` is the full suite CI runs. The audits (jscpd) already run on pre-commit;
+    // `check` is just the same set under one name.
+    ["check"] {
+        steps = linters
+    }
+}
