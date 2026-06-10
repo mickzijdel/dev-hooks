@@ -1,6 +1,6 @@
 # dev-hooks
 
-A Claude Code plugin bundling eleven polyglot, project-agnostic dev-workflow hooks plus a
+A Claude Code plugin bundling fifteen polyglot, project-agnostic dev-workflow hooks plus a
 set of thinking-tool skills. Each hook script detects the project's own toolchain
 (Ruby/Rails, JavaScript/TypeScript, Python) — there is nothing to configure.
 
@@ -14,6 +14,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `PostToolUse` (`Write`\|`Edit`) | `secret-plaintext-reminder.sh` | When Claude writes what looks like a plaintext secret **value** (a named `API_KEY`/`SECRET`/`TOKEN`/`PASSWORD` assignment to a real literal, a private-key block, or an AWS key id), nudge it to migrate to fnox via the `env-to-fnox` skill instead of committing the value. Fires at write time (before `gitleaks` would at commit). Env-var refs and obvious placeholders are ignored. Advisory only, never blocks; fires once per session. |
 | `PostToolUse` (`Write`\|`Edit`) | `popover-reminder.sh` | When Claude writes popover/tooltip/dropdown/menu UI (a frontend file — `.js`/`.ts`/`.erb`/`.html`/`.vue`/`.svelte`/`.haml`/`.slim` — that has a popover/tooltip/dropdown controller filename, `role="tooltip"`/the `popover` attribute, an `@floating-ui`/`popper`/`tippy` import, a `data-controller` naming one, or a tooltip/popover/dropdown class/data-attribute), nudge it to use a collision-aware positioner (flip + shift) rendered in the top layer/a portal instead of hand-rolled `top`/`left` math, and point at the `popovers-tooltips` skill. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_POPOVER=false`. |
 | `PostToolUse` (`Write`\|`Edit`) | `ci-action-ref-reminder.sh` | When Claude writes/edits a GitHub Actions workflow (a `*.yml`/`*.yaml` pinning `uses: owner/repo@ref`), nudge it to verify every ref actually **resolves on the remote** before finishing — an action can ship release tags (`v8.0.0`) without floating a `@v8` major, so a wrong pin passes locally but breaks CI at "Prepare all required actions". Points Claude at the bundled `check_action_refs.sh` (which does the `git ls-remote` check); the hook itself never hits the network. Advisory only, never blocks; fires once per session per file. |
+| `PostToolUse` (`Write`\|`Edit`) | `inline-svg-reminder.sh` | When Claude hand-writes **inline SVG** into a frontend file (an `<svg>` blob with real drawing content — `<path>`/`<circle>`/`<rect>`/… or long `d="M…"` path data — or a `data:image/svg+xml` URI), feed a correction back (exit 2, **every occurrence**): use the project's icon library (named from `package.json`/`Gemfile` when found), else extract to a dedicated `.svg` file/sprite and reference it. Good patterns stay silent: `<use href>` sprite refs, writing `.svg` files, `<img src="x.svg">`, markdown, test files, data-driven chart markup (`<rect x={…}>`), and pre-existing SVG (Writes deduped against `HEAD`, Edits against `old_string`). Opt out with `DEV_HOOKS_SVG_INLINE=false`. |
 | `Stop` | `verify-work.sh` | On stop, detect changed code files and run the project's linters/tests (RuboCop, Minitest/RSpec, Ruff/pytest, ESLint/JS tests). Feeds failures back to Claude (exit 2) so it fixes them before finishing. |
 | `Stop` | `debug-leftover-reminder.sh` | On stop, flag debug statements Claude **newly introduced** this session (`console.log`/`debugger`, `binding.pry`/`byebug`/Ruby `p`, `breakpoint()`/`pdb`) — diffed against `HEAD` so pre-existing lines are ignored — and feed them back (exit 2) to strip before finishing. Test files excluded. Fires at most once per session. |
 | `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files, low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`), and vendored/generated code (dirs from the repo's `.jscpd.json`, plus minified `*.min.*`). Fires at most once per session. |
@@ -141,6 +142,24 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   `.github/workflows`. Fires once per session per file (marker under
   `${TMPDIR:-/tmp}/dev-hooks-ci-action-refs/`). Silence it with `DEV_HOOKS_CI_ACTION_REFS=false`
   (in `.claude/settings.local.json` `"env"`).
+- `inline-svg-reminder.sh` is the one **enforcing** PostToolUse hook: the write still lands,
+  but it feeds a correction back (exit 2) on **every** occurrence rather than once per
+  session — hand-written inline SVG is a habit worth breaking, not a one-time tip. It fires
+  when Claude writes a frontend file (`.js`/`.mjs`/`.cjs`/`.jsx`/`.ts`/`.tsx`/`.vue`/`.svelte`/
+  `.astro`/`.html`/`.htm`/`.erb`/`.haml`/`.slim`/`.php`/`.twig`/`.heex`/`.css`/`.scss`)
+  containing an `<svg>` block with real drawing content (`<path>`/`<circle>`/`<rect>`/… or
+  substantial `d="M…"` path data), a partial drawing fragment, or a `data:image/svg+xml` URI.
+  The feedback says, in order of preference: use the project's icon library (it greps
+  `package.json`/`Gemfile` and names the one already installed — lucide, heroicons, tabler,
+  font-awesome, …), else extract the markup to a dedicated `.svg` file/sprite and reference
+  it; keep it inline only if the user explicitly asked. The *good* patterns never fire:
+  `<svg><use href="sprite.svg#id">` references, writing actual `.svg` files (the refactor
+  target), `<img src="x.svg">`, markdown/docs, test files, and data-driven chart markup
+  (drawing tags with expression attributes like `<rect x={scale(d)}>` — D3/visx charts
+  aren't icons). Pre-existing, user-approved inline SVG doesn't re-trigger: full-file
+  Writes are deduped against the file at `HEAD`, Edits against the `old_string`, keyed on
+  the `d="…"` drawing data so attribute tweaks on an approved icon stay silent. Silence it
+  with `DEV_HOOKS_SVG_INLINE=false` (in `.claude/settings.local.json` `"env"`).
 - `debug-leftover-reminder.sh` only considers **newly-introduced** lines (added lines in
   `git diff HEAD` plus the full contents of untracked files), so committed/pre-existing debug
   statements are ignored — committing or removing the lines clears the nudge. It runs only in
@@ -159,7 +178,8 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   move on. Silence it with `DEV_HOOKS_MISSING_TEST=false` (in `.claude/settings.local.json`
   `"env"`).
 - Hooks require `jq` (used to parse hook input) and, for `verify-work.sh`, `memory-reminder.sh`,
-  `debug-leftover-reminder.sh`, and `missing-test-reminder.sh`, `python3`.
+  `debug-leftover-reminder.sh`, `missing-test-reminder.sh`, `review-reminder.sh`,
+  `secret-plaintext-reminder.sh`, and `inline-svg-reminder.sh`, `python3`.
 - The `github-readme` and `readability` skills bundle optional Python audit scripts
   (`scripts/*.py`, self-contained via [uv](https://docs.astral.sh/uv/) + PEP 723 inline
   metadata — run with `uv run scripts/<name>.py`); they only run when you invoke the skill

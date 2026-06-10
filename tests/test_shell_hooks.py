@@ -400,6 +400,250 @@ def test_popover_reminder_fires_once_per_session(tmp_path):
     assert second.stdout.strip() == ""
 
 
+# ── inline-svg-reminder.sh ──────────────────────────────────────────────────────────
+INLINE_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>'
+
+
+def _svg_payload(
+    file_path, *, content=None, new_string=None, old_string=None, tool="Write"
+):
+    tool_input = {"file_path": str(file_path)}
+    if content is not None:
+        tool_input["content"] = content
+    if new_string is not None:
+        tool_input["new_string"] = new_string
+    if old_string is not None:
+        tool_input["old_string"] = old_string
+    return json.dumps(
+        {"tool_name": tool, "tool_input": tool_input, "session_id": "svg1"}
+    )
+
+
+def _run_svg(payload, **env_overrides):
+    env_overrides.setdefault("DEV_HOOKS_SVG_INLINE", None)
+    return run_hook(
+        "inline-svg-reminder.sh", stdin=payload, env=base_env(**env_overrides)
+    )
+
+
+def assert_svg_fired(r):
+    assert r.returncode == 2
+    assert "[inline-svg]" in r.stderr
+    assert r.stdout.strip() == ""
+
+
+def assert_svg_silent(r):
+    assert r.returncode == 0
+    assert r.stdout.strip() == "" and r.stderr.strip() == ""
+
+
+def test_inline_svg_fires_on_jsx_path_svg(tmp_path):
+    content = 'export const Icon = () => <svg className="h-4 w-4" viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>;\n'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "Icon.tsx", content=content)))
+
+
+def test_inline_svg_fires_on_edit_new_string(tmp_path):
+    r = _run_svg(
+        _svg_payload(tmp_path / "header.html", new_string=INLINE_SVG, tool="Edit")
+    )
+    assert_svg_fired(r)
+
+
+def test_inline_svg_fires_on_partial_fragment(tmp_path):
+    # An Edit that adds drawing elements into an existing <svg> — no <svg> tag in sight.
+    frag = '<path d="M3 12h18M3 6h18M3 18h18"/>\n<circle cx="12" cy="12" r="3"/>\n'
+    r = _run_svg(_svg_payload(tmp_path / "menu.vue", new_string=frag, tool="Edit"))
+    assert_svg_fired(r)
+
+
+def test_inline_svg_fires_on_data_uri(tmp_path):
+    css = 'background-image: url("data:image/svg+xml,%3Csvg xmlns=...%3E");\n'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "app.css", content=css)))
+
+
+def test_inline_svg_fires_in_template_string(tmp_path):
+    js = f"const icon = `{INLINE_SVG}`;\n"
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "icons.js", content=js)))
+
+
+def test_inline_svg_silent_on_use_only_sprite(tmp_path):
+    sprite = '<svg class="icon"><use href="/sprite.svg#check"/></svg>\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "nav.html", content=sprite)))
+
+
+def test_inline_svg_silent_on_svg_file(tmp_path):
+    # Writing a real .svg file is the desired refactor outcome — never flag it.
+    r = _run_svg(_svg_payload(tmp_path / "icons" / "check.svg", content=INLINE_SVG))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_on_markdown(tmp_path):
+    md = f"Badge:\n\n{INLINE_SVG}\n"
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "README.md", content=md)))
+
+
+def test_inline_svg_silent_on_img_reference(tmp_path):
+    html = '<img src="/icons/check.svg" alt="check">\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "page.html", content=html)))
+
+
+def test_inline_svg_silent_on_non_frontend_file(tmp_path):
+    py = f'ICON = "{INLINE_SVG}"\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "icons.py", content=py)))
+
+
+def test_inline_svg_silent_on_test_file(tmp_path):
+    r = _run_svg(_svg_payload(tmp_path / "__tests__" / "Icon.tsx", content=INLINE_SVG))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_when_opted_out(tmp_path):
+    r = _run_svg(
+        _svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG),
+        DEV_HOOKS_SVG_INLINE="false",
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_fires_every_occurrence(tmp_path):
+    # Unlike the once-per-session reminders, this enforces on every write (no marker).
+    payload = _svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG)
+    assert_svg_fired(_run_svg(payload))
+    assert_svg_fired(_run_svg(payload))
+
+
+def test_inline_svg_fires_on_uppercase_svg(tmp_path):
+    shouty = '<SVG VIEWBOX="0 0 24 24"><PATH D="M12 2L2 22h20z"/></SVG>'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "icon.html", content=shouty)))
+
+
+def test_inline_svg_silent_on_dynamic_chart_markup(tmp_path):
+    # Data-driven SVG (D3/visx-style) is a chart, not an icon — no library replaces it.
+    chart = (
+        "export const Bars = ({data}) => (\n"
+        '  <svg width="400" height="200">\n'
+        "    {data.map(d => <rect x={scale(d)} y={y(d)} width={w} height={h(d)} />)}\n"
+        "  </svg>\n"
+        ");\n"
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "Chart.tsx", content=chart)))
+
+
+def test_inline_svg_silent_on_vue_bound_chart_markup(tmp_path):
+    # Vue's quoted bindings (:x="scale(d)") are expressions too, not literal icons.
+    chart = (
+        '<template><svg :width="w">'
+        '<rect v-for="d in data" :x="scale(d)" :y="y(d)" :height="h(d)"/>'
+        "</svg></template>\n"
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "Chart.vue", content=chart)))
+
+
+def test_inline_svg_silent_on_vue_bound_path_generator(tmp_path):
+    # :d="lineGenerator(...)" is a bound expression, not literal path data (the
+    # expression even starts with a valid path command letter, 'l').
+    chart = (
+        '<svg :viewBox="vb"><path :d="lineGenerator(chartData)" fill="none"/></svg>\n'
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "LineChart.vue", content=chart)))
+
+
+def test_inline_svg_fires_on_fragment_with_literal_path_on_dynamic_tag(tmp_path):
+    # Literal d= data is hand-written even when other attributes are expressions.
+    frag = '<path className={styles.icon} d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10z"/>'
+    r = _run_svg(_svg_payload(tmp_path / "Icon.tsx", new_string=frag, tool="Edit"))
+    assert_svg_fired(r)
+
+
+def test_inline_svg_edit_skips_preexisting_shape_icon_via_old_string(tmp_path):
+    # Icons drawn with circle/line (no <path d=>) dedup on their drawing tags.
+    icon = '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    old = f"<button>{icon}</button>"
+    new = old.replace("<svg ", '<svg class="h-4 w-4" ')
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Search.tsx", new_string=new, old_string=old, tool="Edit"
+        )
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_on_custom_element_near_sprite(tmp_path):
+    # <line-chart> is a custom element, not an SVG <line>; the unclosed sprite svg
+    # alongside it must not combine into a false positive.
+    frag = '<svg class="icon"><use href="/sprite.svg#x"/>\n<line-chart points="1,2"></line-chart>\n'
+    r = _run_svg(_svg_payload(tmp_path / "dash.html", new_string=frag, tool="Edit"))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_edit_skips_preexisting_svg_via_old_string(tmp_path):
+    # Tweaking an attribute on an already-approved icon re-sends its <path> in both
+    # old_string and new_string — same drawing data, so no re-fire.
+    old = f'<div class="logo">{INLINE_SVG}</div>'
+    new = old.replace('viewBox="0 0 24 24"', 'class="h-5" viewBox="0 0 24 24"')
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Header.tsx", new_string=new, old_string=old, tool="Edit"
+        )
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_edit_flags_added_svg_despite_old_string(tmp_path):
+    # The Edit adds a NEW icon next to existing non-svg markup — old_string can't absolve it.
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Header.tsx",
+            new_string=f"<div>{INLINE_SVG}</div>",
+            old_string="<div></div>",
+            tool="Edit",
+        )
+    )
+    assert_svg_fired(r)
+
+
+def test_inline_svg_write_skips_preexisting_data_uri_with_changed_context(tmp_path):
+    # Dedup keys on the URI itself, so unrelated edits near a committed data URI stay silent.
+    run = init_git_repo(tmp_path)
+    css = tmp_path / "app.css"
+    css.write_text('.bg { background: url("data:image/svg+xml,%3Csvg%20w%3E"); }\n')
+    run("add", ".")
+    run("commit", "-q", "-m", "css")
+    content = css.read_text() + ".btn { color: red; }\n"
+    assert_svg_silent(_run_svg(_svg_payload(css, content=content)))
+
+
+def test_inline_svg_write_skips_preexisting_svg(tmp_path):
+    run = init_git_repo(tmp_path)
+    comp = tmp_path / "Logo.tsx"
+    comp.write_text(f"export const Logo = () => {INLINE_SVG};\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "logo")
+    # A full-file Write re-sends the committed svg plus an unrelated new line.
+    content = comp.read_text() + "export const x = 1;\n"
+    assert_svg_silent(_run_svg(_svg_payload(comp, content=content)))
+
+
+def test_inline_svg_write_flags_newly_added_svg(tmp_path):
+    run = init_git_repo(tmp_path)
+    comp = tmp_path / "Logo.tsx"
+    comp.write_text("export const Logo = () => null;\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "logo")
+    content = comp.read_text() + f"export const Icon = () => {INLINE_SVG};\n"
+    assert_svg_fired(_run_svg(_svg_payload(comp, content=content)))
+
+
+def test_inline_svg_names_icon_library(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"lucide-react": "^0.400.0"}})
+    )
+    r = _run_svg(_svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG))
+    assert_svg_fired(r)
+    assert "lucide" in r.stderr
+
+
 # ── lint-on-edit.sh ─────────────────────────────────────────────────────────────────
 def test_lint_on_edit_silent_without_file_path():
     r = run_hook("lint-on-edit.sh", stdin=json.dumps({}))
