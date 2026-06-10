@@ -52,8 +52,9 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
      because a Rails app's JS/CSS/SCSS/ERB also needs duplication coverage (flay only parses
      Ruby). See the "Duplication: flay vs jscpd" note in `../SKILL.md`.
 5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
-   (`gitleaks/gitleaks-action@v3`, `fetch-depth: 0`, with `env: GITHUB_TOKEN:
-   ${{ secrets.GITHUB_TOKEN }}` — required to scan `pull_request` events, see v6 → v7) and an
+   (historically `gitleaks/gitleaks-action@v3` with a `GITHUB_TOKEN` env, see v6 → v7 —
+   **superseded in v10 → v11** by the CLI-via-mise job; when applying multiple sections in one
+   pass, write the v11 form directly) and an
    `audit` job (dead-code + duplication + a large-file guard step).
 6. **Verify:** `mise install && hk install && hk run check` (gitleaks + audits run clean), then
    confirm `hk run pre-commit --all` does **not** run vulture/jscpd/flay/debride (only linters +
@@ -258,6 +259,9 @@ To reach v6:
 
 ## v6 → v7 (gitleaks PR scan needs GITHUB_TOKEN)
 
+> **Superseded by v10 → v11**, which drops gitleaks-action for the CLI. When applying multiple
+> sections in one pass, skip this and write the v11 gitleaks job directly.
+
 `gitleaks/gitleaks-action` now hard-requires a `GITHUB_TOKEN` to scan **pull_request**
 events — it calls the GitHub API to enumerate the PR's commits. Without it the `gitleaks`
 job fails on every PR with `🛑 GITHUB_TOKEN is now required to scan pull requests` (push
@@ -379,6 +383,45 @@ repo has plaintext secrets in use. To reach v10:
    string, then `hk run check` must **exit 0** ("no leaks found"); a real key hardcoded in
    `app/`/source is still caught. Then `bash scripts/dev_env_check.sh .` →
    `has_gitleaks_config=1` and `status=compliant`.
+
+---
+
+## v10 → v11 (CI gitleaks: commercial action → MIT CLI via mise)
+
+`gitleaks/gitleaks-action` moved from MIT to a commercial EULA at its v2.0.0: on **org-owned**
+repos it hard-requires a `GITLEAKS_LICENSE` secret (the free "Starter" tier covers exactly 1 repo
+per org; a 2nd org repo needs a paid license), failing the job with `🛑 missing gitleaks license`.
+Personal-account repos need no key, so the gap stays invisible until CI runs on an org repo
+(first hit: `EdinburghUniversityTheatreCompany/bacs-tool`). The gitleaks **CLI** stays MIT/free
+for every repo — only the action wrapper carries the license — so v11 replaces the action with
+the mise.lock-pinned CLI on **all** repos (one code path, no per-owner conditional, no secret to
+provision), which is exactly the binary the local hk pre-commit hook already runs. To reach v11:
+
+1. **Replace the `gitleaks` job** in `.github/workflows/ci.yml` with the CLI form (see
+   `templates/ci.*.yml`):
+   ```yaml
+     gitleaks:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v6
+           with:
+             fetch-depth: 0 # gitleaks git scans the full commit history
+         - uses: jdx/mise-action@v4
+         - name: Scan git history for secrets
+           run: mise exec -- gitleaks git --no-banner .
+   ```
+   `gitleaks git` scans commit history — the scope the action covered, so `fetch-depth: 0` stays
+   required — and auto-loads the root `.gitleaks.toml` (v10) with no `--config` flag. `mise exec`
+   runs the gitleaks version pinned in `mise.lock` (in `[tools]` since v1), keeping local and CI
+   scans on the same binary. The v7 `GITHUB_TOKEN` env was an action-only requirement — drop it.
+   (Scope note: CI scans history, the hk hook scans the working tree via `gitleaks dir` — same
+   split as before, no regression.)
+2. **Bump any existing `jdx/mise-action` pins to `@v4`** (latest major; v4.1.0 as of 2026-06-10)
+   — e.g. the shell stack's `lint` job previously pinned `@v2`.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "11"` in `mise.toml`.
+4. **Verify:** `bash scripts/check_action_refs.sh .github/workflows` → every pin resolves; push
+   (or re-run CI) and confirm the `gitleaks` job passes with **no** `GITLEAKS_LICENSE` secret;
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.0.0
+version: 4.1.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v10)
+## The standard (v11)
 
-A repo is **compliant at v10** when it has all of:
+A repo is **compliant at v11** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "10"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "11"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -43,18 +43,22 @@ A repo is **compliant at v10** when it has all of:
   including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
   **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
   just the same set under one name that CI invokes.
-- **`.gitleaks.toml`** (all stacks) — a root allowlist file. The `gitleaks` step
-  (and CI's gitleaks-action) run `gitleaks dir` over the **whole working tree** — `dir` has no
-  respect-gitignore flag — so without this, any repo with a local `.env`, `log/`, `tmp/`, or a
-  Rails `config/credentials/*.key` fails every commit and `hk run check` stays red, even though
+- **`.gitleaks.toml`** (all stacks) — a root allowlist file. The hk `gitleaks` step runs
+  `gitleaks dir` over the **whole working tree** — `dir` has no respect-gitignore flag — so
+  without this, any repo with a local `.env`, `log/`, `tmp/`, or a Rails
+  `config/credentials/*.key` fails every commit and `hk run check` stays red, even though
   none of those are tracked. The file `[extend]`s the default ruleset and allowlists those
   gitignored runtime/secret **paths only** (source stays fully scanned). gitleaks auto-loads it
-  from the scan root, so the hk builtin needs no `--config`. See "gitleaks whole-tree allowlist".
+  from the scan root, so neither the hk builtin nor CI's `gitleaks git` needs a `--config`.
+  See "gitleaks whole-tree allowlist".
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
-  uses `gitleaks-action@v3` and carries `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
-  (added in v7) — the action requires it to scan `pull_request` events, and fails the PR
-  without it.
+  runs the MIT-licensed gitleaks **CLI** via mise — `jdx/mise-action` +
+  `mise exec -- gitleaks git --no-banner .`, with `fetch-depth: 0` so the full commit history
+  is scanned — **not** `gitleaks/gitleaks-action`, which requires a paid `GITLEAKS_LICENSE`
+  on org-owned repos (the free tier covers exactly 1 repo per org; personal-account repos are
+  unaffected, so the failure stays invisible until CI runs on an org repo). The CLI is free
+  for every repo and is the same mise.lock-pinned binary the local hk hook runs.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
@@ -304,8 +308,7 @@ gh api repos/actions/checkout/tags --jq '.[].name' | grep -E '^v[0-9]' | sort -V
 
 Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this for the Actions
 in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
-`actions/upload-artifact`, `gitleaks/gitleaks-action`, `jdx/mise-action` — and any others a repo
-already uses.
+`actions/upload-artifact`, `jdx/mise-action` — and any others a repo already uses.
 Caveat: some actions don't publish a floating major tag for their newest release (e.g.
 `astral-sh/setup-uv` ships `v8.x` releases but only floats `@v1`…`@v7`), so `@v8` fails to
 resolve in CI. Always verify the chosen ref actually exists —
@@ -413,21 +416,21 @@ urgent upgrade. For one-off exceptions *inside* the window, uv has `exclude-newe
 
 ## gitleaks whole-tree allowlist (`.gitleaks.toml`)
 
-The hk `gitleaks` step (`["gitleaks"] = Builtins.gitleaks`) and CI's gitleaks-action both run
-`gitleaks dir`, which scans the **entire working tree** — `dir` has no respect-gitignore flag, so
-it reads gitignored files too. Without an allowlist, a local `.env`, `log/`, `tmp/cache/`, or a
-Rails `config/credentials/*.key` makes the scan fail on those gitignored artifacts, blocking every
-commit and keeping `hk run check` red (none of them are tracked, so CI — which scans history —
-still passes, masking the problem).
+The hk `gitleaks` step (`["gitleaks"] = Builtins.gitleaks`) runs `gitleaks dir`, which scans the
+**entire working tree** — `dir` has no respect-gitignore flag, so it reads gitignored files too.
+Without an allowlist, a local `.env`, `log/`, `tmp/cache/`, or a Rails
+`config/credentials/*.key` makes the scan fail on those gitignored artifacts, blocking every
+commit and keeping `hk run check` red (none of them are tracked, so CI — whose `gitleaks git`
+job scans history — still passes, masking the problem).
 
 `references/templates/.gitleaks.toml` is the fix: it `[extend]`s the default ruleset
 (`useDefault = true`) and `[allowlist]`s the gitignored runtime/secret **paths** (`.env`, `log/`,
 `tmp/`, `.venv/`, `node_modules/`, `vendor/`, `config/credentials/*.key`). gitleaks auto-loads
-`.gitleaks.toml` from the scan root, so the hk builtin and the CI action both pick it up with **no
-`--config` flag**. The allowlist is **path-scoped to gitignored locations only**, so a secret
-hardcoded in `app/`/source is still caught.
+`.gitleaks.toml` from the scan root, so the hk builtin and CI's `gitleaks git` job both pick it
+up with **no `--config` flag**. The allowlist is **path-scoped to gitignored locations only**, so
+a secret hardcoded in `app/`/source is still caught.
 
-**Caveat:** because CI's gitleaks-action reads the same file, a secret force-added (`git add -f`)
+**Caveat:** because CI's gitleaks job reads the same file, a secret force-added (`git add -f`)
 into one of these paths wouldn't be caught by CI either. That's an accepted trade-off — the paths
 are gitignored, so defeating it takes a deliberate `-f` against `.gitignore`. The complementary
 path is to get the plaintext secret out of the repo entirely: when the checker detects secrets in

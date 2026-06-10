@@ -1,9 +1,10 @@
 """Content checks for the dev-env-setup CI templates.
 
-These guard the gitleaks job that ships in every scaffolded repo: gitleaks-action
-hard-requires a GITHUB_TOKEN to scan pull_request events (without it the job fails the
-PR), and the standard pins the action at its current major. A plain file-content read is
-enough — no subprocess needed — so the checks stay fast and offline.
+These guard the gitleaks job that ships in every scaffolded repo: since v11 it runs the
+MIT-licensed gitleaks CLI via mise (gitleaks/gitleaks-action is commercial since its
+v2.0.0 and demands a paid GITLEAKS_LICENSE on org-owned repos), scanning full git
+history. A plain file-content read is enough — no subprocess needed — so the checks stay
+fast and offline.
 """
 
 import ast
@@ -31,17 +32,28 @@ SHEBANG_DETECTOR_TEMPLATES = [
 
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
-def test_gitleaks_job_pins_v3(name):
+def test_gitleaks_job_runs_cli_not_action(name):
+    """v11: the gitleaks job runs the MIT-licensed CLI via mise. gitleaks/gitleaks-action
+    is commercial since its v2.0.0 and requires a paid GITLEAKS_LICENSE on org-owned repos
+    (the free tier covers 1 repo per org), so the action must not reappear — and neither
+    should its GITHUB_TOKEN env, which only the action needed."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert "gitleaks/gitleaks-action@v3" in text
-    assert "gitleaks/gitleaks-action@v2" not in text
+    assert "uses: gitleaks/gitleaks-action" not in text
+    assert "mise exec -- gitleaks git --no-banner ." in text
+    assert "secrets.GITHUB_TOKEN" not in text
 
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
-def test_gitleaks_job_passes_github_token(name):
+def test_gitleaks_job_scans_full_history_via_mise(name):
+    """`gitleaks git` scans commit history, so the job's checkout needs fetch-depth: 0,
+    and the CLI must come from mise-action (mise.lock-pinned, same binary as the hk hook)."""
     text = (TEMPLATES_DIR / name).read_text()
-    # The token env must sit on the gitleaks step (the action reads it to enumerate PR commits).
-    assert "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in text
+    # Both delimiters must exist, else the slice silently widens to the rest of the file
+    # and the assertions below could pass on the audit job's own fetch-depth/mise-action.
+    assert "\n  gitleaks:\n" in text and "\n  audit:\n" in text
+    job = text.split("\n  gitleaks:\n")[1].split("\n  audit:\n")[0]
+    assert "fetch-depth: 0" in job
+    assert "uses: jdx/mise-action@v4" in job
 
 
 @pytest.mark.parametrize("name", SHEBANG_DETECTOR_TEMPLATES)
