@@ -125,15 +125,29 @@ Append `/note` or `/key` to a value for those fields (e.g. `value = "database-ur
 
 ### 5. Wire it into the run-time
 
-- **mise projects (preferred):** in `mise.toml`, replace `.env` loading with
-  ```toml
-  [env]
-  _.source = "fnox export"
+Use fnox's **own** shell integration, not mise. Both `fnox activate` and `fnox exec`
+resolve secrets via the real fnox binary, never through mise.
+
+- **Interactive (auto-load on `cd`):** once in your shell profile (`~/.bashrc` / `~/.zshrc`):
+  ```bash
+  eval "$(fnox activate bash)"   # zsh: fnox activate zsh
   ```
-  Secrets load when the shell enters the project. `BWS_ACCESS_TOKEN` must be in the
-  environment; if `fnox export` errors with an auth message, the token is missing/expired.
-- **Non-mise projects:** run commands through `fnox exec -- <cmd>`, e.g.
-  `fnox exec -- npm run dev`.
+  This installs a prompt hook that loads a repo's `fnox.toml` secrets on directory entry and
+  unloads them on exit (like direnv/mise). `BWS_ACCESS_TOKEN` must be in the environment; if
+  fnox errors with an auth message, the token is missing/expired.
+- **Non-interactive / CI / tasks:** wrap commands in `fnox exec -- <cmd>`, e.g.
+  `fnox exec -- npm run dev`, `fnox exec -- kamal deploy`, or in a mise task:
+  ```toml
+  [tasks.dev]
+  run = "fnox exec -- bin/dev"
+  ```
+
+> **Do NOT load fnox via `mise.toml [env] _.source` (or any mise env directive).** When fnox
+> is a mise-managed tool it lives on `PATH` as a **mise shim**; calling it from inside mise's
+> own env evaluation re-enters mise, which re-runs the directive → an infinite
+> `bash → fnox → mise` fork loop that exhausts the kernel task limit (observed on mise
+> 2026.6.1). fnox's author keeps the two tools deliberately separate for this reason —
+> `fnox activate`'s hook calls the resolved binary path directly, so it cannot re-enter mise.
 
 ### 6. Decide commit vs. gitignore for `fnox.toml`
 
