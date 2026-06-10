@@ -151,7 +151,7 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   staged-added), excludes test files, low-value targets (barrels, type defs, `*.config.*`,
   migrations, `__init__.py`/`conftest.py`), and vendored/generated code, and stays silent if a
   matching test already exists anywhere in the tree. Vendored/generated dirs come from the repo's
-  own `.jscpd.json` `ignorePattern` at run time (falling back to a built-in default —
+  own `.jscpd.json` `ignore` globs at run time (falling back to a built-in default —
   `node_modules`, `vendor`, `dist`, `build`, `app/assets/builds` — when the repo has no
   `.jscpd.json`); minified files (`*.min.js` etc.) are always skipped. Runs only in a git repo;
   fires once per session (transcript sentinel).

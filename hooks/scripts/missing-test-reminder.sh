@@ -6,7 +6,7 @@
 # to existing files are ignored. Test files, a few low-value-to-test files (package
 # barrels, type defs, config, migrations, __init__/conftest), and vendored/generated code
 # are excluded to limit noise. Vendored/generated dirs come from the repo's own .jscpd.json
-# ignorePattern at run time (falling back to a built-in default when absent); minified
+# `ignore` globs at run time (falling back to a built-in default when absent); minified
 # files (*.min.js etc.) are always skipped.
 #
 # Fires at most once per session via its own transcript sentinel (mirrors review-reminder),
@@ -79,7 +79,7 @@ def is_low_value(path):
 
 
 # Vendored/generated directories. Kept in sync with the .jscpd.json template's
-# ignorePattern via tests/test_dev_env_templates.py; the runtime read below prefers the
+# `ignore` globs via tests/test_dev_env_templates.py; the runtime read below prefers the
 # repo's own .jscpd.json and falls back to this when the repo has none.
 DEFAULT_VENDOR_DIRS = {
     "__pycache__",
@@ -102,7 +102,9 @@ def read_jscpd_dirs():
     except (OSError, ValueError):
         return None
     dirs = set()
-    for pat in data.get("ignorePattern", []):
+    # v12 uses `ignore` (the key jscpd v5 honors for paths); `ignorePattern` is the
+    # pre-v12 key, still read so not-yet-upgraded repos keep their exclusions.
+    for pat in data.get("ignore", []) + data.get("ignorePattern", []):
         m = re.match(r"^\*\*/(.+)/\*\*$", pat)
         if m:
             dirs.add(m.group(1))

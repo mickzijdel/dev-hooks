@@ -68,7 +68,7 @@ jobs:
         run: bundle exec flay . || true   # flay exits 0 anyway; surfaces structural clones
       - name: Duplication (jscpd — polyglot gate)
         # -f scopes to code formats (no config equivalent); .jscpd.json carries
-        # minTokens/threshold/reporters/gitignore/ignorePattern (excludes generated
+        # minTokens/threshold/reporters/gitignore/ignore globs (excludes generated
         # db/schema.rb, structure.sql, app/assets/builds).
         # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
         # (see hk.ruby.pkl / SKILL.md › jscpd version policy) so local and CI gates agree.

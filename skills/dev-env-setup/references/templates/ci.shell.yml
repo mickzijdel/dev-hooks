@@ -76,7 +76,7 @@ jobs:
           if [ -n "$files" ]; then uvx vulture --min-confidence 80 $files; else echo "no python files, skipping"; fi
       - name: Duplication (jscpd)
         # -f scopes to code formats (no config equivalent); .jscpd.json carries
-        # minTokens/threshold/reporters/gitignore/ignorePattern.
+        # minTokens/threshold/reporters/gitignore/ignore globs.
         # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
         # (see hk.shell.pkl / SKILL.md › jscpd version policy) so local and CI gates agree.
         run: |

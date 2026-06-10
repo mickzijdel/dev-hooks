@@ -92,15 +92,24 @@ def test_skill_doc_matches_version_stamp():
 
 
 def _jscpd_dir_fragments(jscpd_json_path):
-    """Dir fragments from a .jscpd.json's `**/<dir>/**` ignorePattern entries (file-shaped
-    patterns like `**/db/schema.rb` are excluded)."""
+    """Dir fragments from a .jscpd.json's `**/<dir>/**` ignore entries (file-shaped
+    patterns like `**/db/schema.rb` are excluded). Reads `ignore` (v12+, the key jscpd v5
+    honors for paths) plus the pre-v12 `ignorePattern` for not-yet-upgraded repos."""
     data = json.loads(jscpd_json_path.read_text())
     frags = set()
-    for pat in data.get("ignorePattern", []):
+    for pat in data.get("ignore", []) + data.get("ignorePattern", []):
         m = re.match(r"^\*\*/(.+)/\*\*$", pat)
         if m:
             frags.add(m.group(1))
     return frags
+
+
+def test_jscpd_template_uses_ignore_key():
+    """jscpd v5 honors `ignore` for path exclusion and silently ignores `ignorePattern`
+    (which let CI scan vendor/bundle — the v12 fix). The template must never regress."""
+    data = json.loads((TEMPLATES_DIR / ".jscpd.json").read_text())
+    assert "ignore" in data
+    assert "ignorePattern" not in data
 
 
 def test_missing_test_fallback_matches_jscpd_template():

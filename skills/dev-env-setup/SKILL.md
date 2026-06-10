@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.1.0
+version: 4.2.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,17 +25,18 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v11)
+## The standard (v12)
 
-A repo is **compliant at v11** when it has all of:
+A repo is **compliant at v12** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "11"`.
+  `npx`); `[settings] lockfile = true`; `[env]` carries the version stamp `DEV_ENV_VERSION = "12"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
-  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`
+  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignore` — the key must
+  be `ignore`, **not** `ignorePattern` (inert for paths in jscpd v5; see the exclusions note)
   (vendored/generated dirs incl. `node_modules`, `vendor`, `dist`, `build`). The `missing-test-reminder` hook also reads this file to skip those dirs.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
   audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
@@ -106,13 +107,20 @@ again in `check`/CI.
 > registry round-trip (~0.9s) per commit that stages matching files.
 >
 > Configuring exclusions:
-> - **Exclude paths** with `ignorePattern` (a glob array) in `.jscpd.json`. (Plain `ignore` has
->   no effect; `gitignore: true` already skips gitignored paths.)
+> - **Exclude paths** with `ignore` (a glob array) in `.jscpd.json`. **`ignorePattern` does NOT
+>   exclude paths in jscpd v5** — it's silently inert there, which let CI scan the
+>   CI-installed `vendor/bundle` gems and fail on their clones (booking-overview, 2026-06-10;
+>   fixed in v12). When testing exclusions, beware that jscpd loads `.jscpd.json` from the
+>   **cwd**, not from the scanned directory — verifying against another path needs `-c <config>`,
+>   otherwise you read the wrong config and conclude the wrong key works (how the original
+>   "`ignore` has no effect" note happened). `gitignore: true` also skips gitignored paths, but
+>   don't lean on it alone: CI-only dirs like `vendor/bundle` (created by `ruby/setup-ruby`
+>   bundler-cache) are typically **not** gitignored, so the `ignore` globs must cover them.
 > - **Restrict which file types are scanned** with `-f` on the command — there is no config
 >   option for it, and without it jscpd also scans markdown/yaml/json and trips `threshold 0` on
 >   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
 >   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
->   (Ruby). Add `ignorePattern` on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
+>   (Ruby). Add `ignore` globs on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
 > jscpd keys off extensions, so duplication on extensionless scripts isn't auto-covered. To
 > auto-fix clones, agents can run
 > `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.

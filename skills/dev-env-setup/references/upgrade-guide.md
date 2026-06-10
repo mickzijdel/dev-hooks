@@ -427,6 +427,29 @@ provision), which is exactly the binary the local hk pre-commit hook already run
 
 ---
 
+## v11 → v12 (jscpd path excludes: `ignorePattern` → `ignore`)
+
+jscpd v5 (the Rust `cpd` engine every repo runs via `npx`) honors **`ignore`** for path
+exclusion and **silently ignores `ignorePattern`** — the key all pre-v12 `.jscpd.json`s used.
+The pre-v12 note claiming "plain `ignore` has no effect" came from a mistested verification:
+jscpd loads `.jscpd.json` from the **cwd**, not the scanned path, so the test read a different
+config than it thought (use `-c <config>` when scanning another directory). Symptom that
+exposed it: on Ruby repos, CI's `ruby/setup-ruby` bundler-cache installs gems into
+`vendor/bundle` (not gitignored, so `gitignore: true` doesn't skip it), and the audit job
+failed on thousands of vendored-gem clone lines (booking-overview, 2026-06-10). Locally the
+same repo failed on `bin/` binstub clones despite `**/bin/**` being listed. To reach v12:
+
+1. **Rename the key** in `.jscpd.json`: `"ignorePattern"` → `"ignore"` (values unchanged).
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "12"` in `mise.toml`.
+3. **Verify:** run the repo's jscpd command (e.g. `npx --offline jscpd . -f <stack formats>`)
+   from the repo root and confirm the previously-leaking paths report no clones; on Ruby,
+   recreate a fake `vendor/bundle/**/*.rb` clone pair and confirm it stays excluded.
+
+(The `missing-test-reminder` hook reads both keys, so not-yet-upgraded repos keep their
+test-nudge exclusions either way — only jscpd itself needs the rename.)
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

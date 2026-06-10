@@ -794,14 +794,15 @@ def test_missing_test_silent_for_minified_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path):
+@pytest.mark.parametrize("jscpd_key", ["ignore", "ignorePattern"])
+def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path, jscpd_key):
     # The repo's own .jscpd.json drives the skip list: a dir it ignores is skipped, but a
     # plain source file still fires (so the gate didn't over-broaden). Stage both files so the
-    # vendored path is listed individually (see note in the vendored-dirs test).
+    # vendored path is listed individually (see note in the vendored-dirs test). `ignore` is
+    # the v12+ key (the one jscpd v5 honors for paths); `ignorePattern` is the pre-v12 key,
+    # still honored so not-yet-upgraded repos keep their exclusions.
     run = init_git_repo(tmp_path)
-    (tmp_path / ".jscpd.json").write_text(
-        json.dumps({"ignorePattern": ["**/thirdparty/**"]})
-    )
+    (tmp_path / ".jscpd.json").write_text(json.dumps({jscpd_key: ["**/thirdparty/**"]}))
     (tmp_path / "thirdparty").mkdir()
     (tmp_path / "thirdparty" / "x.js").write_text("export const x = 1\n")
     (tmp_path / "bar.py").write_text("def f():\n    return 1\n")
