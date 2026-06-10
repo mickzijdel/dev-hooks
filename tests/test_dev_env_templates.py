@@ -39,7 +39,7 @@ def test_gitleaks_job_runs_cli_not_action(name):
     should its GITHUB_TOKEN env, which only the action needed."""
     text = (TEMPLATES_DIR / name).read_text()
     assert "uses: gitleaks/gitleaks-action" not in text
-    assert "mise exec -- gitleaks git --no-banner ." in text
+    assert "mise exec -- gitleaks git --redact --no-banner ." in text
     assert "secrets.GITHUB_TOKEN" not in text
 
 

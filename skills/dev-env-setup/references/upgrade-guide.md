@@ -408,12 +408,14 @@ provision), which is exactly the binary the local hk pre-commit hook already run
              fetch-depth: 0 # gitleaks git scans the full commit history
          - uses: jdx/mise-action@v4
          - name: Scan git history for secrets
-           run: mise exec -- gitleaks git --no-banner .
+           run: mise exec -- gitleaks git --redact --no-banner .
    ```
    `gitleaks git` scans commit history — the scope the action covered, so `fetch-depth: 0` stays
    required — and auto-loads the root `.gitleaks.toml` (v10) with no `--config` flag. `mise exec`
    runs the gitleaks version pinned in `mise.lock` (in `[tools]` since v1), keeping local and CI
-   scans on the same binary. The v7 `GITHUB_TOKEN` env was an action-only requirement — drop it.
+   scans on the same binary. `--redact` masks secret values in findings — without it a hit would
+   print the secret into the CI log (public on public repos); the hk builtin already redacts.
+   The v7 `GITHUB_TOKEN` env was an action-only requirement — drop it.
    (Scope note: CI scans history, the hk hook scans the working tree via `gitleaks dir` — same
    split as before, no regression.)
 2. **Bump any existing `jdx/mise-action` pins to `@v4`** (latest major; v4.1.0 as of 2026-06-10)

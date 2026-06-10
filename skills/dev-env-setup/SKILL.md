@@ -54,7 +54,7 @@ A repo is **compliant at v11** when it has all of:
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
   runs the MIT-licensed gitleaks **CLI** via mise — `jdx/mise-action` +
-  `mise exec -- gitleaks git --no-banner .`, with `fetch-depth: 0` so the full commit history
+  `mise exec -- gitleaks git --redact --no-banner .`, with `fetch-depth: 0` so the full commit history
   is scanned — **not** `gitleaks/gitleaks-action`, which requires a paid `GITLEAKS_LICENSE`
   on org-owned repos (the free tier covers exactly 1 repo per org; personal-account repos are
   unaffected, so the failure stays invisible until CI runs on an org repo). The CLI is free
