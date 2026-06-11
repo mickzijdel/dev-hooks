@@ -38,6 +38,14 @@ local linters = new Mapping<String, Step> {
         glob = List("**/*.sh", "**/*.py")
         check = "bash scripts/run-jscpd.sh"
     }
+    // Version-stamp sync for the dev-env-setup skill: VERSION is the source of truth and
+    // the templates' DEV_ENV_VERSION, the SKILL.md/standard.md current-version mentions,
+    // and the upgrade-guide's migration chain must all match it. CI runs the full pytest
+    // suite anyway; this surfaces drift at commit time, only when skill files are staged.
+    ["dev-env-version-sync"] {
+        glob = List("skills/dev-env-setup/**", "tests/test_dev_env_templates.py")
+        check = "uv run pytest -q tests/test_dev_env_templates.py"
+    }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks
     // Block accidentally-committed large files. hk builtin.

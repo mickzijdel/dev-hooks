@@ -26,6 +26,7 @@ MISE_TEMPLATES = [
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
 STANDARD_MD = ROOT / "skills" / "dev-env-setup" / "references" / "standard.md"
+UPGRADE_GUIDE = ROOT / "skills" / "dev-env-setup" / "references" / "upgrade-guide.md"
 MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
 GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
 
@@ -109,17 +110,60 @@ def test_mise_template_version_stamp_matches_version_file(name):
     ("path", "pattern"),
     [
         (SKILL_MD, r"^## The standard \(v(\d+)\)"),
+        (SKILL_MD, r"compliant at v(\d+)"),
         (STANDARD_MD, r"^# The standard \(v(\d+)\) — full specification"),
+        (STANDARD_MD, r"compliant at v(\d+)"),
+        (STANDARD_MD, r'DEV_ENV_VERSION = "(\d+)"'),
     ],
-    ids=["SKILL.md", "references/standard.md"],
+    ids=[
+        "SKILL.md-standard-header",
+        "SKILL.md-compliant-at",
+        "standard.md-standard-header",
+        "standard.md-compliant-at",
+        "standard.md-version-stamp",
+    ],
 )
-def test_skill_doc_matches_version_stamp(path, pattern):
-    """The 'The standard (vN)' headers in SKILL.md and its references/standard.md split
-    both track the VERSION source of truth."""
+def test_doc_current_version_mentions(path, pattern):
+    """Every current-version mention in SKILL.md and references/standard.md tracks the
+    VERSION source of truth. The header patterns stay anchored so the docs must keep a
+    versioned 'The standard (vN)' header; the body patterns use findall so a stale
+    mention anywhere fails. Historical mentions ('added in v6', 'the v12 fix',
+    '## v10 → v11') deliberately don't match — when writing prose about a *past*
+    version, phrase it that way rather than as 'compliant at vN'."""
     version = VERSION_FILE.read_text().strip()
-    header = re.search(pattern, path.read_text(), re.M)
-    assert header is not None, f"{path.name} is missing its 'The standard (vN)' header"
-    assert header.group(1) == version
+    found = re.findall(pattern, path.read_text(), re.M)
+    assert found, f"{path.name} has no match for {pattern!r}"
+    stale = sorted({v for v in found if v != version})
+    assert not stale, (
+        f"{path.name} mentions v{', v'.join(stale)} where VERSION says v{version} "
+        f"(pattern {pattern!r})"
+    )
+
+
+def test_upgrade_guide_reaches_current_version():
+    """The upgrade guide's '## vN-1 → vN' chain must be contiguous from v1 and end at the
+    VERSION source of truth, and the newest section must tell migrators to stamp exactly
+    that version. Catches the classic drift: VERSION bumped without a migration section
+    (or vice versa)."""
+    version = int(VERSION_FILE.read_text().strip())
+    text = UPGRADE_GUIDE.read_text()
+    pairs = [
+        (int(a), int(b)) for a, b in re.findall(r"^## v(\d+) → v(\d+) ", text, re.M)
+    ]
+    assert pairs, "upgrade-guide.md has no '## vN → vN' migration sections"
+    assert all(b == a + 1 for a, b in pairs), f"non-adjacent migration step in {pairs}"
+    assert sorted(b for _, b in pairs) == list(range(1, version + 1)), (
+        f"migration sections cover targets {sorted(b for _, b in pairs)}, "
+        f"expected v1..v{version} (VERSION = {version})"
+    )
+    newest = re.search(
+        rf"^## v{version - 1} → v{version} .*?(?=^## |\Z)", text, re.M | re.S
+    )
+    assert newest is not None
+    assert f'DEV_ENV_VERSION = "{version}"' in newest.group(0), (
+        f"the v{version - 1} → v{version} section never says to stamp "
+        f'DEV_ENV_VERSION = "{version}"'
+    )
 
 
 def _jscpd_dir_fragments(jscpd_json_path):

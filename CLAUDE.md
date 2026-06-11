@@ -8,7 +8,12 @@ Make sure to check all of the following and make sure they are up-to-date after 
 7. when editing a skill, check **all** its template/reference files (e.g.
    `skills/*/references/templates/`) — these mirror the standard the skill encodes and
    drift out of sync silently (e.g. a version stamp bumped in one template but not its
-   siblings). Update every variant, not just the one you started with.
+   siblings). Update every variant, not just the one you started with. For dev-env-setup
+   the version stamps are machine-checked: `tests/test_dev_env_templates.py` asserts the
+   templates, SKILL.md/standard.md current-version mentions, and the upgrade-guide chain
+   all match `VERSION` (the hk `dev-env-version-sync` step runs it at commit time when
+   skill or test files are staged). Bumping the standard = add the `## vN-1 → vN` guide section
+   first; the tests enumerate every other spot to touch.
 
 Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool). The version lives **only** in `.claude-plugin/plugin.json` — marketplace.json deliberately carries no plugin version (Claude Code uses plugin.json's when both exist) and only a stable one-line description; don't re-add either.
 

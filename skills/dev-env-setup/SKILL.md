@@ -289,7 +289,7 @@ disturbs already-locked versions — it only gates *new* resolutions.
 | **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
 | pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
 
-Only **uv** is checker-enforced for Python repos (see "The standard (v13)"); the rest are recommended
+Only **uv** is checker-enforced for Python repos (see "The standard"); the rest are recommended
 and applied by the setup/upgrade flow when the matching lockfile is present. `exclude-newer` accepts
 a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
 so the window moves forward with the current date.
