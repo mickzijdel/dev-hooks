@@ -1,8 +1,9 @@
 # Putting your app online
 
 "Deploying" means getting your project off your laptop and onto the internet so others can use
-it at a URL. Where you deploy depends on **what kind of thing you built**. Start by answering
-one question:
+it at a URL. Where you deploy depends on **what kind of thing you built** — which usually follows
+from the framework you started with (see [`starter-stacks.md`](starter-stacks.md): Astro and a
+Vite build are static; Next.js and FastAPI run a server). Start by answering one question:
 
 > **Does it have a backend** — a server, a database, logins, anything that runs code *after* the
 > page loads? Or is it just files a browser can open (HTML, CSS, JavaScript, images)?
