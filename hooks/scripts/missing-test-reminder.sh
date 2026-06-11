@@ -14,22 +14,17 @@
 #
 # Opt out per repo/user with DEV_HOOKS_MISSING_TEST=false (in .claude settings "env").
 
-case "${DEV_HOOKS_MISSING_TEST:-}" in
-  false | 0 | no | off) exit 0 ;;
-esac
-
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+reminder_opt_out DEV_HOOKS_MISSING_TEST
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-INPUT=$(cat 2>/dev/null)
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
-
 SENTINEL="[missing-test] new source files without tests this session"
 
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  grep -qF "$SENTINEL" "$TRANSCRIPT" 2>/dev/null && exit 0
-fi
+# Sets INPUT/TRANSCRIPT; exits 0 if the sentinel is already in the transcript.
+reminder_stop_init "$SENTINEL"
 
 FINDINGS=$(
   python3 - "$SELF_DIR/lib" <<'PYEOF'
@@ -150,5 +145,4 @@ PYEOF
 
 MSG="${SENTINEL}. You added these source files this session but I found no matching test for them — add tests before finishing (TDD / \"Always Works\"). If a file genuinely doesn't warrant a test, say so and move on:"$'\n'"$FINDINGS"
 
-jq -cn --arg msg "$MSG" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-exit 2
+reminder_emit_stop "$MSG"

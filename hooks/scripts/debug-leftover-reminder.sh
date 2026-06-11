@@ -12,24 +12,19 @@
 #
 # Opt out per repo/user with DEV_HOOKS_DEBUG_LEFTOVER=false (in .claude settings "env").
 
-case "${DEV_HOOKS_DEBUG_LEFTOVER:-}" in
-  false | 0 | no | off) exit 0 ;;
-esac
-
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+reminder_opt_out DEV_HOOKS_DEBUG_LEFTOVER
 
 # Must be a git repo (diff-based detection needs one).
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-INPUT=$(cat 2>/dev/null)
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
-
 SENTINEL="[debug-leftover] new debug statements detected this session"
 
-# Already nudged this session? Stay silent (prevents a Stop loop).
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  grep -qF "$SENTINEL" "$TRANSCRIPT" 2>/dev/null && exit 0
-fi
+# Sets INPUT/TRANSCRIPT; exits 0 if the sentinel is already in the transcript
+# (already nudged this session — prevents a Stop loop).
+reminder_stop_init "$SENTINEL"
 
 FINDINGS=$(
   python3 - "$SELF_DIR/lib" <<'PYEOF'
@@ -114,5 +109,4 @@ PYEOF
 
 MSG="${SENTINEL}. You introduced these debug statements this session — remove them before finishing (or, if one is intentional, keep it and ignore this):"$'\n'"$FINDINGS"
 
-jq -cn --arg msg "$MSG" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-exit 2
+reminder_emit_stop "$MSG"

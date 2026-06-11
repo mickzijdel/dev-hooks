@@ -24,19 +24,14 @@ esac
 
 ORDERING="Order instructions least- to most-frequently-changed for cache reuse: base image -> system packages -> dependency manifests (COPY package.json/Gemfile/requirements.txt) -> RUN install -> THEN COPY . . (source) -> build -> CMD. See the \`dockerfile\` skill for the full gotchas list (pinning, multi-stage, .dockerignore, non-root USER, exec-form CMD)."
 
-emit() {
-  jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-  exit 0
-}
-
 # --- hadolint present + file on disk: lint every time and report the results ------------
 if command -v hadolint >/dev/null 2>&1; then
   if [ -f "$FILE" ]; then
     OUT=$(hadolint "$FILE" 2>&1)
     if [ -z "$OUT" ]; then
-      emit "hadolint passed clean on $BASE. $ORDERING"
+      reminder_emit "hadolint passed clean on $BASE. $ORDERING"
     else
-      emit "hadolint found issues in $BASE — review and fix before finalizing:"$'\n'"$OUT"$'\n\n'"$ORDERING"
+      reminder_emit "hadolint found issues in $BASE — review and fix before finalizing:"$'\n'"$OUT"$'\n\n'"$ORDERING"
     fi
   fi
   # hadolint present but file not on disk (rare): no install hint, just the reminder below.
@@ -46,10 +41,6 @@ else
 fi
 
 # --- fall back to a once-per-session reminder ------------------------------------------
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-dockerfile"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once dockerfile || exit 0
 
-emit "You just wrote $BASE. $ORDERING$HADOLINT_HINT"
+reminder_emit "You just wrote $BASE. $ORDERING$HADOLINT_HINT"
