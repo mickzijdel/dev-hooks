@@ -21,7 +21,8 @@ A repo is **compliant at v14** when it has all of:
   be `ignore`, **not** `ignorePattern` (inert for paths in jscpd v5; see the exclusions note)
   (vendored/generated dirs incl. `node_modules`, `vendor`, `dist`, `build`). The `missing-test-reminder` hook also reads this file to skip those dirs.
 - **`scripts/run-jscpd.sh`** (all stacks, added in v14) — the shared jscpd runner, copied
-  byte-identical from `templates/run-jscpd.sh`. It is the **single home of the jscpd
+  verbatim from `templates/run-jscpd.sh` (a repo's own hk fix step may re-indent it to local
+  style — fine; never hand-edit the logic, the next policy change should be a plain re-copy). It is the **single home of the jscpd
   version-cooldown policy** (see the version-policy note below) and takes the stack's format
   list as its argument; the hk step runs `bash scripts/run-jscpd.sh <formats>` and CI's audit
   job runs the same with `--require` (offline + no cached jscpd then *fails* the job instead

@@ -38,7 +38,7 @@ A repo is **compliant at v14** when it has all of:
   `ignore` — never `ignorePattern`, inert in jscpd v5).
 - **`scripts/run-jscpd.sh`** (added in v14) — the shared jscpd runner holding the
   version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
-  so the two gates can't drift. Copied byte-identical from the template.
+  so the two gates can't drift. Copied verbatim from the template (repo formatters may re-indent it; never hand-edit the logic).
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
   hooks.

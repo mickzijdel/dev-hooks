@@ -482,8 +482,9 @@ CI, where an unrunnable jscpd should fail the job instead of warn-and-pass (pre-
 keeps warn-and-pass so a commit is never blocked by an unreachable registry). To reach v14:
 
 1. **Copy the runner:** `references/templates/run-jscpd.sh` → `scripts/run-jscpd.sh`,
-   `chmod +x` it. Don't edit the body — keeping it byte-identical across repos makes the
-   next policy change a plain file copy.
+   `chmod +x` it. Don't hand-edit the logic — the next policy
+   change should be a plain re-copy (your repo's hk fix step may re-indent the file to
+   local style; that's fine).
 2. **Point hk at it.** Replace the jscpd step's inline `check` command in `hk.pkl` with
    (keep the repo's existing `-f` format list, e.g. `python` or
    `ruby,erb,javascript,typescript,css,scss,sass,vue`):

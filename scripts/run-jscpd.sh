@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Shared jscpd runner — the single home of the version-cooldown policy, called by both
 # the hk pre-commit/`check` gate and the CI audit job so the two can't drift.
-# Part of the dev-env standard (dev-hooks:dev-env-setup, v14); keep it byte-identical
-# across repos so the next policy change is a plain file copy.
+# Part of the dev-env standard (dev-hooks:dev-env-setup, v14); don't edit the logic by
+# hand — the next policy change should be a plain re-copy of the template (a repo's own
+# formatter may re-indent this file to local style; that's fine).
 #
 # Usage: run-jscpd.sh [--require] <formats>
 #   <formats>   comma-separated jscpd format list for -f (e.g. "python,bash")
