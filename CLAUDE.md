@@ -10,7 +10,7 @@ Make sure to check all of the following and make sure they are up-to-date after 
    drift out of sync silently (e.g. a version stamp bumped in one template but not its
    siblings). Update every variant, not just the one you started with.
 
-Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool).
+Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool). The version lives **only** in `.claude-plugin/plugin.json` — marketplace.json deliberately carries no plugin version (Claude Code uses plugin.json's when both exist) and only a stable one-line description; don't re-add either.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 

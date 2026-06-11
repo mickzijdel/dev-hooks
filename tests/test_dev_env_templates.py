@@ -16,7 +16,13 @@ import pytest
 from conftest import ROOT
 
 TEMPLATES_DIR = ROOT / "skills" / "dev-env-setup" / "references" / "templates"
-CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml"]
+CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml", "ci.js.yml"]
+MISE_TEMPLATES = [
+    "mise.python.toml",
+    "mise.ruby.toml",
+    "mise.shell.toml",
+    "mise.js.toml",
+]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
 MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
@@ -81,6 +87,21 @@ def test_gitleaks_template_allowlists_gitignored_artifacts():
     # Allowlist must cover the gitignored secret/artifact paths the standard relies on.
     for needle in (r"^\.env", "log/", r"config/credentials/.*\.key"):
         assert needle in text, f".gitleaks.toml allowlist is missing {needle!r}"
+
+
+@pytest.mark.parametrize("name", MISE_TEMPLATES)
+def test_mise_template_version_stamp_matches_version_file(name):
+    """Every mise template's DEV_ENV_VERSION must equal the VERSION source of truth.
+    Regression guard: the python/ruby/shell templates sat at "9" through three standard
+    bumps, so freshly scaffolded repos immediately flagged as needing a v9→v12 upgrade."""
+    version = VERSION_FILE.read_text().strip()
+    m = re.search(
+        r'^DEV_ENV_VERSION = "(\d+)"$', (TEMPLATES_DIR / name).read_text(), re.M
+    )
+    assert m is not None, f"{name} is missing a DEV_ENV_VERSION stamp"
+    assert m.group(1) == version, (
+        f"{name} stamps v{m.group(1)}, VERSION file says v{version}"
+    )
 
 
 def test_skill_doc_matches_version_stamp():
