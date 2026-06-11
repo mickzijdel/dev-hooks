@@ -1,7 +1,7 @@
 # Picking what to build with
 
 When someone's starting a new project, the first question isn't "which framework" — it's **what
-are you building?** Answer that and the choice is usually obvious. Four common cases cover most
+are you building?** Answer that and the choice is usually obvious. Five common cases cover most
 beginners. Pick the simplest one that fits; you can always grow into something bigger later.
 
 > Match the framework to the **deploy target** too — see [`deploy.md`](deploy.md). A static site
@@ -100,12 +100,44 @@ bin/rails generate scaffold post title:string body:text   # a full CRUD screen, 
 bin/rails server              # http://localhost:3000
 ```
 
+As the app grows, two Rails-world habits keep it tidy and modern. Build your UI from
+**[ViewComponents](https://viewcomponent.org)** — reusable, unit-testable pieces of HTML instead
+of sprawling templates — and lean on **Hotwire**: **Turbo** updates and navigates the page over
+the wire (so it feels like a single-page app without being one), with a little **Stimulus**
+JavaScript sprinkled in only where you genuinely need it. Together they give the app a responsive,
+modern feel while keeping the code server-side and beginner-readable.
+
 Prefer to stay in Python with no new language to install? **[Django](https://www.djangoproject.com)**
 is the equivalent — same batteries-included, admin-out-of-the-box philosophy — and it pairs with
 the `uv` setup (`uv add django`).
 
 **Deploy:** runs a server *and* a database → **Railway, Render, or Fly.io** (see
 [`deploy.md`](deploy.md)).
+
+## 5. A script, tool, or automation → **Python + uv** (usually)
+
+A one-off script, a scheduled job, a scraper, a data-cleaning task, a small command-line tool —
+code with no web UI that just *does a thing*.
+
+Default to **Python**, run with **[uv](https://docs.astral.sh/uv/)** (already installed by this
+skill). uv makes single-file scripts genuinely pleasant: a script can declare its own dependencies
+inline, so there's no project to set up and no virtualenv to manage.
+
+```bash
+uv run script.py                       # run a one-file script
+uv add --script script.py requests     # record a dependency inside that script (PEP 723)
+```
+
+For a real command-line tool with options and `--help`, reach for
+**[Typer](https://typer.tiangolo.com)** (`uv add typer`) — it turns plain functions into a polished
+CLI.
+
+But don't be dogmatic here: pick the lightest tool for the job. A three-line task might just be a
+shell script; if you're already inside a JavaScript project, a Node script is fine. Let the
+specific task decide — Python + uv is the sensible default, not a rule.
+
+**Deploy:** usually nothing to deploy — run it locally, or on a schedule with `cron` or a CI job
+(e.g. GitHub Actions).
 
 ## A few things you'll probably need
 
@@ -130,5 +162,7 @@ Whatever you pick above, these come up fast — reach for the boring, standard a
 - It's a clickable app with lots of live state → **React + Vite**.
 - It's a "sign up and manage your stuff" app with a database → **Rails** (or Django).
 - It has no UI of its own, or it's the data/logic behind one → **FastAPI**.
+- It just *does a thing* with no web UI (a script, job, scraper, CLI) → **Python + uv** (or
+  whatever's lightest).
 - It's a mix → start with the one piece you need first and add the others when you actually need
   them. Don't build all of it on day one.
