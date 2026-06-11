@@ -178,7 +178,10 @@ Two pieces, both written to the user's `~/.claude/` after showing them the diff:
    *mutating* commands still ask. Start from
    [`references/templates/settings.allowlist.json`](references/templates/settings.allowlist.json)
    and merge it into `~/.claude/settings.json` using the **[[update-config]]** skill (don't
-   hand-edit settings.json — that skill owns it). After they've worked for a bit, the
+   hand-edit settings.json — that skill owns it). The template also sets
+   `DEV_HOOKS_GUARD_MAIN=1`, switching on the dangerous-command guard's **opt-in** "confirm
+   before committing/pushing straight to `main`" check — right for someone building the
+   branch-and-PR habit. After they've worked for a bit, the
    **[[fewer-permission-prompts]]** skill tailors the list to their actual usage.
 2. **Global CLAUDE.md defaults** — beginner-safe working rules (plan big tasks first, keep
    changes small and committed, never commit secrets, confirm before destructive ops). Copy

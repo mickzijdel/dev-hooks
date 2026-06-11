@@ -59,7 +59,9 @@ approved, you merge it, and `main` now includes your work. `gh pr create` opens 
 terminal.
 
 This is why the dev-hooks **dangerous-command guard** asks you to confirm if you try to commit
-or push straight to `main` — it's nudging you toward a branch + PR instead.
+or push straight to `main` — it's nudging you toward a branch + PR instead. (That check is
+switched on by the setup's starter settings; see
+[`claude-config.md`](claude-config.md).)
 
 ## Undoing mistakes (nothing is as scary as it looks)
 

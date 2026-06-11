@@ -1,5 +1,8 @@
 {
-  "//": "Starter permissions config for a beginner's ~/.claude/settings.json. MERGE this in with the update-config skill (don't hand-edit). 'allow' pre-approves safe, read-only inspection commands so prompts only appear for commands that change something; anything that writes, deletes, installs, moves, or pushes is deliberately NOT listed, so it still asks. 'deny' blocks reading secret files outright. This is stack-agnostic on purpose — tailor it to what you actually run (Rails tasks, a browser driver, project MCP servers, etc.) with the fewer-permission-prompts skill once you've been working for a bit.",
+  "//": "Starter permissions config for a beginner's ~/.claude/settings.json. MERGE this in with the update-config skill (don't hand-edit). 'allow' pre-approves safe, read-only inspection commands so prompts only appear for commands that change something; anything that writes, deletes, installs, moves, or pushes is deliberately NOT listed, so it still asks. 'deny' blocks reading secret files outright. 'env' turns on the dangerous-command guard's opt-in commit/push-on-main check — right for beginners building the branch-and-PR habit; drop it once working directly on main is a deliberate choice. This is stack-agnostic on purpose — tailor it to what you actually run (Rails tasks, a browser driver, project MCP servers, etc.) with the fewer-permission-prompts skill once you've been working for a bit.",
+  "env": {
+    "DEV_HOOKS_GUARD_MAIN": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(ls:*)",

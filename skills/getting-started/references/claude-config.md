@@ -16,8 +16,10 @@ The starter list is [`templates/settings.allowlist.json`](templates/settings.all
 It allows safe inspection commands (listing files, reading Git state, viewing files, any
 `--version`/`--help`) and leaves everything that writes, deletes, installs, or pushes still
 asking. It also has a small **deny** list that blocks reading secret files outright
-(`.env`, `.env.*`, `secrets/`), so those never end up in the agent's context. It's
-stack-agnostic on purpose — tailor it to what you actually run with the
+(`.env`, `.env.*`, `secrets/`), so those never end up in the agent's context, and an **env**
+entry (`DEV_HOOKS_GUARD_MAIN=1`) that switches on the guard's opt-in "confirm before
+committing/pushing straight to `main`" check — right while you're building the branch-and-PR
+habit. It's stack-agnostic on purpose — tailor it to what you actually run with the
 **fewer-permission-prompts** skill once you've been working for a bit.
 
 **Don't hand-edit `settings.json`.** Use the **update-config** skill — it owns that file and
@@ -46,8 +48,10 @@ what the agent intended:
   or home directory, a fork bomb, formatting/overwriting a drive, making the whole system
   world-writable.
 - **Pauses for your confirmation** on risky-but-legitimate ones — `rm -rf`, throwing away
-  uncommitted work (`git reset --hard`, `git clean -f`), force-pushing, committing/pushing
-  straight to `main`, piping a downloaded script into a shell, or `sudo`.
+  uncommitted work (`git reset --hard`, `git clean -f`), force-pushing, piping a downloaded
+  script into a shell, or `sudo`. With the seeded settings it also asks before
+  committing/pushing straight to `main` (that check is opt-in, via `DEV_HOOKS_GUARD_MAIN=1`
+  in the settings template above).
 - **Stays out of the way** for everything else.
 
 Every block/confirmation comes with a plain-language reason so you learn *why* it's risky.

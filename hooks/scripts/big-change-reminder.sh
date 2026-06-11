@@ -1,8 +1,9 @@
 #!/bin/bash
-# Stop: when a single session has produced a very large, uncommitted change, nudge Claude
-# (exit 2) to slow down — commit in smaller pieces, get a review, and consider plan mode for
-# the next chunk. Aimed at people new to coding, for whom a 2000-line uncommitted diff is hard
-# to review and easy to lose.
+# Stop: when the session ends with a very large uncommitted change in the working tree,
+# nudge Claude (exit 2) to slow down — commit in smaller pieces, get a review, and consider
+# plan mode for the next chunk. Aimed at people new to coding, for whom a 2000-line
+# uncommitted diff is hard to review and easy to lose. (It measures the whole tree, so
+# pre-existing uncommitted work counts too — that diff is just as unreviewed.)
 #
 # Stays silent when a multi-session plan is already in progress (.claude/current_plan.md
 # exists) — that means the work is already being driven deliberately. Fires at most once per
@@ -30,16 +31,21 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 reminder_changed_files # sets CHANGED (staged + unstaged + untracked filenames)
 [ -z "$CHANGED" ] && exit 0
 
-files=$(printf '%s\n' "$CHANGED" | grep -c .)
+# Files: tracked changes from porcelain status + untracked files enumerated one by one
+# (porcelain collapses an untracked directory into a single entry, hiding its contents).
+tracked_files=$(git status --porcelain 2>/dev/null | grep -vc '^??')
 
-# Changed lines: additions across tracked files (numstat) + every line of untracked files.
+# Added lines: additions across tracked files (numstat) + every line of untracked files.
 tracked_added=$(git diff HEAD --numstat 2>/dev/null | awk '{ s += ($1 == "-" ? 0 : $1) } END { print s + 0 }')
+untracked_files=0
 untracked_added=0
 while IFS= read -r f; do
   [ -f "$f" ] || continue
+  untracked_files=$((untracked_files + 1))
   n=$(wc -l <"$f" 2>/dev/null || echo 0)
   untracked_added=$((untracked_added + n))
 done < <(git ls-files --others --exclude-standard 2>/dev/null)
+files=$((tracked_files + untracked_files))
 lines=$((tracked_added + untracked_added))
 
 FILES_THRESHOLD=${DEV_HOOKS_BIG_CHANGE_FILES:-25}
@@ -49,6 +55,6 @@ if [ "$files" -lt "$FILES_THRESHOLD" ] && [ "$lines" -lt "$LINES_THRESHOLD" ]; t
   exit 0
 fi
 
-MSG="$SENTINEL: this session has changed $files file(s) / ~$lines lines and none of it is committed yet. A change this big is hard to review and easy to lose. Before finishing: commit the working pieces in small, focused commits (each with a clear message), make sure tests pass, and get a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
+MSG="$SENTINEL: the working tree holds $files changed file(s) / ~$lines added lines and none of it is committed yet. A change this big is hard to review and easy to lose. Before finishing: commit the working pieces in small, focused commits (each with a clear message), make sure tests pass, and get a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
 
 reminder_emit_stop "$MSG"

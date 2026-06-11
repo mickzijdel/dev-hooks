@@ -80,6 +80,12 @@ def test_settings_allowlist_is_valid_json():
     assert not any("push" in entry for entry in allow)
 
 
+def test_settings_allowlist_seeds_main_guard_opt_in():
+    # Beginners get the guard's opt-in commit/push-on-main confirmation switched on.
+    data = json.loads(ALLOWLIST.read_text())
+    assert data["env"]["DEV_HOOKS_GUARD_MAIN"] == "1"
+
+
 def test_claude_defaults_template_present():
     text = CLAUDE_DEFAULTS.read_text()
     assert text.strip()

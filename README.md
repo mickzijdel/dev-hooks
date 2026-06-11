@@ -8,7 +8,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 
 | Event | Script | Purpose |
 |-------|--------|---------|
-| `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, committing/pushing straight to `main`/`master`, `curl … \| bash`, `sudo`). Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
+| `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by `getting-started`): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `scaffold-reminder.sh` | When Claude **creates a new** project manifest or framework entrypoint by hand (`Gemfile`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `mix.exs`, `composer.json`, `build.gradle`/`pom.xml`, `manage.py`, `config/application.rb`, …), remind it to run the framework's official generator (`rails new`, `npm create vite@latest`, `django-admin startproject`, `cargo new`, …) instead of scaffolding from memory — and to check the framework's current stable release and the generator's current flags first, unless the user pinned a version. Write-tool only; files git already tracks are skipped. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_SCAFFOLD=false`. |
@@ -25,7 +25,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 | `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
-| `Stop` | `big-change-reminder.sh` | On stop, if this session produced a very large **uncommitted** change (default: ≥ 25 files or ≥ 800 changed lines), nudge Claude (exit 2) to slow down — commit the working pieces in small, focused commits, run tests, get a review, and consider plan mode for the next chunk. Stays silent when a multi-session plan is already in progress (`.claude/current_plan.md`). Aimed at beginners, for whom a giant uncommitted diff is hard to review and easy to lose. Fires once per session. Thresholds tunable via `DEV_HOOKS_BIG_CHANGE_FILES`/`DEV_HOOKS_BIG_CHANGE_LINES`; opt out with `DEV_HOOKS_BIG_CHANGE=false`. |
+| `Stop` | `big-change-reminder.sh` | On stop, if the working tree holds a very large **uncommitted** change (default: ≥ 25 files or ≥ 800 added lines), nudge Claude (exit 2) to slow down — commit the working pieces in small, focused commits, run tests, get a review, and consider plan mode for the next chunk. Stays silent when a multi-session plan is already in progress (`.claude/current_plan.md`). Aimed at beginners, for whom a giant uncommitted diff is hard to review and easy to lose. Fires once per session. Thresholds tunable via `DEV_HOOKS_BIG_CHANGE_FILES`/`DEV_HOOKS_BIG_CHANGE_LINES`; opt out with `DEV_HOOKS_BIG_CHANGE=false`. |
 
 ## Skills
 
@@ -203,12 +203,19 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   (risky-but-legitimate — forces a human confirmation); for everything else it stays silent and
   the normal permission flow proceeds. It never emits `allow`, so it can't widen your own
   allowlist. Detection is deliberately conservative — a short list of well-known footguns, not
-  "anything that writes". For commit/push it checks the current branch (`git branch
-  --show-current` in the call's cwd) to catch working directly on `main`/`master`. Silence it
-  with `DEV_HOOKS_BASH_GUARD=false` (in `.claude/settings.local.json` `"env"`).
-- `big-change-reminder.sh` runs only in a git repo and counts this session's uncommitted change
-  (changed files from `git status --porcelain`, added lines from `git diff HEAD --numstat` plus
-  the line count of untracked files). It fires (exit 2, once per session via a transcript
+  "anything that writes" — and it splits the command into simple-command segments (`;`, `&`,
+  `|`, newlines) so flags and targets are only judged against the command they belong to
+  (`cd ~ && rm -rf build/` is not `rm -rf ~`; a commit message that *mentions* `mkfs` is not
+  `mkfs`). The commit/push-on-`main`/`master` check is **opt-in** via `DEV_HOOKS_GUARD_MAIN=1`
+  (the `getting-started` skill seeds it for beginners — solo main-branch workflows aren't
+  prompted on every commit); when on, it checks the current branch with `git branch
+  --show-current` in the call's cwd. Silence the whole guard with
+  `DEV_HOOKS_BASH_GUARD=false` (in `.claude/settings.local.json` `"env"`).
+- `big-change-reminder.sh` runs only in a git repo and sizes the **uncommitted** working tree
+  (tracked changes from `git status --porcelain` plus untracked files enumerated via
+  `git ls-files --others` — so files inside a brand-new directory are counted individually;
+  added lines from `git diff HEAD --numstat` plus the line count of untracked files). It
+  fires (exit 2, once per session via a transcript
   sentinel) only above the thresholds (`DEV_HOOKS_BIG_CHANGE_FILES` default 25,
   `DEV_HOOKS_BIG_CHANGE_LINES` default 800) and stays silent when `.claude/current_plan.md`
   exists — a plan already means the work is deliberate. Silence it with

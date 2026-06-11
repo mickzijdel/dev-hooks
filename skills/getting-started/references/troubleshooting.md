@@ -63,8 +63,10 @@ Missing system libraries. Re-run with system deps (needs `sudo`, so confirm):
 
 If a command is genuinely safe and you want it through, run it yourself in a terminal (outside
 the agent), or temporarily set `DEV_HOOKS_BASH_GUARD=false` in your Claude settings `"env"`.
-For the *big-change* nudge, set `DEV_HOOKS_BIG_CHANGE=false`. Turn them back on afterwards —
-they're cheap insurance.
+If it's only the commit/push-on-`main` confirmation you've outgrown (you now work on `main`
+deliberately), remove just `DEV_HOOKS_GUARD_MAIN` from the settings `"env"` and keep the rest
+of the guard. For the *big-change* nudge, set `DEV_HOOKS_BIG_CHANGE=false`. Turn them back on
+afterwards — they're cheap insurance.
 
 ## I want to undo something Claude did
 
