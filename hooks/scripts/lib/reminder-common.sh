@@ -73,6 +73,39 @@ reminder_stop_init() {
   fi
 }
 
+# ── PreToolUse(Bash) helpers ─────────────────────────────────────────────────────
+# PreToolUse preamble for Bash-command guards: opt-out, read stdin, and set in the
+# caller's scope:
+#   INPUT    — raw hook stdin
+#   COMMAND  — .tool_input.command (the bash command about to run; may be multi-line)
+#   CWD      — .cwd (where it will run; falls back to $PWD)
+#   SESSION  — .session_id (or "nosession")
+# Exits 0 (silent → normal permission flow) on opt-out or when there's no command.
+# COMMAND is read on its own (not via mapfile) so a multi-line command isn't truncated.
+reminder_pre_init() {
+  reminder_opt_out "$1"
+  INPUT=$(cat 2>/dev/null)
+  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
+  [ -z "$COMMAND" ] && exit 0
+  local _pi
+  mapfile -t _pi < <(printf '%s' "$INPUT" |
+    jq -r '(.cwd // ""), (.session_id // "nosession")' 2>/dev/null)
+  # shellcheck disable=SC2034
+  CWD=${_pi[0]:-$PWD}
+  [ -z "$CWD" ] && CWD=$PWD
+  # shellcheck disable=SC2034
+  SESSION=${_pi[1]:-nosession}
+}
+
+# Emit a PreToolUse permission decision ("deny" | "ask") with a reason, then exit 0.
+# Safe commands never call this — the hook stays silent and the normal permission flow
+# proceeds. We never emit "allow": that would bypass the user's own allowlist.
+reminder_emit_decision() {
+  jq -cn --arg decision "$1" --arg reason "$2" \
+    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: $decision, permissionDecisionReason: $reason}}'
+  exit 0
+}
+
 # Fire-at-most-once guard, keyed on hook name + $SESSION (+ an optional extra key,
 # e.g. a manifest category or file hash). Marker files live under ${TMPDIR}. Needs
 # $SESSION, i.e. reminder_init must have run. Callers:

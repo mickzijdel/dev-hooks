@@ -1,0 +1,50 @@
+{
+  "//": "Starter permissions config for a beginner's ~/.claude/settings.json. MERGE this in with the update-config skill (don't hand-edit). 'allow' pre-approves safe, read-only inspection commands so prompts only appear for commands that change something; anything that writes, deletes, installs, moves, or pushes is deliberately NOT listed, so it still asks. 'deny' blocks reading secret files outright. 'env' turns on the dangerous-command guard's opt-in commit/push-on-main check — right for beginners building the branch-and-PR habit; drop it once working directly on main is a deliberate choice. This is stack-agnostic on purpose — tailor it to what you actually run (Rails tasks, a browser driver, project MCP servers, etc.) with the fewer-permission-prompts skill once you've been working for a bit.",
+  "env": {
+    "DEV_HOOKS_GUARD_MAIN": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(tree:*)",
+      "Bash(file:*)",
+      "Bash(stat:*)",
+      "Bash(which:*)",
+      "Bash(echo:*)",
+      "Bash(date)",
+      "Bash(uname:*)",
+      "Bash(env)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(* --version)",
+      "Bash(* --help)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote -v)",
+      "Bash(git stash list)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh auth status)",
+      "Bash(mise ls:*)",
+      "Bash(mise outdated:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ]
+  }
+}

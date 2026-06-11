@@ -8,6 +8,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 
 | Event | Script | Purpose |
 |-------|--------|---------|
+| `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by `getting-started`): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `scaffold-reminder.sh` | When Claude **creates a new** project manifest or framework entrypoint by hand (`Gemfile`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `mix.exs`, `composer.json`, `build.gradle`/`pom.xml`, `manage.py`, `config/application.rb`, …), remind it to run the framework's official generator (`rails new`, `npm create vite@latest`, `django-admin startproject`, `cargo new`, …) instead of scaffolding from memory — and to check the framework's current stable release and the generator's current flags first, unless the user pinned a version. Write-tool only; files git already tracks are skipped. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_SCAFFOLD=false`. |
@@ -24,6 +25,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 | `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
+| `Stop` | `big-change-reminder.sh` | On stop, if the working tree holds a very large **uncommitted** change (default: ≥ 25 files or ≥ 800 added lines), nudge Claude (exit 2) to slow down — commit the working pieces in small, focused commits, run tests, get a review, and consider plan mode for the next chunk. Stays silent when a multi-session plan is already in progress (`.claude/current_plan.md`). Aimed at beginners, for whom a giant uncommitted diff is hard to review and easy to lose. Fires once per session. Thresholds tunable via `DEV_HOOKS_BIG_CHANGE_FILES`/`DEV_HOOKS_BIG_CHANGE_LINES`; opt out with `DEV_HOOKS_BIG_CHANGE=false`. |
 
 ## Skills
 
@@ -34,6 +36,8 @@ secrets-workflow helpers adapted from [Nate Berkopec's dotfiles](https://github.
 
 | Skill | Use when |
 |-------|----------|
+| `getting-started` | Setting up a brand-new machine for AI-assisted coding (or bringing an existing setup up to date) — idempotently installs/upgrades a baseline toolchain via mise (node/pnpm/Python + uv, jq, ripgrep, gitleaks, gh), VS Code + the Claude Code extension, Docker, the Playwright browsers, and the dev-hooks/Superpowers/vischeck plugins; sets up a GitHub account + git identity; seeds beginner-safe Claude config (a permissions allowlist + CLAUDE.md defaults); orients first-timers on Git; and hands off to `starting-a-project` once they're ready to build. Detect-and-confirm: it pauses before sudo, GUI installs, and `~/.claude` writes. macOS, Linux, and WSL2. |
+| `starting-a-project` | Deciding what to build a new project with and getting it online — a "what are you building?" decision tree mapping common beginner goals to a concrete stack (a content website → Astro; an interactive app → React + Vite/Next.js; a database-backed web app → Rails/Django; an API → FastAPI; a script/automation → Python + uv; a phone app → Expo; a data dashboard → Streamlit; plus desktop/game/extension/bot), each with a scaffold command, styling (Tailwind, shadcn/ui), database and auth pointers, and a matching deploy target. Then a deploy guide from static sites (GitHub Pages) through full-app hosts and containers. Use for "what should I use to build X?" or "how do I put this online?". Companion to `getting-started`. |
 | `but-for-real` | About to claim something is done/fixed/working — forces re-reading the real code, running it, and separating verified from assumed. |
 | `premortem` | Before committing to a non-trivial plan — imagines it already failed and works backward to failure modes, hidden assumptions, and a revised plan. |
 | `board` | You want hard, independent critique — convenes a panel of real parallel advisor subagents, then a chairman synthesizes. |
@@ -193,6 +197,43 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   It can false-positive on files that legitimately need no test — Claude is told to say so and
   move on. Silence it with `DEV_HOOKS_MISSING_TEST=false` (in `.claude/settings.local.json`
   `"env"`).
+- `dangerous-command-guard.sh` is the only **PreToolUse** hook and the only one that can
+  *block* a tool call. It reads the bash command from the hook payload (never runs or modifies
+  it) and emits a `permissionDecision` of `deny` (catastrophic, irreversible commands) or `ask`
+  (risky-but-legitimate — forces a human confirmation); for everything else it stays silent and
+  the normal permission flow proceeds. It never emits `allow`, so it can't widen your own
+  allowlist. Detection is deliberately conservative — a short list of well-known footguns, not
+  "anything that writes" — and it splits the command into simple-command segments (`;`, `&`,
+  `|`, newlines) so flags and targets are only judged against the command they belong to
+  (`cd ~ && rm -rf build/` is not `rm -rf ~`; a commit message that *mentions* `mkfs` is not
+  `mkfs`). The commit/push-on-`main`/`master` check is **opt-in** via `DEV_HOOKS_GUARD_MAIN=1`
+  (the `getting-started` skill seeds it for beginners — solo main-branch workflows aren't
+  prompted on every commit); when on, it checks the current branch with `git branch
+  --show-current` in the call's cwd. Silence the whole guard with
+  `DEV_HOOKS_BASH_GUARD=false` (in `.claude/settings.local.json` `"env"`).
+- `big-change-reminder.sh` runs only in a git repo and sizes the **uncommitted** working tree
+  (tracked changes from `git status --porcelain` plus untracked files enumerated via
+  `git ls-files --others` — so files inside a brand-new directory are counted individually;
+  added lines from `git diff HEAD --numstat` plus the line count of untracked files). It
+  fires (exit 2, once per session via a transcript
+  sentinel) only above the thresholds (`DEV_HOOKS_BIG_CHANGE_FILES` default 25,
+  `DEV_HOOKS_BIG_CHANGE_LINES` default 800) and stays silent when `.claude/current_plan.md`
+  exists — a plan already means the work is deliberate. Silence it with
+  `DEV_HOOKS_BIG_CHANGE=false`.
+- The `getting-started` skill bootstraps a *machine* (not a repo): it ships an idempotent audit
+  script (`scripts/onboard_check.sh`, read-only — detects, never installs) and a prose workflow
+  that installs/upgrades only what's missing, pausing for confirmation before any sudo, GUI
+  install, or `~/.claude` write. Its Claude-config templates (`references/templates/`) are seeded
+  via the `update-config` skill, and it points first-timers at a bundled Git reference and, once
+  they're ready to build, hands off to the `starting-a-project` skill. It targets macOS, Linux,
+  and WSL2 (bash); on native Windows it sets up WSL2 first. Companion to the dangerous-command
+  guard, which enforces at runtime what the seeded CLAUDE.md defaults ask for.
+- The `starting-a-project` skill is the build-and-ship companion to `getting-started`: a
+  "what are you building?" decision tree (`references/starter-stacks.md`) mapping each common
+  beginner goal to a stack + scaffold command, and a deploy guide (`references/deploy.md`) from
+  static sites through full-app hosts and containers. It's advisory — Claude reads it to
+  recommend, and may run the scaffold command — and stays framework-agnostic, steering to the
+  simplest option that fits.
 - The content-reading hooks (`secret-plaintext-reminder.sh`, `inline-svg-reminder.sh`) share
   their payload extraction via `hooks/scripts/lib/reminder-common.sh`, which understands
   Write `content`, Edit `new_string`/`old_string`, and MultiEdit `edits[]` alike.

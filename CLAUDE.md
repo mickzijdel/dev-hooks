@@ -27,7 +27,11 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_old_content` (CONTENT/OLD across Write content, Edit new/old_string, and
   MultiEdit edits[]), `reminder_fire_once <name> [extra]` (once-per-session marker; needs
   $SESSION from reminder_init), and `reminder_emit <msg>` (advisory additionalContext +
-  exit 0). Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  exit 0). PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
+  reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
+  `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
+  never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
+  so the normal permission flow proceeds). Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT + the once-per-session sentinel guard), `reminder_changed_files`
   (CHANGED from porcelain status), and `reminder_emit_stop <msg>` (continue:false + exit 2).
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
