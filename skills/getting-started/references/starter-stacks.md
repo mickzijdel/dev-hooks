@@ -1,8 +1,9 @@
 # Picking what to build with
 
 When someone's starting a new project, the first question isn't "which framework" — it's **what
-are you building?** Answer that and the choice is usually obvious. Five common cases cover most
-beginners. Pick the simplest one that fits; you can always grow into something bigger later.
+are you building?** Answer that and the choice is usually obvious. Seven common cases cover most
+beginners, with a few rarer ones listed at the end. Pick the simplest one that fits; you can
+always grow into something bigger later.
 
 > Match the framework to the **deploy target** too — see [`deploy.md`](deploy.md). A static site
 > goes almost anywhere (including free GitHub Pages); an app that runs a server needs a host that
@@ -139,6 +140,62 @@ specific task decide — Python + uv is the sensible default, not a rule.
 **Deploy:** usually nothing to deploy — run it locally, or on a schedule with `cron` or a CI job
 (e.g. GitHub Actions).
 
+## 6. A phone app → **Expo** (React Native)
+
+An app people install on their iPhone or Android — not a website they visit in a browser.
+
+**[Expo](https://expo.dev)** is the friendliest way in, and it's **[React
+Native](https://reactnative.dev)** underneath, so the React you'd learn in option 2 carries
+straight over. It handles the painful native-build machinery for you, and the **Expo Go** app lets
+you see your app running on your own phone instantly while you develop.
+
+```bash
+pnpm create expo-app@latest my-app && cd my-app
+pnpm start                    # scan the QR code with the Expo Go app to run it on your phone
+```
+
+One reality check: a real phone app is more involved than a website — to ship it you'll eventually
+deal with App Store / Play Store accounts and review. But for learning and sharing with friends,
+Expo Go needs none of that.
+
+**Deploy:** to the app stores with **EAS Build** (`eas build`), Expo's hosted build-and-submit
+service. For quick sharing, just send people the Expo Go link.
+
+## 7. A data app or dashboard → **Streamlit**
+
+You have some data — a CSV, a spreadsheet, query results — and you want to explore it, chart it,
+or put a simple interactive dashboard in front of it.
+
+**[Streamlit](https://streamlit.io)** turns a plain Python script into a web app with charts,
+tables, sliders, and inputs — no front-end code at all. It pairs perfectly with the Python + `uv`
+already installed, and it's the fast way to make data *clickable* without learning React.
+
+```bash
+uv add streamlit
+uv run streamlit run app.py   # opens a live dashboard in your browser
+```
+
+Just exploring rather than building something to share? A **Jupyter notebook** (`uv add
+jupyterlab`, then `uv run jupyter lab`) is the other common Python answer. (If you later need a
+*polished, branded* dashboard, that's really a web app — option 2 or 3.)
+
+**Deploy:** free on **[Streamlit Community Cloud](https://streamlit.io/cloud)** (point it at a
+GitHub repo), or any server host (see [`deploy.md`](deploy.md)).
+
+## Other things people build
+
+These come up less often, but if that's what you're after, here's the short answer:
+
+- **A desktop app** (installs on Mac / Windows / Linux) → **[Tauri](https://tauri.app)**: you write
+  a normal web front end and it wraps it in a small native window. (**Electron** is the older,
+  heavier, more battle-tested alternative.)
+- **A game** → in the browser, **[Phaser](https://phaser.io)** (JavaScript); as a desktop or
+  learning project, **[pygame](https://www.pygame.org)** (`uv add pygame`).
+- **A browser extension** → plain HTML/JS against the browser's extension APIs;
+  **[WXT](https://wxt.dev)** scaffolds and bundles it for you.
+- **A Discord / Slack bot** → Python with **discord.py** (`uv add discord.py`) or Node with
+  **discord.js** — essentially option 5 (automation) talking to a chat platform's API.
+
 ## A few things you'll probably need
 
 Whatever you pick above, these come up fast — reach for the boring, standard answer:
@@ -164,5 +221,7 @@ Whatever you pick above, these come up fast — reach for the boring, standard a
 - It has no UI of its own, or it's the data/logic behind one → **FastAPI**.
 - It just *does a thing* with no web UI (a script, job, scraper, CLI) → **Python + uv** (or
   whatever's lightest).
+- People install it on their phone → **Expo**.
+- It's mostly charts and tables over some data → **Streamlit**.
 - It's a mix → start with the one piece you need first and add the others when you actually need
   them. Don't build all of it on day one.
