@@ -8,13 +8,13 @@ referenced by a hook script must appear in README.md.
 
 import re
 
-from conftest import HOOKS, ROOT
+from conftest import DEV_HOOKS, HOOKS
 
 ENV_VAR = re.compile(r"DEV_HOOKS_[A-Z][A-Z_]*")
 
 
 def test_every_hook_env_var_is_documented_in_readme():
-    readme_vars = set(ENV_VAR.findall((ROOT / "README.md").read_text()))
+    readme_vars = set(ENV_VAR.findall((DEV_HOOKS / "README.md").read_text()))
     missing = {}
     # Top-level hook scripts only: lib/ helpers document vars generically ("DEV_HOOKS_X")
     # and are covered through the hooks that pass them real names.

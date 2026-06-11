@@ -13,9 +13,9 @@ import re
 
 import pytest
 
-from conftest import ROOT
+from conftest import DEV_HOOKS
 
-TEMPLATES_DIR = ROOT / "skills" / "dev-env-setup" / "references" / "templates"
+TEMPLATES_DIR = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "templates"
 CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml", "ci.js.yml"]
 MISE_TEMPLATES = [
     "mise.python.toml",
@@ -23,11 +23,13 @@ MISE_TEMPLATES = [
     "mise.shell.toml",
     "mise.js.toml",
 ]
-VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
-SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
-STANDARD_MD = ROOT / "skills" / "dev-env-setup" / "references" / "standard.md"
-UPGRADE_GUIDE = ROOT / "skills" / "dev-env-setup" / "references" / "upgrade-guide.md"
-MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
+VERSION_FILE = DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION"
+SKILL_MD = DEV_HOOKS / "skills" / "dev-env-setup" / "SKILL.md"
+STANDARD_MD = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "standard.md"
+UPGRADE_GUIDE = (
+    DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "upgrade-guide.md"
+)
+MISSING_TEST_HOOK = DEV_HOOKS / "hooks" / "scripts" / "missing-test-reminder.sh"
 GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
 
 # Templates carrying shebang-based companion-step detectors for extensionless scripts.

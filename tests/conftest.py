@@ -11,9 +11,13 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+DEV_HOOKS = ROOT / "plugins" / "dev-hooks"
+ONBOARDING = ROOT / "plugins" / "coding-onboarding"
+THINKING = ROOT / "plugins" / "thinking-tools"
+WRITING = ROOT / "plugins" / "writing"
 FIXTURES = ROOT / "tests" / "fixtures"
 GOLDEN = ROOT / "tests" / "golden"
-HOOKS = ROOT / "hooks" / "scripts"
+HOOKS = DEV_HOOKS / "hooks" / "scripts"
 
 
 @pytest.fixture(scope="session")
@@ -43,7 +47,7 @@ def init_git_repo(path: Path, *, remote=None, email="t@t", name="t"):
     return run
 
 
-CHECKER = ROOT / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
+CHECKER = DEV_HOOKS / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
 
 
 def run_checker(target):
@@ -75,7 +79,7 @@ def make_compliant_repo(
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
     allowlist, or the shared jscpd runner (v14). Stamped at the current version (read from
     VERSION) so it stays compliant as the standard advances."""
-    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
+    version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
     if cooldown:

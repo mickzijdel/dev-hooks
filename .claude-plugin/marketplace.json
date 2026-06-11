@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "dev-hooks",
-  "version": "1.4.0",
-  "description": "Polyglot dev-workflow hooks for Claude Code.",
+  "version": "2.0.0",
+  "description": "Mick's Claude Code plugins: dev-workflow hooks, coding onboarding, thinking tools, and writing skills.",
   "owner": {
     "name": "Mick Zijdel",
     "email": "claude@mickzijdel.com",
@@ -12,12 +12,8 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks) plus thinking-tool, writing, dev-env and secrets-workflow skills. See plugin.json / README for the full list.",
-      "source": {
-        "source": "github",
-        "repo": "mickzijdel/dev-hooks",
-        "ref": "main"
-      },
+      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, env-to-fnox, dockerfile, popovers-tooltips). See its plugin.json / README for the full list.",
+      "source": "./plugins/dev-hooks",
       "category": "workflow",
       "author": {
         "name": "Mick Zijdel",
@@ -25,7 +21,49 @@
         "url": "https://github.com/mickzijdel"
       },
       "homepage": "https://github.com/mickzijdel/dev-hooks",
-      "keywords": ["hooks", "linting", "testing", "automation", "workflow", "skills", "critique", "premortem", "review", "writing", "readme", "readability", "secrets", "fnox", "mise", "hk", "gitleaks", "ci", "dev-env"]
+      "keywords": ["hooks", "linting", "testing", "automation", "workflow", "guardrails", "secrets", "fnox", "mise", "hk", "gitleaks", "ci", "dev-env", "dockerfile", "popover"]
+    },
+    {
+      "name": "coding-onboarding",
+      "displayName": "Coding Onboarding",
+      "description": "Onboarding for people new to coding or AI-assisted coding: getting-started (idempotent machine setup) and starting-a-project (stack decision tree with scaffold commands and deploy targets).",
+      "source": "./plugins/coding-onboarding",
+      "category": "learning",
+      "author": {
+        "name": "Mick Zijdel",
+        "email": "claude@mickzijdel.com",
+        "url": "https://github.com/mickzijdel"
+      },
+      "homepage": "https://github.com/mickzijdel/dev-hooks",
+      "keywords": ["onboarding", "getting-started", "beginner", "setup", "deploy", "scaffold"]
+    },
+    {
+      "name": "thinking-tools",
+      "displayName": "Thinking Tools",
+      "description": "Adversarial critique and self-checking skills: board, premortem, but-for-real, self-rate, code-simplifier, weekly-automation-review, commit-digest.",
+      "source": "./plugins/thinking-tools",
+      "category": "productivity",
+      "author": {
+        "name": "Mick Zijdel",
+        "email": "claude@mickzijdel.com",
+        "url": "https://github.com/mickzijdel"
+      },
+      "homepage": "https://github.com/mickzijdel/dev-hooks",
+      "keywords": ["critique", "premortem", "review", "verification", "automation"]
+    },
+    {
+      "name": "writing",
+      "displayName": "Writing",
+      "description": "Writing and content skills adapted from Nate Berkopec's dotfiles: github-readme, humanizer, readability.",
+      "source": "./plugins/writing",
+      "category": "writing",
+      "author": {
+        "name": "Mick Zijdel",
+        "email": "claude@mickzijdel.com",
+        "url": "https://github.com/mickzijdel"
+      },
+      "homepage": "https://github.com/mickzijdel/dev-hooks",
+      "keywords": ["writing", "readme", "readability", "humanizer", "docs"]
     }
   ]
 }

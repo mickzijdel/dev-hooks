@@ -14,18 +14,20 @@ import sys
 import pytest
 
 from conftest import (
+    DEV_HOOKS,
     FIXTURES,
     GOLDEN,
     ROOT,
+    WRITING,
     init_git_repo,
     make_compliant_repo,
     run_checker,
 )
 
-GR = ROOT / "skills" / "github-readme" / "scripts" / "github_readme_audit.py"
-RA = ROOT / "skills" / "readability" / "scripts" / "readability_audit.py"
-FK = ROOT / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
-VP = ROOT / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
+GR = WRITING / "skills" / "github-readme" / "scripts" / "github_readme_audit.py"
+RA = WRITING / "skills" / "readability" / "scripts" / "readability_audit.py"
+FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
+VP = WRITING / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
 
 # (golden name, script, args, stdin fixture filename or None)
 CASES = [
@@ -163,7 +165,7 @@ def test_checker_needs_upgrade_without_jscpd_runner(tmp_path):
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
-    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
+    version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
     (tmp_path / "mise.toml").write_text(
         f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'

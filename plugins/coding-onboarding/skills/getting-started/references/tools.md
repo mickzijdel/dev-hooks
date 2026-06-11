@@ -50,6 +50,10 @@ start — come back when you're curious about a name you keep seeing.
 - **dev-hooks** — your safety net while coding with an agent: auto-formats files, runs your
   tests before finishing, reminds about secrets and missing tests, and **guards against
   dangerous commands** (see [`claude-config.md`](claude-config.md)).
+- **thinking-tools** — same marketplace as dev-hooks: skills that push back — adversarial
+  critique, premortems, and "did you actually run it?" self-checks.
+- **writing** — same marketplace: README structure, readability, and making prose sound
+  less AI-generated.
 - **Superpowers** — a framework of extra skills and a development methodology for the agent.
 - **vischeck** — visual checking: takes authenticated screenshots of your UI and reviews them
   against a quality rubric, so visual changes get a real look, not just a "looks fine".

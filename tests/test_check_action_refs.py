@@ -1,4 +1,4 @@
-"""Subprocess tests for skills/dev-env-setup/scripts/check_action_refs.sh.
+"""Subprocess tests for plugins/dev-hooks/skills/dev-env-setup/scripts/check_action_refs.sh.
 
 The script resolves `uses: owner/repo@ref` against the remote with `git ls-remote`. To stay
 offline and deterministic, the tests inject a stub resolver via DEV_HOOKS_LSREMOTE (the
@@ -9,9 +9,9 @@ decides by the ref name — `*missing*` → reachable-but-absent (FAIL), `*offli
 
 import subprocess
 
-from conftest import ROOT, requires_jq
+from conftest import DEV_HOOKS, requires_jq
 
-SCRIPT = ROOT / "skills" / "dev-env-setup" / "scripts" / "check_action_refs.sh"
+SCRIPT = DEV_HOOKS / "skills" / "dev-env-setup" / "scripts" / "check_action_refs.sh"
 
 STUB = """#!/bin/bash
 case "$*" in

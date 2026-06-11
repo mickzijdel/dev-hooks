@@ -43,8 +43,15 @@ local linters = new Mapping<String, Step> {
     // and the upgrade-guide's migration chain must all match it. CI runs the full pytest
     // suite anyway; this surfaces drift at commit time, only when skill files are staged.
     ["dev-env-version-sync"] {
-        glob = List("skills/dev-env-setup/**", "tests/test_dev_env_templates.py")
+        glob = List("plugins/dev-hooks/skills/dev-env-setup/**", "tests/test_dev_env_templates.py")
         check = "uv run pytest -q tests/test_dev_env_templates.py"
+    }
+    // Marketplace + per-plugin manifest validation via the Claude CLI, whenever plugin
+    // files are staged. Local-only (CI doesn't install the Claude CLI); scans the whole
+    // tree, not {{ files }}.
+    ["plugin-validate"] {
+        glob = List(".claude-plugin/**", "plugins/**")
+        check = "claude plugin validate . --strict && for p in plugins/*/; do claude plugin validate \"$p\" --strict; done"
     }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks

@@ -147,7 +147,7 @@ To reach v3:
    "Project docs (README + CLAUDE.md)" section in `../SKILL.md` for the full brief. The essentials:
    - **Read key-package versions from the resolved manifests/lockfiles** (`uv.lock`/`pyproject.toml`,
      `Gemfile.lock`, `package.json`) — never from memory.
-   - **README.md** via the `dev-hooks:github-readme` skill, with a tech-stack section listing those
+   - **README.md** via the `writing:github-readme` skill (if installed; otherwise write it by hand following its structure), with a tech-stack section listing those
      packages **and their pinned versions**.
    - **CLAUDE.md** with run/test/lint instructions mirroring the hk/mise setup, plus the same
      key-package-versions list.

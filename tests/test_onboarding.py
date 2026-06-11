@@ -8,9 +8,9 @@ on machine-specific results. The config templates are validated as parseable / n
 import json
 import subprocess
 
-from conftest import ROOT
+from conftest import ONBOARDING
 
-SKILL = ROOT / "skills" / "getting-started"
+SKILL = ONBOARDING / "skills" / "getting-started"
 CHECK = SKILL / "scripts" / "onboard_check.sh"
 ALLOWLIST = SKILL / "references" / "templates" / "settings.allowlist.json"
 CLAUDE_DEFAULTS = SKILL / "references" / "templates" / "CLAUDE.defaults.md"

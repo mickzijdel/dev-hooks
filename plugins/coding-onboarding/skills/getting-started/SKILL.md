@@ -153,14 +153,25 @@ playwright install`.
 Install inside an active Claude Code session (each is idempotent):
 
 ```text
-/plugin install github:mickzijdel/dev-hooks
+/plugin marketplace add mickzijdel/dev-hooks
+/plugin install dev-hooks@dev-hooks
+/plugin install thinking-tools@dev-hooks
+/plugin install writing@dev-hooks
 /plugin marketplace add obra/superpowers-marketplace
 /plugin install superpowers@superpowers-marketplace
 /plugin install github:mickzijdel/vischeck
 ```
 
+The first command registers the marketplace this very skill ships from; the three installs
+are its sibling plugins:
+
 - **dev-hooks** — the safety net: lint-on-edit, verify-before-stop, secret/debug/missing-test
-  reminders, and the beginner guardrails (the dangerous-command guard + big-change reminder).
+  reminders, and the beginner guardrails (the dangerous-command guard + big-change reminder —
+  the guard's commit-to-main check is what `DEV_HOOKS_GUARD_MAIN` in step 8 switches on).
+- **thinking-tools** — pushback on demand: adversarial critique (board), premortems, and
+  "did you actually run it?" checks (but-for-real, self-rate).
+- **writing** — README structure, readability, and de-AI-ing prose (github-readme,
+  readability, humanizer).
 - **Superpowers** — an agentic skills/methodology framework.
 - **vischeck** — visual UI verification (authenticated screenshots + a review rubric); it needs
   `uv` and the chromium browser from step 6, both already set up.

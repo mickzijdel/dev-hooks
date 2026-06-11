@@ -19,8 +19,9 @@
 # npm test, …) pass straight through.
 #
 # Extra, opt-in check: committing/pushing while sitting on main/master asks for
-# confirmation when DEV_HOOKS_GUARD_MAIN=1 (the getting-started skill seeds this for
-# beginners; solo main-branch workflows aren't nagged by default).
+# confirmation when DEV_HOOKS_GUARD_MAIN=1 (the coding-onboarding plugin's
+# getting-started skill seeds this for beginners when installed; anyone can set it
+# manually — solo main-branch workflows aren't nagged by default).
 #
 # Advisory by design; opt out per repo/user with DEV_HOOKS_BASH_GUARD=false
 # (in .claude settings "env").
@@ -241,8 +242,9 @@ if [ -z "$ASK" ] && cmd_has '(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space
 fi
 
 # Committing or pushing while sitting on the main/master branch — a classic beginner
-# footgun. Opt-in (DEV_HOOKS_GUARD_MAIN=1): the getting-started skill seeds it for
-# beginners; established main-branch workflows shouldn't be prompted on every commit.
+# footgun. Opt-in (DEV_HOOKS_GUARD_MAIN=1): the coding-onboarding plugin's
+# getting-started skill seeds it for beginners when installed; established main-branch
+# workflows shouldn't be prompted on every commit.
 if [ -z "$ASK" ] && { [ -n "$GIT_COMMITS" ] || [ -n "$GIT_PUSHES" ]; }; then
   case "${DEV_HOOKS_GUARD_MAIN:-}" in
     1 | true | TRUE | True)

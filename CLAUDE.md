@@ -1,12 +1,18 @@
+This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
+root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
+each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks also has
+`hooks/`). Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
+repo-wide.
+
 Make sure to check all of the following and make sure they are up-to-date after making changes;
 1. tool-specific documentation for tools you edited
 2. skills for tools you edited
-3. plugin.json
-4. README.md
+3. the touched plugin's plugin.json
+4. the touched plugin's README.md and the root README.md
 5. CLAUDE.md
 6. tests/ — keep the pytest suite green and add coverage for behaviour you change
 7. when editing a skill, check **all** its template/reference files (e.g.
-   `skills/*/references/templates/`) — these mirror the standard the skill encodes and
+   `plugins/*/skills/*/references/templates/`) — these mirror the standard the skill encodes and
    drift out of sync silently (e.g. a version stamp bumped in one template but not its
    siblings). Update every variant, not just the one you started with. For dev-env-setup
    the version stamps are machine-checked: `tests/test_dev_env_templates.py` asserts the
@@ -15,11 +21,19 @@ Make sure to check all of the following and make sure they are up-to-date after 
    skill or test files are staged). Bumping the standard = add the `## vN-1 → vN` guide section
    first; the tests enumerate every other spot to touch.
 
-Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool). The version lives **only** in `.claude-plugin/plugin.json` — marketplace.json deliberately carries no plugin version (Claude Code uses plugin.json's when both exist) and only a stable one-line description; don't re-add either.
+On every commit, bump the version of **each plugin whose files the commit touches** (patch for
+small fixes, minor for more substantial changes — a new skill or tool). Commits touching only
+root tooling/tests/docs bump nothing (or only marketplace.json's own version if its structure
+changed). A plugin's version lives **only** in its `plugins/<name>/.claude-plugin/plugin.json` —
+marketplace.json deliberately carries no per-plugin versions (Claude Code uses plugin.json's
+when both exist) and only stable one-line descriptions; don't re-add either. The hk
+`plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
+plugin when plugin files are staged; it is the one hk step CI doesn't mirror (CI has no Claude
+CLI).
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
-## Authoring hooks (`hooks/scripts/*.sh`)
+## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
   knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`

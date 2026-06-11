@@ -1,6 +1,6 @@
 """Subprocess tests for the bundled shell hooks.
 
-Each hook is run as `bash hooks/scripts/<name>.sh` with a crafted stdin payload / cwd /
+Each hook is run as `bash plugins/dev-hooks/hooks/scripts/<name>.sh` with a crafted stdin payload / cwd /
 environment, asserting on exit code and that stdout is empty (silent) or valid JSON. Both
 the silent-gate path and the firing path are exercised for every hook.
 """
@@ -13,8 +13,8 @@ import time
 import pytest
 
 from conftest import (
+    DEV_HOOKS,
     HOOKS,
-    ROOT,
     init_git_repo,
     make_transcript,
     requires_jq,
@@ -88,7 +88,7 @@ def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     r = run_hook(
         "dev-env-reminder.sh",
         stdin=json.dumps({"cwd": str(tmp_path)}),
-        env=base_env(DEV_HOOKS_DEVENV_OWNED="true", CLAUDE_PLUGIN_ROOT=str(ROOT)),
+        env=base_env(DEV_HOOKS_DEVENV_OWNED="true", CLAUDE_PLUGIN_ROOT=str(DEV_HOOKS)),
     )
     assert r.returncode == 0
     assert_json_with(r.stdout, "[dev-env]")

@@ -1,0 +1,11 @@
+{
+  "name": "thinking-tools",
+  "description": "Thinking-tool skills for harder, more honest AI assistance: board (adversarial multi-expert critique), premortem (name what could go wrong before committing to a plan), but-for-real (no success claims without actually running the thing), self-rate (grade your own draft before the user does), code-simplifier (clarity-preserving refactors of recent changes), weekly-automation-review (spot repetitive work worth automating), and commit-digest (pull applicable improvements from tracked external repos).",
+  "version": "1.0.0",
+  "author": {
+    "name": "Mick Zijdel"
+  },
+  "repository": "https://github.com/mickzijdel/dev-hooks",
+  "license": "MIT",
+  "keywords": ["critique", "premortem", "review", "verification", "self-assessment", "refactoring", "automation", "retrospective"]
+}

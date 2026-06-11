@@ -12,6 +12,6 @@
     "**/build/**",
     "**/tests/fixtures/**",
     "**/tests/golden/**",
-    "skills/dev-env-setup/references/templates/**"
+    "plugins/dev-hooks/skills/dev-env-setup/references/templates/**"
   ]
 }
