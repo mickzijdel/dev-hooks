@@ -2,14 +2,11 @@
 name: starting-a-project
 version: 1.0.0
 description: |
-  Help someone decide what to build a new project with, and get it online. A "what are you
-  building?" decision tree that maps the common beginner goals — a content website, an interactive
-  app, a database-backed web app, an API, a script or automation, a phone app, a data dashboard —
-  to a concrete framework (Astro, React + Vite / Next.js, Rails / Django, FastAPI, Python + uv,
-  Expo, Streamlit), each with a scaffold command and a matching deploy target. Also covers styling
-  (Tailwind, shadcn/ui), databases, auth, and how to put it online (GitHub Pages → full-app hosts
-  and containers). Use when someone asks "what should I use to build X?", "how do I start a new
-  project?", or "how do I deploy / put this online?".
+  Use when someone is starting a new project and unsure what stack or framework to build it
+  with — "what should I use to build X?", "how do I start a new project?" — or asks how to
+  deploy / put a project online. Covers the common beginner goals: a content website, an
+  interactive app, a database-backed web app, an API, a script or automation, a phone app, a
+  data dashboard.
 allowed-tools:
   - Read
   - Write

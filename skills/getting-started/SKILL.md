@@ -2,15 +2,10 @@
 name: getting-started
 version: 1.0.0
 description: |
-  Set up a brand-new machine for AI-assisted coding with Claude Code, end to end, and keep it
-  current on re-runs. Installs/upgrades a baseline toolchain (mise managing node/pnpm/Python +
-  uv, jq, ripgrep, gitleaks, gh), VS Code + the Claude Code extension, Docker, the Playwright
-  browsers, and the dev-hooks / Superpowers / vischeck plugins; sets up a GitHub account and
-  git identity; seeds beginner-safe Claude config (a permissions allowlist + CLAUDE.md
-  defaults); orients first-timers on Git; and hands off to the starting-a-project skill when
-  they're ready to build and ship their first app. Use when someone is starting from scratch,
-  says "set me up / onboard me / I just installed Claude Code", or wants to bring an existing
-  setup up to date. macOS, Linux, and WSL2.
+  Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
+  say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
+  Claude, or want an existing setup checked or brought up to date (toolchain, editor, Docker,
+  GitHub, Claude config). Idempotent and safe to re-run. macOS, Linux, and WSL2.
 allowed-tools:
   - Read
   - Write
