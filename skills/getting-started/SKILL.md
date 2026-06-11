@@ -198,7 +198,10 @@ Round it off with the two things a beginner needs next, lightly:
 - **Starting a project** — when they want to build something, use
   [`references/starter-stacks.md`](references/starter-stacks.md) to pick a framework from what
   they're building: a content website → **Astro**; an interactive app → **React + Vite** (Next.js
-  if it needs a server); an API/backend → **FastAPI** (pairs with the Python + uv set up here).
+  if it needs a server); a full database-backed web app → **Rails** (or Django); an API/backend →
+  **FastAPI** (pairs with the Python + uv set up here). It also covers the things they'll hit next
+  — Tailwind for styling, shadcn/ui for React components, SQLite to start, and not rolling their
+  own auth.
 - **Deploying** — when they ask "how do people put this online?", use
   [`references/deploy.md`](references/deploy.md): a decision guide from static sites (GitHub
   Pages is the free starting point) to full apps and containers, each with a one-command path.
