@@ -61,12 +61,18 @@ def run_checker(target):
 
 
 def make_compliant_repo(
-    path, *, readme=True, claude=True, cooldown=True, gitleaks_config=True
+    path,
+    *,
+    readme=True,
+    claude=True,
+    cooldown=True,
+    gitleaks_config=True,
+    jscpd_runner=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
-    except optionally the README/CLAUDE.md docs, the uv cooldown, or the .gitleaks.toml
-    allowlist. Stamped at the current version (read from VERSION) so it stays compliant as
-    the standard advances."""
+    except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
+    allowlist, or the shared jscpd runner (v14). Stamped at the current version (read from
+    VERSION) so it stays compliant as the standard advances."""
     version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -87,6 +93,9 @@ def make_compliant_repo(
         (path / "CLAUDE.md").write_text("# project instructions\n")
     if gitleaks_config:
         (path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
+    if jscpd_runner:
+        (path / "scripts").mkdir(exist_ok=True)
+        (path / "scripts" / "run-jscpd.sh").write_text("#!/usr/bin/env bash\n")
 
 
 def make_transcript(path: Path, *, human_turns=0, extra_lines=None):

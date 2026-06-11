@@ -152,6 +152,14 @@ def test_checker_needs_upgrade_without_gitleaks_config(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_needs_upgrade_without_jscpd_runner(tmp_path):
+    # v14: a current-version repo missing scripts/run-jscpd.sh is flagged for upgrade.
+    make_compliant_repo(tmp_path, jscpd_runner=False)
+    out = run_checker(tmp_path)
+    assert out["has_jscpd_runner"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
@@ -168,6 +176,8 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     (wf / "ci.yml").write_text("name: ci\non: push\n")
     (tmp_path / "README.md").write_text("# x\n")
     (tmp_path / "CLAUDE.md").write_text("# project instructions\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run-jscpd.sh").write_text("#!/usr/bin/env bash\n")
     out = run_checker(tmp_path)
     assert out["stack"] == "ruby"
     assert out["has_cooldown"] == "1"

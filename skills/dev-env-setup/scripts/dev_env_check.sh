@@ -24,6 +24,8 @@
 #   has_cooldown     1 if the uv dependency cooldown is set (Python: pyproject.toml [tool.uv]
 #                    exclude-newer; required from standard v6). Defaults to 1 for non-Python
 #                    stacks / repos without pyproject.toml, so it never blocks them.
+#   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
+#                    shared jscpd runner both the hk step and CI's audit job call).
 #   suggests_fnox    1 if the repo has plaintext secrets in use (a non-empty .env/.env.local
 #                    with KEY=value lines, a config/credentials/*.key, or source references to
 #                    Rails credentials / ENV[…] / Settings.) AND no fnox.toml yet. Advisory only —
@@ -114,6 +116,11 @@ if [ "$stack" = "python" ] && [ -f "$DIR/pyproject.toml" ]; then
   grep -qE '^[[:space:]]*exclude-newer[[:space:]]*=' "$DIR/pyproject.toml" || has_cooldown=0
 fi
 
+# Shared jscpd runner (v14): the version-cooldown policy lives in scripts/run-jscpd.sh,
+# called by both the hk step and CI's audit job so the two gates can't drift.
+has_jscpd_runner=0
+[ -f "$DIR/scripts/run-jscpd.sh" ] && has_jscpd_runner=1
+
 # Plaintext secrets in use, not yet migrated (advisory — nudges env-to-fnox, never gates status).
 # Triggers only when there's no fnox.toml and secrets are actually present: a non-empty
 # .env/.env.local with a KEY=value line, a Rails master key, or source references to credentials.
@@ -146,7 +153,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -164,6 +171,7 @@ has_lockfile=$has_lockfile
 has_readme=$has_readme
 has_claude=$has_claude
 has_cooldown=$has_cooldown
+has_jscpd_runner=$has_jscpd_runner
 suggests_fnox=$suggests_fnox
 repo_version=$repo_version
 current_version=$current_version
@@ -174,7 +182,7 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
 

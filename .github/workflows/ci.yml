@@ -67,7 +67,7 @@ jobs:
         # dev-env-setup SKILL.md › jscpd version policy) are shared with the hk
         # pre-commit gate via scripts/run-jscpd.sh so the two can't drift. --require
         # keeps CI strict: unlike pre-commit, an unrunnable jscpd fails the job.
-        run: bash scripts/run-jscpd.sh --require
+        run: bash scripts/run-jscpd.sh --require python,bash
       - name: Large files
         run: |
           limit=512000

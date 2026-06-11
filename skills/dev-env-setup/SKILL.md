@@ -25,17 +25,20 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v13)
+## The standard (v14)
 
-A repo is **compliant at v13** when it has all of:
+A repo is **compliant at v14** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
   `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
-  `DEV_ENV_VERSION = "13"`.
+  `DEV_ENV_VERSION = "14"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
   `ignore` — never `ignorePattern`, inert in jscpd v5).
+- **`scripts/run-jscpd.sh`** (added in v14) — the shared jscpd runner holding the
+  version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
+  so the two gates can't drift. Copied byte-identical from the template.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
   hooks.
@@ -90,9 +93,11 @@ proposing additions.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
-   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json` **and
-   `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s whole-tree scan from
-   failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks whole-tree allowlist").
+   `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json`,
+   `run-jscpd.sh` → `scripts/run-jscpd.sh` (`chmod +x`; the shared jscpd runner both the hk
+   step and CI call), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
+   whole-tree scan from failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks
+   whole-tree allowlist").
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
    are covered automatically by the shell template's shebang companion steps — no hk-glob
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless

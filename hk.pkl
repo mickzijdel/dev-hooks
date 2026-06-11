@@ -36,7 +36,7 @@ local linters = new Mapping<String, Step> {
     // local and CI gates can't drift.
     ["jscpd"] {
         glob = List("**/*.sh", "**/*.py")
-        check = "bash scripts/run-jscpd.sh"
+        check = "bash scripts/run-jscpd.sh python,bash"
     }
     // Version-stamp sync for the dev-env-setup skill: VERSION is the source of truth and
     // the templates' DEV_ENV_VERSION, the SKILL.md/standard.md current-version mentions,

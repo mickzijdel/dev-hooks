@@ -471,6 +471,37 @@ community time to catch and yank a malicious release before it lands. To reach v
 
 ---
 
+## v13 → v14 (shared jscpd runner: `scripts/run-jscpd.sh`)
+
+Before v14 the jscpd cooldown one-liner (cutoff date, v5 floor, offline fallback) was
+duplicated verbatim between `hk.pkl` and the CI audit job — any policy change had to be
+patched in both, and they drifted silently. v14 moves it into a single
+`scripts/run-jscpd.sh` (template: `references/templates/run-jscpd.sh`) that both gates
+call. The script takes the stack's format list as an argument and a `--require` flag for
+CI, where an unrunnable jscpd should fail the job instead of warn-and-pass (pre-commit
+keeps warn-and-pass so a commit is never blocked by an unreachable registry). To reach v14:
+
+1. **Copy the runner:** `references/templates/run-jscpd.sh` → `scripts/run-jscpd.sh`,
+   `chmod +x` it. Don't edit the body — keeping it byte-identical across repos makes the
+   next policy change a plain file copy.
+2. **Point hk at it.** Replace the jscpd step's inline `check` command in `hk.pkl` with
+   (keep the repo's existing `-f` format list, e.g. `python` or
+   `ruby,erb,javascript,typescript,css,scss,sass,vue`):
+   ```pkl
+   check = "bash scripts/run-jscpd.sh <formats>"
+   ```
+3. **Point CI at it.** Replace the `Duplication (jscpd)` step's `run:` block in
+   `.github/workflows/ci.yml` with:
+   ```yaml
+   run: bash scripts/run-jscpd.sh --require <formats>
+   ```
+4. **Bump the stamp.** Set `DEV_ENV_VERSION = "14"` in `mise.toml`.
+5. **Verify:** `bash scripts/run-jscpd.sh <formats>` from the repo root scans clean (and
+   `bash scripts/run-jscpd.sh --require <formats>` behaves the same online);
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

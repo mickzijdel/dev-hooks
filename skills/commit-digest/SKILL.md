@@ -67,7 +67,7 @@ For each **Implement** decision, open a **separate PR**:
    uv run pytest -q
    shfmt -d .
    shellcheck hooks/scripts/**/*.sh
-   bash scripts/run-jscpd.sh
+   bash scripts/run-jscpd.sh python,bash
    ```
 5. Commit, push, and open a PR with a clear title and description referencing the source
    commit SHA or feed item URL.

@@ -1,4 +1,4 @@
-# The standard (v13) — full specification
+# The standard (v14) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,20 +6,27 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v13** when it has all of:
+A repo is **compliant at v14** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
   run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`
   and `minimum_release_age = "4d"` (4-day supply-chain cooldown on `mise upgrade`; `mise install`
   always reproduces `mise.lock` exactly — see "Lockfile & supply-chain verification" in
-  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "13"`.
+  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "14"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
   `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignore` — the key must
   be `ignore`, **not** `ignorePattern` (inert for paths in jscpd v5; see the exclusions note)
   (vendored/generated dirs incl. `node_modules`, `vendor`, `dist`, `build`). The `missing-test-reminder` hook also reads this file to skip those dirs.
+- **`scripts/run-jscpd.sh`** (all stacks, added in v14) — the shared jscpd runner, copied
+  byte-identical from `templates/run-jscpd.sh`. It is the **single home of the jscpd
+  version-cooldown policy** (see the version-policy note below) and takes the stack's format
+  list as its argument; the hk step runs `bash scripts/run-jscpd.sh <formats>` and CI's audit
+  job runs the same with `--require` (offline + no cached jscpd then *fails* the job instead
+  of warn-and-pass — pre-commit keeps warn-and-pass so a commit is never blocked by an
+  unreachable registry).
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
   audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
   and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
@@ -81,16 +88,18 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > `aqua`/`ubi` backend — see `dropped-from-nate.md` for the tested comparison and
 > revisit triggers, 2026-06-09.)
 >
-> **jscpd version policy (pre-commit + CI):** the step neither pins a fixed version nor calls
-> `@latest` blindly. It tracks latest with a **4-day cooldown** — the same supply-chain seasoning
-> as the dependency cooldowns (see "Dependency cooldown (supply-chain)" in `../SKILL.md`) — via
-> `npx --before=<4 days ago>`, which
+> **jscpd version policy (pre-commit + CI):** the gate neither pins a fixed version nor calls
+> `@latest` blindly. Since v14 the whole policy lives in one place — `scripts/run-jscpd.sh` —
+> which both the hk step and CI's audit job call, so the two can't drift. It tracks latest with
+> a **4-day cooldown** — the same supply-chain seasoning as the dependency cooldowns (see
+> "Dependency cooldown (supply-chain)" in `../SKILL.md`) — via `npx --before=<4 days ago>`, which
 > resolves the newest release that has existed at least 4 days. It's **floored at v5** (the major
 > `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <4 days
-> old; if the cooldown pick is below the floor the step falls back to `latest`. It also **degrades
-> gracefully offline**: when the registry is unreachable it runs the cached jscpd, and when nothing
-> is cached it warns and passes rather than blocking the commit. The cooldown resolve costs one
-> registry round-trip (~0.9s) per commit that stages matching files.
+> old; if the cooldown pick is below the floor the script falls back to `latest`. It also
+> **degrades gracefully offline**: when the registry is unreachable it runs the cached jscpd, and
+> when nothing is cached it warns and passes rather than blocking the commit — unless invoked
+> with `--require` (CI does), which fails instead. The cooldown resolve costs one registry
+> round-trip (~0.9s) per commit that stages matching files.
 >
 > Configuring exclusions:
 > - **Exclude paths** with `ignore` (a glob array) in `.jscpd.json`. **`ignorePattern` does NOT
