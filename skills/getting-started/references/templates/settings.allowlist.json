@@ -1,0 +1,42 @@
+{
+  "//": "Starter permissions allowlist for a beginner's ~/.claude/settings.json. MERGE this into the user's settings.json with the update-config skill (don't hand-edit). It pre-approves safe, read-only inspection commands so prompts only appear for commands that change something. Anything that writes, deletes, installs, moves, or pushes is deliberately NOT here, so it still asks. Tune later with the fewer-permission-prompts skill.",
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(tree:*)",
+      "Bash(file:*)",
+      "Bash(stat:*)",
+      "Bash(which:*)",
+      "Bash(echo:*)",
+      "Bash(date)",
+      "Bash(env)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote -v)",
+      "Bash(git stash list)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh auth status)",
+      "Bash(mise ls:*)",
+      "Bash(mise outdated:*)",
+      "Bash(node --version)",
+      "Bash(pnpm --version)",
+      "Bash(python3 --version)",
+      "Bash(uv --version)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)"
+    ]
+  }
+}
