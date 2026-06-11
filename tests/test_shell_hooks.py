@@ -128,6 +128,71 @@ def test_latest_deps_silent_for_non_manifest(tmp_path):
     assert r.stdout.strip() == ""
 
 
+# ── scaffold-reminder.sh ────────────────────────────────────────────────────────────
+def _scaffold_payload(tmp_path, name="Gemfile", tool="Write"):
+    return json.dumps(
+        {
+            "tool_name": tool,
+            "tool_input": {"file_path": str(tmp_path / name)},
+            "session_id": "sc1",
+        }
+    )
+
+
+def _run_scaffold(tmp_path, payload):
+    return run_hook(
+        "scaffold-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SCAFFOLD=None),
+    )
+
+
+def test_scaffold_fires_for_untracked_gemfile_in_repo(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n")
+    r = _run_scaffold(tmp_path, _scaffold_payload(tmp_path))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "rails new")
+    # The version-check half of the nudge: use current stable unless the user pinned one.
+    assert_json_with(r.stdout, "current stable release")
+
+
+def test_scaffold_fires_for_rails_application_rb_path(tmp_path):
+    # Entrypoint matched on the FILE tail, not just the basename; non-git dir = new.
+    r = _run_scaffold(tmp_path, _scaffold_payload(tmp_path, "config/application.rb"))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "rails new")
+
+
+def test_scaffold_silent_for_tracked_manifest(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n")
+    run("add", "Gemfile")  # tracked manifest = existing project, not scaffolding
+    r = _run_scaffold(tmp_path, _scaffold_payload(tmp_path))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_scaffold_silent_for_edit_tool(tmp_path):
+    r = _run_scaffold(
+        tmp_path, _scaffold_payload(tmp_path, "package.json", tool="Edit")
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_scaffold_silent_for_non_manifest(tmp_path):
+    r = _run_scaffold(tmp_path, _scaffold_payload(tmp_path, "foo.py"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_scaffold_silent_for_application_rb_outside_config(tmp_path):
+    r = _run_scaffold(tmp_path, _scaffold_payload(tmp_path, "lib/application.rb"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── dockerfile-reminder.sh (also exercises lib/reminder-common.sh) ───────────────────
 def test_dockerfile_reminder_fires_for_dockerfile(tmp_path):
     dockerfile = tmp_path / "Dockerfile"
@@ -919,6 +984,7 @@ def _ci_action_payload(tmp_path):
 # (script, opt-out env var, payload builder, needle expected in the firing output)
 FIRE_ONCE_REMINDERS = [
     ("latest-deps-reminder.sh", "DEV_HOOKS_LATEST_DEPS", _latest_deps_payload, "stale"),
+    ("scaffold-reminder.sh", "DEV_HOOKS_SCAFFOLD", _scaffold_payload, "rails new"),
     (
         "popover-reminder.sh",
         "DEV_HOOKS_POPOVER",

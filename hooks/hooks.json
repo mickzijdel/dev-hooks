@@ -32,6 +32,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scaffold-reminder.sh\"",
+            "statusMessage": "Checking for hand-rolled project scaffolding..."
+          },
+          {
+            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dockerfile-reminder.sh\"",
             "statusMessage": "Checking Dockerfile layer ordering..."
           },

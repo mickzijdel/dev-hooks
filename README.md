@@ -10,6 +10,7 @@ set of thinking-tool skills. Each hook script detects the project's own toolchai
 |-------|--------|---------|
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
+| `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `scaffold-reminder.sh` | When Claude **creates a new** project manifest or framework entrypoint by hand (`Gemfile`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `mix.exs`, `composer.json`, `build.gradle`/`pom.xml`, `manage.py`, `config/application.rb`, …), remind it to run the framework's official generator (`rails new`, `npm create vite@latest`, `django-admin startproject`, `cargo new`, …) instead of scaffolding from memory — and to check the framework's current stable release and the generator's current flags first, unless the user pinned a version. Write-tool only; files git already tracks are skipped. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_SCAFFOLD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `dockerfile-reminder.sh` | When Claude writes a `Dockerfile`/`Containerfile`, run **hadolint** on it and feed the findings (or a clean pass) back to Claude, plus a layer-ordering nudge that points at the `dockerfile` skill. If hadolint isn't installed, falls back to a once-per-session ordering/gotchas reminder. Advisory only — reports every time, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `secret-plaintext-reminder.sh` | When Claude writes what looks like a plaintext secret **value** (a named `API_KEY`/`SECRET`/`TOKEN`/`PASSWORD` assignment to a real literal, a private-key block, or an AWS key id), nudge it to migrate to fnox via the `env-to-fnox` skill instead of committing the value. Fires at write time (before `gitleaks` would at commit). Env-var refs and obvious placeholders are ignored. Advisory only, never blocks; fires once per session. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `popover-reminder.sh` | When Claude writes popover/tooltip/dropdown/menu UI (a frontend file — the shared extension list, see `inline-svg-reminder.sh` notes — that has a popover/tooltip/dropdown controller filename, `role="tooltip"`/the `popover` attribute, an `@floating-ui`/`popper`/`tippy` import, a `data-controller` naming one, or a tooltip/popover/dropdown class/data-attribute), nudge it to use a collision-aware positioner (flip + shift) rendered in the top layer/a portal instead of hand-rolled `top`/`left` math, and point at the `popovers-tooltips` skill. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_POPOVER=false`. |
@@ -107,6 +108,18 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   fires at most once per session per ecosystem (python/js/ruby/lockfile), tracked via a
   marker under `${TMPDIR:-/tmp}/dev-hooks-latest-deps/`. Silence it with
   `DEV_HOOKS_LATEST_DEPS=false` (in `.claude/settings.local.json` `"env"`).
+- `scaffold-reminder.sh` is reminder-only — it never blocks the write. It fires when the
+  Write tool creates a project manifest or framework entrypoint that git doesn't already
+  track (outside a git repo every file counts as new): hand-writing one of those is the
+  signature of scaffolding a project from memory. Edits stay silent (the project already
+  exists), as do tracked files. The nudge names the matching generator (`rails new`,
+  `npm create vite@latest`, `uv init`/`django-admin startproject`, `cargo new`,
+  `go mod init`, `mix new`/`mix phx.new`, `composer create-project`, `gradle init`, …)
+  and tells Claude to first check the framework's current stable release — and the
+  generator's current flags via `--help`/docs — rather than recalling either, unless the
+  user asked for a specific version. Fires once per session, tracked via a marker under
+  `${TMPDIR:-/tmp}/dev-hooks-scaffold/`. Silence it with `DEV_HOOKS_SCAFFOLD=false`
+  (in `.claude/settings.local.json` `"env"`).
 - `dockerfile-reminder.sh` runs [`hadolint`](https://github.com/hadolint/hadolint) on each
   `Dockerfile`/`Containerfile` Claude writes and reports the findings (or a clean pass) back
   to Claude, plus a layer-ordering nudge pointing at the `dockerfile` skill. It's report-only:
