@@ -98,6 +98,8 @@ ln -s ~/Stack/Programmeren/dev-hooks ~/.claude/skills/dev-hooks
   existing `~/.claude/projects/*/memory/` dir), so it's safe for installers who don't use
   memory. It only nudges Claude to capture learnings — it never writes memory or edits
   CLAUDE.md itself, and Claude is told to save nothing when there's nothing durable.
+  "Substantial session" defaults to ≥ 6 human turns; tune with `DEV_HOOKS_MEMORY_MIN_TURNS`
+  (in `.claude/settings.local.json` `"env"`).
 - `latest-deps-reminder.sh` is reminder-only — it never queries a package registry, just
   nudges Claude to look up current versions itself (training data goes stale). On manifest
   edits (python/js/ruby — not lockfiles) it additionally reminds Claude to keep README.md
