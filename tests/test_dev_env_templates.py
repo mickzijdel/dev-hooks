@@ -1,9 +1,10 @@
 """Content checks for the dev-env-setup CI templates.
 
-These guard the gitleaks job that ships in every scaffolded repo: gitleaks-action
-hard-requires a GITHUB_TOKEN to scan pull_request events (without it the job fails the
-PR), and the standard pins the action at its current major. A plain file-content read is
-enough — no subprocess needed — so the checks stay fast and offline.
+These guard the gitleaks job that ships in every scaffolded repo: since v11 it runs the
+MIT-licensed gitleaks CLI via mise (gitleaks/gitleaks-action is commercial since its
+v2.0.0 and demands a paid GITLEAKS_LICENSE on org-owned repos), scanning full git
+history. A plain file-content read is enough — no subprocess needed — so the checks stay
+fast and offline.
 """
 
 import ast
@@ -15,9 +16,16 @@ import pytest
 from conftest import ROOT
 
 TEMPLATES_DIR = ROOT / "skills" / "dev-env-setup" / "references" / "templates"
-CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml"]
+CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml", "ci.js.yml"]
+MISE_TEMPLATES = [
+    "mise.python.toml",
+    "mise.ruby.toml",
+    "mise.shell.toml",
+    "mise.js.toml",
+]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
+STANDARD_MD = ROOT / "skills" / "dev-env-setup" / "references" / "standard.md"
 MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
 GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
 
@@ -31,17 +39,28 @@ SHEBANG_DETECTOR_TEMPLATES = [
 
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
-def test_gitleaks_job_pins_v3(name):
+def test_gitleaks_job_runs_cli_not_action(name):
+    """v11: the gitleaks job runs the MIT-licensed CLI via mise. gitleaks/gitleaks-action
+    is commercial since its v2.0.0 and requires a paid GITLEAKS_LICENSE on org-owned repos
+    (the free tier covers 1 repo per org), so the action must not reappear — and neither
+    should its GITHUB_TOKEN env, which only the action needed."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert "gitleaks/gitleaks-action@v3" in text
-    assert "gitleaks/gitleaks-action@v2" not in text
+    assert "uses: gitleaks/gitleaks-action" not in text
+    assert "mise exec -- gitleaks git --redact --no-banner ." in text
+    assert "secrets.GITHUB_TOKEN" not in text
 
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
-def test_gitleaks_job_passes_github_token(name):
+def test_gitleaks_job_scans_full_history_via_mise(name):
+    """`gitleaks git` scans commit history, so the job's checkout needs fetch-depth: 0,
+    and the CLI must come from mise-action (mise.lock-pinned, same binary as the hk hook)."""
     text = (TEMPLATES_DIR / name).read_text()
-    # The token env must sit on the gitleaks step (the action reads it to enumerate PR commits).
-    assert "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in text
+    # Both delimiters must exist, else the slice silently widens to the rest of the file
+    # and the assertions below could pass on the audit job's own fetch-depth/mise-action.
+    assert "\n  gitleaks:\n" in text and "\n  audit:\n" in text
+    job = text.split("\n  gitleaks:\n")[1].split("\n  audit:\n")[0]
+    assert "fetch-depth: 0" in job
+    assert "uses: jdx/mise-action@v4" in job
 
 
 @pytest.mark.parametrize("name", SHEBANG_DETECTOR_TEMPLATES)
@@ -71,24 +90,57 @@ def test_gitleaks_template_allowlists_gitignored_artifacts():
         assert needle in text, f".gitleaks.toml allowlist is missing {needle!r}"
 
 
-def test_skill_doc_matches_version_stamp():
-    """SKILL.md's '## The standard (vN)' header tracks the VERSION source of truth."""
+@pytest.mark.parametrize("name", MISE_TEMPLATES)
+def test_mise_template_version_stamp_matches_version_file(name):
+    """Every mise template's DEV_ENV_VERSION must equal the VERSION source of truth.
+    Regression guard: the python/ruby/shell templates sat at "9" through three standard
+    bumps, so freshly scaffolded repos immediately flagged as needing a v9→v12 upgrade."""
     version = VERSION_FILE.read_text().strip()
-    header = re.search(r"^## The standard \(v(\d+)\)", SKILL_MD.read_text(), re.M)
-    assert header is not None, "SKILL.md is missing the '## The standard (vN)' header"
+    m = re.search(
+        r'^DEV_ENV_VERSION = "(\d+)"$', (TEMPLATES_DIR / name).read_text(), re.M
+    )
+    assert m is not None, f"{name} is missing a DEV_ENV_VERSION stamp"
+    assert m.group(1) == version, (
+        f"{name} stamps v{m.group(1)}, VERSION file says v{version}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "pattern"),
+    [
+        (SKILL_MD, r"^## The standard \(v(\d+)\)"),
+        (STANDARD_MD, r"^# The standard \(v(\d+)\) — full specification"),
+    ],
+    ids=["SKILL.md", "references/standard.md"],
+)
+def test_skill_doc_matches_version_stamp(path, pattern):
+    """The 'The standard (vN)' headers in SKILL.md and its references/standard.md split
+    both track the VERSION source of truth."""
+    version = VERSION_FILE.read_text().strip()
+    header = re.search(pattern, path.read_text(), re.M)
+    assert header is not None, f"{path.name} is missing its 'The standard (vN)' header"
     assert header.group(1) == version
 
 
 def _jscpd_dir_fragments(jscpd_json_path):
-    """Dir fragments from a .jscpd.json's `**/<dir>/**` ignorePattern entries (file-shaped
-    patterns like `**/db/schema.rb` are excluded)."""
+    """Dir fragments from a .jscpd.json's `**/<dir>/**` ignore entries (file-shaped
+    patterns like `**/db/schema.rb` are excluded). Reads `ignore` (v12+, the key jscpd v5
+    honors for paths) plus the pre-v12 `ignorePattern` for not-yet-upgraded repos."""
     data = json.loads(jscpd_json_path.read_text())
     frags = set()
-    for pat in data.get("ignorePattern", []):
+    for pat in data.get("ignore", []) + data.get("ignorePattern", []):
         m = re.match(r"^\*\*/(.+)/\*\*$", pat)
         if m:
             frags.add(m.group(1))
     return frags
+
+
+def test_jscpd_template_uses_ignore_key():
+    """jscpd v5 honors `ignore` for path exclusion and silently ignores `ignorePattern`
+    (which let CI scan vendor/bundle — the v12 fix). The template must never regress."""
+    data = json.loads((TEMPLATES_DIR / ".jscpd.json").read_text())
+    assert "ignore" in data
+    assert "ignorePattern" not in data
 
 
 def test_missing_test_fallback_matches_jscpd_template():

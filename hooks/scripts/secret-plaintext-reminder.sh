@@ -1,5 +1,5 @@
 #!/bin/bash
-# PostToolUse(Write|Edit): when Claude writes what looks like a plaintext secret *value*
+# PostToolUse(Write|Edit|MultiEdit): when Claude writes what looks like a plaintext secret *value*
 # into a file, nudge it to migrate to fnox via the env-to-fnox skill instead of committing
 # the value. Advisory only — emits additionalContext and always exits 0, never blocks.
 #
@@ -11,18 +11,11 @@
 # Fires at most once per session (marker under ${TMPDIR}).
 # Opt out per repo/user with DEV_HOOKS_SECRETS=false (in .claude settings "env").
 
-case "${DEV_HOOKS_SECRETS:-}" in
-  false | 0 | no | off) exit 0 ;;
-esac
-
-INPUT=$(cat 2>/dev/null)
-FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-[ -z "$FILE" ] && exit 0
-SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // "nosession"' 2>/dev/null)
-CONTENT=$(printf '%s' "$INPUT" | jq -r '(.tool_input.content // "") + "\n" + (.tool_input.new_string // "")' 2>/dev/null)
-[ -z "$CONTENT" ] && exit 0
-
-BASE=$(basename "$FILE")
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+# Sets INPUT, FILE, SESSION, TOOL, BASE (or exits 0 on opt-out / missing file_path).
+reminder_init DEV_HOOKS_SECRETS
 
 # Skip example/template files and the reference files meant to be committed.
 case "$BASE" in
@@ -30,8 +23,11 @@ case "$BASE" in
   *.lock | *.lockb | package-lock.json | pnpm-lock.yaml) exit 0 ;;
 esac
 
-CONTENT_FILE=$(mktemp)
-trap 'rm -f "$CONTENT_FILE"' EXIT
+reminder_content # sets CONTENT (Write content + Edit/MultiEdit new_strings)
+[ -z "$CONTENT" ] && exit 0
+
+reminder_mktemp
+CONTENT_FILE=$REPLY
 printf '%s' "$CONTENT" >"$CONTENT_FILE"
 
 FOUND=$(
@@ -75,13 +71,8 @@ PYEOF
 [ -z "$FOUND" ] && exit 0
 
 # Fire at most once per session.
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-secrets"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once secrets || exit 0
 
 MSG="You just wrote what looks like a plaintext secret value into $BASE. Don't commit secret *values*. Migrate this to fnox via the \`env-to-fnox\` skill: store only a *reference* (key name) in a committed \`fnox.toml\` and resolve the real value from the vault (Bitwarden Secrets Manager by default) at run time. Keep \`.env\`/\`.env.local\` gitignored. If this is genuinely not a secret (a placeholder, public value, or test fixture), ignore this."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-exit 0
+reminder_emit "$MSG"

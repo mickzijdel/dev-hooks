@@ -2,11 +2,15 @@
 # Runs when Claude stops. Detects changed code files, runs applicable linters/tests,
 # and feeds failures back to Claude so it can fix them before finishing.
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+
 # Must be in a git repo
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 # Collect changed code files (staged + unstaged vs HEAD)
-CHANGED=$(git status --porcelain 2>/dev/null | awk '{print $NF}')
+reminder_changed_files # sets CHANGED
 [ -z "$CHANGED" ] && exit 0
 
 HAS_RUBY=$(echo "$CHANGED" | grep -qE '\.(rb|erb|rake)$' && echo 1 || echo 0)
@@ -16,8 +20,8 @@ HAS_JS=$(echo "$CHANGED" | grep -qE '\.(js|ts|jsx|tsx|vue|mjs|cjs)$' && echo 1 |
 # Nothing relevant changed
 [ "$HAS_RUBY$HAS_PYTHON$HAS_JS" = "000" ] && exit 0
 
-TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
+reminder_mktemp # result in $REPLY; the lib owns the cleanup trap
+TMPFILE=$REPLY
 
 TOOLS_RAN=0
 
@@ -100,32 +104,11 @@ if [ "$HAS_JS" = "1" ]; then
 fi
 
 # ── Report ────────────────────────────────────────────────────────────────────
-emit_json() {
-  python3 - "$1" "$2" <<'PYEOF'
-import sys, json
-
-with open(sys.argv[1]) as f:
-    body = f.read().strip()
-
-msg = sys.argv[2] + ("\n" + body if body else "")
-print(json.dumps({
-    "continue": False,
-    "hookSpecificOutput": {
-        "hookEventName": "Stop",
-        "additionalContext": msg
-    }
-}))
-PYEOF
-}
-
 if [ -s "$TMPFILE" ]; then
-  emit_json "$TMPFILE" "Verification failed. Fix these before finishing:"
-  exit 2
+  reminder_emit_stop "Verification failed. Fix these before finishing:"$'\n'"$(cat "$TMPFILE")"
 elif [ "$TOOLS_RAN" = "0" ]; then
   # No tools detected — remind Claude to check manually
-  printf '' >"$TMPFILE"
-  emit_json "$TMPFILE" "No test suite or linter was auto-detected, but code files were modified. If this project has tests or a linter, please run them now to verify your changes before finishing."
-  exit 2
+  reminder_emit_stop "No test suite or linter was auto-detected, but code files were modified. If this project has tests or a linter, please run them now to verify your changes before finishing."
 fi
 
 exit 0

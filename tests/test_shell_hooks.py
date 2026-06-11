@@ -12,7 +12,15 @@ import time
 
 import pytest
 
-from conftest import HOOKS, ROOT, init_git_repo, make_transcript, requires_jq
+from conftest import (
+    HOOKS,
+    ROOT,
+    init_git_repo,
+    make_compliant_repo,
+    make_transcript,
+    requires_jq,
+    run_checker,
+)
 
 pytestmark = requires_jq
 
@@ -88,54 +96,7 @@ def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     assert_json_with(r.stdout, "[dev-env]")
 
 
-# ── dev_env_check.sh (skill checker) ────────────────────────────────────────────────
-CHECKER = ROOT / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
-
-
-def run_checker(target):
-    r = subprocess.run(
-        ["bash", str(CHECKER), str(target)],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    out = {}
-    for line in r.stdout.splitlines():
-        if "=" in line and not line.startswith("# "):
-            key, _, value = line.partition("=")
-            out[key] = value
-    return out
-
-
-def make_compliant_repo(
-    path, *, readme=True, claude=True, cooldown=True, gitleaks_config=True
-):
-    """Build a repo that satisfies everything the checker enforces at the current standard
-    except optionally the README/CLAUDE.md docs, the uv cooldown, or the .gitleaks.toml
-    allowlist. Stamped at the current version (read from VERSION) so it stays compliant as
-    the standard advances."""
-    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
-    # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
-    pyproject = "[project]\nname='x'\n"
-    if cooldown:
-        pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
-    (path / "pyproject.toml").write_text(pyproject)
-    (path / "mise.toml").write_text(
-        f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
-    )
-    (path / "mise.lock").write_text("")
-    (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
-    wf = path / ".github" / "workflows"
-    wf.mkdir(parents=True)
-    (wf / "ci.yml").write_text("name: ci\non: push\n")
-    if readme:
-        (path / "README.md").write_text("# x\n")
-    if claude:
-        (path / "CLAUDE.md").write_text("# project instructions\n")
-    if gitleaks_config:
-        (path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
-
-
+# ── dev_env_check.sh (skill checker; harness lives in conftest) ─────────────────────
 def test_checker_compliant_with_docs(tmp_path):
     make_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
@@ -224,27 +185,21 @@ def test_checker_no_fnox_suggestion_without_secrets(tmp_path):
     assert out["suggests_fnox"] == "0"
 
 
+@pytest.mark.parametrize("vendor_dir", [".venv", "node_modules", "vendor"])
+def test_checker_no_fnox_suggestion_from_vendored_dirs(tmp_path, vendor_dir):
+    # A vendored/dependency dir whose third-party source contains Settings./ENV[
+    # must NOT trigger the fnox nudge — only the repo's OWN source counts.
+    # Regression for the readoc false positive (installed python-docx/pymupdf
+    # under .venv matched the credential heuristic's grep).
+    make_compliant_repo(tmp_path)
+    vendored = tmp_path / vendor_dir / "lib" / "pkg"
+    vendored.mkdir(parents=True)
+    (vendored / "section.py").write_text("x = Settings.foo\ny = ENV['BAR']\n")
+    out = run_checker(tmp_path)
+    assert out["suggests_fnox"] == "0"
+
+
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────
-def test_latest_deps_fires_once_per_session(tmp_path):
-    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
-    payload = json.dumps(
-        {
-            "tool_input": {"file_path": str(tmp_path / "pyproject.toml")},
-            "session_id": "s1",
-        }
-    )
-    first = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0
-    assert_json_with(first.stdout, "stale")
-    # Manifest edits also nudge keeping the human-facing docs in sync.
-    assert_json_with(first.stdout, "README.md")
-    assert_json_with(first.stdout, "CLAUDE.md")
-    # Marker now exists → second call for same session+category stays silent.
-    second = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
-    assert second.returncode == 0
-    assert second.stdout.strip() == ""
-
-
 def test_latest_deps_gemfile_nudges_docs(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
     payload = json.dumps(
@@ -303,19 +258,6 @@ def test_dockerfile_reminder_silent_for_non_dockerfile(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_dockerfile_reminder_silent_when_opted_out(tmp_path):
-    payload = json.dumps(
-        {"tool_input": {"file_path": str(tmp_path / "Dockerfile")}, "session_id": "d3"}
-    )
-    r = run_hook(
-        "dockerfile-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_DOCKERFILE="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
 def test_popover_reminder_fires_for_controller_filename(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"
@@ -361,29 +303,290 @@ def test_popover_reminder_silent_for_non_frontend_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_popover_reminder_silent_when_opted_out(tmp_path):
-    ctrl = tmp_path / "popover_controller.js"
-    ctrl.write_text("// popover\n")
-    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p5"})
+def test_popover_reminder_fires_for_heex(tmp_path):
+    # .heex is covered by the shared frontend-extension list in the lib.
+    view = tmp_path / "nav.heex"
+    view.write_text('<div role="tooltip" class="hidden">tip</div>\n')
+    payload = json.dumps({"tool_input": {"file_path": str(view)}, "session_id": "p7"})
     r = run_hook(
-        "popover-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_POPOVER="false"),
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
     )
     assert r.returncode == 0
+    assert_json_with(r.stdout, "popovers-tooltips")
+
+
+# ── inline-svg-reminder.sh ──────────────────────────────────────────────────────────
+INLINE_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>'
+
+
+def _svg_payload(
+    file_path, *, content=None, new_string=None, old_string=None, tool="Write"
+):
+    tool_input = {"file_path": str(file_path)}
+    if content is not None:
+        tool_input["content"] = content
+    if new_string is not None:
+        tool_input["new_string"] = new_string
+    if old_string is not None:
+        tool_input["old_string"] = old_string
+    return json.dumps(
+        {"tool_name": tool, "tool_input": tool_input, "session_id": "svg1"}
+    )
+
+
+def _run_svg(payload, **env_overrides):
+    env_overrides.setdefault("DEV_HOOKS_SVG_INLINE", None)
+    return run_hook(
+        "inline-svg-reminder.sh", stdin=payload, env=base_env(**env_overrides)
+    )
+
+
+def assert_svg_fired(r):
+    assert r.returncode == 2
+    assert "[inline-svg]" in r.stderr
     assert r.stdout.strip() == ""
 
 
-def test_popover_reminder_fires_once_per_session(tmp_path):
-    ctrl = tmp_path / "tooltip_controller.js"
-    ctrl.write_text("// tip\n")
-    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p6"})
-    env = base_env(TMPDIR=str(tmp_path))
-    first = run_hook("popover-reminder.sh", stdin=payload, env=env)
-    second = run_hook("popover-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0 and second.returncode == 0
-    assert_json_with(first.stdout, "popovers-tooltips")
-    assert second.stdout.strip() == ""
+def assert_svg_silent(r):
+    assert r.returncode == 0
+    assert r.stdout.strip() == "" and r.stderr.strip() == ""
+
+
+def test_inline_svg_fires_on_jsx_path_svg(tmp_path):
+    content = 'export const Icon = () => <svg className="h-4 w-4" viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>;\n'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "Icon.tsx", content=content)))
+
+
+def test_inline_svg_fires_on_edit_new_string(tmp_path):
+    r = _run_svg(
+        _svg_payload(tmp_path / "header.html", new_string=INLINE_SVG, tool="Edit")
+    )
+    assert_svg_fired(r)
+
+
+def test_inline_svg_fires_on_partial_fragment(tmp_path):
+    # An Edit that adds drawing elements into an existing <svg> — no <svg> tag in sight.
+    frag = '<path d="M3 12h18M3 6h18M3 18h18"/>\n<circle cx="12" cy="12" r="3"/>\n'
+    r = _run_svg(_svg_payload(tmp_path / "menu.vue", new_string=frag, tool="Edit"))
+    assert_svg_fired(r)
+
+
+def test_inline_svg_fires_on_data_uri(tmp_path):
+    css = 'background-image: url("data:image/svg+xml,%3Csvg xmlns=...%3E");\n'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "app.css", content=css)))
+
+
+def test_inline_svg_fires_in_template_string(tmp_path):
+    js = f"const icon = `{INLINE_SVG}`;\n"
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "icons.js", content=js)))
+
+
+def test_inline_svg_silent_on_use_only_sprite(tmp_path):
+    sprite = '<svg class="icon"><use href="/sprite.svg#check"/></svg>\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "nav.html", content=sprite)))
+
+
+def test_inline_svg_silent_on_svg_file(tmp_path):
+    # Writing a real .svg file is the desired refactor outcome — never flag it.
+    r = _run_svg(_svg_payload(tmp_path / "icons" / "check.svg", content=INLINE_SVG))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_on_markdown(tmp_path):
+    md = f"Badge:\n\n{INLINE_SVG}\n"
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "README.md", content=md)))
+
+
+def test_inline_svg_silent_on_img_reference(tmp_path):
+    html = '<img src="/icons/check.svg" alt="check">\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "page.html", content=html)))
+
+
+def test_inline_svg_silent_on_non_frontend_file(tmp_path):
+    py = f'ICON = "{INLINE_SVG}"\n'
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "icons.py", content=py)))
+
+
+def test_inline_svg_silent_on_test_file(tmp_path):
+    r = _run_svg(_svg_payload(tmp_path / "__tests__" / "Icon.tsx", content=INLINE_SVG))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_when_opted_out(tmp_path):
+    r = _run_svg(
+        _svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG),
+        DEV_HOOKS_SVG_INLINE="false",
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_fires_every_occurrence(tmp_path):
+    # Unlike the once-per-session reminders, this enforces on every write (no marker).
+    payload = _svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG)
+    assert_svg_fired(_run_svg(payload))
+    assert_svg_fired(_run_svg(payload))
+
+
+def test_inline_svg_fires_on_uppercase_svg(tmp_path):
+    shouty = '<SVG VIEWBOX="0 0 24 24"><PATH D="M12 2L2 22h20z"/></SVG>'
+    assert_svg_fired(_run_svg(_svg_payload(tmp_path / "icon.html", content=shouty)))
+
+
+def test_inline_svg_silent_on_dynamic_chart_markup(tmp_path):
+    # Data-driven SVG (D3/visx-style) is a chart, not an icon — no library replaces it.
+    chart = (
+        "export const Bars = ({data}) => (\n"
+        '  <svg width="400" height="200">\n'
+        "    {data.map(d => <rect x={scale(d)} y={y(d)} width={w} height={h(d)} />)}\n"
+        "  </svg>\n"
+        ");\n"
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "Chart.tsx", content=chart)))
+
+
+def test_inline_svg_silent_on_vue_bound_chart_markup(tmp_path):
+    # Vue's quoted bindings (:x="scale(d)") are expressions too, not literal icons.
+    chart = (
+        '<template><svg :width="w">'
+        '<rect v-for="d in data" :x="scale(d)" :y="y(d)" :height="h(d)"/>'
+        "</svg></template>\n"
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "Chart.vue", content=chart)))
+
+
+def test_inline_svg_silent_on_vue_bound_path_generator(tmp_path):
+    # :d="lineGenerator(...)" is a bound expression, not literal path data (the
+    # expression even starts with a valid path command letter, 'l').
+    chart = (
+        '<svg :viewBox="vb"><path :d="lineGenerator(chartData)" fill="none"/></svg>\n'
+    )
+    assert_svg_silent(_run_svg(_svg_payload(tmp_path / "LineChart.vue", content=chart)))
+
+
+def test_inline_svg_fires_on_fragment_with_literal_path_on_dynamic_tag(tmp_path):
+    # Literal d= data is hand-written even when other attributes are expressions.
+    frag = '<path className={styles.icon} d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10z"/>'
+    r = _run_svg(_svg_payload(tmp_path / "Icon.tsx", new_string=frag, tool="Edit"))
+    assert_svg_fired(r)
+
+
+def test_inline_svg_edit_skips_preexisting_shape_icon_via_old_string(tmp_path):
+    # Icons drawn with circle/line (no <path d=>) dedup on their drawing tags.
+    icon = '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    old = f"<button>{icon}</button>"
+    new = old.replace("<svg ", '<svg class="h-4 w-4" ')
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Search.tsx", new_string=new, old_string=old, tool="Edit"
+        )
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_silent_on_custom_element_near_sprite(tmp_path):
+    # <line-chart> is a custom element, not an SVG <line>; the unclosed sprite svg
+    # alongside it must not combine into a false positive.
+    frag = '<svg class="icon"><use href="/sprite.svg#x"/>\n<line-chart points="1,2"></line-chart>\n'
+    r = _run_svg(_svg_payload(tmp_path / "dash.html", new_string=frag, tool="Edit"))
+    assert_svg_silent(r)
+
+
+def test_inline_svg_edit_skips_preexisting_svg_via_old_string(tmp_path):
+    # Tweaking an attribute on an already-approved icon re-sends its <path> in both
+    # old_string and new_string — same drawing data, so no re-fire.
+    old = f'<div class="logo">{INLINE_SVG}</div>'
+    new = old.replace('viewBox="0 0 24 24"', 'class="h-5" viewBox="0 0 24 24"')
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Header.tsx", new_string=new, old_string=old, tool="Edit"
+        )
+    )
+    assert_svg_silent(r)
+
+
+def test_inline_svg_edit_flags_added_svg_despite_old_string(tmp_path):
+    # The Edit adds a NEW icon next to existing non-svg markup — old_string can't absolve it.
+    r = _run_svg(
+        _svg_payload(
+            tmp_path / "Header.tsx",
+            new_string=f"<div>{INLINE_SVG}</div>",
+            old_string="<div></div>",
+            tool="Edit",
+        )
+    )
+    assert_svg_fired(r)
+
+
+def test_inline_svg_write_skips_preexisting_data_uri_with_changed_context(tmp_path):
+    # Dedup keys on the URI itself, so unrelated edits near a committed data URI stay silent.
+    run = init_git_repo(tmp_path)
+    css = tmp_path / "app.css"
+    css.write_text('.bg { background: url("data:image/svg+xml,%3Csvg%20w%3E"); }\n')
+    run("add", ".")
+    run("commit", "-q", "-m", "css")
+    content = css.read_text() + ".btn { color: red; }\n"
+    assert_svg_silent(_run_svg(_svg_payload(css, content=content)))
+
+
+def test_inline_svg_fires_on_multiedit_payload(tmp_path):
+    payload = json.dumps(
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(tmp_path / "Icon.tsx"),
+                "edits": [{"old_string": "null", "new_string": INLINE_SVG}],
+            },
+            "session_id": "svg1",
+        }
+    )
+    assert_svg_fired(_run_svg(payload))
+
+
+def test_inline_svg_multiedit_skips_preexisting_via_edits_old_string(tmp_path):
+    # The same icon appears in the edit's old_string (attr tweak) — not a new offence.
+    new = INLINE_SVG.replace("<svg ", '<svg class="h-5" ')
+    payload = json.dumps(
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(tmp_path / "Icon.tsx"),
+                "edits": [{"old_string": INLINE_SVG, "new_string": new}],
+            },
+            "session_id": "svg1",
+        }
+    )
+    assert_svg_silent(_run_svg(payload))
+
+
+def test_inline_svg_write_skips_preexisting_svg(tmp_path):
+    run = init_git_repo(tmp_path)
+    comp = tmp_path / "Logo.tsx"
+    comp.write_text(f"export const Logo = () => {INLINE_SVG};\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "logo")
+    # A full-file Write re-sends the committed svg plus an unrelated new line.
+    content = comp.read_text() + "export const x = 1;\n"
+    assert_svg_silent(_run_svg(_svg_payload(comp, content=content)))
+
+
+def test_inline_svg_write_flags_newly_added_svg(tmp_path):
+    run = init_git_repo(tmp_path)
+    comp = tmp_path / "Logo.tsx"
+    comp.write_text("export const Logo = () => null;\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "logo")
+    content = comp.read_text() + f"export const Icon = () => {INLINE_SVG};\n"
+    assert_svg_fired(_run_svg(_svg_payload(comp, content=content)))
+
+
+def test_inline_svg_names_icon_library(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"lucide-react": "^0.400.0"}})
+    )
+    r = _run_svg(_svg_payload(tmp_path / "Icon.tsx", content=INLINE_SVG))
+    assert_svg_fired(r)
+    assert "lucide" in r.stderr
 
 
 # ── lint-on-edit.sh ─────────────────────────────────────────────────────────────────
@@ -561,34 +764,6 @@ def test_debug_leftover_silent_for_preexisting_committed(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_debug_leftover_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("breakpoint()\n")
-    r = run_hook(
-        "debug-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_DEBUG_LEFTOVER="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_debug_leftover_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("breakpoint()\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=1, extra_lines=[DEBUG_SENTINEL]
-    )
-    r = run_hook(
-        "debug-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 def test_debug_leftover_ignores_test_files(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "test_foo.py").write_text("breakpoint()\n")  # a test file
@@ -602,26 +777,6 @@ def test_debug_leftover_ignores_test_files(tmp_path):
 
 
 # ── secret-plaintext-reminder.sh ────────────────────────────────────────────────────
-def test_secret_plaintext_fires_once_per_session(tmp_path):
-    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
-    payload = json.dumps(
-        {
-            "tool_input": {
-                "file_path": str(tmp_path / ".env"),
-                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
-            },
-            "session_id": "s1",
-        }
-    )
-    first = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0
-    assert_json_with(first.stdout, "env-to-fnox")
-    # Marker now exists → second call for the same session stays silent.
-    second = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
-    assert second.returncode == 0
-    assert second.stdout.strip() == ""
-
-
 def test_secret_plaintext_silent_for_env_reference(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
     payload = json.dumps(
@@ -670,23 +825,27 @@ def test_secret_plaintext_silent_for_example_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_secret_plaintext_silent_when_opted_out(tmp_path):
+def test_secret_plaintext_fires_on_multiedit_payload(tmp_path):
+    # MultiEdit's edits[].new_string flows through the shared reminder_content extraction.
     payload = json.dumps(
         {
+            "tool_name": "MultiEdit",
             "tool_input": {
-                "file_path": str(tmp_path / ".env"),
-                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+                "file_path": str(tmp_path / "settings.py"),
+                "edits": [
+                    {"old_string": "x = 1", "new_string": 'API_KEY="testtesttest"\n'}
+                ],
             },
-            "session_id": "s5",
+            "session_id": "s6",
         }
     )
     r = run_hook(
         "secret-plaintext-reminder.sh",
         stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS="false"),
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None),
     )
     assert r.returncode == 0
-    assert r.stdout.strip() == ""
+    assert_json_with(r.stdout, "env-to-fnox")
 
 
 # ── missing-test-reminder.sh ────────────────────────────────────────────────────────
@@ -713,34 +872,6 @@ def test_missing_test_silent_when_test_present(tmp_path):
         "missing-test-reminder.sh",
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_missing_test_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
-    r = run_hook(
-        "missing-test-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_MISSING_TEST="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_missing_test_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=1, extra_lines=[MISSING_TEST_SENTINEL]
-    )
-    r = run_hook(
-        "missing-test-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
@@ -780,14 +911,15 @@ def test_missing_test_silent_for_minified_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path):
+@pytest.mark.parametrize("jscpd_key", ["ignore", "ignorePattern"])
+def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path, jscpd_key):
     # The repo's own .jscpd.json drives the skip list: a dir it ignores is skipped, but a
     # plain source file still fires (so the gate didn't over-broaden). Stage both files so the
-    # vendored path is listed individually (see note in the vendored-dirs test).
+    # vendored path is listed individually (see note in the vendored-dirs test). `ignore` is
+    # the v12+ key (the one jscpd v5 honors for paths); `ignorePattern` is the pre-v12 key,
+    # still honored so not-yet-upgraded repos keep their exclusions.
     run = init_git_repo(tmp_path)
-    (tmp_path / ".jscpd.json").write_text(
-        json.dumps({"ignorePattern": ["**/thirdparty/**"]})
-    )
+    (tmp_path / ".jscpd.json").write_text(json.dumps({jscpd_key: ["**/thirdparty/**"]}))
     (tmp_path / "thirdparty").mkdir()
     (tmp_path / "thirdparty" / "x.js").write_text("export const x = 1\n")
     (tmp_path / "bar.py").write_text("def f():\n    return 1\n")
@@ -842,23 +974,176 @@ def test_ci_action_ref_silent_for_non_yaml(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_ci_action_ref_silent_when_opted_out(tmp_path):
-    wf = _workflow(tmp_path)
-    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c4"})
-    r = run_hook(
+# ── cross-hook behavior: opt-out and fire-once-per-session ──────────────────────────
+# Every reminder hook honors its DEV_HOOKS_* opt-out env var, and the marker-based hooks
+# fire at most once per session (per category/file where applicable). One payload table
+# drives both checks; each builder returns a payload that would otherwise make its hook
+# fire. dockerfile-reminder is opt-out-only: with hadolint installed it deliberately
+# lints on EVERY write, so it has no fire-once guarantee to pin.
+
+
+def _latest_deps_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {"file_path": str(tmp_path / "pyproject.toml")},
+            "session_id": "x1",
+        }
+    )
+
+
+def _dockerfile_payload(tmp_path):
+    f = tmp_path / "Dockerfile"
+    f.write_text("FROM alpine:3.20\nRUN echo hi\n")
+    return json.dumps({"tool_input": {"file_path": str(f)}, "session_id": "x1"})
+
+
+def _popover_payload(tmp_path):
+    f = tmp_path / "tooltip_controller.js"
+    f.write_text("// tip\n")
+    return json.dumps({"tool_input": {"file_path": str(f)}, "session_id": "x1"})
+
+
+def _secret_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env"),
+                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+            },
+            "session_id": "x1",
+        }
+    )
+
+
+def _ci_action_payload(tmp_path):
+    return json.dumps(
+        {"tool_input": {"file_path": str(_workflow(tmp_path))}, "session_id": "x1"}
+    )
+
+
+# (script, opt-out env var, payload builder, needle expected in the firing output)
+FIRE_ONCE_REMINDERS = [
+    ("latest-deps-reminder.sh", "DEV_HOOKS_LATEST_DEPS", _latest_deps_payload, "stale"),
+    (
+        "popover-reminder.sh",
+        "DEV_HOOKS_POPOVER",
+        _popover_payload,
+        "popovers-tooltips",
+    ),
+    (
+        "secret-plaintext-reminder.sh",
+        "DEV_HOOKS_SECRETS",
+        _secret_payload,
+        "env-to-fnox",
+    ),
+    (
         "ci-action-ref-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_CI_ACTION_REFS="false"),
+        "DEV_HOOKS_CI_ACTION_REFS",
+        _ci_action_payload,
+        "check_action_refs.sh",
+    ),
+]
+OPT_OUT_REMINDERS = FIRE_ONCE_REMINDERS + [
+    (
+        "dockerfile-reminder.sh",
+        "DEV_HOOKS_DOCKERFILE",
+        _dockerfile_payload,
+        "Order instructions",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,make_payload,needle",
+    OPT_OUT_REMINDERS,
+    ids=[e[0] for e in OPT_OUT_REMINDERS],
+)
+def test_reminder_silent_when_opted_out(
+    tmp_path, script, opt_var, make_payload, needle
+):
+    r = run_hook(
+        script,
+        stdin=make_payload(tmp_path),
+        env=base_env(TMPDIR=str(tmp_path), **{opt_var: "false"}),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
-def test_ci_action_ref_fires_once_per_session(tmp_path):
-    wf = _workflow(tmp_path)
-    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c5"})
-    env = base_env(TMPDIR=str(tmp_path))
-    first = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
-    second = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
-    assert_json_with(first.stdout, "check_action_refs.sh")
+@pytest.mark.parametrize(
+    "script,opt_var,make_payload,needle",
+    FIRE_ONCE_REMINDERS,
+    ids=[e[0] for e in FIRE_ONCE_REMINDERS],
+)
+def test_reminder_fires_once_per_session(
+    tmp_path, script, opt_var, make_payload, needle
+):
+    env = base_env(TMPDIR=str(tmp_path), **{opt_var: None})
+    payload = make_payload(tmp_path)
+    first = run_hook(script, stdin=payload, env=env)
+    assert first.returncode == 0
+    assert_json_with(first.stdout, needle)
+    # Marker now exists → second call for the same session stays silent.
+    second = run_hook(script, stdin=payload, env=env)
+    assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+# Stop hooks: same opt-out and once-per-session (transcript sentinel) contracts.
+# (script, opt-out env var, sentinel, triggering foo.py content)
+STOP_REMINDERS = [
+    (
+        "debug-leftover-reminder.sh",
+        "DEV_HOOKS_DEBUG_LEFTOVER",
+        DEBUG_SENTINEL,
+        "breakpoint()\n",
+    ),
+    (
+        "missing-test-reminder.sh",
+        "DEV_HOOKS_MISSING_TEST",
+        MISSING_TEST_SENTINEL,
+        "def f():\n    return 1\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,sentinel,trigger",
+    STOP_REMINDERS,
+    ids=[e[0] for e in STOP_REMINDERS],
+)
+def test_stop_reminder_silent_when_opted_out(
+    tmp_path, script, opt_var, sentinel, trigger
+):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text(trigger)
+    r = run_hook(
+        script,
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=base_env(**{opt_var: "false"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,sentinel,trigger",
+    STOP_REMINDERS,
+    ids=[e[0] for e in STOP_REMINDERS],
+)
+def test_stop_reminder_silent_when_already_prompted(
+    tmp_path, script, opt_var, sentinel, trigger
+):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text(trigger)
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=1, extra_lines=[sentinel]
+    )
+    r = run_hook(
+        script,
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""

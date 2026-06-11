@@ -6,7 +6,7 @@
 # to existing files are ignored. Test files, a few low-value-to-test files (package
 # barrels, type defs, config, migrations, __init__/conftest), and vendored/generated code
 # are excluded to limit noise. Vendored/generated dirs come from the repo's own .jscpd.json
-# ignorePattern at run time (falling back to a built-in default when absent); minified
+# `ignore` globs at run time (falling back to a built-in default when absent); minified
 # files (*.min.js etc.) are always skipped.
 #
 # Fires at most once per session via its own transcript sentinel (mirrors review-reminder),
@@ -14,54 +14,33 @@
 #
 # Opt out per repo/user with DEV_HOOKS_MISSING_TEST=false (in .claude settings "env").
 
-case "${DEV_HOOKS_MISSING_TEST:-}" in
-  false | 0 | no | off) exit 0 ;;
-esac
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+reminder_opt_out DEV_HOOKS_MISSING_TEST
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-INPUT=$(cat 2>/dev/null)
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
-
 SENTINEL="[missing-test] new source files without tests this session"
 
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  grep -qF "$SENTINEL" "$TRANSCRIPT" 2>/dev/null && exit 0
-fi
+# Sets INPUT/TRANSCRIPT; exits 0 if the sentinel is already in the transcript.
+reminder_stop_init "$SENTINEL"
 
 FINDINGS=$(
-  python3 - <<'PYEOF'
+  python3 - "$SELF_DIR/lib" <<'PYEOF'
 import json
 import os
 import re
-import subprocess
+import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ in the plugin's lib dir
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import git, is_test_path
 
 PY_EXT = {".py"}
 RB_EXT = {".rb"}
 JS_EXT = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"}
 TESTABLE = PY_EXT | RB_EXT | JS_EXT
-
-
-# jscpd:ignore-start - small git/test-path helpers intentionally shared with debug-leftover
-def git(args):
-    try:
-        r = subprocess.run(["git", *args], capture_output=True, text=True)
-        return r.stdout if r.returncode == 0 else ""
-    except OSError:
-        return ""
-
-
-def is_test_path(path):
-    base = os.path.basename(path)
-    if re.search(r"(?:_spec\.rb|_test\.rb)$", base):
-        return True
-    if re.search(r"^test_.*\.py$|_test\.py$", base):
-        return True
-    if re.search(r"\.(?:test|spec)\.", base):
-        return True
-    parts = path.split("/")
-    return any(p in ("spec", "tests", "test", "__tests__") for p in parts)
-# jscpd:ignore-end
 
 
 def is_low_value(path):
@@ -79,7 +58,7 @@ def is_low_value(path):
 
 
 # Vendored/generated directories. Kept in sync with the .jscpd.json template's
-# ignorePattern via tests/test_dev_env_templates.py; the runtime read below prefers the
+# `ignore` globs via tests/test_dev_env_templates.py; the runtime read below prefers the
 # repo's own .jscpd.json and falls back to this when the repo has none.
 DEFAULT_VENDOR_DIRS = {
     "__pycache__",
@@ -102,7 +81,9 @@ def read_jscpd_dirs():
     except (OSError, ValueError):
         return None
     dirs = set()
-    for pat in data.get("ignorePattern", []):
+    # v12 uses `ignore` (the key jscpd v5 honors for paths); `ignorePattern` is the
+    # pre-v12 key, still read so not-yet-upgraded repos keep their exclusions.
+    for pat in data.get("ignore", []) + data.get("ignorePattern", []):
         m = re.match(r"^\*\*/(.+)/\*\*$", pat)
         if m:
             dirs.add(m.group(1))
@@ -164,5 +145,4 @@ PYEOF
 
 MSG="${SENTINEL}. You added these source files this session but I found no matching test for them — add tests before finishing (TDD / \"Always Works\"). If a file genuinely doesn't warrant a test, say so and move on:"$'\n'"$FINDINGS"
 
-jq -cn --arg msg "$MSG" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-exit 2
+reminder_emit_stop "$MSG"

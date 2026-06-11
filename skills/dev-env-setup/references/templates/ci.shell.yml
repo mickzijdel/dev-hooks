@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v2   # installs shellcheck/shfmt/ruff/uv honoring mise.lock (same versions as pre-commit)
+      - uses: jdx/mise-action@v4   # installs shellcheck/shfmt/ruff/uv honoring mise.lock (same versions as pre-commit)
       - name: Run shellcheck
         # *.sh/*.bash plus extensionless shell scripts detected by shebang (bin/foo,
         # hooks) — mirrors the hk `shellcheck-scripts` step so CI and pre-commit agree.
@@ -44,15 +44,18 @@ jobs:
       - name: Run tests
         run: uv run pytest --tb=short
 
+  # Run the MIT-licensed gitleaks CLI (via mise, version-pinned in mise.lock) rather than
+  # gitleaks/gitleaks-action: the action requires a paid GITLEAKS_LICENSE on org-owned repos,
+  # while the CLI is free for all repos and is exactly what the local hk pre-commit hook runs.
   gitleaks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required to scan pull_request events
+          fetch-depth: 0 # gitleaks git scans the full commit history
+      - uses: jdx/mise-action@v4
+      - name: Scan git history for secrets
+        run: mise exec -- gitleaks git --redact --no-banner .
 
   # Noisier audits — mirror the hk `check` hook (not run on pre-commit).
   audit:
@@ -73,7 +76,7 @@ jobs:
           if [ -n "$files" ]; then uvx vulture --min-confidence 80 $files; else echo "no python files, skipping"; fi
       - name: Duplication (jscpd)
         # -f scopes to code formats (no config equivalent); .jscpd.json carries
-        # minTokens/threshold/reporters/gitignore/ignorePattern.
+        # minTokens/threshold/reporters/gitignore/ignore globs.
         # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
         # (see hk.shell.pkl / SKILL.md › jscpd version policy) so local and CI gates agree.
         run: |

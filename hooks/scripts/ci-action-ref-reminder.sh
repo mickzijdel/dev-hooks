@@ -27,11 +27,7 @@ esac
 grep -qE 'uses:[[:space:]]*["'"'"']?[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@' "$FILE" || exit 0
 
 # Fire at most once per (session x file) so repeated edits don't re-nag.
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-ci-action-refs"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}-$(printf '%s' "$FILE" | cksum | cut -d' ' -f1)"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once ci-action-refs "$(printf '%s' "$FILE" | cksum | cut -d' ' -f1)" || exit 0
 
 # Absolute path to the bundled checker (CLAUDE_PLUGIN_ROOT when the plugin sets it, else
 # derive from this script's location).
@@ -39,5 +35,4 @@ SCRIPT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}/skills/dev-env-set
 
 MSG="You edited $BASE, which pins GitHub Actions with \`uses: owner/repo@ref\`. Verify every ref actually resolves on the remote before finishing — an action can ship release tags (v8.0.0, v8.1.0) without floating a \`@v8\` major tag, so a wrong pin looks fine locally but breaks CI at \"Prepare all required actions\". Run: \`bash \"$SCRIPT\" \"$FILE\"\` (exits non-zero and lists any unresolved refs). Fix FAILs by pinning a ref that exists (often the exact release tag, e.g. @v8.2.0)."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-exit 0
+reminder_emit "$MSG"

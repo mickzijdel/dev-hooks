@@ -13,29 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/setup-node@v6
         with:
-          ruby-version: .ruby-version
-          bundler-cache: true
-      - name: Make bin files executable
-        run: chmod +x bin/*
-      - name: Lint code for consistent style
-        run: bin/rubocop -f github
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: .ruby-version
-          bundler-cache: true
-      - name: Make bin files executable
-        run: chmod +x bin/*
-      - name: Run tests
-        env:
-          RAILS_ENV: test
-        run: bin/rails db:test:prepare test
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - name: Check formatting (prettier)
+        run: npx prettier --check .
 
   # Run the MIT-licensed gitleaks CLI (via mise, version-pinned in mise.lock) rather than
   # gitleaks/gitleaks-action: the action requires a paid GITLEAKS_LICENSE on org-owned repos,
@@ -50,33 +34,26 @@ jobs:
       - name: Scan git history for secrets
         run: mise exec -- gitleaks git --redact --no-banner .
 
-  # Noisier audits — mirror the hk `check` hook (not run on pre-commit).
-  # Add `flay` and `debride` to the Gemfile dev group.
+  # Add a `test` job here if the project has a test suite (e.g. `npm test` / `npx vitest run`).
+
+  # Noisier audits — mirror the hk `check` hook.
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/setup-node@v6
         with:
-          ruby-version: .ruby-version
-          bundler-cache: true
-      - name: Dead code (debride)
-        run: bundle exec debride .
-      - name: Duplication (flay — Ruby structural, advisory)
-        run: bundle exec flay . || true   # flay exits 0 anyway; surfaces structural clones
-      - name: Duplication (jscpd — polyglot gate)
-        # -f scopes to code formats (no config equivalent); .jscpd.json carries
-        # minTokens/threshold/reporters/gitignore/ignore globs (excludes generated
-        # db/schema.rb, structure.sql, app/assets/builds).
-        # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
-        # (see hk.ruby.pkl / SKILL.md › jscpd version policy) so local and CI gates agree.
+          node-version: lts/*
+      - name: Duplication (jscpd)
+        # -f scopes to code formats; .jscpd.json carries minTokens/threshold/reporters/ignore.
+        # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5.
         run: |
           cutoff=$(date -u -d '4 days ago' +%F)
           ver=$(npx --before="$cutoff" --yes jscpd --version 2>/dev/null | awk 'END{print $NF}')
           case "$ver" in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac
-          npx --yes jscpd@"$ver" . -f ruby,erb,javascript,typescript,css,scss,sass,vue
+          npx --yes jscpd@"$ver" . -f javascript,typescript,css,scss
       - name: Large files
         run: |
           limit=512000

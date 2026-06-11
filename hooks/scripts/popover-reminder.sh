@@ -18,11 +18,8 @@ source "$SELF_DIR/lib/reminder-common.sh"
 # Sets INPUT, FILE, SESSION, BASE (or exits 0 on opt-out / missing file_path).
 reminder_init DEV_HOOKS_POPOVER
 
-# File gate: only frontend markup/script files. (*.html.erb ends in .erb.)
-case "$BASE" in
-  *.js | *.mjs | *.ts | *.jsx | *.tsx | *.vue | *.svelte | *.erb | *.html | *.htm | *.haml | *.slim) ;;
-  *) exit 0 ;;
-esac
+# File gate: only frontend markup/script/style files (shared list in the lib).
+reminder_is_frontend_file "$BASE" || exit 0
 
 # Content gate: a popover/tooltip signal in the filename or the file body.
 SIGNAL=""
@@ -46,13 +43,8 @@ fi
 [ -z "$SIGNAL" ] && exit 0
 
 # Fire at most once per session.
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-popover"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once popover || exit 0
 
 MSG="You just edited $BASE, which looks like popover/tooltip/dropdown UI. Tailwind styles but does NOT position — don't hand-roll top/left math, or it'll open off-screen or get clipped. Use a collision-aware positioner (offset + flip + shift) and render in the top layer / a portal so an overflow/transform/z-index ancestor can't clip it. See the \`popovers-tooltips\` skill: in Rails/Hotwire that's Floating UI (@floating-ui/dom) in a Stimulus controller with autoUpdate — and clean up in disconnect() (the Turbo gotcha). Simpler options: Tippy.js, or your Tailwind kit's component (Flowbite/Preline/daisyUI)."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-exit 0
+reminder_emit "$MSG"

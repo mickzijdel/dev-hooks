@@ -50,10 +50,11 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
      `threshold 0`, `reporters ["ai","threshold"]`, `gitignore true`.
    - **Ruby/Rails Node cost:** adding jscpd means a Node dependency in the repo — accepted
      because a Rails app's JS/CSS/SCSS/ERB also needs duplication coverage (flay only parses
-     Ruby). See the "Duplication: flay vs jscpd" note in `../SKILL.md`.
+     Ruby). See the "Duplication: flay vs jscpd" note in `standard.md`.
 5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
-   (`gitleaks/gitleaks-action@v3`, `fetch-depth: 0`, with `env: GITHUB_TOKEN:
-   ${{ secrets.GITHUB_TOKEN }}` — required to scan `pull_request` events, see v6 → v7) and an
+   (historically `gitleaks/gitleaks-action@v3` with a `GITHUB_TOKEN` env, see v6 → v7 —
+   **superseded in v10 → v11** by the CLI-via-mise job; when applying multiple sections in one
+   pass, write the v11 form directly) and an
    `audit` job (dead-code + duplication + a large-file guard step).
 6. **Verify:** `mise install && hk install && hk run check` (gitleaks + audits run clean), then
    confirm `hk run pre-commit --all` does **not** run vulture/jscpd/flay/debride (only linters +
@@ -77,7 +78,7 @@ A repo with **no** dev-env setup at all goes straight to the full v1 layout — 
 `pyproject.toml` (`templates/pyproject.plugin.toml`), a `tests/` suite running each
 bundled script as a subprocess (`templates/test_scripts.example.py`), and `uv run --script` +
 PEP 723 inline metadata on every Python script. See the "Claude Code plugin repos" section in
-`../SKILL.md`.
+`standard.md`.
 
 ---
 
@@ -258,6 +259,9 @@ To reach v6:
 
 ## v6 → v7 (gitleaks PR scan needs GITHUB_TOKEN)
 
+> **Superseded by v10 → v11**, which drops gitleaks-action for the CLI. When applying multiple
+> sections in one pass, skip this and write the v11 gitleaks job directly.
+
 `gitleaks/gitleaks-action` now hard-requires a `GITHUB_TOKEN` to scan **pull_request**
 events — it calls the GitHub API to enumerate the PR's commits. Without it the `gitleaks`
 job fails on every PR with `🛑 GITHUB_TOKEN is now required to scan pull requests` (push
@@ -382,14 +386,78 @@ repo has plaintext secrets in use. To reach v10:
 
 ---
 
-## v10 → v11 (mise upgrade cooldown)
+## v10 → v11 (CI gitleaks: commercial action → MIT CLI via mise)
 
-v11 adds `minimum_release_age = "4d"` to `[settings]` in `mise.toml`, extending the same 4-day
+`gitleaks/gitleaks-action` moved from MIT to a commercial EULA at its v2.0.0: on **org-owned**
+repos it hard-requires a `GITLEAKS_LICENSE` secret (the free "Starter" tier covers exactly 1 repo
+per org; a 2nd org repo needs a paid license), failing the job with `🛑 missing gitleaks license`.
+Personal-account repos need no key, so the gap stays invisible until CI runs on an org repo
+(first hit: `EdinburghUniversityTheatreCompany/bacs-tool`). The gitleaks **CLI** stays MIT/free
+for every repo — only the action wrapper carries the license — so v11 replaces the action with
+the mise.lock-pinned CLI on **all** repos (one code path, no per-owner conditional, no secret to
+provision), which is exactly the binary the local hk pre-commit hook already runs. To reach v11:
+
+1. **Replace the `gitleaks` job** in `.github/workflows/ci.yml` with the CLI form (see
+   `templates/ci.*.yml`):
+   ```yaml
+     gitleaks:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v6
+           with:
+             fetch-depth: 0 # gitleaks git scans the full commit history
+         - uses: jdx/mise-action@v4
+         - name: Scan git history for secrets
+           run: mise exec -- gitleaks git --redact --no-banner .
+   ```
+   `gitleaks git` scans commit history — the scope the action covered, so `fetch-depth: 0` stays
+   required — and auto-loads the root `.gitleaks.toml` (v10) with no `--config` flag. `mise exec`
+   runs the gitleaks version pinned in `mise.lock` (in `[tools]` since v1), keeping local and CI
+   scans on the same binary. `--redact` masks secret values in findings — without it a hit would
+   print the secret into the CI log (public on public repos); the hk builtin already redacts.
+   The v7 `GITHUB_TOKEN` env was an action-only requirement — drop it.
+   (Scope note: CI scans history, the hk hook scans the working tree via `gitleaks dir` — same
+   split as before, no regression.)
+2. **Bump any existing `jdx/mise-action` pins to `@v4`** (latest major; v4.1.0 as of 2026-06-10)
+   — e.g. the shell stack's `lint` job previously pinned `@v2`.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "11"` in `mise.toml`.
+4. **Verify:** `bash scripts/check_action_refs.sh .github/workflows` → every pin resolves; push
+   (or re-run CI) and confirm the `gitleaks` job passes with **no** `GITLEAKS_LICENSE` secret;
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
+## v11 → v12 (jscpd path excludes: `ignorePattern` → `ignore`)
+
+jscpd v5 (the Rust `cpd` engine every repo runs via `npx`) honors **`ignore`** for path
+exclusion and **silently ignores `ignorePattern`** — the key all pre-v12 `.jscpd.json`s used.
+The pre-v12 note claiming "plain `ignore` has no effect" came from a mistested verification:
+jscpd loads `.jscpd.json` from the **cwd**, not the scanned path, so the test read a different
+config than it thought (use `-c <config>` when scanning another directory). Symptom that
+exposed it: on Ruby repos, CI's `ruby/setup-ruby` bundler-cache installs gems into
+`vendor/bundle` (not gitignored, so `gitignore: true` doesn't skip it), and the audit job
+failed on thousands of vendored-gem clone lines (booking-overview, 2026-06-10). Locally the
+same repo failed on `bin/` binstub clones despite `**/bin/**` being listed. To reach v12:
+
+1. **Rename the key** in `.jscpd.json`: `"ignorePattern"` → `"ignore"` (values unchanged).
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "12"` in `mise.toml`.
+3. **Verify:** run the repo's jscpd command (e.g. `npx --offline jscpd . -f <stack formats>`)
+   from the repo root and confirm the previously-leaking paths report no clones; on Ruby,
+   recreate a fake `vendor/bundle/**/*.rb` clone pair and confirm it stays excluded.
+
+(The `missing-test-reminder` hook reads both keys, so not-yet-upgraded repos keep their
+test-nudge exclusions either way — only jscpd itself needs the rename.)
+
+---
+
+## v12 → v13 (mise upgrade cooldown)
+
+v13 adds `minimum_release_age = "4d"` to `[settings]` in `mise.toml`, extending the same 4-day
 supply-chain window to **mise tool upgrades** that the standard already applies to jscpd
 (`npx --before=<4 days ago>`) and project deps (Bundler, uv, npm cooldowns). With `mise.lock`
 committed, `mise install` always reproduces the locked versions — unaffected by this setting; it
 only prevents `mise upgrade` from resolving a tool version published in the last 4 days, giving the
-community time to catch and yank a malicious release before it lands. To reach v11:
+community time to catch and yank a malicious release before it lands. To reach v13:
 
 1. **Add `minimum_release_age` to `[settings]` in `mise.toml`:**
    ```toml
@@ -397,7 +465,7 @@ community time to catch and yank a malicious release before it lands. To reach v
    lockfile = true
    minimum_release_age = "4d"   # ← add this line
    ```
-2. **Bump the stamp.** Set `DEV_ENV_VERSION = "11"` in `mise.toml`.
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "13"` in `mise.toml`.
 3. **Verify:** `mise install` still reproduces locked versions unchanged;
    `bash scripts/dev_env_check.sh .` → `status=compliant`.
 

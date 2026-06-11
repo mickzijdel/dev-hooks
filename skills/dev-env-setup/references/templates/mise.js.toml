@@ -2,17 +2,16 @@
 hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
-shellcheck = "latest"
-shfmt = "latest"
-uv = "latest"     # runs PEP 723 scripts (`uv run --script`) and the pytest suite
-ruff = "latest"   # for the *.py skill scripts and tests
-node = "latest"            # provides npx, used to run jscpd 5.x (`npx --yes jscpd@latest`)
+node = "latest"   # JS/TS stack tool; also provides npx, used to run jscpd 5.x
 # jscpd (duplication) runs via npx — see hk.pkl / .jscpd.json (not a mise tool; jscpd 5.x ships
 # as a Rust binary via npm optional platform packages that npx resolves but mise's npm backend
-# does not). vulture (dead-code) is run via `uvx vulture` — no extra tool needed.
+# does not).
 
 [settings]
-# Commit mise.lock so the toolchain installs reproducibly with checksum verification (v2).
+# Maintain mise.lock (resolved versions + per-platform checksums) on every install.
+# Tools stay spec'd "latest"; the lock records what that resolved to so installs are
+# reproducible + checksum-verified (aqua-backed tools add Cosign/SLSA). Upgrade with
+# `mise upgrade`, then commit the changed mise.lock.
 lockfile = true
 # Prevent `mise upgrade` from resolving a tool version published in the last 4 days — same
 # supply-chain window as the Bundler/uv/npm dependency cooldowns. `mise install` is unaffected

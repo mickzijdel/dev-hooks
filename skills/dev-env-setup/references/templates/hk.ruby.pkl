@@ -28,7 +28,9 @@ local linters = new Mapping<String, Step> {
         check = "bundle exec flay ."
     }
     // `-f` scopes to code formats (no config equivalent) so docs/configs aren't flagged;
-    // `.jscpd.json` `ignorePattern` excludes generated db/schema.rb etc. (See SKILL.md › jscpd note.)
+    // `.jscpd.json` `ignore` globs exclude vendored/generated paths (vendor/, db/schema.rb etc.).
+    // The key must be `ignore` — jscpd v5 silently ignores `ignorePattern` for paths, which let
+    // CI scan CI-installed vendor/bundle gems. (See SKILL.md › jscpd note.)
     // Version policy: track latest with a 4-day cooldown (never run a release < 4 days old —
     // supply-chain seasoning), floored at v5 (the major .jscpd.json targets) so it can't
     // regress to v4 while v5 is still maturing. Online → resolve the newest version >= 4 days

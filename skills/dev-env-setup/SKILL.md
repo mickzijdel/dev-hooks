@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.0.0
+version: 4.3.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,142 +25,37 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v11)
+## The standard (v13)
 
-A repo is **compliant at v11** when it has all of:
+A repo is **compliant at v13** when it has all of:
 
-- **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
-  and (all stacks that run jscpd — Python, shell, **and Ruby/Rails**) `node` (to run jscpd via
-  `npx`); `[settings] lockfile = true` and `minimum_release_age = "4d"`; `[env]` carries the
-  version stamp `DEV_ENV_VERSION = "11"`.
-- **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
-  are reproducible and checksum-verified. See "Lockfile & supply-chain verification".
-- **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
-  `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignorePattern`
-  (vendored/generated dirs incl. `node_modules`, `vendor`, `dist`, `build`). The `missing-test-reminder` hook also reads this file to skip those dirs.
-- **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
-  audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
-  and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
-  including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
-  **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
-  just the same set under one name that CI invokes.
-- **`.gitleaks.toml`** (all stacks) — a root allowlist file. The `gitleaks` step
-  (and CI's gitleaks-action) run `gitleaks dir` over the **whole working tree** — `dir` has no
-  respect-gitignore flag — so without this, any repo with a local `.env`, `log/`, `tmp/`, or a
-  Rails `config/credentials/*.key` fails every commit and `hk run check` stays red, even though
-  none of those are tracked. The file `[extend]`s the default ruleset and allowlists those
-  gitignored runtime/secret **paths only** (source stays fully scanned). gitleaks auto-loads it
-  from the scan root, so the hk builtin needs no `--config`. See "gitleaks whole-tree allowlist".
-- **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
-  `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
-  uses `gitleaks-action@v3` and carries `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`
-  (added in v7) — the action requires it to scan `pull_request` events, and fails the PR
-  without it.
-- **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
-  recording the **current versions of the project's key packages** (main framework, Tailwind,
-  Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
-  enforces that both files exist; keeping the version numbers accurate is the writer's job (the
-  `latest-deps-reminder` hook nudges Claude to update them on every manifest edit). If either
-  doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
-  "Project docs (README + CLAUDE.md)".
-- **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
-  `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until
-  they've been public long enough for a malicious release to be caught and yanked. The checker
-  enforces this on Python stacks; Ruby and JS repos get the same window via their own package
-  manager (recommended, not gated) — see "Dependency cooldown (supply-chain)".
+- **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
+  `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
+  `DEV_ENV_VERSION = "13"`.
+- **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
+  supply-chain verification".
+- **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
+  `ignore` — never `ignorePattern`, inert in jscpd v5).
+- **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, `gitleaks`, and
+  `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
+  hooks.
+- **`.gitleaks.toml`** — allowlists gitignored runtime/secret paths so the whole-tree
+  `gitleaks dir` scan doesn't fail on a local `.env`/`log/`. See "gitleaks whole-tree allowlist".
+- **`.github/workflows/ci.yml`** — mirrors the hk checks plus an `audit` job; gitleaks runs as
+  the MIT-licensed **CLI via mise** (never `gitleaks/gitleaks-action`, which needs a paid
+  license on org repos).
+- **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
+  See "Project docs (README + CLAUDE.md)".
+- **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
+  stacks get the same window via their package manager (recommended). See "Dependency cooldown
+  (supply-chain)".
 
-Per-stack checks (see `references/templates/`). **When each runs:** every step — linters,
-large-file, and the dead-code + duplication audits — runs on pre-commit (each glob-gated) and
-again in `check`/CI.
-| Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
-|-------|---------|-------|---------|------------|-----------|-------------|
-| Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
-| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
-| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
-
-> Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) run on pre-commit alongside the
-> linters (each is glob-gated, so they only fire when a matching file is staged) and again in
-> `check`/CI. They're fast enough warm — vulture ~0.15s, jscpd ~1s (cooldown resolve + scan) — and
-> catching dead code / clones before push beats finding out in CI. Thresholds are tunable — see
-> `references/upgrade-guide.md`.
->
-> **jscpd** runs via `npx` (its v5 Rust engine — the `cpd` binary — ships through npm optional
-> platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading
-> `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone output) and the
-> **`threshold`** reporter (CI gate). (Making it a real mise tool is deferred: `cargo:jscpd` works
-> but needs a Rust toolchain per repo, and there are no prebuilt release binaries for an
-> `aqua`/`ubi` backend — see `references/dropped-from-nate.md` for the tested comparison and
-> revisit triggers, 2026-06-09.)
->
-> **jscpd version policy (pre-commit + CI):** the step neither pins a fixed version nor calls
-> `@latest` blindly. It tracks latest with a **4-day cooldown** — the same supply-chain seasoning
-> as the [dependency cooldowns](#dependency-cooldown-supply-chain) below — via `npx --before=<4 days ago>`, which
-> resolves the newest release that has existed at least 4 days. It's **floored at v5** (the major
-> `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <4 days
-> old; if the cooldown pick is below the floor the step falls back to `latest`. It also **degrades
-> gracefully offline**: when the registry is unreachable it runs the cached jscpd, and when nothing
-> is cached it warns and passes rather than blocking the commit. The cooldown resolve costs one
-> registry round-trip (~0.9s) per commit that stages matching files.
->
-> Configuring exclusions:
-> - **Exclude paths** with `ignorePattern` (a glob array) in `.jscpd.json`. (Plain `ignore` has
->   no effect; `gitignore: true` already skips gitignored paths.)
-> - **Restrict which file types are scanned** with `-f` on the command — there is no config
->   option for it, and without it jscpd also scans markdown/yaml/json and trips `threshold 0` on
->   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
->   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
->   (Ruby). Add `ignorePattern` on top to skip tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
-> jscpd keys off extensions, so duplication on extensionless scripts isn't auto-covered. To
-> auto-fix clones, agents can run
-> `npx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring`.
-
-> **Extensionless scripts (CC-plugin `bin/foo`, hooks) are linted by shebang — no glob
-> surgery needed.** hk's `shellcheck`/`shfmt`/`ruff` builtins match by extension (`**/*.sh`,
-> `**/*.py`), so they'd silently skip the extensionless executables plugin repos keep in
-> `bin/`. The shell template (`hk.shell.pkl`) therefore carries companion steps —
-> `shellcheck-scripts`, `shfmt-scripts`, `ruff-check-scripts`, `ruff-format-scripts` — that
-> detect such files by **shebang on line 1 only** (`git ls-files | while read -r f; do head -n1
-> "$f" | grep -qE '^#!.*…' && printf '%s\n' "$f"; done`), the same way the `vulture` step already
-> does, and `ci.shell.yml` mirrors them. The `head -n1` matters: `grep -lE '^#!…'` would match a
-> `#!` line **anywhere** in a file, so a `#!/bin/bash` inside a fenced code block in docs would be
-> misdetected as a script and the linter would choke parsing prose as code — a shebang is only a
-> shebang on line 1. They're **check-only**
-> (a flagged script is fixed by hand or `ruff check --fix`/`shfmt -w`) and run full-tree.
-> So you no longer hand-add extensionless CLIs to hk globs. `[tool.ruff] extend-include` is
-> still worth setting (in `pyproject.toml`) to the **Python** extensionless scripts so a bare
-> `ruff check .` covers them too — list them explicitly, never a blanket `bin/*` (it would
-> make ruff try to parse a bash hook as Python). jscpd still keys off extensions, so verbatim
-> duplication in extensionless scripts remains uncovered (acceptable).
-
-### Duplication: flay vs jscpd (why Ruby runs both)
-
-**flay** parses Ruby to an AST and hashes subtrees, so it catches **structural** duplication even
-when identifiers, literals, or whitespace differ (renamed clones) — and verbatim Ruby too. But it
-only understands Ruby (`.rb`/`.erb`), and it **exits 0** (advisory; great for refactoring sweeps,
-useless as a gate). **jscpd** is a **token-based** (Rabin-Karp) detector across 200+ formats: it
-catches verbatim copy-paste in **any** language and **gates** CI via its `threshold` reporter.
-
-A Rails app is polyglot — Stimulus JS, CSS/SCSS, ERB markup all carry duplication that flay can't
-parse — so **Ruby/Rails runs both**: jscpd as the cross-language enforcing gate (incl. Ruby
-verbatim), flay as advisory Ruby structural depth. **Python/shell run jscpd only** (no
-widely-used AST dup detector for Python; pylint's duplicate-code is token-ish and heavy). The cost
-is that jscpd needs Node, so Ruby repos gain a Node dependency — acceptable because Rails already
-ships JS/CSS worth checking. flay can be promoted from advisory to a hard gate later via a
-`--mass` threshold wrapper if wanted.
-
-**Claude Code plugin repos** (and any script-bundle repo) carry two extra requirements:
-
-1. **All bundled scripts are tested.** Follow [`readoc`]'s setup: a **dev-only**
-   `pyproject.toml` (`[tool.uv] package = false`, deps in `[dependency-groups] dev`, see
-   `references/templates/pyproject.plugin.toml`) and a `tests/` suite that runs each
-   script/CLI/hook **as a subprocess** and asserts on real output
-   (`references/templates/test_scripts.example.py`). The `pytest` hk step + the CI `test`
-   job run it. No script ships without a test exercising it.
-2. **Python scripts use uv + PEP 723 inline metadata.** Each Python script is self-contained:
-   shebang `#!/usr/bin/env -S uv run --script` and a `# /// script … # ///` block declaring
-   `requires-python` + `dependencies`, run via `uv run`. No repo-level runtime deps; mirror the
-   script's libs into the dev group so tests can import them. (Mixed shell + Python is fine —
-   shell via `shellcheck`/`shfmt`, Python via uv/PEP 723.)
+The full specification — per-artifact requirements, the per-stack linter/audit matrix, the
+jscpd version policy and exclusion gotchas, extensionless-script (shebang) linting, the
+flay-vs-jscpd rationale, the extra requirements for Claude Code plugin / script-bundle repos,
+and the `.gitignore` gotchas — lives in
+[`references/standard.md`](references/standard.md). **Read it before writing or editing any of
+the standard's files.**
 
 **Applicability:** the standard applies to a repo with a recognized stack
 (`pyproject.toml`/`Gemfile`/`package.json`) **or** any scripts (`*.sh`, `bin/*`, `*.py`) —
@@ -189,7 +84,9 @@ proposing additions.
    - `needs-upgrade` → go to step 4 (upgrade).
 
 2. **Fresh setup — detect the stack** (the checker reports it) and confirm with the user if
-   ambiguous (e.g. a plugin that is also a Python package).
+   ambiguous (e.g. a plugin that is also a Python package). Recognized stacks: `pyproject.toml`
+   → `python`, `Gemfile` → `ruby`, `package.json` → `javascript`; scripts-only repos →
+   `shell`.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
@@ -199,11 +96,12 @@ proposing additions.
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
    are covered automatically by the shell template's shebang companion steps — no hk-glob
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless
-   note above). The templates
+   note in `references/standard.md`). The templates
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
    the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
    Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
-   incl. Ruby). **For a
+   incl. Ruby); JS repos need no extra audit deps (jscpd runs via `npx`, `node` is already the
+   stack tool). **For a
    shell/plugin repo**, also add the [`readoc`]-style dev project (`pyproject.plugin.toml` →
    `pyproject.toml`, fill in the name) and a `tests/` suite (`test_scripts.example.py` as a
    starting point) so every bundled script is exercised, and give each Python script the
@@ -305,8 +203,7 @@ gh api repos/actions/checkout/tags --jq '.[].name' | grep -E '^v[0-9]' | sort -V
 
 Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this for the Actions
 in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
-`actions/upload-artifact`, `gitleaks/gitleaks-action`, `jdx/mise-action` — and any others a repo
-already uses.
+`actions/upload-artifact`, `jdx/mise-action` — and any others a repo already uses.
 Caveat: some actions don't publish a floating major tag for their newest release (e.g.
 `astral-sh/setup-uv` ships `v8.x` releases but only floats `@v1`…`@v7`), so `@v8` fails to
 resolve in CI. Always verify the chosen ref actually exists —
@@ -357,10 +254,10 @@ versions. **Commit `mise.lock`** alongside `mise.toml`.
 
 **Gap:** this covers only mise-managed tools. The `npx` jscpd audit step isn't mise-pinned (jscpd
 5.x ships only as npm-distributed Rust platform packages — no clean mise backend); instead it
-tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note above). Project
-deps lock separately via `uv.lock` / `Gemfile.lock`.
+tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note in
+`references/standard.md`). Project deps lock separately via `uv.lock` / `Gemfile.lock`.
 
-**Tool-upgrade cooldown (v11):** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
+**Tool-upgrade cooldown (v13):** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
 supply-chain window to `mise upgrade`. When re-resolving `"latest"`, mise only considers tool
 versions published at least 4 days ago, giving the community time to catch and yank a malicious
 release before it lands here. `mise install` is unaffected — it always reproduces the exact
@@ -373,8 +270,8 @@ releases (the 2026 Shai-Hulud npm waves, the axios / litellm incidents) are dete
 within hours-to-days of publication, so a short cooldown means you are never the one who installs a
 compromised version in the window before the community catches it. The standard already applies this
 to its own tooling — the jscpd audit step resolves via `npx --before=<4 days ago>` (see the jscpd
-version policy above) — and this section extends the same 4-day window to a repo's own runtime / dev
-dependencies.
+version policy in `references/standard.md`) — and this section extends the same 4-day window to a
+repo's own runtime / dev dependencies.
 
 Set it **per repo** so every developer and CI run enforce the same window, and (if not already set)
 once **machine-wide** as a default. An existing lockfile (`Gemfile.lock`, `uv.lock`,
@@ -392,7 +289,7 @@ disturbs already-locked versions — it only gates *new* resolutions.
 | **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
 | pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
 
-Only **uv** is checker-enforced for Python repos (see "The standard (v6)"); the rest are recommended
+Only **uv** is checker-enforced for Python repos (see "The standard (v13)"); the rest are recommended
 and applied by the setup/upgrade flow when the matching lockfile is present. `exclude-newer` accepts
 a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
 so the window moves forward with the current date.
@@ -420,21 +317,21 @@ urgent upgrade. For one-off exceptions *inside* the window, uv has `exclude-newe
 
 ## gitleaks whole-tree allowlist (`.gitleaks.toml`)
 
-The hk `gitleaks` step (`["gitleaks"] = Builtins.gitleaks`) and CI's gitleaks-action both run
-`gitleaks dir`, which scans the **entire working tree** — `dir` has no respect-gitignore flag, so
-it reads gitignored files too. Without an allowlist, a local `.env`, `log/`, `tmp/cache/`, or a
-Rails `config/credentials/*.key` makes the scan fail on those gitignored artifacts, blocking every
-commit and keeping `hk run check` red (none of them are tracked, so CI — which scans history —
-still passes, masking the problem).
+The hk `gitleaks` step (`["gitleaks"] = Builtins.gitleaks`) runs `gitleaks dir`, which scans the
+**entire working tree** — `dir` has no respect-gitignore flag, so it reads gitignored files too.
+Without an allowlist, a local `.env`, `log/`, `tmp/cache/`, or a Rails
+`config/credentials/*.key` makes the scan fail on those gitignored artifacts, blocking every
+commit and keeping `hk run check` red (none of them are tracked, so CI — whose `gitleaks git`
+job scans history — still passes, masking the problem).
 
 `references/templates/.gitleaks.toml` is the fix: it `[extend]`s the default ruleset
 (`useDefault = true`) and `[allowlist]`s the gitignored runtime/secret **paths** (`.env`, `log/`,
 `tmp/`, `.venv/`, `node_modules/`, `vendor/`, `config/credentials/*.key`). gitleaks auto-loads
-`.gitleaks.toml` from the scan root, so the hk builtin and the CI action both pick it up with **no
-`--config` flag**. The allowlist is **path-scoped to gitignored locations only**, so a secret
-hardcoded in `app/`/source is still caught.
+`.gitleaks.toml` from the scan root, so the hk builtin and CI's `gitleaks git` job both pick it
+up with **no `--config` flag**. The allowlist is **path-scoped to gitignored locations only**, so
+a secret hardcoded in `app/`/source is still caught.
 
-**Caveat:** because CI's gitleaks-action reads the same file, a secret force-added (`git add -f`)
+**Caveat:** because CI's gitleaks job reads the same file, a secret force-added (`git add -f`)
 into one of these paths wouldn't be caught by CI either. That's an accepted trade-off — the paths
 are gitignored, so defeating it takes a deliberate `-f` against `.gitignore`. The complementary
 path is to get the plaintext secret out of the repo entirely: when the checker detects secrets in
@@ -447,25 +344,10 @@ use without a `fnox.toml`, it emits `suggests_fnox=1` and the setup/upgrade repo
   reads the same file, so a repo on an older stamp gets flagged automatically.
 - Never auto-run this from a hook — it's invoked by Mick (or offered by the reminder), and it
   writes commit-tracked config, so confirm before committing.
-
-### `.gitignore`
-
-The standard ships **no `.gitignore` template** — Claude's defaults are usually right. Just
-check these gotchas, where the default may be wrong or the standard's tooling expects something:
-
-- **Ignore `.env` / `.env.local`.** The gitleaks step is the safety net; `.gitignore` is the
-  first line — keep both. But **commit `fnox.toml`** in solo repos (it holds secret *references*,
-  not values); gitignore it only in repos shared with others. See [[env-to-fnox]].
-- **But `.env` must also be allowlisted in `.gitleaks.toml`** (committed, v10+) — `gitleaks dir`
-  scans gitignored files too, so the ignored `.env`/`log/`/`*.key` still trip the scan without the
-  allowlist. The same gitignored `.env` that this silences is what triggers the `suggests_fnox`
-  nudge toward [[env-to-fnox]]. See "gitleaks whole-tree allowlist".
-- **Commit lockfiles, don't ignore them** (`mise.lock`, `uv.lock`, `Gemfile.lock`). The standard
-  pins tools for reproducibility; a library-flavored default that drops lockfiles defeats that.
-- **`mise.local.toml` is the ignorable one; `mise.toml` is committed** — the `DEV_ENV_VERSION`
-  stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
-- **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
-  The default already covers this; just don't un-ignore it.
+- The standard ships **no `.gitignore` template** — Claude's defaults are usually right, but
+  check the gotchas in [`references/standard.md`](references/standard.md) (".gitignore
+  gotchas"): keep `.env` ignored AND allowlisted in `.gitleaks.toml`, commit lockfiles and
+  `mise.toml`, keep `.venv/` ignored.
 
 [`bedlam-bacs`]: https://github.com/EdinburghUniversityTheatreCompany/bacs-tool
 [`readoc`]: https://github.com/mickzijdel/readoc

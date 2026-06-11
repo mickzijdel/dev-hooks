@@ -30,7 +30,7 @@
 #                    nudges the env-to-fnox skill; never affects status.
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
-#   stack            python | ruby | shell | unknown
+#   stack            python | ruby | javascript | shell | unknown
 #   status           not-applicable | needs-setup | needs-upgrade | compliant
 
 set -u
@@ -49,6 +49,8 @@ if [ -f "$DIR/pyproject.toml" ] || [ -f "$DIR/setup.py" ] || [ -f "$DIR/setup.cf
   stack="python"
 elif [ -f "$DIR/Gemfile" ]; then
   stack="ruby"
+elif [ -f "$DIR/package.json" ]; then
+  stack="javascript"
 fi
 
 # ── Applicability: recognized stack, OR scripts present (shell/plugin repos) ─────
@@ -125,7 +127,10 @@ if [ ! -f "$DIR/fnox.toml" ]; then
   fi
   if [ "$suggests_fnox" = 0 ]; then
     # grep -l prints matching filenames; capture them so a partial xargs exit (123) can't lie.
-    cred_hit="$(find "$DIR" -path "$DIR/.git" -prune -o -type f \( -name '*.rb' -o -name '*.py' -o -name '*.erb' \) -print 2>/dev/null | head -n 500 | xargs -r grep -lE 'Rails\.application\.credentials|ENV\[|Settings\.' 2>/dev/null | head -n1)"
+    # Prune VCS / vendored / build-output dirs (by basename, at any depth) so third-party
+    # source under .venv/node_modules/vendor doesn't trip the heuristic — only the repo's own
+    # code counts. Same dirs the rest of the standard excludes (jscpd `ignore` globs, vulture).
+    cred_hit="$(find "$DIR" \( -name .git -o -name .venv -o -name node_modules -o -name vendor -o -name .bundle -o -name dist -o -name build \) -prune -o -type f \( -name '*.rb' -o -name '*.py' -o -name '*.erb' \) -print 2>/dev/null | head -n 500 | xargs -r grep -lE 'Rails\.application\.credentials|ENV\[|Settings\.' 2>/dev/null | head -n1)"
     [ -n "$cred_hit" ] && suggests_fnox=1
   fi
 fi
