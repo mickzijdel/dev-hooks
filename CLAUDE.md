@@ -45,6 +45,6 @@ Do not include changelog or detective-work where it does not belong, such as in 
   block genuinely can't be shared that way, wrap it in `# jscpd:ignore-start` /
   `# jscpd:ignore-end` (valid python comments inside the heredoc; jscpd 5.x honors them).
 - Before claiming a hook works, run the full local CI: `uv run pytest -q`, `shfmt -d .`,
-  `shellcheck **/*.sh`, and `npx --yes jscpd@latest . -f python,bash`. Let `shfmt -w` do the
+  `shellcheck **/*.sh`, and `bash scripts/run-jscpd.sh`. Let `shfmt -w` do the
   formatting — with `.editorconfig` it rewrites `case` patterns to `a | b)` and pushes `$(…)`
   heredocs onto their own line.

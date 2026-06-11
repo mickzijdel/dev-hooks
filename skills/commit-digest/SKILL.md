@@ -67,7 +67,7 @@ For each **Implement** decision, open a **separate PR**:
    uv run pytest -q
    shfmt -d .
    shellcheck hooks/scripts/**/*.sh
-   npx --yes jscpd@latest . -f python,bash
+   bash scripts/run-jscpd.sh
    ```
 5. Commit, push, and open a PR with a clear title and description referencing the source
    commit SHA or feed item URL.
