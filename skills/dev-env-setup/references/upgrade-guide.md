@@ -50,7 +50,7 @@ CI mirroring it, but **no gitleaks step and no version stamp**). To reach v1:
      `threshold 0`, `reporters ["ai","threshold"]`, `gitignore true`.
    - **Ruby/Rails Node cost:** adding jscpd means a Node dependency in the repo — accepted
      because a Rails app's JS/CSS/SCSS/ERB also needs duplication coverage (flay only parses
-     Ruby). See the "Duplication: flay vs jscpd" note in `../SKILL.md`.
+     Ruby). See the "Duplication: flay vs jscpd" note in `standard.md`.
 5. **CI** mirroring the hooks (see `templates/ci.*.yml`): a `gitleaks` job
    (historically `gitleaks/gitleaks-action@v3` with a `GITHUB_TOKEN` env, see v6 → v7 —
    **superseded in v10 → v11** by the CLI-via-mise job; when applying multiple sections in one
@@ -78,7 +78,7 @@ A repo with **no** dev-env setup at all goes straight to the full v1 layout — 
 `pyproject.toml` (`templates/pyproject.plugin.toml`), a `tests/` suite running each
 bundled script as a subprocess (`templates/test_scripts.example.py`), and `uv run --script` +
 PEP 723 inline metadata on every Python script. See the "Claude Code plugin repos" section in
-`../SKILL.md`.
+`standard.md`.
 
 ---
 
@@ -447,6 +447,27 @@ same repo failed on `bin/` binstub clones despite `**/bin/**` being listed. To r
 
 (The `missing-test-reminder` hook reads both keys, so not-yet-upgraded repos keep their
 test-nudge exclusions either way — only jscpd itself needs the rename.)
+
+---
+
+## v12 → v13 (mise upgrade cooldown)
+
+v13 adds `minimum_release_age = "4d"` to `[settings]` in `mise.toml`, extending the same 4-day
+supply-chain window to **mise tool upgrades** that the standard already applies to jscpd
+(`npx --before=<4 days ago>`) and project deps (Bundler, uv, npm cooldowns). With `mise.lock`
+committed, `mise install` always reproduces the locked versions — unaffected by this setting; it
+only prevents `mise upgrade` from resolving a tool version published in the last 4 days, giving the
+community time to catch and yank a malicious release before it lands. To reach v13:
+
+1. **Add `minimum_release_age` to `[settings]` in `mise.toml`:**
+   ```toml
+   [settings]
+   lockfile = true
+   minimum_release_age = "4d"   # ← add this line
+   ```
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "13"` in `mise.toml`.
+3. **Verify:** `mise install` still reproduces locked versions unchanged;
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
 
 ---
 

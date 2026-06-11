@@ -10,18 +10,24 @@ Make sure to check all of the following and make sure they are up-to-date after 
    drift out of sync silently (e.g. a version stamp bumped in one template but not its
    siblings). Update every variant, not just the one you started with.
 
-Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool).
+Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool). The version lives **only** in `.claude-plugin/plugin.json` — marketplace.json deliberately carries no plugin version (Claude Code uses plugin.json's when both exist) and only a stable one-line description; don't re-add either.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
 ## Authoring hooks (`hooks/scripts/*.sh`)
 
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
-  knowledge for PostToolUse(Write|Edit|MultiEdit) hooks: `reminder_init <OPT_VAR>` (opt-out +
-  INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` / `reminder_old_content`
-  (CONTENT/OLD across Write content, Edit new/old_string, and MultiEdit edits[]),
-  `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared cleanup trap; do
-  NOT set your own `trap … EXIT`, it would clobber the lib's), `reminder_is_frontend_file`,
+  knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`
+  (opt-out + INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` /
+  `reminder_old_content` (CONTENT/OLD across Write content, Edit new/old_string, and
+  MultiEdit edits[]), `reminder_fire_once <name> [extra]` (once-per-session marker; needs
+  $SESSION from reminder_init), and `reminder_emit <msg>` (advisory additionalContext +
+  exit 0). Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  (INPUT/TRANSCRIPT + the once-per-session sentinel guard), `reminder_changed_files`
+  (CHANGED from porcelain status), and `reminder_emit_stop <msg>` (continue:false + exit 2).
+  Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
+  cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
+  `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`)
   live in `lib/hook_helpers.py` — import them by passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.

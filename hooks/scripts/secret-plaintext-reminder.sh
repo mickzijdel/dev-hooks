@@ -71,13 +71,8 @@ PYEOF
 [ -z "$FOUND" ] && exit 0
 
 # Fire at most once per session.
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-secrets"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once secrets || exit 0
 
 MSG="You just wrote what looks like a plaintext secret value into $BASE. Don't commit secret *values*. Migrate this to fnox via the \`env-to-fnox\` skill: store only a *reference* (key name) in a committed \`fnox.toml\` and resolve the real value from the vault (Bitwarden Secrets Manager by default) at run time. Keep \`.env\`/\`.env.local\` gitignored. If this is genuinely not a secret (a placeholder, public value, or test fixture), ignore this."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-exit 0
+reminder_emit "$MSG"

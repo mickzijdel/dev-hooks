@@ -17,6 +17,10 @@
 
 MIN_TURNS="${DEV_HOOKS_MEMORY_MIN_TURNS:-6}"
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+
 # Sentinel embedded in our reminder; finding it in the transcript means we already
 # prompted this session.
 SENTINEL="[memory-reminder] session learnings not yet captured this session"
@@ -28,9 +32,9 @@ if [ "$DEV_HOOKS_MEMORY" != "1" ]; then
   [ -z "$found_memory" ] && exit 0
 fi
 
-# ── Read hook input ──────────────────────────────────────────────────────────────
-INPUT=$(cat 2>/dev/null)
-TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+# Sets INPUT/TRANSCRIPT; exits 0 on the sentinel fast path (gate 3 — the python pass
+# below re-checks it in the same sweep that counts turns, as a belt-and-braces guard).
+reminder_stop_init "$SENTINEL"
 
 # Without a transcript we can't judge substance or the once-per-session guard.
 [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ] && exit 0
@@ -93,5 +97,4 @@ esac
 # ── Emit the reminder ────────────────────────────────────────────────────────────
 MSG="${SENTINEL}. Before finishing, review this session for durable, non-obvious facts worth saving to your file-based memory, following the memory instructions in your CLAUDE.md (one fact per file with frontmatter, plus a one-line pointer in MEMORY.md). Scope: write ONLY to your memory directory — do NOT edit CLAUDE.md. Dedupe first: check MEMORY.md and update an existing file rather than creating a duplicate. IMPORTANT escape hatch: if nothing here is durable and non-obvious — or it's already captured by the repo, git history, or CLAUDE.md — then save NOTHING. Say 'nothing worth saving' in one line and stop. Do not invent memories to satisfy this reminder."
 
-jq -cn --arg msg "$MSG" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-exit 2
+reminder_emit_stop "$MSG"

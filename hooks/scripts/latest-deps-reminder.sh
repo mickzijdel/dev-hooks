@@ -38,11 +38,7 @@ case "$BASE" in
 esac
 
 # Fire at most once per (session x category) so repeated edits don't re-nag.
-MARKER_DIR="${TMPDIR:-/tmp}/dev-hooks-latest-deps"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION}-${CATEGORY}"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+reminder_fire_once latest-deps "$CATEGORY" || exit 0
 
 LEAD="You just wrote $BASE. Your training data may be stale, so do NOT trust pinned versions from memory."
 
@@ -66,5 +62,4 @@ case "$CATEGORY" in
     ;;
 esac
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-exit 0
+reminder_emit "$MSG"
