@@ -13,8 +13,12 @@ click "allow" without reading. The fix is an **allowlist**: pre-approve a set of
 read-only commands so prompts only appear for the commands that actually change something.
 
 The starter list is [`templates/settings.allowlist.json`](templates/settings.allowlist.json).
-It allows safe inspection commands (listing files, reading Git state, viewing files) and leaves
-everything that writes, deletes, installs, or pushes still asking.
+It allows safe inspection commands (listing files, reading Git state, viewing files, any
+`--version`/`--help`) and leaves everything that writes, deletes, installs, or pushes still
+asking. It also has a small **deny** list that blocks reading secret files outright
+(`.env`, `.env.*`, `secrets/`), so those never end up in the agent's context. It's
+stack-agnostic on purpose — tailor it to what you actually run with the
+**fewer-permission-prompts** skill once you've been working for a bit.
 
 **Don't hand-edit `settings.json`.** Use the **update-config** skill — it owns that file and
 merges changes correctly. Later, after you've actually been working, the
@@ -25,9 +29,10 @@ tailored to you.
 
 `CLAUDE.md` is a standing instruction file the agent reads every session. A global one in
 `~/.claude/` applies everywhere. The starter
-[`templates/CLAUDE.defaults.md`](templates/CLAUDE.defaults.md) encodes beginner-safe habits:
-plan big tasks before diving in, keep changes small and committed, work on a branch (not
-`main`), never commit secrets, and confirm before anything destructive.
+[`templates/CLAUDE.defaults.md`](templates/CLAUDE.defaults.md) encodes beginner-safe habits: be
+thorough rather than fast, **verify before claiming something works** ("Always Works"), plan big
+tasks before diving in, keep changes small and committed on a branch (not `main`), never commit
+secrets, and confirm before anything destructive.
 
 These are *defaults* — a specific project can override them with its own `CLAUDE.md`.
 

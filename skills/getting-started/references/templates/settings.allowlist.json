@@ -1,5 +1,5 @@
 {
-  "//": "Starter permissions allowlist for a beginner's ~/.claude/settings.json. MERGE this into the user's settings.json with the update-config skill (don't hand-edit). It pre-approves safe, read-only inspection commands so prompts only appear for commands that change something. Anything that writes, deletes, installs, moves, or pushes is deliberately NOT here, so it still asks. Tune later with the fewer-permission-prompts skill.",
+  "//": "Starter permissions config for a beginner's ~/.claude/settings.json. MERGE this in with the update-config skill (don't hand-edit). 'allow' pre-approves safe, read-only inspection commands so prompts only appear for commands that change something; anything that writes, deletes, installs, moves, or pushes is deliberately NOT listed, so it still asks. 'deny' blocks reading secret files outright. This is stack-agnostic on purpose — tailor it to what you actually run (Rails tasks, a browser driver, project MCP servers, etc.) with the fewer-permission-prompts skill once you've been working for a bit.",
   "permissions": {
     "allow": [
       "Bash(ls:*)",
@@ -8,16 +8,20 @@
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(wc:*)",
+      "Bash(sort:*)",
       "Bash(tree:*)",
       "Bash(file:*)",
       "Bash(stat:*)",
       "Bash(which:*)",
       "Bash(echo:*)",
       "Bash(date)",
+      "Bash(uname:*)",
       "Bash(env)",
       "Bash(rg:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
+      "Bash(* --version)",
+      "Bash(* --help)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -31,12 +35,13 @@
       "Bash(gh auth status)",
       "Bash(mise ls:*)",
       "Bash(mise outdated:*)",
-      "Bash(node --version)",
-      "Bash(pnpm --version)",
-      "Bash(python3 --version)",
-      "Bash(uv --version)",
       "Bash(docker ps:*)",
       "Bash(docker images:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
     ]
   }
 }
