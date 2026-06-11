@@ -18,11 +18,8 @@ source "$SELF_DIR/lib/reminder-common.sh"
 # Sets INPUT, FILE, SESSION, BASE (or exits 0 on opt-out / missing file_path).
 reminder_init DEV_HOOKS_POPOVER
 
-# File gate: only frontend markup/script files. (*.html.erb ends in .erb.)
-case "$BASE" in
-  *.js | *.mjs | *.ts | *.jsx | *.tsx | *.vue | *.svelte | *.erb | *.html | *.htm | *.haml | *.slim) ;;
-  *) exit 0 ;;
-esac
+# File gate: only frontend markup/script/style files (shared list in the lib).
+reminder_is_frontend_file "$BASE" || exit 0
 
 # Content gate: a popover/tooltip signal in the filename or the file body.
 SIGNAL=""

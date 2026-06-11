@@ -18,6 +18,8 @@ case "${DEV_HOOKS_MISSING_TEST:-}" in
   false | 0 | no | off) exit 0 ;;
 esac
 
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 INPUT=$(cat 2>/dev/null)
@@ -30,38 +32,20 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
 fi
 
 FINDINGS=$(
-  python3 - <<'PYEOF'
+  python3 - "$SELF_DIR/lib" <<'PYEOF'
 import json
 import os
 import re
-import subprocess
+import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ in the plugin's lib dir
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import git, is_test_path
 
 PY_EXT = {".py"}
 RB_EXT = {".rb"}
 JS_EXT = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"}
 TESTABLE = PY_EXT | RB_EXT | JS_EXT
-
-
-# jscpd:ignore-start - small git/test-path helpers intentionally shared with debug-leftover
-def git(args):
-    try:
-        r = subprocess.run(["git", *args], capture_output=True, text=True)
-        return r.stdout if r.returncode == 0 else ""
-    except OSError:
-        return ""
-
-
-def is_test_path(path):
-    base = os.path.basename(path)
-    if re.search(r"(?:_spec\.rb|_test\.rb)$", base):
-        return True
-    if re.search(r"^test_.*\.py$|_test\.py$", base):
-        return True
-    if re.search(r"\.(?:test|spec)\.", base):
-        return True
-    parts = path.split("/")
-    return any(p in ("spec", "tests", "test", "__tests__") for p in parts)
-# jscpd:ignore-end
 
 
 def is_low_value(path):

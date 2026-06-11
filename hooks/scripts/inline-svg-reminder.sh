@@ -1,5 +1,5 @@
 #!/bin/bash
-# PostToolUse(Write|Edit): when Claude hand-writes inline SVG markup (an <svg> blob with
+# PostToolUse(Write|Edit|MultiEdit): when Claude hand-writes inline SVG markup (an <svg> blob with
 # real drawing content, or a data:image/svg+xml URI) into a source file, feed a correction
 # back via exit 2: use the project's icon library, or extract the markup to a dedicated
 # .svg file and reference it. The write has already landed — the feedback tells Claude to
@@ -17,23 +17,18 @@
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
-# Sets INPUT, FILE, SESSION, BASE (or exits 0 on opt-out / missing file_path).
+# Sets INPUT, FILE, SESSION, TOOL, BASE (or exits 0 on opt-out / missing file_path).
 reminder_init DEV_HOOKS_SVG_INLINE
 
-# Only frontend-ish files where inline icons end up (*.html.erb ends in .erb). Everything
-# else — notably .svg files themselves (writing one is the desired refactor outcome, which
-# lets the refactor converge) and markdown/docs — stays silent.
-case "$BASE" in
-  *.js | *.mjs | *.cjs | *.ts | *.jsx | *.tsx | *.vue | *.svelte | *.astro | *.html | *.htm | *.erb | *.haml | *.slim | *.php | *.twig | *.heex | *.css | *.scss) ;;
-  *) exit 0 ;;
-esac
+# Only frontend-ish files where inline icons end up. Everything else — notably .svg files
+# themselves (writing one is the desired refactor outcome, which lets the refactor
+# converge) and markdown/docs — stays silent.
+reminder_is_frontend_file "$BASE" || exit 0
 
 # SVG fixtures in tests are legitimate; an every-occurrence exit-2 hook must stay quiet there.
-case "$FILE" in
-  */test/* | */tests/* | */spec/* | */__tests__/* | *.test.* | *.spec.* | *_test.* | *_spec.*) exit 0 ;;
-esac
+reminder_is_test_path "$FILE" && exit 0
 
-CONTENT=$(printf '%s' "$INPUT" | jq -r '(.tool_input.content // "") + "\n" + (.tool_input.new_string // "")' 2>/dev/null)
+reminder_content # sets CONTENT (Write content + Edit/MultiEdit new_strings)
 
 # Cheap pre-filter: stay python-free unless there is any svg-ish substring at all.
 # nocasematch keeps it in sync with the case-insensitive python regexes below.
@@ -44,21 +39,24 @@ case "$CONTENT" in
 esac
 shopt -u nocasematch
 
-TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
-OLD=$(printf '%s' "$INPUT" | jq -r '.tool_input.old_string // ""' 2>/dev/null)
+reminder_old_content # sets OLD (Edit/MultiEdit old_strings) for the dedup pass
 
-CONTENT_FILE=$(mktemp)
-OLD_FILE=$(mktemp)
-trap 'rm -f "$CONTENT_FILE" "$OLD_FILE"' EXIT
+reminder_mktemp
+CONTENT_FILE=$REPLY
+reminder_mktemp
+OLD_FILE=$REPLY
 printf '%s' "$CONTENT" >"$CONTENT_FILE"
 printf '%s' "$OLD" >"$OLD_FILE"
 
 FOUND=$(
-  python3 - "$CONTENT_FILE" "$OLD_FILE" "$TOOL" "$FILE" <<'PYEOF'
+  python3 - "$CONTENT_FILE" "$OLD_FILE" "$TOOL" "$FILE" "$SELF_DIR/lib" <<'PYEOF'
 import os
 import re
-import subprocess
 import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ in the plugin's lib dir
+sys.path.insert(0, sys.argv[5])
+from hook_helpers import git
 
 with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
     content = fh.read()
@@ -137,16 +135,6 @@ def key(snippet):
     snippet (e.g. a data URI) otherwise."""
     parts = D_ATTR.findall(snippet) or [m.group(0) for m in DRAW_TAG.finditer(snippet)]
     return re.sub(r"\s+", " ", " ".join(parts) if parts else snippet).strip()[:300]
-
-
-# jscpd:ignore-start - small git helper intentionally shared with debug-leftover/missing-test
-def git(args):
-    try:
-        r = subprocess.run(["git", *args], capture_output=True, text=True)
-        return r.stdout if r.returncode == 0 else ""
-    except OSError:
-        return ""
-# jscpd:ignore-end
 
 
 new = [(key(s), s) for s in findings(content)]

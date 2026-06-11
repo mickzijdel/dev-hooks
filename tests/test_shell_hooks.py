@@ -388,6 +388,18 @@ def test_popover_reminder_silent_when_opted_out(tmp_path):
     assert r.stdout.strip() == ""
 
 
+def test_popover_reminder_fires_for_heex(tmp_path):
+    # .heex is covered by the shared frontend-extension list in the lib.
+    view = tmp_path / "nav.heex"
+    view.write_text('<div role="tooltip" class="hidden">tip</div>\n')
+    payload = json.dumps({"tool_input": {"file_path": str(view)}, "session_id": "p7"})
+    r = run_hook(
+        "popover-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "popovers-tooltips")
+
+
 def test_popover_reminder_fires_once_per_session(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"
     ctrl.write_text("// tip\n")
@@ -611,6 +623,36 @@ def test_inline_svg_write_skips_preexisting_data_uri_with_changed_context(tmp_pa
     run("commit", "-q", "-m", "css")
     content = css.read_text() + ".btn { color: red; }\n"
     assert_svg_silent(_run_svg(_svg_payload(css, content=content)))
+
+
+def test_inline_svg_fires_on_multiedit_payload(tmp_path):
+    payload = json.dumps(
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(tmp_path / "Icon.tsx"),
+                "edits": [{"old_string": "null", "new_string": INLINE_SVG}],
+            },
+            "session_id": "svg1",
+        }
+    )
+    assert_svg_fired(_run_svg(payload))
+
+
+def test_inline_svg_multiedit_skips_preexisting_via_edits_old_string(tmp_path):
+    # The same icon appears in the edit's old_string (attr tweak) — not a new offence.
+    new = INLINE_SVG.replace("<svg ", '<svg class="h-5" ')
+    payload = json.dumps(
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(tmp_path / "Icon.tsx"),
+                "edits": [{"old_string": INLINE_SVG, "new_string": new}],
+            },
+            "session_id": "svg1",
+        }
+    )
+    assert_svg_silent(_run_svg(payload))
 
 
 def test_inline_svg_write_skips_preexisting_svg(tmp_path):
@@ -945,6 +987,29 @@ def test_secret_plaintext_silent_when_opted_out(tmp_path):
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+def test_secret_plaintext_fires_on_multiedit_payload(tmp_path):
+    # MultiEdit's edits[].new_string flows through the shared reminder_content extraction.
+    payload = json.dumps(
+        {
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(tmp_path / "settings.py"),
+                "edits": [
+                    {"old_string": "x = 1", "new_string": 'API_KEY="testtesttest"\n'}
+                ],
+            },
+            "session_id": "s6",
+        }
+    )
+    r = run_hook(
+        "secret-plaintext-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None),
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "env-to-fnox")
 
 
 # ── missing-test-reminder.sh ────────────────────────────────────────────────────────
