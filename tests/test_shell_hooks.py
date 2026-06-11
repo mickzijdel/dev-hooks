@@ -12,7 +12,15 @@ import time
 
 import pytest
 
-from conftest import HOOKS, ROOT, init_git_repo, make_transcript, requires_jq
+from conftest import (
+    HOOKS,
+    ROOT,
+    init_git_repo,
+    make_compliant_repo,
+    make_transcript,
+    requires_jq,
+    run_checker,
+)
 
 pytestmark = requires_jq
 
@@ -88,54 +96,7 @@ def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     assert_json_with(r.stdout, "[dev-env]")
 
 
-# ── dev_env_check.sh (skill checker) ────────────────────────────────────────────────
-CHECKER = ROOT / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
-
-
-def run_checker(target):
-    r = subprocess.run(
-        ["bash", str(CHECKER), str(target)],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 0, r.stderr
-    out = {}
-    for line in r.stdout.splitlines():
-        if "=" in line and not line.startswith("# "):
-            key, _, value = line.partition("=")
-            out[key] = value
-    return out
-
-
-def make_compliant_repo(
-    path, *, readme=True, claude=True, cooldown=True, gitleaks_config=True
-):
-    """Build a repo that satisfies everything the checker enforces at the current standard
-    except optionally the README/CLAUDE.md docs, the uv cooldown, or the .gitleaks.toml
-    allowlist. Stamped at the current version (read from VERSION) so it stays compliant as
-    the standard advances."""
-    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
-    # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
-    pyproject = "[project]\nname='x'\n"
-    if cooldown:
-        pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
-    (path / "pyproject.toml").write_text(pyproject)
-    (path / "mise.toml").write_text(
-        f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
-    )
-    (path / "mise.lock").write_text("")
-    (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
-    wf = path / ".github" / "workflows"
-    wf.mkdir(parents=True)
-    (wf / "ci.yml").write_text("name: ci\non: push\n")
-    if readme:
-        (path / "README.md").write_text("# x\n")
-    if claude:
-        (path / "CLAUDE.md").write_text("# project instructions\n")
-    if gitleaks_config:
-        (path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
-
-
+# ── dev_env_check.sh (skill checker; harness lives in conftest) ─────────────────────
 def test_checker_compliant_with_docs(tmp_path):
     make_compliant_repo(tmp_path)
     out = run_checker(tmp_path)
@@ -239,26 +200,6 @@ def test_checker_no_fnox_suggestion_from_vendored_dirs(tmp_path, vendor_dir):
 
 
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────
-def test_latest_deps_fires_once_per_session(tmp_path):
-    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
-    payload = json.dumps(
-        {
-            "tool_input": {"file_path": str(tmp_path / "pyproject.toml")},
-            "session_id": "s1",
-        }
-    )
-    first = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0
-    assert_json_with(first.stdout, "stale")
-    # Manifest edits also nudge keeping the human-facing docs in sync.
-    assert_json_with(first.stdout, "README.md")
-    assert_json_with(first.stdout, "CLAUDE.md")
-    # Marker now exists → second call for same session+category stays silent.
-    second = run_hook("latest-deps-reminder.sh", stdin=payload, env=env)
-    assert second.returncode == 0
-    assert second.stdout.strip() == ""
-
-
 def test_latest_deps_gemfile_nudges_docs(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
     payload = json.dumps(
@@ -317,19 +258,6 @@ def test_dockerfile_reminder_silent_for_non_dockerfile(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_dockerfile_reminder_silent_when_opted_out(tmp_path):
-    payload = json.dumps(
-        {"tool_input": {"file_path": str(tmp_path / "Dockerfile")}, "session_id": "d3"}
-    )
-    r = run_hook(
-        "dockerfile-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_DOCKERFILE="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
 def test_popover_reminder_fires_for_controller_filename(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"
@@ -375,19 +303,6 @@ def test_popover_reminder_silent_for_non_frontend_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_popover_reminder_silent_when_opted_out(tmp_path):
-    ctrl = tmp_path / "popover_controller.js"
-    ctrl.write_text("// popover\n")
-    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p5"})
-    r = run_hook(
-        "popover-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_POPOVER="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 def test_popover_reminder_fires_for_heex(tmp_path):
     # .heex is covered by the shared frontend-extension list in the lib.
     view = tmp_path / "nav.heex"
@@ -398,18 +313,6 @@ def test_popover_reminder_fires_for_heex(tmp_path):
     )
     assert r.returncode == 0
     assert_json_with(r.stdout, "popovers-tooltips")
-
-
-def test_popover_reminder_fires_once_per_session(tmp_path):
-    ctrl = tmp_path / "tooltip_controller.js"
-    ctrl.write_text("// tip\n")
-    payload = json.dumps({"tool_input": {"file_path": str(ctrl)}, "session_id": "p6"})
-    env = base_env(TMPDIR=str(tmp_path))
-    first = run_hook("popover-reminder.sh", stdin=payload, env=env)
-    second = run_hook("popover-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0 and second.returncode == 0
-    assert_json_with(first.stdout, "popovers-tooltips")
-    assert second.stdout.strip() == ""
 
 
 # ── inline-svg-reminder.sh ──────────────────────────────────────────────────────────
@@ -861,34 +764,6 @@ def test_debug_leftover_silent_for_preexisting_committed(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_debug_leftover_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("breakpoint()\n")
-    r = run_hook(
-        "debug-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_DEBUG_LEFTOVER="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_debug_leftover_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("breakpoint()\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=1, extra_lines=[DEBUG_SENTINEL]
-    )
-    r = run_hook(
-        "debug-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 def test_debug_leftover_ignores_test_files(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "test_foo.py").write_text("breakpoint()\n")  # a test file
@@ -902,26 +777,6 @@ def test_debug_leftover_ignores_test_files(tmp_path):
 
 
 # ── secret-plaintext-reminder.sh ────────────────────────────────────────────────────
-def test_secret_plaintext_fires_once_per_session(tmp_path):
-    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
-    payload = json.dumps(
-        {
-            "tool_input": {
-                "file_path": str(tmp_path / ".env"),
-                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
-            },
-            "session_id": "s1",
-        }
-    )
-    first = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
-    assert first.returncode == 0
-    assert_json_with(first.stdout, "env-to-fnox")
-    # Marker now exists → second call for the same session stays silent.
-    second = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
-    assert second.returncode == 0
-    assert second.stdout.strip() == ""
-
-
 def test_secret_plaintext_silent_for_env_reference(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS=None)
     payload = json.dumps(
@@ -966,25 +821,6 @@ def test_secret_plaintext_silent_for_example_file(tmp_path):
         }
     )
     r = run_hook("secret-plaintext-reminder.sh", stdin=payload, env=env)
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_secret_plaintext_silent_when_opted_out(tmp_path):
-    payload = json.dumps(
-        {
-            "tool_input": {
-                "file_path": str(tmp_path / ".env"),
-                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
-            },
-            "session_id": "s5",
-        }
-    )
-    r = run_hook(
-        "secret-plaintext-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_SECRETS="false"),
-    )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -1036,34 +872,6 @@ def test_missing_test_silent_when_test_present(tmp_path):
         "missing-test-reminder.sh",
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_missing_test_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
-    r = run_hook(
-        "missing-test-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_MISSING_TEST="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_missing_test_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    return 1\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=1, extra_lines=[MISSING_TEST_SENTINEL]
-    )
-    r = run_hook(
-        "missing-test-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
@@ -1166,23 +974,176 @@ def test_ci_action_ref_silent_for_non_yaml(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_ci_action_ref_silent_when_opted_out(tmp_path):
-    wf = _workflow(tmp_path)
-    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c4"})
-    r = run_hook(
+# ── cross-hook behavior: opt-out and fire-once-per-session ──────────────────────────
+# Every reminder hook honors its DEV_HOOKS_* opt-out env var, and the marker-based hooks
+# fire at most once per session (per category/file where applicable). One payload table
+# drives both checks; each builder returns a payload that would otherwise make its hook
+# fire. dockerfile-reminder is opt-out-only: with hadolint installed it deliberately
+# lints on EVERY write, so it has no fire-once guarantee to pin.
+
+
+def _latest_deps_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {"file_path": str(tmp_path / "pyproject.toml")},
+            "session_id": "x1",
+        }
+    )
+
+
+def _dockerfile_payload(tmp_path):
+    f = tmp_path / "Dockerfile"
+    f.write_text("FROM alpine:3.20\nRUN echo hi\n")
+    return json.dumps({"tool_input": {"file_path": str(f)}, "session_id": "x1"})
+
+
+def _popover_payload(tmp_path):
+    f = tmp_path / "tooltip_controller.js"
+    f.write_text("// tip\n")
+    return json.dumps({"tool_input": {"file_path": str(f)}, "session_id": "x1"})
+
+
+def _secret_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / ".env"),
+                "content": 'API_KEY="testtesttest"\n',  # deliberately low-entropy fake
+            },
+            "session_id": "x1",
+        }
+    )
+
+
+def _ci_action_payload(tmp_path):
+    return json.dumps(
+        {"tool_input": {"file_path": str(_workflow(tmp_path))}, "session_id": "x1"}
+    )
+
+
+# (script, opt-out env var, payload builder, needle expected in the firing output)
+FIRE_ONCE_REMINDERS = [
+    ("latest-deps-reminder.sh", "DEV_HOOKS_LATEST_DEPS", _latest_deps_payload, "stale"),
+    (
+        "popover-reminder.sh",
+        "DEV_HOOKS_POPOVER",
+        _popover_payload,
+        "popovers-tooltips",
+    ),
+    (
+        "secret-plaintext-reminder.sh",
+        "DEV_HOOKS_SECRETS",
+        _secret_payload,
+        "env-to-fnox",
+    ),
+    (
         "ci-action-ref-reminder.sh",
-        stdin=payload,
-        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_CI_ACTION_REFS="false"),
+        "DEV_HOOKS_CI_ACTION_REFS",
+        _ci_action_payload,
+        "check_action_refs.sh",
+    ),
+]
+OPT_OUT_REMINDERS = FIRE_ONCE_REMINDERS + [
+    (
+        "dockerfile-reminder.sh",
+        "DEV_HOOKS_DOCKERFILE",
+        _dockerfile_payload,
+        "Order instructions",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,make_payload,needle",
+    OPT_OUT_REMINDERS,
+    ids=[e[0] for e in OPT_OUT_REMINDERS],
+)
+def test_reminder_silent_when_opted_out(
+    tmp_path, script, opt_var, make_payload, needle
+):
+    r = run_hook(
+        script,
+        stdin=make_payload(tmp_path),
+        env=base_env(TMPDIR=str(tmp_path), **{opt_var: "false"}),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
-def test_ci_action_ref_fires_once_per_session(tmp_path):
-    wf = _workflow(tmp_path)
-    payload = json.dumps({"tool_input": {"file_path": str(wf)}, "session_id": "c5"})
-    env = base_env(TMPDIR=str(tmp_path))
-    first = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
-    second = run_hook("ci-action-ref-reminder.sh", stdin=payload, env=env)
-    assert_json_with(first.stdout, "check_action_refs.sh")
+@pytest.mark.parametrize(
+    "script,opt_var,make_payload,needle",
+    FIRE_ONCE_REMINDERS,
+    ids=[e[0] for e in FIRE_ONCE_REMINDERS],
+)
+def test_reminder_fires_once_per_session(
+    tmp_path, script, opt_var, make_payload, needle
+):
+    env = base_env(TMPDIR=str(tmp_path), **{opt_var: None})
+    payload = make_payload(tmp_path)
+    first = run_hook(script, stdin=payload, env=env)
+    assert first.returncode == 0
+    assert_json_with(first.stdout, needle)
+    # Marker now exists → second call for the same session stays silent.
+    second = run_hook(script, stdin=payload, env=env)
+    assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+# Stop hooks: same opt-out and once-per-session (transcript sentinel) contracts.
+# (script, opt-out env var, sentinel, triggering foo.py content)
+STOP_REMINDERS = [
+    (
+        "debug-leftover-reminder.sh",
+        "DEV_HOOKS_DEBUG_LEFTOVER",
+        DEBUG_SENTINEL,
+        "breakpoint()\n",
+    ),
+    (
+        "missing-test-reminder.sh",
+        "DEV_HOOKS_MISSING_TEST",
+        MISSING_TEST_SENTINEL,
+        "def f():\n    return 1\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,sentinel,trigger",
+    STOP_REMINDERS,
+    ids=[e[0] for e in STOP_REMINDERS],
+)
+def test_stop_reminder_silent_when_opted_out(
+    tmp_path, script, opt_var, sentinel, trigger
+):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text(trigger)
+    r = run_hook(
+        script,
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=base_env(**{opt_var: "false"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "script,opt_var,sentinel,trigger",
+    STOP_REMINDERS,
+    ids=[e[0] for e in STOP_REMINDERS],
+)
+def test_stop_reminder_silent_when_already_prompted(
+    tmp_path, script, opt_var, sentinel, trigger
+):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text(trigger)
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=1, extra_lines=[sentinel]
+    )
+    r = run_hook(
+        script,
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""

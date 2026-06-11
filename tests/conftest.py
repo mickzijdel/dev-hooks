@@ -41,6 +41,54 @@ def init_git_repo(path: Path, *, remote=None, email="t@t", name="t"):
     return run
 
 
+CHECKER = ROOT / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
+
+
+def run_checker(target):
+    """Run the dev-env-setup compliance checker and parse its key=value output."""
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(target)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    out = {}
+    for line in r.stdout.splitlines():
+        if "=" in line and not line.startswith("# "):
+            key, _, value = line.partition("=")
+            out[key] = value
+    return out
+
+
+def make_compliant_repo(
+    path, *, readme=True, claude=True, cooldown=True, gitleaks_config=True
+):
+    """Build a repo that satisfies everything the checker enforces at the current standard
+    except optionally the README/CLAUDE.md docs, the uv cooldown, or the .gitleaks.toml
+    allowlist. Stamped at the current version (read from VERSION) so it stays compliant as
+    the standard advances."""
+    version = (ROOT / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
+    # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
+    pyproject = "[project]\nname='x'\n"
+    if cooldown:
+        pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
+    (path / "pyproject.toml").write_text(pyproject)
+    (path / "mise.toml").write_text(
+        f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
+    )
+    (path / "mise.lock").write_text("")
+    (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
+    wf = path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("name: ci\non: push\n")
+    if readme:
+        (path / "README.md").write_text("# x\n")
+    if claude:
+        (path / "CLAUDE.md").write_text("# project instructions\n")
+    if gitleaks_config:
+        (path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
+
+
 def make_transcript(path: Path, *, human_turns=0, extra_lines=None):
     """Write a minimal JSONL transcript with `human_turns` real user messages."""
     import json
