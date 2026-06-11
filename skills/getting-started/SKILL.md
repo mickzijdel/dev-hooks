@@ -7,9 +7,10 @@ description: |
   uv, jq, ripgrep, gitleaks, gh), VS Code + the Claude Code extension, Docker, the Playwright
   browsers, and the dev-hooks / Superpowers / vischeck plugins; sets up a GitHub account and
   git identity; seeds beginner-safe Claude config (a permissions allowlist + CLAUDE.md
-  defaults); and orients first-timers on Git and on deploying an app. Use when someone is
-  starting from scratch, says "set me up / onboard me / I just installed Claude Code", or wants
-  to bring an existing setup up to date. macOS, Linux, and WSL2.
+  defaults); orients first-timers on Git; and hands off to the starting-a-project skill when
+  they're ready to build and ship their first app. Use when someone is starting from scratch,
+  says "set me up / onboard me / I just installed Claude Code", or wants to bring an existing
+  setup up to date. macOS, Linux, and WSL2.
 allowed-tools:
   - Read
   - Write
@@ -195,17 +196,11 @@ Round it off with the two things a beginner needs next, lightly:
   [`references/git-basics.md`](references/git-basics.md): the everyday loop, branches & pull
   requests, and how to undo mistakes safely. Don't lecture — point them there and answer
   questions.
-- **Starting a project** — when they want to build something, use
-  [`references/starter-stacks.md`](references/starter-stacks.md) to pick a framework from what
-  they're building: a content website → **Astro**; an interactive app → **React + Vite** (Next.js
-  if it needs a server); a full database-backed web app → **Rails** (or Django); an API/backend →
-  **FastAPI**; a script or automation → **Python + uv**; a phone app → **Expo**; a data dashboard →
-  **Streamlit** (plus desktop apps, games, and bots in a catch-all). It also covers the things
-  they'll hit next — Tailwind for styling, shadcn/ui for React components, SQLite to start, and not
-  rolling their own auth.
-- **Deploying** — when they ask "how do people put this online?", use
-  [`references/deploy.md`](references/deploy.md): a decision guide from static sites (GitHub
-  Pages is the free starting point) to full apps and containers, each with a one-command path.
+- **Building and shipping something** — when they're ready to make their first project, hand off
+  to the [[starting-a-project]] skill: a "what are you building?" decision tree that picks a stack
+  (Astro, React + Vite, Rails/Django, FastAPI, Python + uv, Expo, Streamlit) and then walks them
+  through putting it online (GitHub Pages → full-app hosts). Don't duplicate that here — point
+  them at it.
 
 [`references/tools.md`](references/tools.md) explains, in plain language, what every tool is and
 why it's there — link it for the curious.
