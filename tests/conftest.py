@@ -29,7 +29,9 @@ def golden_exit_codes():
 
 
 def init_git_repo(path: Path, *, remote=None, email="t@t", name="t"):
-    """Initialise a git repo at `path` with one commit; optional origin remote."""
+    """Initialise an empty git repo at `path` (no commits — HEAD doesn't resolve yet,
+    deliberately exercising hooks against the brand-new-repo edge); optional origin
+    remote. Returns a `run(*git_args)` helper so tests add/commit when they need to."""
     run = lambda *a: subprocess.run(  # noqa: E731
         ["git", *a], cwd=path, check=True, capture_output=True, text=True
     )
