@@ -13,7 +13,6 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DEV_HOOKS = ROOT / "plugins" / "dev-hooks"
 ONBOARDING = ROOT / "plugins" / "coding-onboarding"
-THINKING = ROOT / "plugins" / "thinking-tools"
 WRITING = ROOT / "plugins" / "writing"
 FIXTURES = ROOT / "tests" / "fixtures"
 GOLDEN = ROOT / "tests" / "golden"
