@@ -25,6 +25,7 @@ MISE_TEMPLATES = [
 ]
 VERSION_FILE = ROOT / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = ROOT / "skills" / "dev-env-setup" / "SKILL.md"
+STANDARD_MD = ROOT / "skills" / "dev-env-setup" / "references" / "standard.md"
 MISSING_TEST_HOOK = ROOT / "hooks" / "scripts" / "missing-test-reminder.sh"
 GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
 
@@ -104,11 +105,20 @@ def test_mise_template_version_stamp_matches_version_file(name):
     )
 
 
-def test_skill_doc_matches_version_stamp():
-    """SKILL.md's '## The standard (vN)' header tracks the VERSION source of truth."""
+@pytest.mark.parametrize(
+    ("path", "pattern"),
+    [
+        (SKILL_MD, r"^## The standard \(v(\d+)\)"),
+        (STANDARD_MD, r"^# The standard \(v(\d+)\) — full specification"),
+    ],
+    ids=["SKILL.md", "references/standard.md"],
+)
+def test_skill_doc_matches_version_stamp(path, pattern):
+    """The 'The standard (vN)' headers in SKILL.md and its references/standard.md split
+    both track the VERSION source of truth."""
     version = VERSION_FILE.read_text().strip()
-    header = re.search(r"^## The standard \(v(\d+)\)", SKILL_MD.read_text(), re.M)
-    assert header is not None, "SKILL.md is missing the '## The standard (vN)' header"
+    header = re.search(pattern, path.read_text(), re.M)
+    assert header is not None, f"{path.name} is missing its 'The standard (vN)' header"
     assert header.group(1) == version
 
 

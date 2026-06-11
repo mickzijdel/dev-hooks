@@ -45,7 +45,7 @@ one new adoption (now v2 — see [upgrade-guide.md](upgrade-guide.md)).
 - shellcheck / shfmt are **additions** of mine (not Nate's), so the standard can cover
   shell-script and Claude-Code-plugin repos like this one.
 - **Duplication** (large-file + dead-code + duplication) was adopted into v1. Duplication uses
-  two tools depending on stack — see the "Duplication: flay vs jscpd" note in `../SKILL.md` for
+  two tools depending on stack — see the "Duplication: flay vs jscpd" note in `standard.md` for
   why Ruby/Rails runs both (flay for Ruby structure, jscpd for the polyglot JS/CSS/ERB gate) and
   Python/shell run jscpd only.
 
