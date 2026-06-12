@@ -1,5 +1,13 @@
 # dev-hooks (marketplace)
 
+> [!TIP]
+> Also check out [vischeck](https://github.com/mickzijdel/vischeck) (screenshot-based visual
+> verification for agents) and [rails-toolkit](https://github.com/mickzijdel/rails-toolkit)
+> (agent skills for Rails 8+). You might also like my other plugins, such as
+> [readoc](https://github.com/mickzijdel/readoc) (read/edit .docx, .xlsx, and PDFs) and
+> [airtable-utils](https://github.com/mickzijdel/airtable-utils) (Airtable scripting and
+> schema tools).
+
 A Claude Code plugin marketplace serving four plugins from this one repo. Install only what
 fits your use: the hook suite for day-to-day agent coding, the onboarding skills for someone
 new to coding, or the thinking/writing toolkits anywhere.
