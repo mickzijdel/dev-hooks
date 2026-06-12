@@ -1,4 +1,4 @@
-# The standard (v14) — full specification
+# The standard (v15) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,14 +6,14 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v14** when it has all of:
+A repo is **compliant at v15** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
   run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`
   and `minimum_release_age = "4d"` (4-day supply-chain cooldown on `mise upgrade`; `mise install`
   always reproduces `mise.lock` exactly — see "Lockfile & supply-chain verification" in
-  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "14"`.
+  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "15"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -29,11 +29,19 @@ A repo is **compliant at v14** when it has all of:
   of warn-and-pass — pre-commit keeps warn-and-pass so a commit is never blocked by an
   unreachable registry).
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
-  audits (dead-code + duplication), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
+  audits (dead-code + duplication), the `exec-bit-scripts` gate (v15), `gitleaks`, and
+  `check-added-large-files`** (`Builtins.*`),
   and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
   including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
   **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
   just the same set under one name that CI invokes.
+- **Executable-bit gate** (all stacks, added in v15) — the hk `exec-bit-scripts` step plus a
+  mirroring step in CI's `lint` job fail when any git-tracked file whose **first line is a
+  shebang** sits at index mode `100644`. A fresh clone or plugin-cache install receives the
+  **index** mode, not local working-tree permissions — and with `core.fileMode = false` a local
+  `chmod +x` never reaches git — so a 100644 script dies with exit 126 "Permission denied" on
+  every other machine while working fine on the author's. Fix:
+  `git update-index --chmod=+x <file>`. See "Executable bits on shipped scripts" below.
 - **`.gitleaks.toml`** (all stacks) — a root allowlist file. The hk `gitleaks` step runs
   `gitleaks dir` over the **whole working tree** — `dir` has no respect-gitignore flag — so
   without this, any repo with a local `.env`, `log/`, `tmp/`, or a Rails
@@ -139,6 +147,35 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > `ruff check .` covers them too — list them explicitly, never a blanket `bin/*` (it would
 > make ruff try to parse a bash hook as Python). jscpd still keys off extensions, so verbatim
 > duplication in extensionless scripts remains uncovered (acceptable).
+
+## Executable bits on shipped scripts (v15)
+
+Any git-tracked file whose **first line is a shebang** must be index mode `100755`. Clones,
+CI checkouts, and Claude Code plugin-cache installs all materialize the **git index mode** —
+local working-tree permissions never leave the author's machine, and with
+`core.fileMode = false` (common on mounted/synced filesystems) even a local `chmod +x` is
+invisible to git. The failure shape: every script works for the author, then exits 126
+"Permission denied" on every other machine (see the v14 → v15 section in
+`upgrade-guide.md` for the incident that motivated this). Fix:
+`git update-index --chmod=+x <file>`.
+
+Two gates enforce the same rule so they can't drift:
+
+- **hk `exec-bit-scripts`** (all `hk.<stack>.pkl` templates) — scans `git ls-files -s` for
+  `100644` entries whose first line is `#!` and fails the commit, naming the files and the fix.
+  The detection is a **single awk** on purpose: hk's internal `sh` aborts on a `while read`
+  loop inside a `$(...)` command substitution — even when the substitution exits 0 — so every
+  intermediate command must be zero-exit. Don't "simplify" it back to a shell loop; it passes
+  under real dash/bash/sh and dies only under hk's runner.
+- **CI `lint` job step** (all `ci.<stack>.yml` templates) — the same awk in plain shell. A
+  plugin/script-bundle repo whose pytest suite runs in CI should *also* carry the test form
+  (see this repo's `tests/test_exec_bits.py`): same rule, plus a sanity assertion that a known
+  shipped script is among the detected executables, guarding against the scan silently
+  matching nothing.
+
+The shebang heuristic deliberately covers sourced libraries too (e.g. a `lib/common.sh` with a
+shebang for shellcheck's benefit): the bit is harmless there, and one blanket rule beats
+maintaining an exemption list.
 
 ## Duplication: flay vs jscpd (why Ruby runs both)
 

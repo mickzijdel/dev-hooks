@@ -67,6 +67,12 @@ Do not include changelog or detective-work where it does not belong, such as in 
   ANY duplication. Shared python helpers belong in `lib/hook_helpers.py` (above); only when a
   block genuinely can't be shared that way, wrap it in `# jscpd:ignore-start` /
   `# jscpd:ignore-end` (valid python comments inside the heredoc; jscpd 5.x honors them).
+- **Commit every script with the executable bit in the git index** (this repo has
+  `core.fileMode=false`, so a plain `chmod +x` never reaches git — use
+  `git update-index --chmod=+x <file>`). Plugin-cache installs and clones receive the index
+  mode; a 100644 shebang script dies there with exit 126. The hk `exec-bit-scripts` step,
+  the CI lint job, and `tests/test_exec_bits.py` all gate this (any tracked file whose first
+  line is `#!`).
 - Before claiming a hook works, run the full local CI: `uv run pytest -q`, `shfmt -d .`,
   `shellcheck **/*.sh`, and `bash scripts/run-jscpd.sh python,bash`. Let `shfmt -w` do the
   formatting — with `.editorconfig` it rewrites `case` patterns to `a | b)` and pushes `$(…)`

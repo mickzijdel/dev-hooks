@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.3.0
+version: 4.4.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v14)
+## The standard (v15)
 
-A repo is **compliant at v14** when it has all of:
+A repo is **compliant at v15** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
   `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
-  `DEV_ENV_VERSION = "14"`.
+  `DEV_ENV_VERSION = "15"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -39,9 +39,16 @@ A repo is **compliant at v14** when it has all of:
 - **`scripts/run-jscpd.sh`** (added in v14) — the shared jscpd runner holding the
   version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
   so the two gates can't drift. Copied verbatim from the template (repo formatters may re-indent it; never hand-edit the logic).
-- **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, `gitleaks`, and
+- **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
+  `exec-bit-scripts` gate, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
   hooks.
+- **Executable-bit gate** (added in v15) — the hk `exec-bit-scripts` step + a CI lint-job
+  mirror fail when any tracked shebang file is index mode `100644` (a fresh clone/plugin
+  install would get a script that dies with exit 126). Fix:
+  `git update-index --chmod=+x <file>`. See "Executable bits on shipped scripts" in
+  `references/standard.md` — including why the check is a single awk (hk's internal shell
+  aborts on `while read` inside `$(...)`).
 - **`.gitleaks.toml`** — allowlists gitignored runtime/secret paths so the whole-tree
   `gitleaks dir` scan doesn't fail on a local `.env`/`log/`. See "gitleaks whole-tree allowlist".
 - **`.github/workflows/ci.yml`** — mirrors the hk checks plus an `audit` job; gitleaks runs as
@@ -94,7 +101,9 @@ proposing additions.
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
    `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json`,
-   `run-jscpd.sh` → `scripts/run-jscpd.sh` (`chmod +x`; the shared jscpd runner both the hk
+   `run-jscpd.sh` → `scripts/run-jscpd.sh` (`chmod +x` — and if the repo has
+   `core.fileMode = false`, `git update-index --chmod=+x scripts/run-jscpd.sh` after staging,
+   or the v15 exec-bit gate will flag it; the shared jscpd runner both the hk
    step and CI call), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
    whole-tree scan from failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks
    whole-tree allowlist").

@@ -162,6 +162,14 @@ def test_checker_needs_upgrade_without_jscpd_runner(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_needs_upgrade_without_exec_bit_step(tmp_path):
+    # v15: a current-version repo whose hk.pkl lacks the exec-bit-scripts step is flagged.
+    make_compliant_repo(tmp_path, exec_bit=False)
+    out = run_checker(tmp_path)
+    assert out["has_exec_bit"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
@@ -171,7 +179,9 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
         f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
     )
     (tmp_path / "mise.lock").write_text("")
-    (tmp_path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
+    (tmp_path / "hk.pkl").write_text(
+        '["gitleaks"] = Builtins.gitleaks\n["exec-bit-scripts"] { check = "..." }\n'
+    )
     (tmp_path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
     wf = tmp_path / ".github" / "workflows"
     wf.mkdir(parents=True)

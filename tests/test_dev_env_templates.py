@@ -40,6 +40,8 @@ SHEBANG_DETECTOR_TEMPLATES = [
     "ci.python.yml",
 ]
 
+HK_TEMPLATES = ["hk.python.pkl", "hk.ruby.pkl", "hk.shell.pkl", "hk.js.pkl"]
+
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
 def test_gitleaks_job_runs_cli_not_action(name):
@@ -79,6 +81,24 @@ def test_shebang_detector_matches_line_one_only(name):
     )
     # The line-1-only form must be present.
     assert "head -n1" in text, f"{name} is missing the `head -n1` line-1 detector"
+
+
+@pytest.mark.parametrize("name", HK_TEMPLATES + CI_TEMPLATES)
+def test_exec_bit_gate_in_every_template(name):
+    """v15: every hk template carries the `exec-bit-scripts` step and every CI template
+    mirrors it in the lint job, so a tracked shebang file at index mode 100644 (exit 126
+    on every fresh clone / plugin install) fails before it ships. The detection must stay
+    a single awk over `git ls-files -s`: hk's internal `sh` aborts on a while/read loop
+    inside $(...) even when the substitution exits 0."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert "$1 ~ /^100644/" in text, f"{name} is missing the exec-bit awk detector"
+    assert "git update-index --chmod=+x" in text, (
+        f"{name}'s exec-bit gate doesn't name the fix"
+    )
+    if name.startswith("hk."):
+        assert '["exec-bit-scripts"]' in text, (
+            f"{name} is missing the exec-bit-scripts step"
+        )
 
 
 def test_gitleaks_template_allowlists_gitignored_artifacts():

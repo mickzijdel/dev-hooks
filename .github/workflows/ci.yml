@@ -18,6 +18,19 @@ jobs:
           shellcheck **/*.sh
       - name: shfmt
         run: shfmt -d .
+      - name: Executable bits on shipped scripts
+        # Any tracked file whose first line is a shebang must be mode 100755 in the
+        # index — with core.fileMode=false a local chmod never reaches git, and a
+        # 100644 script dies with exit 126 on every fresh clone / plugin install.
+        # Mirrors the hk `exec-bit-scripts` step; tests/test_exec_bits.py enforces
+        # the same rule with a sanity check that the scan matches something.
+        run: |
+          bad=$(git ls-files -s | awk -F'\t' '$1 ~ /^100644/ { if ((getline line < $2) > 0 && line ~ /^#!/) print $2; close($2) }')
+          if [ -n "$bad" ]; then
+            echo "Shebang scripts missing the executable bit in the git index. Fix: git update-index --chmod=+x <file>"
+            echo "$bad"
+            exit 1
+          fi
 
   test:
     runs-on: ubuntu-latest

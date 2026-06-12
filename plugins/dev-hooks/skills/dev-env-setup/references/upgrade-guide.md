@@ -503,6 +503,42 @@ keeps warn-and-pass so a commit is never blocked by an unreachable registry). To
 
 ---
 
+## v14 → v15 (executable-bit gate on shipped scripts)
+
+Clones, CI checkouts, and Claude Code plugin-cache installs materialize the **git index
+mode** — local working-tree permissions never leave the author's machine, and with
+`core.fileMode = false` even a local `chmod +x` is invisible to git. A tracked shebang script
+at index mode `100644` therefore works for the author and dies with exit 126 "Permission
+denied" everywhere else (this shipped airtable-utils 1.3.3 with non-executable `bin/`
+scripts). v15 gates the bit in both places: an hk `exec-bit-scripts` pre-commit step and a
+mirroring step in CI's `lint` job, both failing on any tracked file whose first line is a
+shebang sitting at `100644`. To reach v15:
+
+1. **Fix any existing offenders first** (the new gates fire immediately otherwise):
+   ```bash
+   git ls-files -s | awk -F'\t' '$1 ~ /^100644/ { if ((getline line < $2) > 0 && line ~ /^#!/) print $2; close($2) }'
+   git update-index --chmod=+x <each listed file>   # and chmod +x locally for consistency
+   ```
+2. **Add the hk step.** Copy the `exec-bit-scripts` step (with its comment) from
+   `templates/hk.<stack>.pkl` into the `linters` mapping. It carries no glob (it's a
+   single ~5ms awk over `git ls-files -s`, fine on every commit) and no `fix` —
+   auto-chmodding could mask an intentional non-executable. **Keep the detection a single
+   awk**: hk's internal `sh` aborts on a `while read` loop inside a `$(...)` command
+   substitution even when the substitution exits 0, so the obvious shell rewrite passes
+   under dash/bash/sh and dies only under hk's runner.
+3. **Add the CI mirror.** Copy the `Executable bits on shipped scripts` step from
+   `templates/ci.<stack>.yml` into the `lint` job. A plugin/script-bundle repo whose pytest
+   suite runs in CI should also add the test form — same rule plus a sanity assertion that a
+   known shipped script is among the detected executables (see dev-hooks'
+   `tests/test_exec_bits.py`).
+4. **Bump the stamp.** Set `DEV_ENV_VERSION = "15"` in `mise.toml`.
+5. **Verify both directions:** `hk run check --all` is green; then
+   `git update-index --chmod=-x` a shipped script and confirm the hk step (and the pytest
+   test, if present) fails naming the file and the `git update-index --chmod=+x` fix;
+   restore with `--chmod=+x`. Then `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

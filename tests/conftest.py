@@ -73,11 +73,12 @@ def make_compliant_repo(
     cooldown=True,
     gitleaks_config=True,
     jscpd_runner=True,
+    exec_bit=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
-    allowlist, or the shared jscpd runner (v14). Stamped at the current version (read from
-    VERSION) so it stays compliant as the standard advances."""
+    allowlist, the shared jscpd runner (v14), or the exec-bit hk step (v15). Stamped at the
+    current version (read from VERSION) so it stays compliant as the standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -88,7 +89,10 @@ def make_compliant_repo(
         f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'
     )
     (path / "mise.lock").write_text("")
-    (path / "hk.pkl").write_text('["gitleaks"] = Builtins.gitleaks\n')
+    hk = '["gitleaks"] = Builtins.gitleaks\n'
+    if exec_bit:
+        hk += '["exec-bit-scripts"] { check = "..." }\n'
+    (path / "hk.pkl").write_text(hk)
     wf = path / ".github" / "workflows"
     wf.mkdir(parents=True)
     (wf / "ci.yml").write_text("name: ci\non: push\n")
