@@ -1,7 +1,7 @@
 {
   "name": "writing",
   "description": "Writing and content skills adapted from Nate Berkopec's dotfiles: github-readme (README structure, onboarding flow, examples, contribution guidance), humanizer (strip signs of AI-generated writing, based on Wikipedia's guide), and readability (clarity and scannability for web content, docs, and long-form text).",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Mick Zijdel"
   },

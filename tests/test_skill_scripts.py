@@ -3,6 +3,9 @@
 Golden parity for the ported Python skill CLIs: the golden files in tests/golden/ were
 captured from the original Ruby scripts before they were removed; these tests assert the
 Python ports reproduce that output byte for byte (and match the recorded exit codes).
+gr_modern post-dates the port — it covers heading/command spellings the Python audit
+recognises beyond the Ruby original (Install heading, /plugin and uv/mise commands) and
+its golden was captured from the Python script.
 Plus subprocess tests for the dev-env-setup skill's dev_env_check.sh compliance checker
 (harness lives in conftest).
 """
@@ -35,6 +38,7 @@ CASES = [
     ("gr_sample_strict", GR, ["tests/fixtures/sample_readme.md", "--strict"], None),
     ("gr_bad", GR, ["tests/fixtures/bad_readme.md"], None),
     ("gr_bad_strict", GR, ["tests/fixtures/bad_readme.md", "--strict"], None),
+    ("gr_modern", GR, ["tests/fixtures/modern_readme.md"], None),
     ("gr_missing", GR, ["tests/fixtures/does_not_exist.md"], None),
     ("ra_prose", RA, ["tests/fixtures/sample_prose.md"], None),
     (

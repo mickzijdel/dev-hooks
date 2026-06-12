@@ -17,7 +17,11 @@ from pathlib import Path
 Result = namedtuple("Result", ["status", "label", "details"])
 
 SECTION_PATTERNS = {
-    "installation": [r"^#{1,6}\s+installation\b", r"^#{1,6}\s+setup\b"],
+    "installation": [
+        r"^#{1,6}\s+installation\b",
+        r"^#{1,6}\s+install\b",
+        r"^#{1,6}\s+setup\b",
+    ],
     "usage": [
         r"^#{1,6}\s+usage\b",
         r"^#{1,6}\s+quick\s*start\b",
@@ -27,15 +31,16 @@ SECTION_PATTERNS = {
 }
 
 SETUP_COMMAND_HINTS = [
-    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go)\s+(?:install|add|get)\b",
+    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|uv|mise)\s+(?:install|add|get|sync)\b",
     r"\bgit\s+clone\b",
     r"\b(?:make|rake|just)\s+\w+",
     r"\b(?:docker|docker-compose|compose)\b",
+    r"/plugin\s+(?:marketplace\s+add|install)\b",
     r"\./bin/[\w-]+\b",
 ]
 
 USAGE_COMMAND_HINTS = [
-    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|ruby|python)\s+(?:run|exec|test|start|serve)\b",
+    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|ruby|python|uv|mise)\s+(?:run|exec|test|start|serve)\b",
     r"\b(?:make|rake|just)\s+\w+",
     r"\./bin/[\w-]+\b",
     r"^\$\s+.+",
