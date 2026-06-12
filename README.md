@@ -46,23 +46,6 @@ $ claude
 > /dev-hooks:dev-env-setup audit this repo against the dev-env standard
 ```
 
-## Migrating from 1.x
-
-Before v2, this repo was a single `dev-hooks` plugin at the repo root.
-
-- `/plugin install github:mickzijdel/dev-hooks` **no longer works** — the repo root is now a
-  marketplace, not a plugin. Reinstall via the marketplace commands above.
-- A symlink of the **repo root** into `~/.claude/skills/` (the old local-dev trick) breaks
-  **silently** — the root no longer has a plugin manifest or `skills/`/`hooks/` dirs. Remove
-  it and use one of the local-development options below.
-- Marketplace installs of `dev-hooks@dev-hooks` keep working: refresh the marketplace
-  (`/plugin marketplace update dev-hooks`) and update the plugin.
-- Skills that moved to a sibling plugin have new qualified names, e.g.
-  `dev-hooks:premortem` → `thinking-tools:premortem`,
-  `dev-hooks:getting-started` → `coding-onboarding:getting-started`,
-  `dev-hooks:humanizer` → `writing:humanizer`. The four skills still in `dev-hooks`
-  (`dev-env-setup`, `env-to-fnox`, `dockerfile`, `popovers-tooltips`) are unchanged.
-
 ## Local development
 
 Clone the repo, add the working copy as a local marketplace, and install from it:
