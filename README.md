@@ -23,7 +23,7 @@ new to coding, or the thinking/writing toolkits anywhere.
 
 Each plugin's README documents its contents, env vars, and notes.
 
-## Install
+## Installation
 
 Add the marketplace once, then install the plugins you want:
 
@@ -33,6 +33,17 @@ Add the marketplace once, then install the plugins you want:
 /plugin install coding-onboarding@dev-hooks
 /plugin install thinking-tools@dev-hooks
 /plugin install writing@dev-hooks
+```
+
+## Usage
+
+Everything runs inside Claude Code. The `dev-hooks` hooks fire automatically — lint after
+edits, verify tests before stopping, guard dangerous commands. Skills trigger on matching
+tasks, or invoke one directly:
+
+```console
+$ claude
+> /dev-hooks:dev-env-setup audit this repo against the dev-env standard
 ```
 
 ## Migrating from 1.x
@@ -54,9 +65,10 @@ Before v2, this repo was a single `dev-hooks` plugin at the repo root.
 
 ## Local development
 
-Add the working copy as a local marketplace and install from it:
+Clone the repo, add the working copy as a local marketplace, and install from it:
 
 ```bash
+git clone https://github.com/mickzijdel/dev-hooks ~/Stack/Programmeren/dev-hooks
 /plugin marketplace add ~/Stack/Programmeren/dev-hooks
 /plugin install dev-hooks@dev-hooks   # and the others as needed
 ```
@@ -86,3 +98,7 @@ mise install
 uv run pytest -q
 hk check
 ```
+
+## License
+
+[MIT](LICENSE)
