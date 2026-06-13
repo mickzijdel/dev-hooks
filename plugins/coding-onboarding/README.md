@@ -1,5 +1,18 @@
 # coding-onboarding
 
+> [!TIP]
+> **Nothing installed yet? Just run this in a terminal:**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/mickzijdel/dev-hooks/main/install.sh | bash
+> ```
+> It installs Claude Code, signs you in, installs this plugin, and opens a checklist that
+> explains each step. Then type `claude`, press Enter, and say **set me up**.
+>
+> Good habit: never run a `curl … | bash` command without knowing what it does. Read
+> [`install.sh`](../../install.sh) first — or paste the command to any AI assistant and ask
+> "is this safe and what does it do?" before running it. (It's short, dependency-free, and
+> only installs Claude Code + this plugin.)
+
 A Claude Code plugin for people new to coding (or to AI-assisted coding): one skill sets up
 their machine, the other helps them pick a stack and get a first project online. Built to be
 handed to someone you're onboarding without also subjecting them to a full hook suite —
