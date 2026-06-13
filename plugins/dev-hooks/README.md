@@ -10,7 +10,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 ## Hooks
 
 | Event | Script | Purpose |
-|-------|--------|---------|
+|-------|--------|--------|
 | `UserPromptSubmit` | `prompt-log.sh` | Append one JSON line per user prompt (timestamp, repo cwd, session id, prompt length, first 500 chars) to `~/.claude/automation-review/prompts.jsonl` — the cross-repo data source the `thinking-tools` `weekly-automation-review` skill clusters to spot repetitive requests worth automating. Local-only, silent, never blocks the prompt. Opt out with `DEV_HOOKS_PROMPT_LOG=false`. |
 | `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by the `coding-onboarding` plugin's `getting-started` skill): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
@@ -76,10 +76,16 @@ The companion skills the hooks point at:
 - `memory-reminder.sh` targets Claude Code's file-based memory feature. It stays a no-op
   unless you set `DEV_HOOKS_MEMORY=1` or have already used memory somewhere (it detects any
   existing `~/.claude/projects/*/memory/` dir), so it's safe for installers who don't use
-  memory. It only nudges Claude to capture learnings — it never writes memory or edits
+  the memory feature, while avoiding a per-project cold start.
+  It only nudges Claude to capture learnings — it never writes memory or edits
   CLAUDE.md itself, and Claude is told to save nothing when there's nothing durable.
   "Substantial session" defaults to ≥ 6 human turns; tune with `DEV_HOOKS_MEMORY_MIN_TURNS`
-  (in `.claude/settings.local.json` `"env"`).
+  (in `.claude/settings.local.json` `"env"`). For the cleanest integration, set
+  `"autoMemoryEnabled": false` in your global `~/.claude/settings.json`. Claude Code's
+  built-in auto-memory feature (enabled by default) writes context to memory automatically
+  during sessions, which can produce redundant entries alongside the intentional,
+  structured captures this hook prompts at session end. Disabling it means all memory
+  writes go through the end-of-session review.
 - `latest-deps-reminder.sh` is reminder-only — it never queries a package registry, just
   nudges Claude to look up current versions itself (training data goes stale). On manifest
   edits (python/js/ruby — not lockfiles) it additionally reminds Claude to keep README.md

@@ -1,7 +1,7 @@
 {
   "name": "thinking-tools",
-  "description": "Thinking-tool skills for harder, more honest AI assistance: board (adversarial multi-expert critique), premortem (name what could go wrong before committing to a plan), but-for-real (no success claims without actually running the thing), self-rate (grade your own draft before the user does), code-simplifier (clarity-preserving refactors of recent changes), weekly-automation-review (spot repetitive work worth automating — reads the cross-repo prompt log and per-repo memory indexes when the dev-hooks plugin is installed), and commit-digest (pull applicable improvements from tracked external repos).",
-  "version": "1.1.0",
+  "description": "Thinking-tool skills for harder, more honest AI assistance: board (adversarial multi-expert critique), premortem (name what could go wrong before committing to a plan), but-for-real (no success claims without actually running the thing), self-rate (grade your own draft before the user does), code-simplifier (clarity-preserving refactors of recent changes), weekly-automation-review (spot repetitive work worth automating — reads the cross-repo prompt log and per-repo memory indexes when the dev-hooks plugin is installed), commit-digest (pull applicable improvements from tracked external repos), and agent-handoff (plan.md as shared coordination medium for continuing work across sessions and parallel agents).",
+  "version": "1.2.0",
   "author": {
     "name": "Mick Zijdel"
   },
