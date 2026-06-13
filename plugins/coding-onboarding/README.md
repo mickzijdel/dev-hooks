@@ -18,10 +18,59 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 
 ## Install
 
+If Claude Code isn't installed yet, the one-line bootstrap (below) sets up everything. If you
+already have Claude Code:
+
 ```bash
 /plugin marketplace add mickzijdel/dev-hooks
 /plugin install coding-onboarding@dev-hooks
 ```
+
+## Bootstrap installer (starting from nothing)
+
+For a complete beginner with nothing installed, the repo ships a curl-able bootstrap at its
+root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mickzijdel/dev-hooks/main/install.sh | bash
+```
+
+It does only the handful of things that *can't* be done from inside Claude, explaining each in
+plain language before it happens and pausing for you to continue:
+
+1. opens a browser **checklist page** (`onboarding/onboard.html`) to follow along;
+2. installs **Claude Code** (the official installer) if it's missing;
+3. helps you **sign in**;
+4. adds the marketplace and installs this **plugin**;
+5. hands off — you type `claude`, then **set me up**, and `getting-started` takes over.
+
+It's idempotent: anything already done prints `✓ already done` and is skipped. On native
+Windows it prints the WSL2 setup steps and exits (the checklist page has the same guidance with
+copy buttons, and works in any Windows browser).
+
+**The checklist page** is a single self-contained HTML file. Its "Keep this window on top"
+button uses the [Document Picture-in-Picture API](https://developer.mozilla.org/en-US/docs/Web/API/Document_Picture-in-Picture_API)
+(Chrome/Edge 116+) to float the checklist above your other windows; browsers without it show a
+"snap it side-by-side" hint instead. Your ticks persist in `localStorage`, and the commands have
+copy buttons.
+
+**Options** (env vars / flags, for testers and power users):
+
+| Setting | Effect |
+|---------|--------|
+| `--check` | Read-only: print what's set up as `KEY=VALUE` lines, then exit. Installs nothing. |
+| `ONBOARD_CLAUDE_BIN` | Path to the `claude` binary (default: found on your `PATH`). |
+| `ONBOARD_ASSUME_YES=1` | Don't pause for "press Enter" — run straight through. |
+| `ONBOARD_NO_BROWSER=1` | Don't download or open the checklist page. |
+
+When run as `curl … | bash`, normal input is the download stream, so the script reads your
+confirmations from `/dev/tty` — and if there's no terminal attached (an automated run), it
+prints "continuing automatically" and never hangs.
+
+> All user-facing text here follows a **plain-words rule** — no unexplained jargon, everyday
+> analogies, keystroke-level instructions. The shared glossary is
+> `skills/getting-started/references/plain-words.md`; keep `install.sh`, `onboard.html`, and the
+> skill in step with it when editing.
 
 ## Notes
 
