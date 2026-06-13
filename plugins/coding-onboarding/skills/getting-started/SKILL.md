@@ -1,6 +1,6 @@
 ---
 name: getting-started
-version: 1.1.0
+version: 1.1.1
 description: |
   Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
   say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
@@ -70,6 +70,11 @@ command in the root README) already has Claude Code, is signed in, and has this 
 installed; the audit will show `claude=installed`. Acknowledge that ("the installer already
 handled Claude Code — nice") and fast-forward to what's still missing instead of re-explaining
 those steps.
+
+**If the audit shows everything already `installed`** (a returning user, or someone whose
+machine was set up elsewhere), don't end the turn with "you're all set!" — there's nothing to
+install, but the user still came here to *do* something. Skip straight to **step 11**, which
+runs in every case.
 
 ### 2. mise — the toolchain backbone
 
@@ -211,19 +216,12 @@ Two pieces, both written to the user's `~/.claude/` after showing them the diff:
 See [`references/claude-config.md`](references/claude-config.md) for how these two work together
 with the dangerous-command guard (config sets expectations; the hook enforces at runtime).
 
-### 9. Orient — Git and shipping
+### 9. Orient — Git
 
-Round it off with the two things a beginner needs next, lightly:
-
-- **Git** — if they're new to it, give the short tour from
-  [`references/git-basics.md`](references/git-basics.md): the everyday loop, branches & pull
-  requests, and how to undo mistakes safely. Don't lecture — point them there and answer
-  questions.
-- **Building and shipping something** — when they're ready to make their first project, hand off
-  to the [[starting-a-project]] skill: a "what are you building?" decision tree that picks a stack
-  (Astro, React + Vite, Rails/Django, FastAPI, Python + uv, Expo, Streamlit) and then walks them
-  through putting it online (GitHub Pages → full-app hosts). Don't duplicate that here — point
-  them at it.
+Give the beginner the one thing they'll touch constantly: **Git**. If they're new to it, give
+the short tour from [`references/git-basics.md`](references/git-basics.md) — the everyday loop,
+branches & pull requests, and how to undo mistakes safely. Don't lecture — point them there and
+answer questions.
 
 [`references/tools.md`](references/tools.md) explains, in plain language, what every tool is and
 why it's there — link it for the curious.
@@ -239,6 +237,34 @@ bash "$CLAUDE_PLUGIN_ROOT/skills/getting-started/scripts/onboard_check.sh"
 Confirm each line that was `missing` is now `installed`, `gh_auth=yes`, `git_identity=yes`, and
 `playwright_browsers=installed`. List anything still outstanding (e.g. a GUI install the user
 declined, or a `sudo` step they need to run themselves) and what's left for them to do.
+
+### 11. Always end here — "so, what do you want to do?"  *(never skip)*
+
+**This step runs every time, no matter what the audit showed.** Setup is the means, not the
+point — a beginner whose machine was already perfect still came here wanting to *do something*.
+So when nothing needed installing (everything `installed` on the first audit), don't stop with
+"you're all set!" and end the turn — go straight here.
+
+Ask the user — use **AskUserQuestion** so it's a real choice, not a wall of text — what they're
+here to do, and route to the skill that owns it:
+
+- **Build something** (an app, a website, a tool) → hand off to **[[starting-a-project]]**: a
+  "what are you building?" decision tree that picks a stack (Astro, React + Vite, Rails/Django,
+  FastAPI, Python + uv, Expo, Streamlit) and walks them through putting it online. Don't
+  duplicate that decision tree here — invoke the skill.
+- **Solve a specific problem / improve something that already exists** → if it's an existing
+  codebase, offer **[[dev-env-setup]]** to bring the repo up to the lint/test/CI/secrets
+  standard; if it's a fresh idea, that's really "build something" → starting-a-project.
+- **Automate a repetitive task** (a chore they do by hand a lot) → help them name the task,
+  then route: **[[weekly-automation-review]]** to spot what's worth automating, and a hook or
+  skill to do it — the `dev-hooks` plugin for automatic guardrails, or **[[skill-creator]]** to
+  package a repeatable workflow into a skill.
+- **Just exploring / not sure yet** → suggest a tiny first project (a one-page site or a small
+  script) via starting-a-project so they get the build-run-ship loop end to end once.
+
+Keep your own framing short and in plain words; let the handed-off skill carry the depth. The
+goal of getting-started is met not when the tools are installed, but when the user is pointed at
+their actual next move.
 
 ## Notes
 
