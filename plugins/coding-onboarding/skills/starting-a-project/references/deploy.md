@@ -23,8 +23,12 @@ You already have a GitHub account from setup, so there's nothing new to install.
 to a repo, turn Pages on in **Settings → Pages**, pick the branch, and GitHub serves it at
 `https://<username>.github.io/<repo>`.
 
-Two things to know before you choose it:
+A few things to know before you choose it:
 
+- **You're not limited to one site.** Each repository can have its own Pages site, and a free
+  account can have as many repositories as you like — so you can publish many projects, each at
+  its own `https://<username>.github.io/<repo>` address. (There's also one "special" site at the
+  bare `https://<username>.github.io` if you ever name a repo exactly `<username>.github.io`.)
 - **Static only.** GitHub Pages serves files. It cannot run a backend, a database, or
   server-side code. If your app needs those, use a full-app host below.
 - **Free accounts must be public.** On the free GitHub plan, Pages only publishes from a
