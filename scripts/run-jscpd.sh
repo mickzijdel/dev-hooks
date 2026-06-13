@@ -30,6 +30,7 @@ if curl -sf -m 3 https://registry.npmjs.org/ >/dev/null 2>&1; then
   ver=$(npx --before="$cutoff" --yes jscpd --version 2>/dev/null | awk 'END{print $NF}')
   case $ver in
     '' | 0.* | 1.* | 2.* | 3.* | 4.*) ver=latest ;;
+    5.0.[0-5]) ver=5.0.6 ;;
   esac
   npx --yes jscpd@"$ver" . -f "$formats"
 elif npx --offline jscpd --version >/dev/null 2>&1; then
