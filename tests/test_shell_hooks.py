@@ -15,9 +15,11 @@ import pytest
 from conftest import (
     DEV_HOOKS,
     HOOKS,
+    WRITING_HOOKS,
     init_git_repo,
     make_transcript,
     requires_jq,
+    requires_python3,
 )
 
 pytestmark = requires_jq
@@ -33,9 +35,9 @@ def base_env(**overrides):
     return env
 
 
-def run_hook(name, *, stdin="", cwd=None, env=None):
+def run_hook(name, *, stdin="", cwd=None, env=None, scripts=HOOKS):
     return subprocess.run(
-        ["bash", str(HOOKS / name)],
+        ["bash", str(scripts / name)],
         input=stdin,
         cwd=str(cwd) if cwd else None,
         env=env,
@@ -216,6 +218,90 @@ def test_dockerfile_reminder_silent_for_non_dockerfile(tmp_path):
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── readme-reminder.sh (writing plugin; self-contained, no reminder-common.sh) ───────
+_GOOD_README = (
+    "# My Project\n\n"
+    "A tiny tool that does one thing well.\n\n"
+    "## Installation\n\n```\npip install myproject\n```\n\n"
+    "## Usage\n\n```\n$ myproject run\n```\n\n"
+    "## License\n\nMIT\n"
+)
+
+
+def _run_readme(payload, env):
+    return run_hook("readme-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS)
+
+
+@requires_python3
+def test_readme_reminder_audits_and_reports_failures(tmp_path):
+    # A skeletal README fails the bundled audit (missing install/usage/license sections).
+    readme = tmp_path / "README.md"
+    readme.write_text("# x\n")
+    payload = json.dumps({"tool_input": {"file_path": str(readme)}, "session_id": "r1"})
+    r = _run_readme(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "found failures")
+    assert_json_with(r.stdout, "github-readme")
+
+
+@requires_python3
+def test_readme_reminder_reports_pass_for_complete_readme(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text(_GOOD_README)
+    payload = json.dumps({"tool_input": {"file_path": str(readme)}, "session_id": "r2"})
+    r = _run_readme(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "audit passed")
+    assert_json_with(r.stdout, "github-readme")
+
+
+def test_readme_reminder_matches_variant_basename(tmp_path):
+    # Case-insensitive, any extension: Readme.rst counts. No audit script for .rst content,
+    # but the audit runs on the file regardless and still nudges toward the skill.
+    readme = tmp_path / "Readme.rst"
+    readme.write_text("project\n=======\n")
+    payload = json.dumps({"tool_input": {"file_path": str(readme)}, "session_id": "r3"})
+    r = _run_readme(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "github-readme")
+
+
+def test_readme_reminder_silent_for_non_readme(tmp_path):
+    for name in ("docs.md", "CONTRIBUTING.md", "readme_notes.py"):
+        f = tmp_path / name
+        f.write_text("# not a readme\n")
+        payload = json.dumps({"tool_input": {"file_path": str(f)}, "session_id": "r4"})
+        r = _run_readme(payload, base_env(TMPDIR=str(tmp_path)))
+        assert r.returncode == 0
+        assert r.stdout.strip() == "", name
+
+
+def test_readme_reminder_silent_when_opted_out(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text("# x\n")
+    payload = json.dumps({"tool_input": {"file_path": str(readme)}, "session_id": "r5"})
+    r = _run_readme(payload, base_env(TMPDIR=str(tmp_path), WRITING_README="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_readme_reminder_fallback_fires_once_when_audit_missing(tmp_path):
+    # No audit script available → fall back to the once-per-session-per-file nudge.
+    readme = tmp_path / "README.md"
+    readme.write_text("# x\n")
+    payload = json.dumps({"tool_input": {"file_path": str(readme)}, "session_id": "r6"})
+    env = base_env(
+        TMPDIR=str(tmp_path), WRITING_README_AUDIT_SCRIPT=str(tmp_path / "nope.py")
+    )
+    first = _run_readme(payload, env)
+    assert first.returncode == 0
+    assert_json_with(first.stdout, "You just wrote README.md")
+    # Marker now exists → second call for the same session/file stays silent.
+    second = _run_readme(payload, env)
+    assert second.returncode == 0
+    assert second.stdout.strip() == ""
 
 
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────

@@ -1,7 +1,8 @@
 This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
 root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
-each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks also has
-`hooks/`). Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
+each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks and
+writing also ship `hooks/` — dev-hooks the main suite, writing a single `readme-reminder`).
+Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
 Make sure to check all of the following and make sure they are up-to-date after making changes;
@@ -35,6 +36,13 @@ Do not include changelog or detective-work where it does not belong, such as in 
 
 ## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 
+- **The `writing` plugin's `readme-reminder.sh` is the one exception to everything below.**
+  It lives in `plugins/writing/hooks/` and is deliberately self-contained — it does NOT source
+  `reminder-common.sh`, because the `writing` plugin installs without `dev-hooks` and a cross-
+  plugin `source` would break that standalone install. Its small reimplemented bits (opt-out
+  case, jq payload read, `emit`) stay under jscpd's minTokens, so they don't trip the
+  duplication gate against the lib — keep them terse if you extend them. Keep the script
+  dependency-free; don't "DRY" it into the lib.
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
   knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`
   (opt-out + INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` /

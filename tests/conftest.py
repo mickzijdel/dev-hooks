@@ -17,6 +17,7 @@ WRITING = ROOT / "plugins" / "writing"
 FIXTURES = ROOT / "tests" / "fixtures"
 GOLDEN = ROOT / "tests" / "golden"
 HOOKS = DEV_HOOKS / "hooks" / "scripts"
+WRITING_HOOKS = WRITING / "hooks" / "scripts"
 
 
 @pytest.fixture(scope="session")
@@ -123,3 +124,6 @@ def make_transcript(path: Path, *, human_turns=0, extra_lines=None):
 
 
 requires_jq = pytest.mark.skipif(shutil.which("jq") is None, reason="jq not installed")
+requires_python3 = pytest.mark.skipif(
+    shutil.which("python3") is None, reason="python3 not installed"
+)
