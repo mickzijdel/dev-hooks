@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Set up coding with Claude — checklist</title>
+    <style>
+      :root {
+        --bg: #faf9f7;
+        --card: #ffffff;
+        --ink: #1c1b19;
+        --muted: #6b6760;
+        --line: #e6e2db;
+        --accent: #c2410c;
+        --ok: #15803d;
+        --code-bg: #1c1b19;
+        --code-ink: #f4f1ec;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .wrap {
+        max-width: 620px;
+        margin: 0 auto;
+        padding: 24px 20px 60px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 8px 14px;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      details {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 18px;
+      }
+      details summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details p,
+      details ol {
+        color: var(--muted);
+      }
+      ol.steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li.step {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+      li.step.done {
+        opacity: 0.6;
+      }
+      li.step.done .title {
+        text-decoration: line-through;
+      }
+      input[type="checkbox"] {
+        width: 22px;
+        height: 22px;
+        margin-top: 2px;
+        accent-color: var(--ok);
+        cursor: pointer;
+      }
+      .title {
+        font-weight: 600;
+      }
+      .why {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-top: 2px;
+      }
+      .cmd {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+        margin-top: 10px;
+      }
+      code.block {
+        flex: 1;
+        background: var(--code-bg);
+        color: var(--code-ink);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        overflow-x: auto;
+        white-space: pre;
+      }
+      .copy {
+        white-space: nowrap;
+      }
+      .copy.copied {
+        border-color: var(--ok);
+        color: var(--ok);
+      }
+      footer {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div id="checklist">
+        <h1>Let's get you coding with Claude</h1>
+        <p class="lede">
+          You're setting up your computer to write code with an AI helper. Keep this page
+          next to the black text window (called the <strong>terminal</strong> — a window
+          where you type instructions instead of clicking) and tick off each step as you go.
+          The whole thing takes about 15 minutes.
+        </p>
+
+        <div class="bar">
+          <button id="pin" class="primary" type="button">📌 Keep this window on top</button>
+          <button id="reset" type="button">Clear ticks</button>
+          <span id="pinhint" class="hint"></span>
+        </div>
+
+        <details>
+          <summary>Using Windows? Start here first</summary>
+          <p>
+            Most coding tools expect a small Linux workspace that runs inside Windows, called
+            <strong>WSL2</strong>. You only set it up once.
+          </p>
+          <ol>
+            <li>
+              Open <strong>PowerShell</strong> as Administrator (right-click it → "Run as
+              administrator") and run this:
+            </li>
+          </ol>
+          <div class="cmd">
+            <code class="block" id="wslcmd">wsl --install</code>
+            <button class="copy" type="button" data-copy="wslcmd">Copy</button>
+          </div>
+          <ol start="2">
+            <li>Restart your computer when it asks.</li>
+            <li>Open <strong>Ubuntu</strong> from the Start menu — a terminal window opens.</li>
+            <li>Paste the main command below into that Ubuntu window and carry on.</li>
+          </ol>
+        </details>
+
+        <ol class="steps">
+          <li class="step" data-step="1">
+            <input type="checkbox" id="s1" />
+            <div>
+              <label class="title" for="s1">Open your terminal and run one command</label>
+              <div class="why">
+                The terminal is the window where you type instructions to your computer. This
+                one command starts everything off — copy it, paste it in, and press Enter.
+              </div>
+              <div class="cmd">
+                <code class="block" id="maincmd">curl -fsSL https://raw.githubusercontent.com/mickzijdel/dev-hooks/main/install.sh | bash</code>
+                <button class="copy" type="button" data-copy="maincmd">Copy</button>
+              </div>
+            </div>
+          </li>
+          <li class="step" data-step="2">
+            <input type="checkbox" id="s2" />
+            <div>
+              <label class="title" for="s2">Let it install Claude Code</label>
+              <div class="why">
+                Claude Code is an AI helper that lives in your terminal and can set things up
+                for you. The command above installs it automatically — just wait for it to
+                finish.
+              </div>
+            </div>
+          </li>
+          <li class="step" data-step="3">
+            <input type="checkbox" id="s3" />
+            <div>
+              <label class="title" for="s3">Sign in to Claude</label>
+              <div class="why">
+                A browser window opens asking you to sign in — just like signing into any app.
+                You can make a free account here if you don't have one. Your code always stays
+                on your own computer.
+              </div>
+            </div>
+          </li>
+          <li class="step" data-step="4">
+            <input type="checkbox" id="s4" />
+            <div>
+              <label class="title" for="s4">Let it add the setup guide</label>
+              <div class="why">
+                Claude learns new skills through add-ons (like installing an app on a phone).
+                The command adds the one that knows how to set up the rest of your machine.
+              </div>
+            </div>
+          </li>
+          <li class="step" data-step="5">
+            <input type="checkbox" id="s5" />
+            <div>
+              <label class="title" for="s5">Start Claude and say "set me up"</label>
+              <div class="why">
+                When the command finishes, type <code>claude</code> and press Enter. When
+                Claude answers, type <strong>set me up</strong>. From here Claude takes over
+                and walks you through the rest — your coding toolbox, GitHub (where coders
+                keep and back up their work), your editor — explaining each piece as it goes.
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <footer>
+          Stuck on something? See the
+          <a
+            href="https://github.com/mickzijdel/dev-hooks/blob/main/plugins/coding-onboarding/skills/getting-started/references/troubleshooting.md"
+            >troubleshooting guide</a
+          >. Your ticks are saved in this browser, so you can close and reopen this page.
+        </footer>
+      </div>
+    </div>
+
+    <script>
+      // ── Tick persistence ────────────────────────────────────────────────────────
+      var KEY = "onboard-step-";
+      function boxes() {
+        return Array.prototype.slice.call(document.querySelectorAll(".steps input[type=checkbox]"));
+      }
+      function applyState(box) {
+        var li = box.closest("li.step");
+        if (li) li.classList.toggle("done", box.checked);
+      }
+      function load() {
+        boxes().forEach(function (box, i) {
+          try {
+            box.checked = localStorage.getItem(KEY + (i + 1)) === "1";
+          } catch (e) {}
+          applyState(box);
+        });
+      }
+      boxes().forEach(function (box, i) {
+        box.addEventListener("change", function () {
+          try {
+            localStorage.setItem(KEY + (i + 1), box.checked ? "1" : "0");
+          } catch (e) {}
+          applyState(box);
+        });
+      });
+      // Keep a second open tab/window in sync.
+      window.addEventListener("storage", function (e) {
+        if (e.key && e.key.indexOf(KEY) === 0) load();
+      });
+      document.getElementById("reset").addEventListener("click", function () {
+        boxes().forEach(function (box, i) {
+          box.checked = false;
+          try {
+            localStorage.setItem(KEY + (i + 1), "0");
+          } catch (e) {}
+          applyState(box);
+        });
+      });
+      load();
+
+      // ── Copy buttons ────────────────────────────────────────────────────────────
+      document.querySelectorAll("button.copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var src = document.getElementById(btn.getAttribute("data-copy"));
+          var text = src ? src.textContent : "";
+          var ok = function () {
+            btn.textContent = "Copied!";
+            btn.classList.add("copied");
+            setTimeout(function () {
+              btn.textContent = "Copy";
+              btn.classList.remove("copied");
+            }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(ok, function () {
+              selectText(src);
+            });
+          } else {
+            selectText(src);
+          }
+        });
+      });
+      function selectText(node) {
+        if (!node) return;
+        var range = document.createRange();
+        range.selectNodeContents(node);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      // ── "Keep this window on top" via the Document Picture-in-Picture API ─────────
+      // Supported in Chrome/Edge 116+. We move the whole checklist into a small floating
+      // window that the browser keeps above everything else, then move it back when closed.
+      var pinBtn = document.getElementById("pin");
+      var pinHint = document.getElementById("pinhint");
+      var checklist = document.getElementById("checklist");
+      var host = checklist.parentNode;
+
+      if ("documentPictureInPicture" in window) {
+        pinBtn.addEventListener("click", async function () {
+          try {
+            var pip = await documentPictureInPicture.requestWindow({ width: 400, height: 580 });
+            // Copy our styles into the floating window.
+            Array.prototype.forEach.call(document.styleSheets, function (sheet) {
+              try {
+                var css = Array.prototype.map
+                  .call(sheet.cssRules, function (r) {
+                    return r.cssText;
+                  })
+                  .join("\n");
+                var style = pip.document.createElement("style");
+                style.textContent = css;
+                pip.document.head.appendChild(style);
+              } catch (e) {}
+            });
+            pip.document.body.style.margin = "0";
+            pip.document.body.appendChild(checklist);
+            pinBtn.textContent = "📌 Floating — close that window to bring it back";
+            pinBtn.disabled = true;
+            pip.addEventListener("pagehide", function () {
+              host.appendChild(checklist);
+              pinBtn.textContent = "📌 Keep this window on top";
+              pinBtn.disabled = false;
+            });
+          } catch (e) {
+            pinHint.textContent = "Couldn't float the window — drag it next to your terminal instead.";
+          }
+        });
+      } else {
+        pinBtn.disabled = true;
+        pinHint.textContent =
+          "Your browser can't float this window. Drag it next to the terminal so you can see both.";
+      }
+    </script>
+  </body>
+</html>

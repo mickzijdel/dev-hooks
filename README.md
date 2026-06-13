@@ -25,6 +25,23 @@ Each plugin's README documents its contents, env vars, and notes.
 
 ## Installation
 
+### Never coded before? One command does everything
+
+If you don't have Claude Code yet, this single line installs it, signs you in, installs the
+onboarding plugin, and opens a checklist (a small window you can keep on top of your other
+windows) that explains each step as it happens. Paste it into a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mickzijdel/dev-hooks/main/install.sh | bash
+```
+
+When it finishes, type `claude`, press Enter, and say **set me up** — Claude takes over from
+there. Works on macOS, Linux, and WSL2; on Windows the checklist walks you through enabling
+WSL2 first. See [coding-onboarding](plugins/coding-onboarding/README.md) for what it does and
+the available options.
+
+### Already have Claude Code
+
 Add the marketplace once, then install the plugins you want:
 
 ```bash

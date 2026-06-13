@@ -5,6 +5,16 @@ writing also ship `hooks/` — dev-hooks the main suite, writing a single `readm
 Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
+The repo root also ships `install.sh` — a curl-able zero-dependency bootstrap that installs
+Claude Code, signs the user in, installs the marketplace + the coding-onboarding plugin, and
+opens an always-on-top browser checklist (`plugins/coding-onboarding/onboarding/onboard.html`).
+It belongs to **coding-onboarding** despite living at root: edits to `install.sh` or
+`onboard.html` bump that plugin's version (not "root tooling, bump nothing"). All
+coding-onboarding user-facing text (install.sh output, onboard.html, the getting-started skill)
+follows a plain-words rule for non-coders — no unexplained jargon, everyday analogies — with the
+shared glossary in `plugins/coding-onboarding/skills/getting-started/references/plain-words.md`;
+keep those three surfaces in step.
+
 Make sure to check all of the following and make sure they are up-to-date after making changes;
 1. tool-specific documentation for tools you edited
 2. skills for tools you edited

@@ -1,6 +1,6 @@
 ---
 name: getting-started
-version: 1.0.0
+version: 1.1.0
 description: |
   Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
   say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
@@ -24,7 +24,7 @@ Get someone from a fresh machine to "I can build and ship something with Claude 
 for people **new to coding** — so the bar is not just "tools installed" but "they understand
 what just happened and won't get their agent into trouble."
 
-Two rules that shape everything below:
+Three rules that shape everything below:
 
 - **Idempotent + upgrade-aware.** Re-running is always safe. Every step checks what's already
   there (via the audit script) and either installs what's missing or upgrades what's behind —
@@ -34,6 +34,14 @@ Two rules that shape everything below:
   anything that needs `sudo`, installs a GUI app (VS Code, Docker), or changes their global
   Claude config. Explain what each thing is *for* in plain language as you go — link the
   reference docs rather than dumping walls of text.
+- **Teach as you go, in plain words.** Assume zero prior knowledge. Before each install step,
+  say in 2–3 plain sentences what the tool is, *why this one* over the alternatives (why mise
+  instead of installing ten tools separately; why uv instead of pip), and what would break
+  without it. Never use a term like "package manager", "CLI", "repo", or "environment variable"
+  without a one-line everyday comparison the first time — the shared analogies live in
+  [`references/plain-words.md`](references/plain-words.md). After each major step, offer a
+  one-liner: "curious how this works? → [`references/tools.md`](references/tools.md)". Keep your
+  own messages short; the depth lives in the references.
 
 ## Platform
 
@@ -56,6 +64,12 @@ bash "$CLAUDE_PLUGIN_ROOT/skills/getting-started/scripts/onboard_check.sh"
 `git_identity`, and `playwright_browsers`. **Read it first** and only act on what's missing or
 out of date. Show the user a short "here's what you have / what I'll add" summary before
 touching anything.
+
+Someone who arrived via the repo's one-line bootstrap (`install.sh` — the `curl … | bash`
+command in the root README) already has Claude Code, is signed in, and has this plugin
+installed; the audit will show `claude=installed`. Acknowledge that ("the installer already
+handled Claude Code — nice") and fast-forward to what's still missing instead of re-explaining
+those steps.
 
 ### 2. mise — the toolchain backbone
 
