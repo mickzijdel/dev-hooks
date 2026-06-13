@@ -63,7 +63,12 @@ Do not include changelog or detective-work where it does not belong, such as in 
   reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
   `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
-  so the normal permission flow proceeds). Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  so the normal permission flow proceeds). UserPromptSubmit (`prompt-log.sh`) has **no** init
+  helper yet — it's the lone consumer of that event's payload, so it uses `reminder_opt_out` plus
+  inline jq (nothing to drift); promote a `reminder_prompt_init` to the lib when a second
+  UserPromptSubmit hook appears. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
+  into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must never
+  print. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT + the once-per-session sentinel guard), `reminder_changed_files`
   (CHANGED from porcelain status), and `reminder_emit_stop <msg>` (continue:false + exit 2).
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared

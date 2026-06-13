@@ -7,6 +7,7 @@ the silent-gate path and the firing path are exercised for every hook.
 
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -1466,3 +1467,93 @@ def test_stop_reminder_silent_when_already_prompted(
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── prompt-log.sh ───────────────────────────────────────────────────────────────────
+ISO_8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def _prompt_log_path(home):
+    return home / ".claude" / "automation-review" / "prompts.jsonl"
+
+
+def run_prompt_log(tmp_path, *, prompt=None, payload=None, **env_overrides):
+    """Run prompt-log.sh with HOME pointed at tmp_path so the log lands under it."""
+    if payload is None:
+        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "s1"}
+    stdin = payload if isinstance(payload, str) else json.dumps(payload)
+    return run_hook(
+        "prompt-log.sh",
+        stdin=stdin,
+        env=base_env(HOME=str(tmp_path), **env_overrides),
+    )
+
+
+def test_prompt_log_appends_valid_jsonl(tmp_path):
+    r = run_prompt_log(tmp_path, prompt="fix the failing CI on this repo")
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert r.stderr == ""
+    lines = _prompt_log_path(tmp_path).read_text().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["cwd"] == "/x/y"
+    assert entry["session_id"] == "s1"
+    assert entry["prompt"] == "fix the failing CI on this repo"
+    assert entry["len"] == len("fix the failing CI on this repo")
+    assert ISO_8601_RE.match(entry["ts"])
+
+
+def test_prompt_log_appends_second_line(tmp_path):
+    run_prompt_log(tmp_path, prompt="first request")
+    run_prompt_log(tmp_path, prompt="second request")
+    lines = _prompt_log_path(tmp_path).read_text().splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["prompt"] == "first request"
+    assert json.loads(lines[1])["prompt"] == "second request"
+
+
+def test_prompt_log_truncates_long_prompt(tmp_path):
+    long_prompt = "x" * 2000
+    r = run_prompt_log(tmp_path, prompt=long_prompt)
+    assert r.returncode == 0
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert len(entry["prompt"]) == 500
+    assert entry["len"] == 2000
+
+
+def test_prompt_log_opt_out(tmp_path):
+    r = run_prompt_log(
+        tmp_path, prompt="should not be logged", DEV_HOOKS_PROMPT_LOG="false"
+    )
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert not _prompt_log_path(tmp_path).exists()
+
+
+@pytest.mark.parametrize("stdin", ["not json", ""])
+def test_prompt_log_exit0_on_malformed_input(tmp_path, stdin):
+    r = run_prompt_log(tmp_path, payload=stdin)
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert not _prompt_log_path(tmp_path).exists()
+
+
+def test_prompt_log_silent_on_empty_prompt(tmp_path):
+    r = run_prompt_log(tmp_path, payload={"prompt": "", "cwd": "/x/y"})
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert not _prompt_log_path(tmp_path).exists()
+
+
+def test_prompt_log_rotates_at_cap(tmp_path):
+    log = _prompt_log_path(tmp_path)
+    log.parent.mkdir(parents=True)
+    log.write_text("old content that exceeds the tiny cap below\n")
+    r = run_prompt_log(tmp_path, prompt="fresh", DEV_HOOKS_PROMPT_LOG_MAX_BYTES="20")
+    assert r.returncode == 0
+    rotated = log.parent / "prompts.jsonl.1"
+    assert rotated.read_text().startswith("old content")
+    lines = log.read_text().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["prompt"] == "fresh"

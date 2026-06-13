@@ -11,6 +11,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 
 | Event | Script | Purpose |
 |-------|--------|---------|
+| `UserPromptSubmit` | `prompt-log.sh` | Append one JSON line per user prompt (timestamp, repo cwd, session id, prompt length, first 500 chars) to `~/.claude/automation-review/prompts.jsonl` — the cross-repo data source the `thinking-tools` `weekly-automation-review` skill clusters to spot repetitive requests worth automating. Local-only, silent, never blocks the prompt. Opt out with `DEV_HOOKS_PROMPT_LOG=false`. |
 | `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by the `coding-onboarding` plugin's `getting-started` skill): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
@@ -50,6 +51,18 @@ The companion skills the hooks point at:
 
 ## Notes
 
+- `prompt-log.sh` is the only **UserPromptSubmit** hook. It appends one JSON line per prompt
+  (`ts`, `cwd`, `session_id`, `len`, `prompt` truncated to the first 500 chars) to
+  `~/.claude/automation-review/prompts.jsonl`, so the `thinking-tools` `weekly-automation-review`
+  skill can cluster repeated requests across **all** your repos and suggest what to turn into a
+  skill/hook/tool. It is silent (it never writes to stdout — a UserPromptSubmit hook's stdout
+  would be injected into Claude's context — and always exits 0, so it can never block or pollute
+  a prompt). **Privacy:** the log is plaintext and may capture whatever you type (including
+  secrets pasted into a prompt). It is local-only under `~/.claude/`, never transmitted, and
+  capped at ~2×10 MiB (it rotates to `prompts.jsonl.1` past the cap, default 10 MiB,
+  `DEV_HOOKS_PROMPT_LOG_MAX_BYTES`). Disable logging entirely with `DEV_HOOKS_PROMPT_LOG=false`
+  (in `.claude/settings.local.json` `"env"`); delete the `~/.claude/automation-review/` directory
+  to purge history.
 - `verify-work.sh` only runs inside a git repo and only when relevant code files have
   changed; it no-ops otherwise.
 - `dev-env-reminder.sh` only nudges on repos it judges **yours** and only when the standard
