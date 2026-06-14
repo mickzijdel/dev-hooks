@@ -1,7 +1,7 @@
 {
   "name": "dev-hooks",
   "description": "Polyglot dev-workflow hooks for Claude Code: auto-lint on edit, verify tests/linters before stopping, a PreToolUse dangerous-command guard, per-prompt JSONL logging that feeds the weekly automation review, and reminder hooks for plaintext secrets, leftover debug statements, missing tests, stack-aware skills, multi-session plans, review-before-finishing, end-of-session memory capture, dev-env-standard gaps, Dockerfile layer ordering (hadolint on write), popover/tooltip positioning, GitHub Actions ref resolution, inline-SVG-to-icon-library, use-the-framework-generator scaffolding, outdated dependency pins, and large uncommitted changes. Ships the companion skills the hooks point at: dev-env-setup (mise + hk + CI + gitleaks + project-docs standard, version-tracked), env-to-fnox (migrate plaintext .env secrets to fnox), dockerfile (cache-friendly layer ordering + gotchas), and popovers-tooltips (collision-aware positioning with Floating UI in a Stimulus controller, plus Tippy/Flowbite/native Popover API).",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "author": {
     "name": "Mick Zijdel"
   },
