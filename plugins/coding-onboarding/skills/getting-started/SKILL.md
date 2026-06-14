@@ -1,6 +1,6 @@
 ---
 name: getting-started
-version: 1.2.0
+version: 1.2.1
 description: |
   Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
   say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
@@ -79,9 +79,11 @@ those steps.
 
 **If the audit shows everything already `installed`** (a returning user, or someone whose
 machine was set up elsewhere), don't end the turn with "you're all set!" — there's nothing to
-install, but the user still came here to *do* something. Still do **step 2** (calibrate — they
-may not have the experience-level guidance in their CLAUDE.md yet), then skip straight to
-**step 12**, which runs in every case.
+install, but the user still came here to *do* something. There's nothing to install, but still
+do **step 2** (calibrate) and then **step 9** — make sure their `~/.claude/CLAUDE.md` has the
+`How to explain things to me` section matching the level they just gave (they may not have it yet,
+or it may be stale); seed or refresh it, showing the diff first. Then go straight to **step 12**,
+which runs in every case.
 
 ### 2. Calibrate — "how should I pitch this?"  *(runs in every case)*
 
@@ -245,8 +247,9 @@ Two pieces, both written to the user's `~/.claude/` after showing them the diff:
    user picked in step 2: take the matching block from
    [`references/explanation-levels.md`](references/explanation-levels.md), weave in their
    free-text reply, and stamp the footer with **today's date** (this is what makes the comfort
-   check-in recur ~monthly). Then copy to `~/.claude/CLAUDE.md`, or merge into an existing one.
-   Everything else in the template is the same for everyone — only that one section changes.
+   check-in recur ~monthly). **Drop the `<!-- … -->` marker comment** — it's a note to you, not
+   for their file. Then copy to `~/.claude/CLAUDE.md`, or merge into an existing one. Everything
+   else in the template is the same for everyone — only that one section changes.
 
 See [`references/claude-config.md`](references/claude-config.md) for how these two work together
 with the dangerous-command guard (config sets expectations; the hook enforces at runtime).

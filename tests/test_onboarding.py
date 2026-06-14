@@ -109,6 +109,7 @@ def test_claude_defaults_has_swappable_explanation_section():
 def test_explanation_levels_defines_four_rungs_and_checkin():
     text = EXPLANATION_LEVELS.read_text()
     low = text.lower()
+    flat = " ".join(low.split())  # collapse line wraps so phrase checks survive reflow
     # All four ladder rungs are named (ascending experience).
     for phrase in (
         "new to all this",
@@ -117,13 +118,18 @@ def test_explanation_levels_defines_four_rungs_and_checkin():
         "code confidently",
     ):
         assert phrase in low, f"missing rung: {phrase!r}"
-    # One CLAUDE.md section snippet per rung (the heading the skill swaps in); the intro
-    # references it once more inline, so there are at least four.
-    assert text.count("## How to explain things to me") >= 4
-    # The self-renewing comfort check-in: a stamped date + a ~month cadence that resets it.
-    assert "calibration set on" in low
-    assert "month" in low
-    assert "today" in low  # the check-in resets the date so it recurs
+    # Each rung has its own `### Rung N` block, and each carries the section heading the skill
+    # swaps in — so a dropped rung fails here (the >= alone wouldn't catch it: the intro mentions
+    # the heading once inline, inflating the count).
+    for n in range(1, 5):
+        assert f"### Rung {n}" in text, f"missing rung block: Rung {n}"
+    assert (
+        text.count("## How to explain things to me") == 5
+    )  # 4 rung blocks + 1 intro mention
+    # The self-renewing comfort check-in: a stamped date + a ~month cadence that resets the date.
+    assert "calibration set on" in flat
+    assert "month" in flat
+    assert "reset the date" in flat  # the check-in resets the stamp so it recurs
 
 
 def test_skill_wires_calibration_step():
