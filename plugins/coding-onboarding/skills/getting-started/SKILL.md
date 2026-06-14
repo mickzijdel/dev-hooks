@@ -1,6 +1,6 @@
 ---
 name: getting-started
-version: 1.1.1
+version: 1.2.0
 description: |
   Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
   say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
@@ -20,9 +20,11 @@ allowed-tools:
 
 # getting-started
 
-Get someone from a fresh machine to "I can build and ship something with Claude Code." Written
-for people **new to coding** — so the bar is not just "tools installed" but "they understand
-what just happened and won't get their agent into trouble."
+Get someone from a fresh machine to "I can build and ship something with Claude Code." It meets
+people **wherever they are** — from someone who's never opened a terminal to an experienced
+developer who's just new to AI-assisted coding — by **asking their experience level once**
+(Step 2) and calibrating from there. The bar is not just "tools installed" but "they understand
+what just happened, at the depth that's right for them, and won't get their agent into trouble."
 
 Three rules that shape everything below:
 
@@ -34,14 +36,18 @@ Three rules that shape everything below:
   anything that needs `sudo`, installs a GUI app (VS Code, Docker), or changes their global
   Claude config. Explain what each thing is *for* in plain language as you go — link the
   reference docs rather than dumping walls of text.
-- **Teach as you go, in plain words.** Assume zero prior knowledge. Before each install step,
-  say in 2–3 plain sentences what the tool is, *why this one* over the alternatives (why mise
-  instead of installing ten tools separately; why uv instead of pip), and what would break
-  without it. Never use a term like "package manager", "CLI", "repo", or "environment variable"
-  without a one-line everyday comparison the first time — the shared analogies live in
-  [`references/plain-words.md`](references/plain-words.md). After each major step, offer a
-  one-liner: "curious how this works? → [`references/tools.md`](references/tools.md)". Keep your
-  own messages short; the depth lives in the references.
+- **Teach as you go, at the right level.** Until Step 2 establishes the user's experience level,
+  default to plain words and assume little prior knowledge; after it, match the explanation and
+  technical depth to the rung they chose (the per-rung guidance lives in
+  [`references/explanation-levels.md`](references/explanation-levels.md)). For the lower rungs:
+  before each install step, say in 2–3 plain sentences what the tool is, *why this one* over the
+  alternatives (why mise instead of installing ten tools separately; why uv instead of pip), and
+  what would break without it; never use a term like "package manager", "CLI", "repo", or
+  "environment variable" without a one-line everyday comparison the first time — the shared
+  analogies live in [`references/plain-words.md`](references/plain-words.md). For an experienced
+  user (top rung), skip the tutorials and keep it terse. Either way, after each major step offer a
+  one-liner: "curious how this works? → [`references/tools.md`](references/tools.md)", and keep
+  your own messages short — the depth lives in the references.
 
 ## Platform
 
@@ -73,10 +79,34 @@ those steps.
 
 **If the audit shows everything already `installed`** (a returning user, or someone whose
 machine was set up elsewhere), don't end the turn with "you're all set!" — there's nothing to
-install, but the user still came here to *do* something. Skip straight to **step 11**, which
-runs in every case.
+install, but the user still came here to *do* something. Still do **step 2** (calibrate — they
+may not have the experience-level guidance in their CLAUDE.md yet), then skip straight to
+**step 12**, which runs in every case.
 
-### 2. mise — the toolchain backbone
+### 2. Calibrate — "how should I pitch this?"  *(runs in every case)*
+
+Now that you've seen the audit, find out who you're talking to so the rest of this setup — and
+every future session — lands at the right depth. Use **AskUserQuestion** (single-select) with the
+four rungs from [`references/explanation-levels.md`](references/explanation-levels.md), worded in
+plain words:
+
+1. New to all this — computers included
+2. Comfortable with computers, but I've never coded
+3. I can code a bit — still learning
+4. I code confidently
+
+The audit gives you a hint — existing `git_identity`, `gh_auth`, or `mise` means they're almost
+certainly not rung 1 — so pre-bias your framing, but still ask; don't assume. Then invite a
+**one-line free-text reply**: "tell me a bit about your background and how you like things
+explained — e.g. have you used AI to write code before, any languages you already know?" That
+elaboration (and whether they've used AI to code) is the most useful signal — capture it.
+
+This answer drives two things: how you explain the rest of *this* walkthrough, and the
+`## How to explain things to me` section you'll seed into their global CLAUDE.md in **step 9**
+(date-stamped so it self-renews ~monthly). Keep the picked rung and their free-text in mind for
+both.
+
+### 3. mise — the toolchain backbone
 
 Everything in the CLI column flows through [mise](https://mise.jdx.dev), so upgrades are one
 command forever after. If `mise=missing`, install it (confirm first — it modifies the shell
@@ -103,7 +133,7 @@ mise upgrade         # bring everything current (respects the lockfile / release
 > Tell the user to open a **new terminal** (or `source` their rc) after the first mise install
 > so the tools land on `PATH`. Re-run the audit to confirm.
 
-### 3. GitHub — account, login, identity
+### 4. GitHub — account, login, identity
 
 `gh` is the gateway. In order:
 
@@ -123,7 +153,7 @@ If they've never used Git, this is the moment to point them at
 [`references/git-basics.md`](references/git-basics.md) and give them the 2-minute version (see
 that file) before moving on.
 
-### 4. VS Code + the Claude Code extension  *(confirm — GUI install)*
+### 5. VS Code + the Claude Code extension  *(confirm — GUI install)*
 
 If `code=missing`, install VS Code (confirm first):
 
@@ -141,7 +171,7 @@ code --install-extension anthropic.claude-code     # re-run with --force to upda
 
 Already installed? Offer `code --install-extension anthropic.claude-code --force` to update it.
 
-### 5. Docker  *(confirm — heavy / licensed)*
+### 6. Docker  *(confirm — heavy / licensed)*
 
 If `docker=missing`, confirm before installing — it's large and Docker Desktop has licensing
 terms for big companies:
@@ -154,7 +184,7 @@ terms for big companies:
 Verify with `docker run hello-world`. Pair this with the bundled [[dockerfile]] skill when they
 write their first Dockerfile.
 
-### 6. Playwright browsers
+### 7. Playwright browsers
 
 The agent uses Playwright to open a real browser and screenshot the app (drives the [[verify]]
 and `run` workflows, and is **required by vischeck**). With `uv` present:
@@ -167,7 +197,7 @@ On Linux/WSL add `--with-deps` if a launch complains about missing system librar
 `sudo` — confirm). For JS projects that bundle Playwright, the project-local path is `npx
 playwright install`.
 
-### 7. Plugins
+### 8. Plugins
 
 Install inside an active Claude Code session (each is idempotent):
 
@@ -186,16 +216,16 @@ are its sibling plugins:
 
 - **dev-hooks** — the safety net: lint-on-edit, verify-before-stop, secret/debug/missing-test
   reminders, and the beginner guardrails (the dangerous-command guard + big-change reminder —
-  the guard's commit-to-main check is what `DEV_HOOKS_GUARD_MAIN` in step 8 switches on).
+  the guard's commit-to-main check is what `DEV_HOOKS_GUARD_MAIN` in step 9 switches on).
 - **thinking-tools** — pushback on demand: adversarial critique (board), premortems, and
   "did you actually run it?" checks (but-for-real, self-rate).
 - **writing** — README structure, readability, and de-AI-ing prose (github-readme,
   readability, humanizer).
 - **Superpowers** — an agentic skills/methodology framework.
 - **vischeck** — visual UI verification (authenticated screenshots + a review rubric); it needs
-  `uv` and the chromium browser from step 6, both already set up.
+  `uv` and the chromium browser from step 7, both already set up.
 
-### 8. Seed beginner-safe Claude config  *(confirm — writes ~/.claude)*
+### 9. Seed Claude config  *(confirm — writes ~/.claude)*
 
 Two pieces, both written to the user's `~/.claude/` after showing them the diff:
 
@@ -208,25 +238,31 @@ Two pieces, both written to the user's `~/.claude/` after showing them the diff:
    before committing/pushing straight to `main`" check — right for someone building the
    branch-and-PR habit. After they've worked for a bit, the
    **[[fewer-permission-prompts]]** skill tailors the list to their actual usage.
-2. **Global CLAUDE.md defaults** — beginner-safe working rules (plan big tasks first, keep
-   changes small and committed, never commit secrets, confirm before destructive ops). Copy
-   [`references/templates/CLAUDE.defaults.md`](references/templates/CLAUDE.defaults.md) to
-   `~/.claude/CLAUDE.md`, or merge into an existing one.
+2. **Global CLAUDE.md defaults** — safe working rules (plan big tasks first, keep changes small
+   and committed, never commit secrets, confirm before destructive ops). Start from
+   [`references/templates/CLAUDE.defaults.md`](references/templates/CLAUDE.defaults.md), but
+   **before** writing it, replace its `## How to explain things to me` section with the rung the
+   user picked in step 2: take the matching block from
+   [`references/explanation-levels.md`](references/explanation-levels.md), weave in their
+   free-text reply, and stamp the footer with **today's date** (this is what makes the comfort
+   check-in recur ~monthly). Then copy to `~/.claude/CLAUDE.md`, or merge into an existing one.
+   Everything else in the template is the same for everyone — only that one section changes.
 
 See [`references/claude-config.md`](references/claude-config.md) for how these two work together
 with the dangerous-command guard (config sets expectations; the hook enforces at runtime).
 
-### 9. Orient — Git
+### 10. Orient — Git
 
-Give the beginner the one thing they'll touch constantly: **Git**. If they're new to it, give
-the short tour from [`references/git-basics.md`](references/git-basics.md) — the everyday loop,
-branches & pull requests, and how to undo mistakes safely. Don't lecture — point them there and
-answer questions.
+Everyone touches **Git** constantly. If the user is on a lower rung (step 2) or says they're new
+to it, give the short tour from [`references/git-basics.md`](references/git-basics.md) — the
+everyday loop, branches & pull requests, and how to undo mistakes safely. For an experienced user
+who already knows Git, skip the tour — just confirm their identity is set. Don't lecture — point
+them there and answer questions.
 
 [`references/tools.md`](references/tools.md) explains, in plain language, what every tool is and
 why it's there — link it for the curious.
 
-### 10. Verify + report
+### 11. Verify + report
 
 Re-run the audit and report real results, not assumptions:
 
@@ -238,10 +274,10 @@ Confirm each line that was `missing` is now `installed`, `gh_auth=yes`, `git_ide
 `playwright_browsers=installed`. List anything still outstanding (e.g. a GUI install the user
 declined, or a `sudo` step they need to run themselves) and what's left for them to do.
 
-### 11. Always end here — "so, what do you want to do?"  *(never skip)*
+### 12. Always end here — "so, what do you want to do?"  *(never skip)*
 
 **This step runs every time, no matter what the audit showed.** Setup is the means, not the
-point — a beginner whose machine was already perfect still came here wanting to *do something*.
+point — someone whose machine was already perfect still came here wanting to *do something*.
 So when nothing needed installing (everything `installed` on the first audit), don't stop with
 "you're all set!" and end the turn — go straight here.
 

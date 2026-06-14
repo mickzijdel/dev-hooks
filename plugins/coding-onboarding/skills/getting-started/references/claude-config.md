@@ -31,10 +31,14 @@ tailored to you.
 
 `CLAUDE.md` is a standing instruction file the agent reads every session. A global one in
 `~/.claude/` applies everywhere. The starter
-[`templates/CLAUDE.defaults.md`](templates/CLAUDE.defaults.md) encodes beginner-safe habits: be
-thorough rather than fast, **verify before claiming something works** ("Always Works"), plan big
-tasks before diving in, keep changes small and committed on a branch (not `main`), never commit
-secrets, and confirm before anything destructive.
+[`templates/CLAUDE.defaults.md`](templates/CLAUDE.defaults.md) encodes safe working habits that
+serve everyone: be thorough rather than fast, **verify before claiming something works**
+("Always Works"), plan big tasks before diving in, keep changes small and committed on a branch
+(not `main`), never commit secrets, and confirm before anything destructive. Its final
+`## How to explain things to me` section is the one part `getting-started` tailors to the user's
+stated experience level (see [`explanation-levels.md`](explanation-levels.md)) — from
+plain-words hand-holding to terse peer-level — with a date stamp that prompts a roughly monthly
+comfort check-in.
 
 These are *defaults* — a specific project can override them with its own `CLAUDE.md`.
 

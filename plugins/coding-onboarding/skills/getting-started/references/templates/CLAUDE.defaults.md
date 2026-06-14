@@ -47,9 +47,12 @@ fast is not a reason to skip this — a quick plan keeps a big change reviewable
   confirm with me — explain what it does and why.
 - Never remove or refactor working functionality unless the task explicitly calls for it.
 
-## Explain as you go, and ask when unsure
+## How to explain things to me
 
-I'm still learning. When you run something non-obvious, say in one line what it does and why.
-When a decision has real trade-offs, give me the options briefly and recommend one. If a request
-is ambiguous, ask a short clarifying question instead of guessing — a 10-second question beats
-redoing the work.
+<!-- getting-started replaces this section per references/explanation-levels.md, using the
+     user's stated experience level (Step 2) and a date-stamped check-back-in footer. The text
+     below is a safe default if it wasn't customized. -->
+
+When you run something non-obvious, say in one line what it does and why. When a decision has real
+trade-offs, give me the options briefly and recommend one. If a request is ambiguous, ask a short
+clarifying question instead of guessing — a 10-second question beats redoing the work.

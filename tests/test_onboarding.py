@@ -14,6 +14,8 @@ SKILL = ONBOARDING / "skills" / "getting-started"
 CHECK = SKILL / "scripts" / "onboard_check.sh"
 ALLOWLIST = SKILL / "references" / "templates" / "settings.allowlist.json"
 CLAUDE_DEFAULTS = SKILL / "references" / "templates" / "CLAUDE.defaults.md"
+EXPLANATION_LEVELS = SKILL / "references" / "explanation-levels.md"
+SKILL_MD = SKILL / "SKILL.md"
 
 TOOLS = [
     "claude",
@@ -89,6 +91,43 @@ def test_settings_allowlist_seeds_main_guard_opt_in():
 def test_claude_defaults_template_present():
     text = CLAUDE_DEFAULTS.read_text()
     assert text.strip()
-    # The beginner-safe habits the skill promises are actually encoded.
+    # The safe habits the skill promises are actually encoded.
     assert "branch" in text.lower()
     assert "secret" in text.lower()
+
+
+def test_claude_defaults_has_swappable_explanation_section():
+    # The skill replaces this one section per experience level (step 9); the marker tells it
+    # exactly what to swap, and the heading must match the per-rung blocks in explanation-levels.
+    text = CLAUDE_DEFAULTS.read_text()
+    assert "## How to explain things to me" in text
+    assert (
+        "explanation-levels.md" in text
+    )  # the marker points the seeding step at the source
+
+
+def test_explanation_levels_defines_four_rungs_and_checkin():
+    text = EXPLANATION_LEVELS.read_text()
+    low = text.lower()
+    # All four ladder rungs are named (ascending experience).
+    for phrase in (
+        "new to all this",
+        "never coded",
+        "code a bit",
+        "code confidently",
+    ):
+        assert phrase in low, f"missing rung: {phrase!r}"
+    # One CLAUDE.md section snippet per rung (the heading the skill swaps in); the intro
+    # references it once more inline, so there are at least four.
+    assert text.count("## How to explain things to me") >= 4
+    # The self-renewing comfort check-in: a stamped date + a ~month cadence that resets it.
+    assert "calibration set on" in low
+    assert "month" in low
+    assert "today" in low  # the check-in resets the date so it recurs
+
+
+def test_skill_wires_calibration_step():
+    text = SKILL_MD.read_text()
+    # The new step uses AskUserQuestion and points at the single source of truth.
+    assert "AskUserQuestion" in text
+    assert "explanation-levels.md" in text
