@@ -95,8 +95,8 @@ proposing additions.
 
 2. **Fresh setup — detect the stack** (the checker reports it) and confirm with the user if
    ambiguous (e.g. a plugin that is also a Python package). Recognized stacks: `pyproject.toml`
-   → `python`, `Gemfile` → `ruby`, `package.json` → `javascript`; scripts-only repos →
-   `shell`.
+   → `python`, `Gemfile` → `ruby`, `package.json` → `javascript`, `go.mod` → `go`; scripts-only
+   repos → `shell`.
 
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
@@ -115,7 +115,11 @@ proposing additions.
    the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
    Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
    incl. Ruby); JS repos need no extra audit deps (jscpd runs via `npx`, `node` is already the
-   stack tool). **For a
+   stack tool). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
+   `golangci-lint run`/`fmt` both read); no extra audit deps are needed — golangci-lint's
+   `unused` covers dead code (so no vulture), and `golangci-lint` itself is mise-pinned. The Go
+   template carries `shellcheck`/`shfmt` for any shipped shell script (it ships
+   `scripts/run-jscpd.sh`). **For a
    shell/plugin repo**, also add the [`readoc`]-style dev project (`pyproject.plugin.toml` →
    `pyproject.toml`, fill in the name) and a `tests/` suite (`test_scripts.example.py` as a
    starting point) so every bundled script is exercised, and give each Python script the
@@ -170,7 +174,7 @@ proposing additions.
    (`has_gitleaks_config=1`), and that `README.md` + `CLAUDE.md` exist (`has_readme=1
    has_claude=1`). A good `.gitleaks.toml` smoke test: with a local `.env`/`log/` present,
    `hk run check` must still pass (no leaks found). Run the project's own tests too (`uv run
-   pytest` / `bin/rails test`). Report real output.
+   pytest` / `bin/rails test` / `go test ./...`). Report real output.
 
 ## Project docs (README + CLAUDE.md)
 
