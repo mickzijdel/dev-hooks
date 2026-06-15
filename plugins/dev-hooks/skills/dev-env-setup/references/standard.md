@@ -81,6 +81,7 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
 | Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
+| Go | `golangci-lint run` + `golangci-lint fmt` (gofmt/goimports), `shellcheck`/`shfmt` (shipped `.sh`) | `go test` (CI: `go build`/`go vet`/`go test -race`) | gitleaks | `check-added-large-files` | golangci-lint `unused` (built in) | `jscpd` (`-f golang`) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
 
 > Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) run on pre-commit alongside the
@@ -124,7 +125,8 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 >   option for it, and without it jscpd also scans markdown/yaml/json and trips `threshold 0` on
 >   README/CI/template duplication. Each stack passes the `-f` matching its glob: `-f python`
 >   (Python), `-f python,bash` (shell/plugin), `-f ruby,erb,javascript,typescript,css,scss,sass,vue`
->   (Ruby), `-f javascript,typescript,css,scss` (JS/TypeScript). Add `ignore` globs on top to skip
+>   (Ruby), `-f javascript,typescript,css,scss` (JS/TypeScript), `-f golang` (Go). Add `ignore`
+>   globs on top to skip
 >   tracked code (e.g. generated `db/schema.rb`). For extensionless **PEP 723** scripts (e.g. `bin/foo`),
 > jscpd keys off extensions, so duplication on extensionless scripts isn't auto-covered. To
 > auto-fix clones, agents can run

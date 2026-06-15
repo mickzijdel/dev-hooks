@@ -35,7 +35,7 @@
 #                    nudges the env-to-fnox skill; never affects status.
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
-#   stack            python | ruby | javascript | shell | unknown
+#   stack            python | ruby | javascript | go | shell | unknown
 #   status           not-applicable | needs-setup | needs-upgrade | compliant
 
 set -u
@@ -56,6 +56,8 @@ elif [ -f "$DIR/Gemfile" ]; then
   stack="ruby"
 elif [ -f "$DIR/package.json" ]; then
   stack="javascript"
+elif [ -f "$DIR/go.mod" ]; then
+  stack="go"
 fi
 
 # ── Applicability: recognized stack, OR scripts present (shell/plugin repos) ─────
