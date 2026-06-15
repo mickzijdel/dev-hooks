@@ -16,12 +16,19 @@ import pytest
 from conftest import DEV_HOOKS
 
 TEMPLATES_DIR = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "templates"
-CI_TEMPLATES = ["ci.python.yml", "ci.ruby.yml", "ci.shell.yml", "ci.js.yml"]
+CI_TEMPLATES = [
+    "ci.python.yml",
+    "ci.ruby.yml",
+    "ci.shell.yml",
+    "ci.js.yml",
+    "ci.go.yml",
+]
 MISE_TEMPLATES = [
     "mise.python.toml",
     "mise.ruby.toml",
     "mise.shell.toml",
     "mise.js.toml",
+    "mise.go.toml",
 ]
 VERSION_FILE = DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION"
 SKILL_MD = DEV_HOOKS / "skills" / "dev-env-setup" / "SKILL.md"
@@ -38,9 +45,16 @@ SHEBANG_DETECTOR_TEMPLATES = [
     "hk.python.pkl",
     "ci.shell.yml",
     "ci.python.yml",
+    "ci.go.yml",
 ]
 
-HK_TEMPLATES = ["hk.python.pkl", "hk.ruby.pkl", "hk.shell.pkl", "hk.js.pkl"]
+HK_TEMPLATES = [
+    "hk.python.pkl",
+    "hk.ruby.pkl",
+    "hk.shell.pkl",
+    "hk.js.pkl",
+    "hk.go.pkl",
+]
 
 
 @pytest.mark.parametrize("name", CI_TEMPLATES)
