@@ -10,7 +10,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 ## Hooks
 
 | Event | Script | Purpose |
-|-------|--------|---------|
+|-------|--------|-------|
 | `UserPromptSubmit` | `prompt-log.sh` | Append one JSON line per user prompt (timestamp, repo cwd, session id, prompt length, first 500 chars) to `~/.claude/automation-review/prompts.jsonl` — the cross-repo data source the `thinking-tools` `weekly-automation-review` skill clusters to spot repetitive requests worth automating. Local-only, silent, never blocks the prompt. Opt out with `DEV_HOOKS_PROMPT_LOG=false`. |
 | `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by the `coding-onboarding` plugin's `getting-started` skill): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, erb_lint, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
@@ -26,6 +26,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 | `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files, low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`), and vendored/generated code (dirs from the repo's `.jscpd.json`, plus minified `*.min.*`). Fires at most once per session. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `SessionStart` | `dev-env-reminder.sh` | If the repo is **yours** and the dev-env standard applies but isn't met (missing `mise`/`hk`/CI/`gitleaks`, or behind the version stamp), nudge Claude to flag it and offer the `dev-env-setup` skill. Advisory only — never edits. Owner-gated (see env vars below); opt out per repo. |
+| `SessionStart` | `docs-context.sh` | If the project has a `docs/` or `doc/` directory containing Markdown files, emit a brief index (titles + optional descriptions from YAML frontmatter) so Claude knows where documentation lives and can consult the right files when working on related features. Advisory only — never blocks. Opt out with `DEV_HOOKS_DOCS_CONTEXT=false`. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 | `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
@@ -73,6 +74,11 @@ The companion skills the hooks point at:
   it entirely), `DEV_HOOKS_DEVENV_OWNERS` (extra GitHub owners, e.g.
   `EdinburghUniversityTheatreCompany`), `DEV_HOOKS_DEVENV_EMAIL` (default `mickzijdel@live.nl`).
   Per-repo opt-out also via a `dev-env: skip` line in the project's `CLAUDE.md`.
+- `docs-context.sh` scans `docs/` (falling back to `doc/`) at the project root for Markdown
+  files up to two levels deep. Titles come from YAML frontmatter (`title:`) or the first `#`
+  heading; an optional frontmatter `description:` field is included after an em-dash. Hidden
+  paths (`.*`) are ignored. Silence it with `DEV_HOOKS_DOCS_CONTEXT=false` (in
+  `.claude/settings.local.json` `"env"`).
 - `memory-reminder.sh` targets Claude Code's file-based memory feature. It stays a no-op
   unless you set `DEV_HOOKS_MEMORY=1` or have already used memory somewhere (it detects any
   existing `~/.claude/projects/*/memory/` dir), so it's safe for installers who don't use
