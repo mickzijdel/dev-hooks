@@ -111,3 +111,28 @@ def test_docs_context_opt_out(tmp_path):
     r = run_docs_context(tmp_path, DEV_HOOKS_DOCS_CONTEXT="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+def test_docs_context_caps_at_30_files(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for i in range(35):
+        (docs / f"page-{i:02d}.md").write_text(f"# Page {i}\n")
+    r = run_docs_context(tmp_path)
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    # Exactly 30 entries listed, 5 remainder noted
+    assert ctx.count("  - ") == 30
+    assert "5 more files not shown" in ctx
+
+
+def test_docs_context_no_truncation_note_at_exactly_30(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for i in range(30):
+        (docs / f"page-{i:02d}.md").write_text(f"# Page {i}\n")
+    r = run_docs_context(tmp_path)
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "more files not shown" not in ctx
+    assert ctx.count("  - ") == 30
