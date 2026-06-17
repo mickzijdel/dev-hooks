@@ -11,6 +11,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dev-env-reminder.sh\"",
             "statusMessage": "Checking repo against your dev-env standard..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/docs-context.sh\"",
+            "statusMessage": "Indexing project documentation..."
           }
         ]
       }
