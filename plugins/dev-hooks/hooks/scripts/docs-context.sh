@@ -26,14 +26,14 @@ done
 
 # Collect .md files up to depth 2; skip hidden paths
 mapfile -t MD_FILES < <(find "$DOCS_DIR" -maxdepth 2 -name "*.md" -not -path "*/.*" 2>/dev/null | sort)
-[ ${#MD_FILES[@]} -eq 0 ] && exit 0
+[ "${#MD_FILES[@]}" -eq 0 ] && exit 0
 
 MAX_FILES=30
 TOTAL=${#MD_FILES[@]}
 LINES=""
 COUNT=0
 for f in "${MD_FILES[@]}"; do
-  [ $COUNT -ge $MAX_FILES ] && break
+  [ "$COUNT" -ge "$MAX_FILES" ] && break
   REL="${f#"$DIR/"}"
   # Parse YAML frontmatter for title + description, falling back to first # heading
   mapfile -t _meta < <(awk '
@@ -58,7 +58,7 @@ for f in "${MD_FILES[@]}"; do
 done
 [ -z "$LINES" ] && exit 0
 
-if [ $TOTAL -gt $MAX_FILES ]; then
+if [ "$TOTAL" -gt "$MAX_FILES" ]; then
   REMAINING=$((TOTAL - MAX_FILES))
   LINES="${LINES}  (${REMAINING} more files not shown — run \`find ${DOCS_DIR#"$DIR/"} -name '*.md'\` to see all)\n"
 fi
