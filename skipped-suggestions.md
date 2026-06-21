@@ -8,6 +8,53 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-06-21 (Run 6)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits 2026-06-18 to 2026-06-21: `bf75247`, `4f9464f`, `baba474`, `e8cca35`, `6f0a951`, `fa7a72d`, `6678423`, `a468864`, `13d1dcf`, `77c479a`, `bce944f`, `4daaf56`, `a44493f`, `09af58d`, `fac3b04`, `920b98a`, `1fb8f31`, `8fc04ef`, `9ad0c0d`, `897e500`, `2516a51`, `777ecd5`, `094b0dd`, `041aca7`, `ca5138d` (all since Run 5; heavy activity around `mise system`, fish, GitHub Actions pinning, aqua)
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-06-18 to 2026-06-21 (17 items)
+
+PRs opened this run:
+- dev-hooks [#11 feat(thinking-tools): add grill-me adversarial code review skill](https://github.com/mickzijdel/dev-hooks/pull/11)
+- rails-toolkit [#3 feat: add rails-action-mailer skill](https://github.com/mickzijdel/rails-toolkit/pull/3) — own idea (gap: `rails-jobs` references mailers; no dedicated guide existed)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Matt Pocock's `/grill-me` skill: parallel adversarial subagents attack code for bugs, edge cases, and security holes, then a chairman synthesises | feed item 2026-06-21 (https://x.com/ivanfioravanti/status/2068592504023461967) | **Implement** | dev-hooks PR #11 opened. Added `grill-me` skill to thinking-tools: Bug Hunter / Security Auditor / Edge-Case Seeker / Performance Skeptic panel, distinct from `code-simplifier` (style) and `board` (idea critique). |
+| Add `rails-action-mailer` skill (own idea) | own idea | **Implement** | rails-toolkit PR #3 opened. `rails-jobs` already references `ExportMailer.completed(self).deliver_later` and `AccountMailer.invitation(self)` without a companion guide. Added 9 patterns: shallow mailers, `deliver_later` everywhere, multi-part templates, `ApplicationMailer` defaults, URL generation, previews, testing, storage-URL attachments, SMTP credentials. |
+| Fix `mise system` package commands | dotfiles commits `bf75247`/`4f9464f` (Jun 21) | Out of scope | macOS `mise system` command bugs; dev-env-setup standard focuses on project-level tool management, not system packages. |
+| Fix fish path lookup when `mise fish` is missing | dotfiles commits `baba474`/`e8cca35` (Jun 20) | Out of scope | fish shell-specific; dev-hooks targets bash/zsh. |
+| Move CLI packages to aqua | dotfiles commit `fa7a72d` (Jun 20) | Deferred | aqua is a provenance-checking tool manager; dev-env-setup standard uses mise for all tool pinning and already achieves the same provenance goals via `mise.lock` + Cosign/SLSA (v11+). Same reasoning as the aube deferred entries in Runs 2 and 3. |
+| Install fish with mise on macOS | dotfiles commits `6678423`/`a468864` (Jun 20) | Out of scope | fish shell-specific. |
+| Skip fish check without fish in non-admin CI / Keep non-admin integration lightweight | dotfiles commits `13d1dcf`/`bce944f`/`4daaf56` (Jun 20) | Out of scope | Nate's non-admin CI variant; dev-hooks CI has no such mode. |
+| Teach dev env audit to pin GitHub Actions | dotfiles commits `77c479a`/`a44493f` (Jun 20) | Deferred | dev-env-setup already has `check_action_refs.sh` (a separate compliance script that `git ls-remote`s every `uses:` pin) plus the `ci-action-ref-reminder` hook. Integrating pinning into `dev_env_check.sh`'s compliance output would be nice but duplicates existing coverage. Revisit if the checker grows a machine-readable report format. |
+| Pin GitHub Actions to SHAs | dotfiles commit `920b98a` (Jun 20) | Duplicate | Same theme as `a44493f`; both already covered by `check_action_refs.sh` + `ci-action-ref-reminder`. |
+| Retry Homebrew bundle installs | dotfiles commit `09af58d` (Jun 20) | Out of scope | macOS Homebrew-specific; dev-hooks uses mise. |
+| Simplify large file check (replace Ruby script with awk one-liner) | dotfiles commits `fac3b04`/`9ad0c0d` (Jun 20) | Out of scope | dev-hooks already uses the `check-added-large-files` hk builtin, which is already simpler than Nate's old approach. No change needed. |
+| Fallback when `mise system` is unavailable | dotfiles commit `1fb8f31` (Jun 20) | Out of scope | macOS `mise system` fallback; same as `4f9464f`. |
+| Use `mise system` for system package installs | dotfiles commits `8fc04ef`/`897e500` (Jun 20) | Out of scope | System-package management is outside dev-env-setup's scope. |
+| Extract home file set resolution | dotfiles commit `2516a51` (Jun 20) | Out of scope | Refactoring of Nate's dotfiles runner internals. |
+| Route web providers back to Exa | dotfiles commits `777ecd5`/`041aca7` (Jun 20) | Out of scope | Pi agent web provider config; not applicable. |
+| Remove missing repo intent doc reference | dotfiles commits `094b0dd`/`ca5138d` (Jun 20) | Out of scope | Documentation cleanup in Nate's dotfiles skill; not applicable. |
+| Use cron jobs to trigger Codex `/goal` commands for automated recurring tasks | feed item 2026-06-21 (https://x.com/intellectronica/status/2068644098970644925) | Duplicate | Covered by `commit-digest` + `weekly-automation-review` as scheduled recurring agents. |
+| Auto-generate feature documentation from repositories with Cognition's DeepWiki | feed item 2026-06-21 (https://x.com/kr0der/status/2068556522888761685) | Out of scope | Cognition/DeepWiki-specific tool; no Claude Code equivalent hook/skill surface. |
+| Feed older academic papers to frontier models to identify errors and extend arguments | feed item 2026-06-21 (https://x.com/emollick/status/2068507998343885284) | Out of scope | Academic research methodology; no dev-workflow surface. |
+| Use Visual Plan skills to make Claude produce structured agent-native plans before coding | feed item 2026-06-20 (https://x.com/Saboo_Shubham_/status/2068349529855078619) | Duplicate | Covered by `board` (adversarial planning critique) + `plan-reminder` hook (keeps plan.md current). |
+| Configure global AGENTS.md to automatically spawn and manage Codex subagents | feed item 2026-06-20 (https://x.com/intellectronica/status/2068321664903823458) | Out of scope | Codex/ChatGPT-specific; no Claude Code equivalent. |
+| Add "Use sub agents as needed" to prompts to parallelise workstreams | feed item 2026-06-20 (https://x.com/Dimillian/status/2068228064572588056) | Out of scope | Prompting tip; no hook surface. |
+| Use Codex browser and computer-use capabilities to build web UI automation workflows | feed item 2026-06-20 (https://x.com/petergyang/status/2068175172960690266) | Out of scope | Codex-specific; no Claude Code equivalent. |
+| Transfer Codex environment between machines by copying the home folder | feed item 2026-06-19 (https://x.com/Dimillian/status/2068066242997477567) | Out of scope | Codex/ChatGPT home-folder migration; no Claude Code equivalent. |
+| Structure agent work as loops reading current/desired state for incremental changes | feed item 2026-06-19 (https://x.com/dexhorthy/status/2067973141289414862) | Out of scope | Methodology tip; no concrete hook surface. |
+| Codex Record-and-Replay converts manual task execution into reusable automation | feed item 2026-06-19 (https://x.com/0xSero/status/2067852273955328373) | Out of scope | Codex feature; no Claude Code equivalent. |
+| Demonstrate recurring tasks once and convert to repeatable Codex skills | feed item 2026-06-19 (https://x.com/gabrielchua/status/2067769585739378808) | Duplicate | Covered by `commit-digest` + `weekly-automation-review`. |
+| Capture meeting notes in Notion, convert to specs, hand to coding agent | feed item 2026-06-18 (https://x.com/geoffreylitt/status/2067705198630355105) | Out of scope | Notion-specific integration; no dev-workflow hook surface. |
+| Share Claude Code Artifacts for visual explanations and diagrams | feed item 2026-06-18 (https://x.com/bcherny/status/2067700226669060207) | Out of scope | Use pattern; no hook/skill surface. |
+| Build personalized advisor skills using SKILL.md + plan.md + learnings.md + eval.md | feed item 2026-06-18 (https://x.com/petergyang/status/2067612053293191515) | Deferred | Interesting 4-file pattern for accumulating learnings across sessions; too personal/coaching-oriented for a dev-workflow hook trigger. Revisit if a dev-events–triggered "session learnings" file pattern emerges (e.g. a Stop hook that captures learnings into learnings.md). |
+| Maintain one persistent orchestrator thread per project, spawn subthreads for tasks | feed item 2026-06-18 (https://x.com/Dimillian/status/2067584223691579462) | Duplicate | Covered by `board` + `agent-handoff` skills. |
+| Create subagents to mine past chat conversations and extract reusable workflows | feed item 2026-06-18 (https://x.com/davis7/status/2067496813406609755) | Duplicate | Covered by `weekly-automation-review` + `prompt-log.sh`. |
+
+---
+
 ## 2026-06-17 (Run 5)
 
 Sources scanned:
