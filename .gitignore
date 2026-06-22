@@ -1,6 +1,9 @@
 .DS_Store
 tmp/
 
+# Local-only weekly automation review reports (weekly-automation-review skill)
+plans/automation-reviews/
+
 # Python (dev tooling only — see pyproject.toml; mise.lock and uv.lock ARE committed)
 .venv/
 __pycache__/
