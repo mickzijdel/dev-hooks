@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "dev-hooks",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Mick's Claude Code plugins: dev-workflow hooks, coding onboarding, thinking tools, and writing skills.",
   "owner": {
     "name": "Mick Zijdel",
@@ -12,7 +12,7 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, env-to-fnox, dockerfile, popovers-tooltips). See its plugin.json / README for the full list.",
+      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, env-to-fnox, dockerfile, popovers-tooltips, tailwind). See its plugin.json / README for the full list.",
       "source": "./plugins/dev-hooks",
       "category": "workflow",
       "author": {
@@ -21,7 +21,7 @@
         "url": "https://github.com/mickzijdel"
       },
       "homepage": "https://github.com/mickzijdel/dev-hooks",
-      "keywords": ["hooks", "linting", "testing", "automation", "workflow", "guardrails", "secrets", "fnox", "mise", "hk", "gitleaks", "ci", "dev-env", "dockerfile", "popover"]
+      "keywords": ["hooks", "linting", "testing", "automation", "workflow", "guardrails", "secrets", "fnox", "mise", "hk", "gitleaks", "ci", "dev-env", "dockerfile", "popover", "tailwind"]
     },
     {
       "name": "coding-onboarding",
