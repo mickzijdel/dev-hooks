@@ -242,6 +242,31 @@ bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .gi
 
 (The `ci-action-ref-reminder` hook nudges you to run this whenever a workflow is edited.)
 
+## Caching npm in CI
+
+`actions/setup-node` ships a built-in npm cache (`with: { cache: npm }`) and the JS template
+(`ci.js.yml`) uses it. But in a **polyglot repo where node is provisioned by mise**
+(`jdx/mise-action`, so the workflow has *no* `setup-node` step), that cache isn't available —
+every `npm ci` does a cold, network-bound install. Add an explicit cache, keyed on the
+lockfile, to **each job that runs `npm ci`** (`setup-node`'s cache is per-job too, so the
+fan-out is expected):
+
+```yaml
+- name: Cache npm downloads
+  uses: actions/cache@v4
+  with:
+    path: ~/.npm  # npm's download cache — the same dir setup-node caches
+    key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+    restore-keys: npm-${{ runner.os }}-
+```
+
+Point `hashFiles` at the real lockfile — `package-lock.json` at the root, or
+`frontend/package-lock.json` in a backend+frontend layout. Restoring `~/.npm` skips the
+network on a warm key (`npm ci` still rebuilds `node_modules`, but from cache). Relatedly,
+keep independent test suites in **separate jobs** (e.g. `backend-test` + `frontend-test`)
+rather than one sequential job, so a failure in one suite doesn't short-circuit the run
+before the other reports.
+
 ## Lockfile & supply-chain verification
 
 The mise toolchain is pinned reproducibly via a committed **`mise.lock`** plus
