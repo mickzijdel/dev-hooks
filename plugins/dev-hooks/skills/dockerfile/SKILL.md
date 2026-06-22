@@ -58,6 +58,33 @@ CMD ["node", "server.js"]
 | Create and switch to a non-root `USER` | Least privilege |
 | Use exec form: `CMD ["node", "server.js"]` not `CMD node server.js` | Proper signal handling (SIGTERM) |
 | Consider BuildKit cache mounts: `RUN --mount=type=cache,target=/root/.npm npm ci` | Reuses the package cache across builds |
+| Never `chown -R` / `chmod -R` a directory holding a large dependency tree (`.venv`, `node_modules`, site-packages) | `chown -R /app` rewrites **every** file into a new layer, so the whole dep tree is stored twice in the image — doubling push and registry-cache time. Set ownership as files land with `COPY --chown` (incl. `COPY --from=… --chown`), or only `chown` the small dirs that need write access |
+
+## Don't `chown -R` a dependency tree
+
+A recursive `chown`/`chmod` over a directory that contains a big install (a Python
+`.venv`, `node_modules`, site-packages) rewrites every file, so Docker writes the
+**entire tree into a fresh layer** — the dependencies end up stored twice in the image,
+which doubles both the image push and any registry build-cache export. Set ownership
+when the files are copied instead.
+
+```dockerfile
+# ❌ chown -R rewrites the whole venv into a second layer (torch shipped twice)
+RUN useradd -m -u 1000 app
+COPY --from=builder /app/.venv /app/.venv
+COPY . .
+RUN chown -R app:app /app          # duplicates .venv → ~2× push + cache time
+USER app
+```
+
+```dockerfile
+# ✅ ownership set as files land — the venv is stored once
+RUN useradd -m -u 1000 app
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app . .
+RUN mkdir -p /app/data && chown app:app /app/data   # only the dir that needs writes
+USER app
+```
 
 ## Lint
 
