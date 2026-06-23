@@ -55,7 +55,12 @@ ecosystem**.
    from a pre-existing failure. Detect the runner from the stack: `uv run pytest` / `pytest`
    (Python), `bundle exec rspec` or `bin/rails test` (Ruby), `npm test` / `pnpm test` (JS). If
    there is **no** test suite, fall back to the build + linters and say so in the final report —
-   a missing suite is a gap to surface, not a reason to skip verification.
+   a missing suite is a gap to surface, not a reason to skip verification. If a suite **exists but
+   can't run locally** (it needs a Postgres/MySQL service, a browser, or other infra that isn't set
+   up), treat that as a **local-setup gap to fix and flag to the user**, not something to work
+   around — get the dependency running (e.g. start Postgres + create the role/DB so `bin/rails
+   test` works) so you can actually verify the upgrade, and tell the user what was missing. Don't
+   push an unverified bump on a boot check alone.
 
 3. **Respect the 4-day cooldown.** The manifests already encode dev-env-setup's supply-chain
    window (`exclude-newer`/`cooldown`/`min-release-age`), so the package manager will hold back
@@ -88,10 +93,16 @@ ecosystem**.
    from the resolved manifests/lockfiles (this is what the `latest-deps-reminder` hook nudges
    for). Fold it into the relevant commit or its own `docs:` commit.
 
-8. **Finish.** Summarize **upgraded vs deferred (and why)**. If everything is green, merge the
-   branch back to main and clean up the worktree (see [[finishing-a-development-branch]]).
-   **Pause and ask the user first** when a major touched a public API / data migration / schema,
-   when the tests couldn't be run at all, or when the diff is large enough to want a second look.
+8. **Finish — and deploy if asked.** Summarize **upgraded vs deferred (and why)**. If everything
+   is green, merge the branch back and clean up the worktree (see
+   [[finishing-a-development-branch]]). Then handle deploy per the repo's model (see Fleet mode
+   step 3 for the full split): a **push-to-deploy** app only gets pushed if the user wants it
+   deployed (else leave it on a branch/PR); a **separate-deploy** app (Kamal etc.) is pushed
+   normally, and — **if the user asked to deploy it** — you then **run the deploy** (`kamal deploy`)
+   and report the outcome. **Pause and ask the user first** when a major touched a public API /
+   data migration / schema, or the diff is large enough to want a second look. **Always confirm the
+   deploy intent before deploying** (a single repo upgraded on its own counts too, not just fleet
+   runs).
 
 ## Fleet mode ("update all my repos")
 
@@ -106,12 +117,27 @@ To sweep every repo, mirror the cadence in the [[dev-env-bump-backfill-fleet]] m
    ```
    **Show the user the target set and confirm before touching anything** — don't sweep in repos
    they don't want changed.
-2. **Dispatch one agent per repo**, each in its **own worktree/branch** (the Task tool's
-   `isolation: "worktree"`, or [[dispatching-parallel-agents]]), each running the per-repo
-   workflow above and opening its own branch/PR.
-3. **No unattended cross-repo auto-merge.** Each repo's result (upgraded / deferred, with the
-   reasons) comes back for review; open a PR per repo rather than pushing to a default branch.
-   Report a one-line summary per repo at the end.
+2. **Ask up front, before upgrading anything** — an upgrade only matters once it's deployed, so
+   get the user's intent first. Ask two things:
+   - **(a) Which repos to exclude** from the upgrade entirely.
+   - **(b) Which deployed apps to deploy** after upgrading. Name each deployed app and its deploy
+     model (below), and confirm per app — don't assume.
+   Carry the answers into the dispatch.
+3. **Know each repo's deploy model** — it decides what "finish" means:
+   - **Push-to-deploy** (Vercel / Netlify / GitHub Pages / Streamlit Cloud — the push to the
+     default branch *is* the deploy): the push ships it. So **only push if the user said to deploy
+     this repo**; otherwise leave the upgrade on a branch / PR and don't merge to default.
+   - **Separate deploy** (Kamal, a `deploy.yml` workflow, `bin/deploy`): pushing is safe — it does
+     **not** ship. Push as normal, then **if the user opted to deploy this app, run its deploy
+     step** (for Kamal: `kamal deploy`) and report the result.
+   - **No deploy** (library / CLI / plugin): just merge + push.
+4. **Dispatch one agent per repo**, each in its **own worktree/branch** (the Task tool's
+   `isolation: "worktree"`, or [[dispatching-parallel-agents]]), each running the per-repo workflow
+   above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3, and a stable,
+   **correct agent↔repo mapping** — if you later message an agent mid-run (e.g. to change the deploy
+   plan), triple-check the agent id matches the repo, or the instruction lands on the wrong repo.
+5. **Report** a one-line summary per repo at the end — upgraded / deferred, push state (pushed /
+   PR #), and deploy state (deployed / not).
 
 ## Guardrails
 
