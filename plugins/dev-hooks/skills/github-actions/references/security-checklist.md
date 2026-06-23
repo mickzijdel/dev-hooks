@@ -83,7 +83,7 @@ are actually using.
 - **Pin npm/PyPI versions explicitly** (`1.2.3`, not `^1.2.0` / `>=2.0.0`) so a compromised
   new release in-range isn't auto-installed (Ultralytics).
 - **Set a minimum release age** where supported (pnpm, yarn — typically 72h) so the community
-  can catch a malicious release first. (npm lacks this natively.) Mirrors Mick's 4-day
+  can catch a malicious release first. (npm lacks this natively.) Mirrors a multi-day
   dependency cooldown.
 - **Verify package provenance / attestations** where the registry supports it (npm via GitHub
   Actions).

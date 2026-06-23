@@ -1,11 +1,11 @@
 ---
 name: github-actions
-version: 1.0.0
+version: 1.0.1
 description: |
   Write, review, and harden GitHub Actions workflows against supply-chain attacks, and bump a
   whole fleet of repos' action pins to the latest versions. Use when writing or editing a
   workflow YAML (.github/workflows/*.yml, ci.yml), when asked to review a CI workflow or audit
-  GitHub Actions security, when the ci-action-ref-reminder hook fires, or when Mick wants to
+  GitHub Actions security, when the ci-action-ref-reminder hook fires, or when the user wants to
   "bump my actions", "update the fleet", "pin actions to SHAs", or close supply-chain /
   pull_request_target / script-injection / GITHUB_TOKEN-permissions gaps. Pairs with
   references/security-checklist.md (the full checklist) and dev-env-setup's CI templates.
@@ -22,7 +22,7 @@ allowed-tools:
 
 # github-actions
 
-The canonical home for everything GitHub Actions in Mick's repos: the security checklist to
+The canonical home for everything GitHub Actions in your repos: the security checklist to
 apply when writing or reviewing a workflow, and the fleet-wide procedure for bumping action
 pins to their latest versions. The full checklist lives in
 [references/security-checklist.md](references/security-checklist.md); read it whenever you touch
@@ -69,7 +69,7 @@ If you do nothing else when writing or reviewing a workflow, get these right:
    # SHA-pinned refs with a `# vX.Y.Z` comment are checked: the tag is resolved on the remote
    # and its SHA must match the pin. A mismatch (lying comment / wrong SHA) FAILs.
    ```
-   If `gh`/`pinact` is unavailable or unauthenticated, say so and ask Mick — never guess a SHA.
+   If `gh`/`pinact` is unavailable or unauthenticated, say so and ask the user — never guess a SHA.
 
 ## Fleet-wide bump
 
@@ -81,10 +81,10 @@ in one session — branch, bump, verify, commit, push — so the repos stay in l
    `mise.toml`; the [[dev-env-bump-backfill-fleet]] memory lists the current set), and
    cross-check with live discovery:
    ```bash
-   gh repo list mickzijdel --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
+   gh repo list "$(gh api user -q .login)" --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
    ```
-   Keep only repos that actually have `.github/workflows/`. **Show Mick the target set and
-   confirm it before changing anything** — don't sweep in repos he doesn't want touched.
+   Keep only repos that actually have `.github/workflows/`. **Show the user the target set and
+   confirm it before changing anything** — don't sweep in repos they don't want touched.
 2. **Per repo** (work in a temp clone or worktree, never on a dirty main):
    ```bash
    git switch -c chore/bump-actions
@@ -95,7 +95,7 @@ in one session — branch, bump, verify, commit, push — so the repos stay in l
    Also add a `permissions: { contents: read }` block to any workflow missing one, and apply
    any other checklist gaps you spot.
 3. **Commit + push/PR** with a consistent message per repo (e.g.
-   `chore(ci): pin actions to SHAs and bump to latest`). Open a PR unless Mick wants direct
+   `chore(ci): pin actions to SHAs and bump to latest`). Open a PR unless the user wants direct
    pushes. Do all repos in the same session, then report a one-line summary per repo.
 
 Guardrails: `gh`/`pinact` missing or unauthenticated → stop and surface it. A repo whose CI
