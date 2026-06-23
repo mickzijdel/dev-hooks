@@ -58,16 +58,21 @@ A repo is **compliant at v16** when it has all of:
   on org-owned repos (the free tier covers exactly 1 repo per org; personal-account repos are
   unaffected, so the failure stays invisible until CI runs on an org repo). The CLI is free
   for every repo and is the same mise.lock-pinned binary the local hk hook runs.
-- **SHA-pinned actions + read-only token** (all stacks, added in v16) — every `uses:` pins a
-  full commit SHA with the release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`), and
-  each workflow declares a top-level `permissions: { contents: read }` (a job needing more
-  declares its own job-level block). Tags are mutable, so an action-account takeover repoints
-  `@v4` to malicious code that every downstream run picks up silently (tj-actions repointed 76
-  of 77 trivy-action tags to an infostealer); a SHA can't be moved, and a read-only default
-  token contains the blast radius if a step is compromised. The checker enforces SHA-pinning
-  (`has_sha_pinned_ci`); `scripts/check_action_refs.sh` verifies each pin's comment resolves to
-  the pinned commit on the remote. Bump pins with `pinact run -u`. See "Keeping GitHub Actions
-  current" in `../SKILL.md` and the **[[github-actions]]** skill's full security checklist.
+- **SHA-pinned actions + read-only token** (all stacks, added in v16) — applies to **every file
+  under `.github/workflows/`**, not just `ci.yml` (a repo's `deploy.yml`, `release.yml`, etc.
+  count too). In each, every `uses:` pins a full commit SHA with the release tag in a trailing
+  comment (`owner/repo@<sha> # vX.Y.Z`), and the workflow declares a top-level
+  `permissions: { contents: read }` (a job needing more — a deploy needing `pages: write` /
+  `id-token: write`, say — declares its own job-level block, or the workflow widens its own
+  top-level block; never remove an existing wider block a deploy relies on). Tags are mutable,
+  so an action-account takeover repoints `@v4` to malicious code that every downstream run picks
+  up silently (tj-actions repointed 76 of 77 trivy-action tags to an infostealer); a SHA can't
+  be moved, and a read-only default token contains the blast radius if a step is compromised.
+  The checker enforces SHA-pinning across all workflow files (`has_sha_pinned_ci`);
+  `scripts/check_action_refs.sh` scans the whole `.github/workflows/` dir and verifies each
+  pin's comment resolves to the pinned commit on the remote. Bump pins with `pinact run -u`
+  (it rewrites every workflow file). See "Keeping GitHub Actions current" in `../SKILL.md` and
+  the **[[github-actions]]** skill's full security checklist.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only

@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.5.0
+version: 4.5.1
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -54,12 +54,14 @@ A repo is **compliant at v16** when it has all of:
 - **`.github/workflows/ci.yml`** — mirrors the hk checks plus an `audit` job; gitleaks runs as
   the MIT-licensed **CLI via mise** (never `gitleaks/gitleaks-action`, which needs a paid
   license on org repos).
-- **SHA-pinned actions + read-only token** (added in v16) — every `uses:` pins a full commit
-  SHA with the release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`; tags are mutable
-  and a takeover repoints them — tj-actions, Trivy), and each workflow declares
-  `permissions: { contents: read }` so a compromised step can't write. Checker-enforced
-  (`has_sha_pinned_ci`). See "Keeping GitHub Actions current" and the **[[github-actions]]**
-  skill's security checklist.
+- **SHA-pinned actions + read-only token** (added in v16) — in **every file under
+  `.github/workflows/`** (not just `ci.yml`), every `uses:` pins a full commit SHA with the
+  release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`; tags are mutable and a
+  takeover repoints them — tj-actions, Trivy), and each workflow declares
+  `permissions: { contents: read }` so a compromised step can't write (a deploy that needs
+  `pages`/`id-token: write` keeps its own wider block). Checker-enforced across all workflow
+  files (`has_sha_pinned_ci`). See "Keeping GitHub Actions current" and the
+  **[[github-actions]]** skill's security checklist.
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other

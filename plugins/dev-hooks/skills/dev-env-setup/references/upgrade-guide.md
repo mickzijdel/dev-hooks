@@ -549,10 +549,14 @@ in a trailing comment, and each workflow defaults its `GITHUB_TOKEN` to read-onl
 compromised step can't write. See the **[[github-actions]]** skill for the full checklist. To
 reach v16:
 
+This applies to **every file under `.github/workflows/`** — `ci.yml` plus any `deploy.yml`,
+`release.yml`, etc. `pinact` and `check_action_refs.sh` both process the whole directory, so
+you don't enumerate files by hand.
+
 1. **SHA-pin every action.** Easiest with `pinact` (`mise use -g pinact`, then `pinact run -u`
    from the repo root) — it rewrites every `uses: owner/repo@tag` to
-   `owner/repo@<sha> # vX.Y.Z` and updates already-pinned SHAs to the latest release. Without
-   pinact, resolve each by hand and keep the version in the comment:
+   `owner/repo@<sha> # vX.Y.Z` across all workflow files and updates already-pinned SHAs to the
+   latest release. Without pinact, resolve each by hand and keep the version in the comment:
    ```bash
    a=actions/checkout
    tag=$(gh release view --repo "$a" --json tagName -q .tagName)
@@ -560,15 +564,17 @@ reach v16:
    # → uses: actions/checkout@<sha> # <tag>
    ```
    If `gh`/`pinact` is unavailable or unauthenticated, stop and ask Mick — never guess a SHA.
-2. **Add a read-only token default.** Insert a top-level `permissions:` block between `on:` and
-   `jobs:` in each workflow (copy from any `templates/ci.<stack>.yml`):
+2. **Add a read-only token default.** In each workflow that has no top-level `permissions:`
+   block, insert one between `on:` and `jobs:` (copy from any `templates/ci.<stack>.yml`):
    ```yaml
    # Default GITHUB_TOKEN to read-only; a job needing more declares its own permissions: block.
    permissions:
      contents: read
    ```
    A job that genuinely needs write (releases, `id-token: write` for OIDC) declares its own
-   job-level block instead of widening the default.
+   job-level block instead of widening the default. **Leave a workflow that already declares a
+   wider top-level block alone** — a `deploy.yml` with `pages: write` / `id-token: write` needs
+   it; clobbering it with `contents: read` breaks the deploy.
 3. **Bump the stamp.** Set `DEV_ENV_VERSION = "16"` in `mise.toml`.
 4. **Verify.** `bash scripts/check_action_refs.sh .github/workflows` →
    `N ok, 0 unresolved` (each pin's `# vX.Y.Z` comment is resolved on the remote and must
