@@ -63,6 +63,8 @@ The same analogies appear in the bootstrap installer (`install.sh`) and the chec
   written in them. (`jq` reads JSON; `yq` reads YAML.)
 - **Benchmark** — a timed test that measures how long something takes, so you can compare two
   ways of doing it. (`hyperfine` benchmarks commands.)
+- **Symlink** — a file that's really a pointer to another file, like a desktop shortcut. Opening
+  it opens the real file. (We point `CLAUDE.md` at `AGENTS.md` this way.)
 
 ## How to use this list
 

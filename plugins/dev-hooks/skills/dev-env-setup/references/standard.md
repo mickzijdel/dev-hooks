@@ -244,3 +244,12 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
   stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
 - **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
   The default already covers this; just don't un-ignore it.
+
+## AGENTS.md symlink (advisory, not gated)
+
+**Recommended, not part of the version-checked standard** — the checker doesn't look for it and
+it never blocks an upgrade. Project instructions live in `CLAUDE.md`, but other AI coding tools
+read `AGENTS.md`. To keep one source of truth, make `AGENTS.md` the real file and symlink
+`CLAUDE.md` → `AGENTS.md`, then commit both. Migrate an existing real `CLAUDE.md` into
+`AGENTS.md` first (never clobber it); on native Windows symlinks need Developer Mode, but WSL2
+is fine. The coding-onboarding `getting-started` skill has the idempotent recipe.

@@ -179,5 +179,16 @@ def test_claude_defaults_prefers_modern_tools():
 
 def test_plain_words_glossary_covers_new_jargon():
     low = PLAIN_WORDS.read_text().lower()
-    for term in ("fuzzy finder", "syntax highlighting", "benchmark", "yaml"):
+    for term in ("fuzzy finder", "syntax highlighting", "benchmark", "yaml", "symlink"):
         assert term in low, f"plain-words.md is missing {term!r}"
+
+
+def test_skill_documents_agents_md_convention():
+    text = SKILL_MD.read_text()
+    assert "AGENTS.md" in text
+    # The idempotent recipe must not clobber an existing real CLAUDE.md, and must symlink.
+    assert "ln -s AGENTS.md CLAUDE.md" in text
+    assert "mv CLAUDE.md AGENTS.md" in text  # migrate-don't-clobber path
+    low = text.lower()
+    assert "symlink" in low
+    assert "wsl" in low  # the native-Windows privilege caveat is noted

@@ -311,6 +311,37 @@ Keep your own framing short and in plain words; let the handed-off skill carry t
 goal of getting-started is met not when the tools are installed, but when the user is pointed at
 their actual next move.
 
+## Project instructions: the AGENTS.md convention
+
+This is about a **project's** instructions file, not the global `~/.claude/CLAUDE.md` from step
+9 — so apply it when you're working *in a repo* (e.g. right after [[starting-a-project]]
+scaffolds one), not during machine setup.
+
+Different AI coding tools read different filenames (Claude reads `CLAUDE.md`; many others read
+`AGENTS.md`). To write project instructions **once** and have every tool pick them up, make
+`AGENTS.md` the real file and point `CLAUDE.md` at it with a symlink:
+
+```bash
+# Run at the repo root. Idempotent — safe to re-run.
+if [ -L CLAUDE.md ]; then
+  :                                   # already a symlink → nothing to do
+elif [ -f CLAUDE.md ] && [ ! -e AGENTS.md ]; then
+  mv CLAUDE.md AGENTS.md              # migrate existing real CLAUDE.md into AGENTS.md
+  ln -s AGENTS.md CLAUDE.md
+elif [ ! -e AGENTS.md ]; then
+  : >AGENTS.md                        # fresh repo: create AGENTS.md, then link
+  ln -s AGENTS.md CLAUDE.md
+fi
+# If BOTH real files already exist, stop and ask the user — don't clobber either; merge by hand.
+```
+
+- **Never clobber** an existing real `CLAUDE.md` — migrate its content into `AGENTS.md` first
+  (the `mv` above), so nothing is lost.
+- Commit both the (real) `AGENTS.md` and the `CLAUDE.md` symlink.
+- **Windows caveat:** symlinks need Developer Mode (or admin) on native Windows. Under **WSL2**
+  — which this skill targets — they work normally. If a symlink can't be created, fall back to
+  keeping `CLAUDE.md` as the real file.
+
 ## Notes
 
 - **Never auto-run the destructive/confirm steps.** sudo, Docker, VS Code, the mise profile

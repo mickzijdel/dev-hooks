@@ -16,6 +16,10 @@ different tool online, you know what trade-off we made for you.
   already have it; setup just makes sure it's current.
 - **Claude Code VS Code extension** — runs Claude *inside* VS Code, so you can review its plans
   and see edits applied inline instead of switching to a terminal.
+- **AGENTS.md / CLAUDE.md** — a project's instructions for the AI: house rules, conventions,
+  how to run things. Claude reads `CLAUDE.md`; other tools read `AGENTS.md`. The setup writes
+  the rules once in `AGENTS.md` and makes `CLAUDE.md` a symlink (a pointer) to it, so every tool
+  reads the same file.
 
 ## The toolchain manager
 
