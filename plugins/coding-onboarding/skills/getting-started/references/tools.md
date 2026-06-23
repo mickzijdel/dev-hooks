@@ -59,11 +59,13 @@ different tool online, you know what trade-off we made for you.
 
 ## Modern command-line upgrades
 
-These are friendlier, faster replacements for the classic Unix commands. You don't have to use
-them — the old ones still work — but they have nicer defaults and clearer output, and Claude
-will use them when they're present. Install them through mise, **not** your system package
-manager: apt ships old versions and renames a couple (`fd` becomes `fdfind`, `bat` becomes
-`batcat`), and a few aren't packaged at all.
+These are friendlier, faster replacements for the classic Unix commands — mostly for **your**
+day-to-day use in the terminal. You don't have to use them; the old ones still work. (Claude
+leans on the plainer commands for its own output — `cat`/`ls`/`git diff` rather than
+`bat`/`eza`/`delta`, whose colours and decoration are noise for an agent — but `rg` and `fd`
+are good for everyone.) Install them through mise, **not** your system package manager: apt
+ships old versions and renames a couple (`fd` becomes `fdfind`, `bat` becomes `batcat`), and a
+few aren't packaged at all.
 
 - **fd** — find files by name, the easy way. A simpler, faster stand-in for the old `find`
   command: `fd report` finds every file with "report" in its name, and it skips hidden and

@@ -47,12 +47,18 @@ fast is not a reason to skip this — a quick plan keeps a big change reviewable
   confirm with me — explain what it does and why.
 - Never remove or refactor working functionality unless the task explicitly calls for it.
 
-## Prefer the modern command-line tools
+## Modern command-line tools — which one to use
 
-When they're installed, reach for the faster, clearer tools over the classic ones: `rg`
-(ripgrep) instead of `grep`, `fd` instead of `find`, `bat` to show a file, `eza` to list a
-folder, and `delta` for git diffs. They have saner defaults and respect `.gitignore`. Fall back
-to the classic command if the modern one isn't available.
+Split by who reads the output:
+
+- **Searching/finding:** prefer `rg` (ripgrep) over `grep` and `fd` over `find` — faster, saner
+  defaults, and they respect `.gitignore`. Good for you (the agent) to use.
+- **Showing a file / listing a folder / showing a diff:** use the plain `cat` / `ls` /
+  `git diff`, **not** `bat` / `eza` / `delta`. The latter add colours, icons, and side-by-side
+  decoration that's lovely in a human terminal but just noise in your output. Reserve
+  `bat`/`eza`/`delta` for the human's interactive use.
+
+Fall back to the classic command if a tool isn't installed.
 
 ## How to explain things to me
 
