@@ -62,6 +62,14 @@ Pick the manager by lockfile/manifest (`uv.lock` or `[tool.uv]` → uv; `poetry.
   already-locked versions untouched.
 - Changelogs: the project's PyPI page → "Release notes" / project links → GitHub **Releases** or
   `CHANGELOG.md`; many projects ship an `UPGRADING`/migration doc.
+- **PEP 723 inline-script deps are a separate surface.** A single-file script with a
+  `# /// script` block (run via `uv run --script`) declares its own `dependencies = [...]`.
+  When those are **unpinned** names (`"python-docx"`, not `"python-docx>=1.2"`), each run already
+  resolves them to latest-within-cooldown — there is nothing to bump, and the
+  `upgrade_inventory.sh` preflight (which only reads `pyproject.toml`/`requirements.txt`) won't
+  flag them. If a script instead **pins** a version in its inline block, upgrade it the same way
+  as a manifest dep: edit the version in the `# /// script` block, then re-run the script
+  (`uv run --script path` refreshes its own per-script lock) and run that script's tests.
 
 ## GitHub Actions — delegate to [[github-actions]]
 

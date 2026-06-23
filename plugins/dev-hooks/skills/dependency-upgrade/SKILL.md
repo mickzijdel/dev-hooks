@@ -44,7 +44,11 @@ ecosystem**.
    ```
    It reports `has_js`/`has_ruby`/`has_python`/`has_actions`, the chosen package manager per
    ecosystem, and the exact outdated-listing command for each. (`--run` also executes the
-   read-only listing commands whose tool is installed.)
+   read-only listing commands whose tool is installed.) It reads only manifests
+   (`package.json`/`Gemfile`/`pyproject.toml`/…), so a Python repo whose single-file CLIs carry
+   **PEP 723 inline-script deps** has a surface the preflight won't list — see the PEP 723 note
+   in references/ecosystems.md (unpinned inline deps are already auto-latest; pinned ones you
+   bump by hand).
 
 2. **Green baseline — do this first.** Run the repo's test suite and confirm it passes *before
    touching anything*. Don't upgrade onto a red baseline — you won't be able to tell your bump
