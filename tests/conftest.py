@@ -50,6 +50,17 @@ def init_git_repo(path: Path, *, remote=None, email="t@t", name="t"):
 CHECKER = DEV_HOOKS / "skills" / "dev-env-setup" / "scripts" / "dev_env_check.sh"
 
 
+def parse_kv(stdout):
+    """Parse the KEY=VALUE lines a checker/inventory script emits (ignoring `# ` summary
+    lines). Shared by the dev-env checker and the dependency-upgrade inventory."""
+    out = {}
+    for line in stdout.splitlines():
+        if "=" in line and not line.startswith("# "):
+            key, _, value = line.partition("=")
+            out[key] = value
+    return out
+
+
 def run_checker(target):
     """Run the dev-env-setup compliance checker and parse its key=value output."""
     r = subprocess.run(
@@ -58,12 +69,7 @@ def run_checker(target):
         text=True,
     )
     assert r.returncode == 0, r.stderr
-    out = {}
-    for line in r.stdout.splitlines():
-        if "=" in line and not line.startswith("# "):
-            key, _, value = line.partition("=")
-            out[key] = value
-    return out
+    return parse_kv(r.stdout)
 
 
 def make_compliant_repo(

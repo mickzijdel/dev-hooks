@@ -24,7 +24,12 @@ from conftest import (
     WRITING,
     init_git_repo,
     make_compliant_repo,
+    parse_kv,
     run_checker,
+)
+
+INVENTORY = (
+    DEV_HOOKS / "skills" / "dependency-upgrade" / "scripts" / "upgrade_inventory.sh"
 )
 
 GR = WRITING / "skills" / "github-readme" / "scripts" / "github_readme_audit.py"
@@ -254,3 +259,89 @@ def test_checker_no_fnox_suggestion_from_vendored_dirs(tmp_path, vendor_dir):
     (vendored / "section.py").write_text("x = Settings.foo\ny = ENV['BAR']\n")
     out = run_checker(tmp_path)
     assert out["suggests_fnox"] == "0"
+
+
+# ── upgrade_inventory.sh (dependency-upgrade skill preflight) ───────────────────────
+def run_inventory(target, *args):
+    """Run the dependency-upgrade preflight (default mode — read-only, no tool exec)
+    and parse its key=value block."""
+    r = subprocess.run(
+        ["bash", str(INVENTORY), str(target), *args],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    return parse_kv(r.stdout), r.stdout
+
+
+def test_inventory_empty_repo_detects_nothing(tmp_path):
+    out, stdout = run_inventory(tmp_path)
+    assert out["has_js"] == "0"
+    assert out["has_ruby"] == "0"
+    assert out["has_python"] == "0"
+    assert out["has_actions"] == "0"
+    assert out["ecosystems"] == ""
+    assert "No JavaScript/Ruby/Python/GitHub-Actions dependencies" in stdout
+
+
+def test_inventory_detects_all_ecosystems(tmp_path):
+    (tmp_path / "package.json").write_text("{}\n")
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("name: ci\non: push\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["has_js"] == "1"
+    assert out["has_ruby"] == "1"
+    assert out["has_python"] == "1"
+    assert out["has_actions"] == "1"
+    assert out["actions_count"] == "1"
+    assert out["ecosystems"] == "js ruby python actions"
+    assert out["ruby_manager"] == "bundler"
+
+
+@pytest.mark.parametrize(
+    "lockfile,expected",
+    [("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"), ("package-lock.json", "npm")],
+)
+def test_inventory_js_manager_from_lockfile(tmp_path, lockfile, expected):
+    (tmp_path / "package.json").write_text("{}\n")
+    (tmp_path / lockfile).write_text("\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["js_manager"] == expected
+
+
+def test_inventory_js_manager_defaults_to_npm_without_lockfile(tmp_path):
+    (tmp_path / "package.json").write_text("{}\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["js_manager"] == "npm"
+
+
+def test_inventory_python_manager_uv_from_lock(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (tmp_path / "uv.lock").write_text("\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["python_manager"] == "uv"
+
+
+def test_inventory_python_manager_uv_from_tool_table(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='x'\n[tool.uv]\nexclude-newer = \"4 days\"\n"
+    )
+    out, _ = run_inventory(tmp_path)
+    assert out["python_manager"] == "uv"
+
+
+def test_inventory_python_manager_poetry_from_tool_table(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[tool.poetry]\nname='x'\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["python_manager"] == "poetry"
+
+
+def test_inventory_python_manager_pip_fallback(tmp_path):
+    # requirements.txt with no uv/poetry signal → pip.
+    (tmp_path / "requirements.txt").write_text("requests==2.0.0\n")
+    out, _ = run_inventory(tmp_path)
+    assert out["has_python"] == "1"
+    assert out["python_manager"] == "pip"
