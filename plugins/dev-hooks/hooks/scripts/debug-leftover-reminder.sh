@@ -34,7 +34,7 @@ import sys
 
 sys.dont_write_bytecode = True  # no __pycache__ in the plugin's lib dir
 sys.path.insert(0, sys.argv[1])
-from hook_helpers import git, is_test_path
+from hook_helpers import collect_new_line_hits, is_test_path
 
 JS_EXT = {".js", ".ts", ".jsx", ".tsx", ".vue", ".mjs", ".cjs"}
 PY_EXT = {".py"}
@@ -54,53 +54,13 @@ for e in RB_EXT:
     PAT_FOR_EXT[e] = RB_PAT
 
 
-def candidate_lines():
-    """Yield (path, lineno, text) for every newly-introduced line."""
-    # Tracked edits vs HEAD (only when HEAD exists).
-    if git(["rev-parse", "--verify", "HEAD"]).strip():
-        cur, new_ln = None, None
-        for line in git(["diff", "HEAD", "--no-color", "--unified=0"]).splitlines():
-            if line.startswith("+++ "):
-                p = line[4:]
-                cur = p[2:] if p.startswith("b/") else p
-            elif line.startswith("@@"):
-                m = re.search(r"\+(\d+)", line)
-                new_ln = int(m.group(1)) if m else None
-            elif line.startswith("+") and not line.startswith("+++"):
-                if cur is not None and new_ln is not None:
-                    yield cur, new_ln, line[1:]
-                    new_ln += 1
-    # Untracked files: every line is new.
-    for f in git(["ls-files", "--others", "--exclude-standard"]).splitlines():
-        if not f:
-            continue
-        try:
-            with open(f, encoding="utf-8", errors="replace") as fh:
-                for i, text in enumerate(fh, 1):
-                    yield f, i, text.rstrip("\n")
-        except OSError:
-            pass
+def keep(path, text):
+    pat = PAT_FOR_EXT.get(os.path.splitext(path)[1])
+    return pat is not None and not is_test_path(path) and bool(pat.search(text))
 
 
-hits = []
-seen = set()
-for path, lineno, text in candidate_lines():
-    ext = os.path.splitext(path)[1]
-    pat = PAT_FOR_EXT.get(ext)
-    if pat is None or is_test_path(path):
-        continue
-    if pat.search(text):
-        key = (path, lineno)
-        if key in seen:
-            continue
-        seen.add(key)
-        hits.append(f"  {path}:{lineno}: {text.strip()[:120]}")
-
-if hits:
-    extra = len(hits) - 15
-    shown = hits[:15]
-    if extra > 0:
-        shown.append(f"  ... and {extra} more")
+shown = collect_new_line_hits(keep)
+if shown:
     print("\n".join(shown))
 PYEOF
 )

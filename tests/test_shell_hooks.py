@@ -1067,6 +1067,264 @@ def test_ci_action_ref_silent_for_non_yaml(tmp_path):
     assert r.stdout.strip() == ""
 
 
+# ── migration-safety-reminder.sh ────────────────────────────────────────────────────
+def _migration_run(tmp_path, rel, session="g1"):
+    f = tmp_path / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("# migration\n")
+    payload = json.dumps({"tool_input": {"file_path": str(f)}, "session_id": session})
+    return run_hook(
+        "migration-safety-reminder.sh",
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+
+
+def test_migration_fires_for_rails(tmp_path):
+    r = _migration_run(tmp_path, "db/migrate/20240101_add_users.rb")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "concurrently")
+
+
+def test_migration_fires_for_django(tmp_path):
+    r = _migration_run(tmp_path, "app/migrations/0002_add_field.py", session="g2")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "Reversible")
+
+
+def test_migration_fires_for_alembic_versions(tmp_path):
+    r = _migration_run(tmp_path, "alembic/versions/abc123_init.py", session="g3")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "migration")
+
+
+def test_migration_silent_for_migrations_init(tmp_path):
+    r = _migration_run(tmp_path, "app/migrations/__init__.py", session="g4")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_migration_silent_for_ordinary_model(tmp_path):
+    r = _migration_run(tmp_path, "app/models/user.rb", session="g5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── a11y-reminder.sh ─────────────────────────────────────────────────────────────────
+def _a11y_run(tmp_path, name, content, session="h1"):
+    f = tmp_path / name
+    f.write_text(content)
+    payload = json.dumps(
+        {"tool_input": {"file_path": str(f), "content": content}, "session_id": session}
+    )
+    return run_hook(
+        "a11y-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+
+
+def test_a11y_fires_for_img_without_alt(tmp_path):
+    r = _a11y_run(tmp_path, "v.html", "<img src='logo.png'>\n")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "no alt attribute")
+
+
+def test_a11y_fires_for_icon_only_button(tmp_path):
+    r = _a11y_run(
+        tmp_path, "b.html", "<button><svg viewBox='0 0 1 1'></svg></button>\n", "h2"
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "icon-only")
+
+
+def test_a11y_fires_for_click_on_div(tmp_path):
+    r = _a11y_run(tmp_path, "c.jsx", "<div onClick={save}>Save</div>\n", "h3")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "non-interactive")
+
+
+def test_a11y_silent_for_accessible_markup(tmp_path):
+    content = '<img src="logo.png" alt="Logo">\n<button>Save</button>\n'
+    r = _a11y_run(tmp_path, "ok.html", content, "h4")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_a11y_silent_for_non_frontend_file(tmp_path):
+    r = _a11y_run(tmp_path, "notes.py", "img = '<img>'  # not markup\n", "h5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── sql-injection-reminder.sh ────────────────────────────────────────────────────────
+def _sql_run(tmp_path, name, content, session="i1"):
+    payload = json.dumps(
+        {
+            "tool_input": {"file_path": str(tmp_path / name), "content": content},
+            "session_id": session,
+        }
+    )
+    return run_hook(
+        "sql-injection-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+
+
+def test_sql_fires_for_python_fstring(tmp_path):
+    r = _sql_run(tmp_path, "q.py", 'cur.execute(f"SELECT * FROM t WHERE id = {uid}")\n')
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "parameterized")
+
+
+def test_sql_fires_for_ruby_interpolation(tmp_path):
+    r = _sql_run(
+        tmp_path,
+        "q.rb",
+        'User.find_by_sql("SELECT * FROM users WHERE id = #{id}")\n',
+        "i2",
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "parameterized")
+
+
+def test_sql_fires_for_concatenation(tmp_path):
+    r = _sql_run(tmp_path, "q.js", 'db.query("DELETE FROM t WHERE id = " + id)\n', "i3")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "parameterized")
+
+
+def test_sql_silent_for_parameterized(tmp_path):
+    r = _sql_run(
+        tmp_path,
+        "ok.py",
+        'cur.execute("SELECT * FROM t WHERE id = %s", (uid,))\n',
+        "i4",
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_sql_silent_for_non_sql_fstring(tmp_path):
+    r = _sql_run(tmp_path, "ok.py", 'msg = f"hello {name}, welcome back"\n', "i5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── error-swallow-reminder.sh ────────────────────────────────────────────────────────
+def _swallow_run(tmp_path, name, content, session="j1"):
+    payload = json.dumps(
+        {
+            "tool_input": {"file_path": str(tmp_path / name), "content": content},
+            "session_id": session,
+        }
+    )
+    return run_hook(
+        "error-swallow-reminder.sh", stdin=payload, env=base_env(TMPDIR=str(tmp_path))
+    )
+
+
+def test_swallow_fires_for_bare_except(tmp_path):
+    r = _swallow_run(tmp_path, "e.py", "try:\n    f()\nexcept:\n    pass\n")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "bare `except:`")
+
+
+def test_swallow_fires_for_except_pass(tmp_path):
+    r = _swallow_run(
+        tmp_path, "e.py", "try:\n    f()\nexcept ValueError:\n    pass\n", "j2"
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "swallows")
+
+
+def test_swallow_fires_for_empty_js_catch(tmp_path):
+    r = _swallow_run(tmp_path, "e.js", "try { f() } catch (e) {}\n", "j3")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "catch")
+
+
+def test_swallow_fires_for_empty_ruby_rescue(tmp_path):
+    r = _swallow_run(tmp_path, "e.rb", "begin\n  f\nrescue => e\nend\n", "j4")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "rescue")
+
+
+def test_swallow_silent_for_handled(tmp_path):
+    content = "try:\n    f()\nexcept ValueError as e:\n    log(e)\n    raise\n"
+    r = _swallow_run(tmp_path, "ok.py", content, "j5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── todo-leftover-reminder.sh ────────────────────────────────────────────────────────
+TODO_SENTINEL = "[todo-leftover] new TODO/FIXME markers added this session"
+
+
+def test_todo_leftover_fires_on_new_marker(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("def f():\n    # TODO: handle errors\n    pass\n")
+    r = run_hook(
+        "todo-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 2
+    payload = assert_json_with(r.stdout, "[todo-leftover]")
+    assert "foo.py" in json.dumps(payload)
+
+
+def test_todo_leftover_silent_for_preexisting_committed(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("# FIXME: later\nx = 1\n")
+    run("add", "foo.py")
+    run("commit", "-q", "-m", "add foo")
+    r = run_hook(
+        "todo-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_todo_leftover_ignores_test_files(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "test_foo.py").write_text("# TODO: write more tests\n")
+    r = run_hook(
+        "todo-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_todo_leftover_silent_when_opted_out(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("# TODO: x\n")
+    r = run_hook(
+        "todo-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=base_env(DEV_HOOKS_TODO_LEFTOVER="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_todo_leftover_silent_when_already_prompted(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.py").write_text("# TODO: x\n")
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", extra_lines=[json.dumps({"text": TODO_SENTINEL})]
+    )
+    r = run_hook(
+        "todo-leftover-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── cross-hook behavior: opt-out and fire-once-per-session ──────────────────────────
 # Every reminder hook honors its DEV_HOOKS_* opt-out env var, and the marker-based hooks
 # fire at most once per session (per category/file where applicable). One payload table
@@ -1114,6 +1372,51 @@ def _ci_action_payload(tmp_path):
     )
 
 
+def _migration_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {"file_path": str(tmp_path / "db" / "migrate" / "001_x.rb")},
+            "session_id": "x1",
+        }
+    )
+
+
+def _a11y_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / "view.html"),
+                "content": "<img src='logo.png'>\n",
+            },
+            "session_id": "x1",
+        }
+    )
+
+
+def _sql_injection_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / "q.py"),
+                "content": 'q = f"SELECT * FROM users WHERE id = {uid}"\n',
+            },
+            "session_id": "x1",
+        }
+    )
+
+
+def _error_swallow_payload(tmp_path):
+    return json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(tmp_path / "e.py"),
+                "content": "try:\n    f()\nexcept:\n    pass\n",
+            },
+            "session_id": "x1",
+        }
+    )
+
+
 # (script, opt-out env var, payload builder, needle expected in the firing output)
 FIRE_ONCE_REMINDERS = [
     ("latest-deps-reminder.sh", "DEV_HOOKS_LATEST_DEPS", _latest_deps_payload, "stale"),
@@ -1135,6 +1438,25 @@ FIRE_ONCE_REMINDERS = [
         "DEV_HOOKS_CI_ACTION_REFS",
         _ci_action_payload,
         "check_action_refs.sh",
+    ),
+    (
+        "migration-safety-reminder.sh",
+        "DEV_HOOKS_MIGRATION",
+        _migration_payload,
+        "migration",
+    ),
+    ("a11y-reminder.sh", "DEV_HOOKS_A11Y", _a11y_payload, "accessibility"),
+    (
+        "sql-injection-reminder.sh",
+        "DEV_HOOKS_SQL_INJECTION",
+        _sql_injection_payload,
+        "parameterized",
+    ),
+    (
+        "error-swallow-reminder.sh",
+        "DEV_HOOKS_ERROR_SWALLOW",
+        _error_swallow_payload,
+        "swallows",
     ),
 ]
 OPT_OUT_REMINDERS = FIRE_ONCE_REMINDERS + [
