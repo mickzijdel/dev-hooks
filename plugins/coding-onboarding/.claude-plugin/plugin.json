@@ -1,11 +1,11 @@
 {
   "name": "coding-onboarding",
-  "description": "Onboarding for people new to coding or to AI-assisted coding, starting from nothing installed: a curl-able bootstrap installer (install.sh) that sets up Claude Code itself and opens an always-on-top browser checklist, then getting-started (idempotent machine setup — mise toolchain, VS Code, Docker, GitHub, Playwright, plugins, Claude config; macOS, Linux, WSL2; asks the user's experience level and calibrates explanation depth to it, with a self-renewing monthly comfort check-in) and starting-a-project (a 'what are you building?' stack decision tree — Astro, React + Vite/Next.js, Rails/Django, FastAPI, Python + uv, Expo, Streamlit — each with a scaffold command and deploy target, plus a static-site-to-containers deploy guide).",
-  "version": "1.2.1",
+  "description": "Onboarding for people new to coding or to AI-assisted coding, starting from nothing installed: a curl-able bootstrap installer (install.sh) that sets up Claude Code itself and opens an always-on-top browser checklist, then getting-started (idempotent machine setup — mise toolchain including modern CLI tools fd/bat/eza/zoxide/fzf/delta/lazygit/yq/hyperfine, VS Code, Docker, GitHub, Playwright, plugins, Claude config, and the AGENTS.md/CLAUDE.md symlink convention; macOS, Linux, WSL2; asks the user's experience level and calibrates explanation depth to it, with a self-renewing monthly comfort check-in) and starting-a-project (a 'what are you building?' stack decision tree — Astro, React + Vite/Next.js, Rails/Django, FastAPI, Python + uv, Expo, Streamlit — each with a scaffold command and deploy target, plus a static-site-to-containers deploy guide).",
+  "version": "1.3.0",
   "author": {
     "name": "Mick Zijdel"
   },
   "repository": "https://github.com/mickzijdel/dev-hooks",
   "license": "MIT",
-  "keywords": ["onboarding", "getting-started", "beginner", "setup", "toolchain", "mise", "vscode", "docker", "github", "git", "deploy", "scaffold", "stack"]
+  "keywords": ["onboarding", "getting-started", "beginner", "setup", "toolchain", "mise", "vscode", "docker", "github", "git", "deploy", "scaffold", "stack", "cli-tools", "agents-md"]
 }
