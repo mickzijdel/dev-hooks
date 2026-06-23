@@ -38,7 +38,7 @@ The companion skills the hooks point at:
 
 | Skill | Use when |
 |-------|----------|
-| `dev-env-setup` | Auditing/setting up a repo against my dev-env standard, version-tracked via `DEV_ENV_VERSION`: mise pinning the toolchain, an hk pre-commit hook running linters/tests + gitleaks, a CI workflow mirroring those checks, a 4-day dependency cooldown (uv `exclude-newer` enforced on Python repos; Ruby/JS package managers documented), and project docs — a `README.md` and `CLAUDE.md` recording the project's pinned key-package versions, dispatching a subagent to create them when missing. Paired with the `dev-env-reminder` hook; trimmed from Nate Berkopec's `dev-env-setup` (kept/dropped rationale in the skill; per-version migration steps in `references/upgrade-guide.md`). |
+| `dev-env-setup` | Auditing/setting up a repo against an opinionated dev-env standard, version-tracked via `DEV_ENV_VERSION`: mise pinning the toolchain, an hk pre-commit hook running linters/tests + gitleaks, a CI workflow mirroring those checks, a 4-day dependency cooldown (uv `exclude-newer` enforced on Python repos; Ruby/JS package managers documented), and project docs — a `README.md` and `CLAUDE.md` recording the project's pinned key-package versions, dispatching a subagent to create them when missing. Paired with the `dev-env-reminder` hook; trimmed from Nate Berkopec's `dev-env-setup` (kept/dropped rationale in the skill; per-version migration steps in `references/upgrade-guide.md`). |
 | `github-actions` | Writing, reviewing, or hardening a GitHub Actions workflow, or bumping a whole fleet's action pins. Carries the supply-chain security checklist (SHA-pin actions, read-only `GITHUB_TOKEN`, no `pull_request_target`/untrusted input in `run:`, OIDC for cloud creds) in `references/security-checklist.md`, plus the fleet-wide SHA-pin/bump procedure (`pinact run -u` + `check_action_refs.sh`). Paired with the `ci-action-ref-reminder` hook; the dev-env v16 CI templates ship pre-hardened to this standard. |
 | `dependency-upgrade` | Bringing a repo's dependencies up to the latest versions across JavaScript (npm/pnpm/yarn), Ruby (bundler), Python (uv/poetry/pip), and GitHub Actions. Reads changelogs/migration guides for **major** bumps, applies the code changes, and lands each step as its own commit — **gating every commit on a green test suite** and deferring any major it can't get green to a written report (`plans/deferred-upgrades.md`). Ships a read-only `upgrade_inventory.sh` preflight, a fleet mode (one isolated agent per repo), delegates the Actions part to `github-actions`, and respects dev-env-setup's 4-day cooldown. This is the *upgrade* counterpart to `dev-env-setup` (which only pins tooling + records versions). |
 | `dockerfile` | Writing/editing a Dockerfile — cache-friendly layer ordering (least→most frequently changed) and common gotchas (pinning, multi-stage, `.dockerignore`, non-root, exec-form `CMD`). Paired with the `dockerfile-reminder` hook; delegates linting to `hadolint`. |
@@ -71,11 +71,12 @@ The companion skills the hooks point at:
   changed; it no-ops otherwise.
 - `dev-env-reminder.sh` only nudges on repos it judges **yours** and only when the standard
   applies but isn't met; it's advisory and never edits anything. Ownership = origin remote
-  owner in an allowlist (default `mickzijdel`) **or** ≥80% of the last month's commits are
-  yours. Tune/override via env (set in `.claude/settings.local.json` `"env"`):
-  `DEV_HOOKS_DEVENV_OWNED` (`true`/`false` — deterministic per-repo override, `false` silences
-  it entirely), `DEV_HOOKS_DEVENV_OWNERS` (extra GitHub owners, e.g.
-  `EdinburghUniversityTheatreCompany`), `DEV_HOOKS_DEVENV_EMAIL` (default `mickzijdel@live.nl`).
+  owner listed in `DEV_HOOKS_DEVENV_OWNERS` **or** ≥80% of the last month's commits authored by
+  your local `git config user.email`. Tune/override via env (set in `.claude/settings.local.json`
+  `"env"`): `DEV_HOOKS_DEVENV_OWNED` (`true`/`false` — deterministic per-repo override, `false`
+  silences it entirely), `DEV_HOOKS_DEVENV_OWNERS` (GitHub owners to treat as yours, e.g. your
+  username or an org you own), `DEV_HOOKS_DEVENV_EMAIL` (commit-author email for the heuristic;
+  defaults to your local `git config user.email`).
   Per-repo opt-out also via a `dev-env: skip` line in the project's `CLAUDE.md`.
 - `docs-context.sh` scans `docs/` (falling back to `doc/`) at the project root for Markdown
   files up to two levels deep. Titles come from YAML frontmatter (`title:`) or the first `#`

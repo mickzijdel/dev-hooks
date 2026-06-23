@@ -2,10 +2,10 @@
 name: dev-env-setup
 version: 4.5.1
 description: |
-  Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
+  Audit a repo against an opinionated dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
   mirrors those checks, and project docs — README.md + CLAUDE.md recording pinned
-  package versions) and set it up or upgrade it. Use when a repo of Mick's is missing
+  package versions) and set it up or upgrade it. Use when a repo is missing
   the standard setup, when the dev-env-reminder hook flags a gap, when the user mentions
   hk/mise/gitleaks/"my dev setup", or when starting a new repo. Tracks a standard version
   via DEV_ENV_VERSION in mise.toml and upgrades behind repos using references/upgrade-guide.md.
@@ -22,8 +22,8 @@ allowed-tools:
 
 # dev-env-setup
 
-Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
-implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
+Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
+both Python and Rails (Ruby) project types.
 
 ## The standard (v16)
 
@@ -82,7 +82,7 @@ including Claude Code plugin repos. A prose/skills-only repo with no scripts is 
 ## Why this shape (keep / drop vs. Nate's setup)
 
 This is trimmed from [Nate Berkopec's `dev-env-setup`](https://github.com/nateberkopec/dotfiles/tree/main/files/home/.claude/skills/dev-env-setup)
-to what Mick's repos actually use. **Kept:** mise-as-tool-manager, hk parallel pre-commit,
+to the subset this standard actually uses. **Kept:** mise-as-tool-manager, hk parallel pre-commit,
 ruff/pytest + rubocop/rails-test, CI-mirrors-hk. **Added:** gitleaks (defense-in-depth with
 [[env-to-fnox]]) and shellcheck/shfmt for shell/plugin repos. **Dropped** (and why) lives in
 [`references/dropped-from-nate.md`](references/dropped-from-nate.md) — revisit those before
@@ -151,7 +151,7 @@ proposing additions.
    current versions of the project's key packages, read from the manifests/lockfiles you just
    set up (not from memory).
 
-6. **Repo ownership.** If the repo is Mick's, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
+6. **Repo ownership.** If the repo is the user's own, **commit** `mise.toml`/`hk.pkl`/`ci.yml`. If it
    is someone else's repo you only contribute to, do **not** commit them — add `hk.pkl` and
    `mise.toml` to `.git/info/exclude` instead. (This mirrors the dev-env-reminder hook's
    ownership rule.)
@@ -234,7 +234,7 @@ echo "uses: $a@$sha # $tag"
 ```
 
 Do this for every action a repo uses. If `gh`/`pinact` is unavailable or unauthenticated, say
-so and ask Mick — never guess a SHA or a version.
+so and ask the user — never guess a SHA or a version.
 
 **Always verify the pins before finishing.** The bundled checker resolves each pin's `# vX.Y.Z`
 comment on the remote and fails if the tag is missing or its commit doesn't match the pinned
@@ -390,13 +390,9 @@ use without a `fnox.toml`, it emits `suggests_fnox=1` and the setup/upgrade repo
 
 - The version stamp is the single source of truth in `references/../VERSION`; the reminder hook
   reads the same file, so a repo on an older stamp gets flagged automatically.
-- Never auto-run this from a hook — it's invoked by Mick (or offered by the reminder), and it
+- Never auto-run this from a hook — it's invoked by the user (or offered by the reminder), and it
   writes commit-tracked config, so confirm before committing.
 - The standard ships **no `.gitignore` template** — Claude's defaults are usually right, but
   check the gotchas in [`references/standard.md`](references/standard.md) (".gitignore
   gotchas"): keep `.env` ignored AND allowlisted in `.gitleaks.toml`, commit lockfiles and
   `mise.toml`, keep `.venv/` ignored.
-
-[`bedlam-bacs`]: https://github.com/EdinburghUniversityTheatreCompany/bacs-tool
-[`readoc`]: https://github.com/mickzijdel/readoc
-[`booking-overview`]: https://github.com/mickzijdel/booking-overview

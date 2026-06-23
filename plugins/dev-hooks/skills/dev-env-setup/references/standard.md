@@ -129,7 +129,7 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > Configuring exclusions:
 > - **Exclude paths** with `ignore` (a glob array) in `.jscpd.json`. **`ignorePattern` does NOT
 >   exclude paths in jscpd v5** — it's silently inert there, which let CI scan the
->   CI-installed `vendor/bundle` gems and fail on their clones (booking-overview, 2026-06-10;
+>   CI-installed `vendor/bundle` gems and fail on their clones (seen in a Rails app, 2026-06-10;
 >   fixed in v12). When testing exclusions, beware that jscpd loads `.jscpd.json` from the
 >   **cwd**, not from the scanned directory — verifying against another path needs `-c <config>`,
 >   otherwise you read the wrong config and conclude the wrong key works (how the original
@@ -214,8 +214,7 @@ ships JS/CSS worth checking. flay can be promoted from advisory to a hard gate l
 
 **Claude Code plugin repos** (and any script-bundle repo) carry two extra requirements:
 
-1. **All bundled scripts are tested.** Follow [`readoc`](https://github.com/mickzijdel/readoc)'s
-   setup: a **dev-only**
+1. **All bundled scripts are tested.** Use the bundled-script test setup: a **dev-only**
    `pyproject.toml` (`[tool.uv] package = false`, deps in `[dependency-groups] dev`, see
    `templates/pyproject.plugin.toml`) and a `tests/` suite that runs each
    script/CLI/hook **as a subprocess** and asserts on real output

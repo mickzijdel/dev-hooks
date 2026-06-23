@@ -392,7 +392,7 @@ repo has plaintext secrets in use. To reach v10:
 repos it hard-requires a `GITLEAKS_LICENSE` secret (the free "Starter" tier covers exactly 1 repo
 per org; a 2nd org repo needs a paid license), failing the job with `🛑 missing gitleaks license`.
 Personal-account repos need no key, so the gap stays invisible until CI runs on an org repo
-(first hit: `EdinburghUniversityTheatreCompany/bacs-tool`). The gitleaks **CLI** stays MIT/free
+(first hit: an org-owned repo). The gitleaks **CLI** stays MIT/free
 for every repo — only the action wrapper carries the license — so v11 replaces the action with
 the mise.lock-pinned CLI on **all** repos (one code path, no per-owner conditional, no secret to
 provision), which is exactly the binary the local hk pre-commit hook already runs. To reach v11:
@@ -436,7 +436,7 @@ jscpd loads `.jscpd.json` from the **cwd**, not the scanned path, so the test re
 config than it thought (use `-c <config>` when scanning another directory). Symptom that
 exposed it: on Ruby repos, CI's `ruby/setup-ruby` bundler-cache installs gems into
 `vendor/bundle` (not gitignored, so `gitignore: true` doesn't skip it), and the audit job
-failed on thousands of vendored-gem clone lines (booking-overview, 2026-06-10). Locally the
+failed on thousands of vendored-gem clone lines (seen in a Rails app, 2026-06-10). Locally the
 same repo failed on `bin/` binstub clones despite `**/bin/**` being listed. To reach v12:
 
 1. **Rename the key** in `.jscpd.json`: `"ignorePattern"` → `"ignore"` (values unchanged).
@@ -563,7 +563,7 @@ you don't enumerate files by hand.
    sha=$(gh api "repos/$a/commits/$tag" --jq .sha)   # dereferences annotated tags
    # → uses: actions/checkout@<sha> # <tag>
    ```
-   If `gh`/`pinact` is unavailable or unauthenticated, stop and ask Mick — never guess a SHA.
+   If `gh`/`pinact` is unavailable or unauthenticated, stop and ask the user — never guess a SHA.
 2. **Add a read-only token default.** In each workflow that has no top-level `permissions:`
    block, insert one between `on:` and `jobs:` (copy from any `templates/ci.<stack>.yml`):
    ```yaml

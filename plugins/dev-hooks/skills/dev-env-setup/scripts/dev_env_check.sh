@@ -1,7 +1,7 @@
 #!/bin/bash
 # dev-env-setup compliance checker.
 #
-# Audits a repo against Mick's dev-env standard (mise + hk + CI + gitleaks, stamped
+# Audits a repo against the dev-env standard (mise + hk + CI + gitleaks, stamped
 # with DEV_ENV_VERSION in mise.toml). Used by the dev-hooks:dev-env-setup skill (audit)
 # and by the dev-env-reminder SessionStart hook (detection).
 #
