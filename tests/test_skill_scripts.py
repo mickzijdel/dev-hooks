@@ -36,6 +36,7 @@ GR = WRITING / "skills" / "github-readme" / "scripts" / "github_readme_audit.py"
 RA = WRITING / "skills" / "readability" / "scripts" / "readability_audit.py"
 FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
 VP = WRITING / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
+A11Y = DEV_HOOKS / "skills" / "accessibility" / "scripts" / "a11y_audit.py"
 
 # (golden name, script, args, stdin fixture filename or None)
 CASES = [
@@ -345,3 +346,80 @@ def test_inventory_python_manager_pip_fallback(tmp_path):
     out, _ = run_inventory(tmp_path)
     assert out["has_python"] == "1"
     assert out["python_manager"] == "pip"
+
+
+# ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────
+_BAD_MARKUP = (
+    "<html>\n"
+    '  <img src="logo.png">\n'
+    "  <button><svg></svg></button>\n"
+    '  <div onclick="go()">Menu</div>\n'
+    '  <input type="text" placeholder="Name">\n'
+    '  <a href="#" tabindex="3">x</a>\n'
+    "</html>\n"
+)
+_GOOD_MARKUP = (
+    '<html lang="en">\n'
+    '  <img src="logo.png" alt="Company logo">\n'
+    '  <label for="n">Name</label><input id="n" type="text">\n'
+    '  <button type="button" aria-label="Delete"><svg aria-hidden="true"></svg></button>\n'
+    "</html>\n"
+)
+
+
+def _run_a11y(*args, cwd=None):
+    return subprocess.run(
+        [sys.executable, str(A11Y), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_a11y_audit_flags_issues(tmp_path):
+    f = tmp_path / "page.html"
+    f.write_text(_BAD_MARKUP)
+    r = _run_a11y(str(f))
+    assert r.returncode == 1
+    out = r.stdout
+    assert "missing a lang attribute" in out
+    assert "no alt attribute" in out
+    assert "icon-only <button>" in out
+    assert "non-interactive" in out
+    assert "no label association" in out
+    assert "positive tabindex" in out
+    # Each finding is reported as file:line:
+    assert f"{f}:2:" in out  # the <img> is on line 2
+
+
+def test_a11y_audit_clean_file(tmp_path):
+    f = tmp_path / "ok.html"
+    f.write_text(_GOOD_MARKUP)
+    r = _run_a11y(str(f))
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert "No accessibility issues" in r.stderr
+
+
+def test_a11y_audit_jsx_htmlfor_is_label(tmp_path):
+    # React uses htmlFor; an input with an id is considered labelable, so no false positive.
+    f = tmp_path / "Form.jsx"
+    f.write_text('<label htmlFor="e">Email</label><input id="e" type="email" />\n')
+    r = _run_a11y(str(f))
+    assert r.returncode == 0
+
+
+def test_a11y_audit_no_markup_files(tmp_path):
+    f = tmp_path / "notes.txt"
+    f.write_text("not markup")
+    r = _run_a11y(str(f))
+    assert r.returncode == 2
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_a11y_audit_runs_via_uv_shebang(tmp_path):
+    """The shipping path: the PEP 723 script self-resolves via `uv run --script`."""
+    f = tmp_path / "ok.html"
+    f.write_text(_GOOD_MARKUP)
+    r = subprocess.run([str(A11Y), str(f)], capture_output=True, text=True)
+    assert r.returncode == 0
