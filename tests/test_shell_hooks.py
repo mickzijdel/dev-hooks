@@ -97,6 +97,52 @@ def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     assert_json_with(r.stdout, "[dev-env]")
 
 
+def test_dev_env_reminder_auto_detects_local_git_user(tmp_path):
+    # No ownership override and no hardcoded owner/email: the hook treats the repo as the
+    # user's when the local `git config user.email` authored (nearly) all recent commits.
+    # This is the generic path — it must work for any user, not a baked-in identity.
+    run = init_git_repo(tmp_path, email="dev@example.com", name="Dev")
+    (tmp_path / "foo.sh").write_text("#!/bin/bash\necho hi\n")  # makes it applicable
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    r = run_hook(
+        "dev-env-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(
+            DEV_HOOKS_DEVENV_OWNED=None,
+            DEV_HOOKS_DEVENV_OWNERS=None,
+            DEV_HOOKS_DEVENV_EMAIL=None,
+            CLAUDE_PLUGIN_ROOT=str(DEV_HOOKS),
+        ),
+    )
+    assert r.returncode == 0
+    msg = json.dumps(assert_json_with(r.stdout, "[dev-env]"))
+    assert "the user" in msg
+    assert "Mick" not in msg
+
+
+def test_dev_env_reminder_silent_for_other_users_commits(tmp_path):
+    # Commits belong to a different email than the local git user, no remote, no override →
+    # not the user's repo → silent. Proves the heuristic compares against the local
+    # git user.email rather than any hardcoded identity.
+    run = init_git_repo(tmp_path, email="dev@example.com", name="Dev")
+    (tmp_path / "foo.sh").write_text("#!/bin/bash\necho hi\n")
+    run("add", "-A")
+    run("-c", "user.email=someone-else@example.com", "commit", "-q", "-m", "init")
+    r = run_hook(
+        "dev-env-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(
+            DEV_HOOKS_DEVENV_OWNED=None,
+            DEV_HOOKS_DEVENV_OWNERS=None,
+            DEV_HOOKS_DEVENV_EMAIL=None,
+            CLAUDE_PLUGIN_ROOT=str(DEV_HOOKS),
+        ),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── latest-deps-reminder.sh ─────────────────────────────────────────────────────────
 def test_latest_deps_gemfile_nudges_docs(tmp_path):
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_LATEST_DEPS=None)
