@@ -47,6 +47,13 @@ fast is not a reason to skip this — a quick plan keeps a big change reviewable
   confirm with me — explain what it does and why.
 - Never remove or refactor working functionality unless the task explicitly calls for it.
 
+## Prefer the modern command-line tools
+
+When they're installed, reach for the faster, clearer tools over the classic ones: `rg`
+(ripgrep) instead of `grep`, `fd` instead of `find`, `bat` to show a file, `eza` to list a
+folder, and `delta` for git diffs. They have saner defaults and respect `.gitignore`. Fall back
+to the classic command if the modern one isn't available.
+
 ## How to explain things to me
 
 <!-- getting-started replaces this section per references/explanation-levels.md, using the

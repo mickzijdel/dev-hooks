@@ -53,6 +53,37 @@ different tool online, you know what trade-off we made for you.
 - **gitleaks** — scans your project for accidentally-committed secrets (API keys, passwords)
   before they leak. A safety net that pairs with the secret-reminder hook.
 
+## Modern command-line upgrades
+
+These are friendlier, faster replacements for the classic Unix commands. You don't have to use
+them — the old ones still work — but they have nicer defaults and clearer output, and Claude
+will use them when they're present. Install them through mise, **not** your system package
+manager: apt ships old versions and renames a couple (`fd` becomes `fdfind`, `bat` becomes
+`batcat`), and a few aren't packaged at all.
+
+- **fd** — find files by name, the easy way. A simpler, faster stand-in for the old `find`
+  command: `fd report` finds every file with "report" in its name, and it skips hidden and
+  ignored files by default. *Why fd?* `find`'s syntax is famously fiddly; `fd` is one word plus
+  what you're looking for.
+- **bat** — print a file to the screen *with* color, line numbers, and git markers. Like the
+  classic `cat`, but readable. Great for glancing at code.
+- **eza** — list the files in a folder (a modern `ls`) with color, icons, git status, and a
+  `--tree` view of nested folders.
+- **zoxide** — a memory for folders you visit. After using it a while, `z myproject` jumps
+  straight to that folder from anywhere — no typing the full path. A smarter `cd`.
+- **fzf** — a fuzzy finder: it pops up an interactive list (files, past commands, branches…)
+  and narrows it as you type a few letters. Press Enter to pick. ("Fuzzy" means you don't need
+  the exact spelling — close is enough.)
+- **delta** — makes `git diff` (the before/after view of your changes) actually readable:
+  syntax-highlighted, lined up side by side, with the exact words that changed picked out.
+- **lazygit** — a full-screen, menu-driven view of git in your terminal. Stage, commit, branch,
+  and browse history by pressing keys, instead of remembering git commands. A gentle on-ramp to
+  git.
+- **yq** — read and edit YAML files (a common configuration format) from the command line. It's
+  `jq`, but for YAML instead of JSON.
+- **hyperfine** — times how long a command takes and compares two commands head-to-head, so you
+  can tell whether a change actually made something faster. (A "benchmark" tool.)
+
 ## Running and testing apps
 
 - **Docker** — packages an app with everything it needs so it runs the same anywhere. Useful

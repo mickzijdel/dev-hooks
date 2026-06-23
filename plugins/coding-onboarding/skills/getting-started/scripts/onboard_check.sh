@@ -83,6 +83,17 @@ report gh gh
 report docker docker
 report code code # VS Code CLI
 
+# Modern CLI quality-of-life tools (all mise-managed; see references/tools.md).
+report fd fd
+report bat bat
+report eza eza
+report zoxide zoxide
+report fzf fzf
+report delta delta
+report lazygit lazygit
+report yq yq
+report hyperfine hyperfine
+
 # ── GitHub auth ──────────────────────────────────────────────────────────────────
 gh_auth="unknown"
 if command -v gh >/dev/null 2>&1; then

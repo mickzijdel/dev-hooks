@@ -33,6 +33,23 @@ TOOLS = [
     "code",
 ]
 
+# Modern CLI quality-of-life tools added to the mise bundle.
+MODERN_CLI_TOOLS = [
+    "fd",
+    "bat",
+    "eza",
+    "zoxide",
+    "fzf",
+    "delta",
+    "lazygit",
+    "yq",
+    "hyperfine",
+]
+TOOLS += MODERN_CLI_TOOLS
+
+TOOLS_DOC = SKILL / "references" / "tools.md"
+PLAIN_WORDS = SKILL / "references" / "plain-words.md"
+
 
 def run_onboard():
     r = subprocess.run(["bash", str(CHECK)], capture_output=True, text=True)
@@ -137,3 +154,30 @@ def test_skill_wires_calibration_step():
     # The new step uses AskUserQuestion and points at the single source of truth.
     assert "AskUserQuestion" in text
     assert "explanation-levels.md" in text
+
+
+def test_skill_mise_line_includes_modern_cli_tools():
+    # The `mise use -g` install line must pin every modern CLI tool, so onboarding actually
+    # installs what onboard_check.sh then probes for.
+    text = SKILL_MD.read_text()
+    for tool in MODERN_CLI_TOOLS:
+        assert tool in text, f"{tool} not pinned in getting-started SKILL.md"
+
+
+def test_tools_doc_explains_every_modern_cli_tool():
+    text = TOOLS_DOC.read_text()
+    for tool in MODERN_CLI_TOOLS:
+        assert f"**{tool}**" in text, f"{tool} not documented in tools.md"
+
+
+def test_claude_defaults_prefers_modern_tools():
+    text = CLAUDE_DEFAULTS.read_text().lower()
+    # The standing instruction to reach for rg/fd over grep/find.
+    assert "rg" in text and "fd" in text
+    assert "grep" in text and "find" in text
+
+
+def test_plain_words_glossary_covers_new_jargon():
+    low = PLAIN_WORDS.read_text().lower()
+    for term in ("fuzzy finder", "syntax highlighting", "benchmark", "yaml"):
+        assert term in low, f"plain-words.md is missing {term!r}"

@@ -121,11 +121,17 @@ curl https://mise.run | sh        # then add the shown `mise activate` line to t
 Then pin the global tools (idempotent — re-running just re-resolves):
 
 ```bash
-mise use -g node@lts pnpm python uv jq ripgrep gitleaks github-cli
+mise use -g node@lts pnpm python uv jq ripgrep gitleaks github-cli \
+  fd bat eza zoxide fzf delta lazygit yq hyperfine
 ```
 
-`github-cli` provides `gh`. With mise already present and tools installed, **upgrade the
-behind ones** instead:
+`github-cli` provides `gh`. The second line is a set of modern command-line tools that make
+everyday work faster and friendlier — better `find`/`grep`/`ls`/`cat`, fuzzy search, a nicer
+git diff, and a visual git UI. Each is explained in plain language in
+[`references/tools.md`](references/tools.md); install them via mise (not the system package
+manager — apt ships stale versions and renames some, e.g. `fd`→`fdfind`, `bat`→`batcat`).
+
+With mise already present and tools installed, **upgrade the behind ones** instead:
 
 ```bash
 mise outdated        # show what's behind

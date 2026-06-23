@@ -51,6 +51,19 @@ The same analogies appear in the bootstrap installer (`install.sh`) and the chec
   same on any computer instead of "works on mine."
 - **Deploy** — putting your project online so other people can use it.
 
+## At the command line
+
+- **Diff** — the before/after view of what changed in a file: lines removed and lines added,
+  side by side. (`delta` makes git's diff easy to read.)
+- **Syntax highlighting** — coloring code so the different parts (keywords, text, numbers) stand
+  out, the way an editor does. (`bat` adds it when printing a file.)
+- **Fuzzy finder** — an interactive search that narrows a list as you type a few letters, and
+  doesn't need the exact spelling — close is enough. (`fzf` is one.)
+- **YAML / JSON** — two common text formats for settings and data. Lots of config files are
+  written in them. (`jq` reads JSON; `yq` reads YAML.)
+- **Benchmark** — a timed test that measures how long something takes, so you can compare two
+  ways of doing it. (`hyperfine` benchmarks commands.)
+
 ## How to use this list
 
 - One new word at a time. Don't define five terms in one breath.
