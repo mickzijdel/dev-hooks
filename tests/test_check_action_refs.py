@@ -24,18 +24,18 @@ esac
 pytestmark = requires_jq  # the suite-wide external-tool gate; bash is always present
 
 
-def make_stub(tmp_path):
+def make_stub(tmp_path, stub_text=STUB):
     stub = tmp_path / "fake_lsremote.sh"
-    stub.write_text(STUB)
+    stub.write_text(stub_text)
     stub.chmod(0o755)
     return f"bash {stub}"
 
 
-def run(tmp_path, *args, env_extra=None):
+def run(tmp_path, *args, env_extra=None, stub_text=STUB):
     import os
 
     env = os.environ.copy()
-    env["DEV_HOOKS_LSREMOTE"] = make_stub(tmp_path)
+    env["DEV_HOOKS_LSREMOTE"] = make_stub(tmp_path, stub_text)
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
@@ -127,3 +127,75 @@ def test_missing_path_arg_errors(tmp_path):
     r = run(tmp_path, str(tmp_path / "does_not_exist.yml"))
     assert r.returncode == 2
     assert "no such file" in r.stderr
+
+
+# ── SHA-pin verification (the v16 standard: `owner/repo@<sha> # vX.Y.Z`) ──────────────
+# A stub that resolves a comment's tag to a known commit so we can assert the pin is honest:
+#   v0.0.0 → reachable but absent (tag not found)   v1.0.0 → commit 1111…   v2.0.0 → commit 2222…
+SHA1 = "1" * 40
+SHA2 = "2" * 40
+# v3.0.0 is an *annotated* tag: ls-remote returns the tag-object line AND a peeled `^{}` commit
+# line. GitHub checks out the peeled commit (SHA4), not the tag-object (SHA3).
+SHA3 = "3" * 40
+SHA4 = "4" * 40
+STUB_SHA = (
+    "#!/bin/bash\n"
+    'case "$*" in\n'
+    "  *offline*) exit 2 ;;\n"
+    "  *v0.0.0*) exit 0 ;;\n"
+    f'  *v1.0.0*) printf "{SHA1}\\trefs/tags/v1.0.0\\n" ; exit 0 ;;\n'
+    f'  *v2.0.0*) printf "{SHA2}\\trefs/tags/v2.0.0\\n" ; exit 0 ;;\n'
+    f'  *v3.0.0*) printf "{SHA3}\\trefs/tags/v3.0.0\\n{SHA4}\\trefs/tags/v3.0.0^{{}}\\n" ; exit 0 ;;\n'
+    "  *) exit 0 ;;\n"
+    "esac\n"
+)
+
+
+def test_sha_pin_with_matching_comment_is_verified_ok(tmp_path):
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA1} # v1.0.0\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 0, r.stdout
+    assert (
+        f"OK    actions/checkout@{SHA1} # v1.0.0  (SHA matches tag v1.0.0)" in r.stdout
+    )
+    assert "0 unresolved" in r.stdout
+
+
+def test_sha_pin_with_wrong_sha_fails(tmp_path):
+    # Pin claims v2.0.0 but the SHA is SHA1, while v2.0.0 actually resolves to SHA2.
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA1} # v2.0.0\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 1, r.stdout
+    assert "pinned SHA is not tag v2.0.0" in r.stdout
+
+
+def test_sha_pin_with_missing_tag_comment_fails(tmp_path):
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA1} # v0.0.0\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 1, r.stdout
+    assert "tag v0.0.0 does not exist" in r.stdout
+
+
+def test_sha_pin_without_comment_is_pin_not_verified(tmp_path):
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA1}\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 0, r.stdout
+    assert "PIN   actions/checkout@" in r.stdout
+    assert "1 pinned-sha" in r.stdout
+
+
+def test_sha_pin_annotated_tag_matches_peeled_commit(tmp_path):
+    # The pin equals the peeled commit (what GitHub checks out) → OK.
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA4} # v3.0.0\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 0, r.stdout
+    assert "OK    actions/checkout@" in r.stdout
+
+
+def test_sha_pin_annotated_tag_object_sha_fails(tmp_path):
+    # Pinning the annotated tag's OBJECT sha (not the peeled commit) must FAIL — GitHub resolves
+    # the tag to the peeled commit, so such a pin looks valid here but breaks CI at checkout.
+    wf = write_workflow(tmp_path, f"      - uses: actions/checkout@{SHA3} # v3.0.0\n")
+    r = run(tmp_path, str(wf), stub_text=STUB_SHA)
+    assert r.returncode == 1, r.stdout
+    assert "pinned SHA is not tag v3.0.0" in r.stdout

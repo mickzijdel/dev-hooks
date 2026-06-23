@@ -174,6 +174,22 @@ def test_checker_needs_upgrade_without_exec_bit_step(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_compliant_has_sha_pinned_ci(tmp_path):
+    # v16: the default compliant repo ships a SHA-pinned `uses:` and reports it pinned.
+    make_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["has_sha_pinned_ci"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_needs_upgrade_with_tag_pinned_action(tmp_path):
+    # v16: a current-version repo whose CI still pins an action by mutable tag is flagged.
+    make_compliant_repo(tmp_path, sha_pinned=False)
+    out = run_checker(tmp_path)
+    assert out["has_sha_pinned_ci"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.

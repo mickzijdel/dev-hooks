@@ -539,6 +539,44 @@ shebang sitting at `100644`. To reach v15:
 
 ---
 
+## v15 → v16 (SHA-pin GitHub Actions + read-only token)
+
+GitHub Action tags are mutable: an action-account takeover repoints `@v4` to malicious code and
+every downstream run picks it up silently with no PR (tj-actions repointed 76 of 77
+trivy-action tags to an infostealer; the Trivy and Ultralytics campaigns rode the same vector).
+v16 closes this in CI workflows — every `uses:` pins a **full commit SHA** with the release tag
+in a trailing comment, and each workflow defaults its `GITHUB_TOKEN` to read-only so a
+compromised step can't write. See the **[[github-actions]]** skill for the full checklist. To
+reach v16:
+
+1. **SHA-pin every action.** Easiest with `pinact` (`mise use -g pinact`, then `pinact run -u`
+   from the repo root) — it rewrites every `uses: owner/repo@tag` to
+   `owner/repo@<sha> # vX.Y.Z` and updates already-pinned SHAs to the latest release. Without
+   pinact, resolve each by hand and keep the version in the comment:
+   ```bash
+   a=actions/checkout
+   tag=$(gh release view --repo "$a" --json tagName -q .tagName)
+   sha=$(gh api "repos/$a/commits/$tag" --jq .sha)   # dereferences annotated tags
+   # → uses: actions/checkout@<sha> # <tag>
+   ```
+   If `gh`/`pinact` is unavailable or unauthenticated, stop and ask Mick — never guess a SHA.
+2. **Add a read-only token default.** Insert a top-level `permissions:` block between `on:` and
+   `jobs:` in each workflow (copy from any `templates/ci.<stack>.yml`):
+   ```yaml
+   # Default GITHUB_TOKEN to read-only; a job needing more declares its own permissions: block.
+   permissions:
+     contents: read
+   ```
+   A job that genuinely needs write (releases, `id-token: write` for OIDC) declares its own
+   job-level block instead of widening the default.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "16"` in `mise.toml`.
+4. **Verify.** `bash scripts/check_action_refs.sh .github/workflows` →
+   `N ok, 0 unresolved` (each pin's `# vX.Y.Z` comment is resolved on the remote and must
+   match the pinned commit). Then `bash scripts/dev_env_check.sh .` →
+   `has_sha_pinned_ci=1` and `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

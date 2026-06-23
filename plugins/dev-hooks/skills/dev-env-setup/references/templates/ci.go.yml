@@ -1,7 +1,8 @@
-# Action versions below are a snapshot — verify each `uses:` is at its latest before
-# copying (see SKILL.md › "Keeping GitHub Actions current"). mise provisions
-# go/golangci-lint/gitleaks at the exact versions in mise.lock so CI and the local hk
-# pre-commit hook run the same tools.
+# Actions are pinned to a commit SHA with the release tag in a trailing comment (supply-chain
+# safety — see the github-actions skill's security-checklist.md). Bump with `pinact run -u` and
+# verify with scripts/check_action_refs.sh (see SKILL.md › "Keeping GitHub Actions current").
+# mise provisions go/golangci-lint/gitleaks at the exact versions in mise.lock so CI and the
+# local hk pre-commit hook run the same tools.
 name: ci
 
 on:
@@ -10,12 +11,16 @@ on:
   pull_request:
     branches: [main]
 
+# Default GITHUB_TOKEN to read-only; a job needing more declares its own permissions: block.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4 # installs go/golangci-lint/shellcheck/shfmt honoring mise.lock
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — installs go/golangci-lint/shellcheck/shfmt honoring mise.lock
       - name: Lint (golangci-lint)
         run: golangci-lint run ./...
       - name: Check formatting (golangci-lint fmt)
@@ -46,8 +51,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4 # installs go honoring mise.lock
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — installs go honoring mise.lock
       - name: go build
         run: go build ./...
       - name: go vet
@@ -64,10 +69,10 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # gitleaks git scans the full commit history
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - name: Scan git history for secrets
         run: mise exec -- gitleaks git --redact --no-banner .
 
@@ -75,10 +80,10 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v4 # provides node for the npx jscpd run
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — provides node for the npx jscpd run
       - name: Duplication (jscpd)
         # -f golang scopes to Go source; .jscpd.json carries minTokens/threshold/reporters/ignore.
         # Runner + version policy (latest on a 4-day cooldown, floored at v5 — see

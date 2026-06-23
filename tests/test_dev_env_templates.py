@@ -79,7 +79,10 @@ def test_gitleaks_job_scans_full_history_via_mise(name):
     assert "\n  gitleaks:\n" in text and "\n  audit:\n" in text
     job = text.split("\n  gitleaks:\n")[1].split("\n  audit:\n")[0]
     assert "fetch-depth: 0" in job
-    assert "uses: jdx/mise-action@v4" in job
+    # v16: mise-action is SHA-pinned with the release tag in a trailing comment.
+    assert re.search(r"uses: jdx/mise-action@[0-9a-f]{40} # v", job), (
+        f"{name}'s gitleaks job no longer SHA-pins jdx/mise-action with a version comment"
+    )
 
 
 @pytest.mark.parametrize("name", SHEBANG_DETECTOR_TEMPLATES)
@@ -113,6 +116,36 @@ def test_exec_bit_gate_in_every_template(name):
         assert '["exec-bit-scripts"]' in text, (
             f"{name} is missing the exec-bit-scripts step"
         )
+
+
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_ci_actions_are_sha_pinned_with_version_comment(name):
+    """v16: every remote `uses: owner/repo@ref` in a CI template pins a full 40-hex commit SHA
+    with the release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`). Tags are mutable —
+    an action takeover repoints them (tj-actions, Trivy); a SHA can't be moved, and the comment
+    keeps it human-readable and bumpable by pinact/check_action_refs.sh."""
+    text = (TEMPLATES_DIR / name).read_text()
+    uses = re.findall(r"uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@\S+)(.*)", text)
+    assert uses, f"{name} has no `uses:` action references"
+    for ref, trailing in uses:
+        sha = ref.split("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", sha), (
+            f"{name} pins {ref!r} to a non-SHA ref — SHA-pin it (owner/repo@<40-hex> # vX.Y.Z)"
+        )
+        assert re.search(r"#\s*v[0-9]", trailing), (
+            f"{name} pins {ref!r} without a `# vX.Y.Z` version comment"
+        )
+
+
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_ci_template_declares_read_only_token(name):
+    """v16: every CI template declares a workflow-level `permissions: { contents: read }` so the
+    GITHUB_TOKEN defaults to read-only and a compromised step can't write. A job needing more
+    declares its own job-level block."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert re.search(r"^permissions:\n  contents: read$", text, re.M), (
+        f"{name} is missing a top-level read-only permissions block"
+    )
 
 
 def test_gitleaks_template_allowlists_gitignored_artifacts():

@@ -1,5 +1,6 @@
-# Action versions below are a snapshot — verify each `uses:` is at its latest before
-# copying (see SKILL.md › "Keeping GitHub Actions current").
+# Actions are pinned to a commit SHA with the release tag in a trailing comment (supply-chain
+# safety — see the github-actions skill's security-checklist.md). Bump with `pinact run -u` and
+# verify with scripts/check_action_refs.sh (see SKILL.md › "Keeping GitHub Actions current").
 name: ci
 
 on:
@@ -8,12 +9,16 @@ on:
   pull_request:
     branches: [main]
 
+# Default GITHUB_TOKEN to read-only; a job needing more declares its own permissions: block.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: lts/*
           cache: npm
@@ -39,10 +44,10 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # gitleaks git scans the full commit history
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - name: Scan git history for secrets
         run: mise exec -- gitleaks git --redact --no-banner .
 
@@ -52,10 +57,10 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: lts/*
       - name: Duplication (jscpd)

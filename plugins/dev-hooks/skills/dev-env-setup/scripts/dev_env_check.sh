@@ -29,6 +29,10 @@
 #   has_exec_bit     1 if hk.pkl carries the exec-bit-scripts step (required from standard
 #                    v15 — fails commits when a tracked shebang script sits at index mode
 #                    100644, which would exit 126 on every fresh clone / plugin install).
+#   has_sha_pinned_ci  1 if every remote `uses: owner/repo@ref` in .github/workflows is pinned
+#                    to a full commit SHA (required from standard v16 — tags are mutable, so a
+#                    compromised action can repoint them; see the github-actions skill). 1 when
+#                    CI has no remote action refs.
 #   suggests_fnox    1 if the repo has plaintext secrets in use (a non-empty .env/.env.local
 #                    with KEY=value lines, a config/credentials/*.key, or source references to
 #                    Rails credentials / ENV[…] / Settings.) AND no fnox.toml yet. Advisory only —
@@ -131,6 +135,20 @@ has_jscpd_runner=0
 has_exec_bit=0
 [ "$has_hk" = 1 ] && grep -q 'exec-bit-scripts' "$DIR/hk.pkl" && has_exec_bit=1
 
+# SHA-pinned actions (v16): every remote `uses: owner/repo@ref` in a workflow must pin a full
+# commit SHA (7–40 hex), not a mutable tag/branch. Skips local (`./…`) and docker (`docker://…`)
+# uses, which have no remote ref. Defaults to 1 when CI carries no remote action refs. Counts
+# total vs SHA-pinned refs with grep -E (whose interval `{7,40}` works everywhere — awk's does
+# not under mawk), so any non-SHA ref drops the count and flips the signal.
+has_sha_pinned_ci=1
+if [ "$has_ci" = 1 ]; then
+  refs="$(grep -rhoE 'uses:[[:space:]]*["'"'"']?[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[^[:space:]"'"'"']+' "$DIR"/.github/workflows/*.y*ml 2>/dev/null |
+    sed -E 's/^uses:[[:space:]]*["'"'"']?//')"
+  total="$(printf '%s' "$refs" | grep -c '@')"
+  pinned="$(printf '%s' "$refs" | grep -cE '@[0-9a-fA-F]{7,40}$')"
+  [ "$total" -ne "$pinned" ] && has_sha_pinned_ci=0
+fi
+
 # Plaintext secrets in use, not yet migrated (advisory — nudges env-to-fnox, never gates status).
 # Triggers only when there's no fnox.toml and secrets are actually present: a non-empty
 # .env/.env.local with a KEY=value line, a Rails master key, or source references to credentials.
@@ -163,7 +181,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -183,6 +201,7 @@ has_claude=$has_claude
 has_cooldown=$has_cooldown
 has_jscpd_runner=$has_jscpd_runner
 has_exec_bit=$has_exec_bit
+has_sha_pinned_ci=$has_sha_pinned_ci
 suggests_fnox=$suggests_fnox
 repo_version=$repo_version
 current_version=$current_version
@@ -193,7 +212,7 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or exec-bit gate missing (has_exec_bit=$has_exec_bit). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
 

@@ -75,11 +75,13 @@ def make_compliant_repo(
     gitleaks_config=True,
     jscpd_runner=True,
     exec_bit=True,
+    sha_pinned=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
-    allowlist, the shared jscpd runner (v14), or the exec-bit hk step (v15). Stamped at the
-    current version (read from VERSION) so it stays compliant as the standard advances."""
+    allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), or SHA-pinned CI
+    actions (v16). Stamped at the current version (read from VERSION) so it stays compliant as
+    the standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -96,7 +98,12 @@ def make_compliant_repo(
     (path / "hk.pkl").write_text(hk)
     wf = path / ".github" / "workflows"
     wf.mkdir(parents=True)
-    (wf / "ci.yml").write_text("name: ci\non: push\n")
+    # v16: CI actions must be SHA-pinned. A 40-hex pin is "pinned"; a tag pin (@v6) is not.
+    pin = ("a" * 40 + " # v1") if sha_pinned else "v6"
+    (wf / "ci.yml").write_text(
+        "name: ci\non: push\njobs:\n  x:\n    steps:\n"
+        f"      - uses: actions/checkout@{pin}\n"
+    )
     if readme:
         (path / "README.md").write_text("# x\n")
     if claude:

@@ -1,8 +1,8 @@
 #!/bin/bash
 # PostToolUse(Write|Edit): when Claude writes/edits a GitHub Actions workflow (a YAML file
-# pinning `uses: owner/repo@ref`), remind it to verify every action ref actually resolves
-# on the remote — the floating-major trap (`@v8` when only `@v1`…`@v7` are published) only
-# surfaces when CI runs, so catch it locally first.
+# pinning `uses: owner/repo@ref`), point it at the `github-actions` skill (supply-chain
+# security checklist — SHA-pin actions, read-only token, no untrusted input in `run:`) and
+# remind it to verify every pin with `check_action_refs.sh` before finishing.
 #
 # Reminder-only by design: the hook does NOT hit the network. It points Claude at the
 # bundled `check_action_refs.sh`, which does the actual `git ls-remote` resolution; Claude
@@ -33,6 +33,6 @@ reminder_fire_once ci-action-refs "$(printf '%s' "$FILE" | cksum | cut -d' ' -f1
 # derive from this script's location).
 SCRIPT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}/skills/dev-env-setup/scripts/check_action_refs.sh"
 
-MSG="You edited $BASE, which pins GitHub Actions with \`uses: owner/repo@ref\`. Verify every ref actually resolves on the remote before finishing — an action can ship release tags (v8.0.0, v8.1.0) without floating a \`@v8\` major tag, so a wrong pin looks fine locally but breaks CI at \"Prepare all required actions\". Run: \`bash \"$SCRIPT\" \"$FILE\"\` (exits non-zero and lists any unresolved refs). Fix FAILs by pinning a ref that exists (often the exact release tag, e.g. @v8.2.0)."
+MSG="You edited $BASE, a GitHub Actions workflow. Apply the \`github-actions\` skill's security checklist — most importantly SHA-pin every \`uses:\` to a full commit SHA with the tag in a trailing comment (\`owner/repo@<sha> # vX.Y.Z\`; mutable tags are the tj-actions/Trivy supply-chain vector), default the workflow's \`GITHUB_TOKEN\` to read-only (\`permissions: { contents: read }\`), and never interpolate \`\${{ github.* }}\` straight into \`run:\`. Then verify the pins: \`bash \"$SCRIPT\" \"$FILE\"\` — it resolves each pin's \`# vX.Y.Z\` comment on the remote and FAILs on a missing tag, a SHA that doesn't match its comment, or a ref left as a mutable tag."
 
 reminder_emit "$MSG"

@@ -1,4 +1,4 @@
-# The standard (v15) — full specification
+# The standard (v16) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,14 +6,14 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v15** when it has all of:
+A repo is **compliant at v16** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
   run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`
   and `minimum_release_age = "4d"` (4-day supply-chain cooldown on `mise upgrade`; `mise install`
   always reproduces `mise.lock` exactly — see "Lockfile & supply-chain verification" in
-  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "15"`.
+  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "16"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -58,6 +58,16 @@ A repo is **compliant at v15** when it has all of:
   on org-owned repos (the free tier covers exactly 1 repo per org; personal-account repos are
   unaffected, so the failure stays invisible until CI runs on an org repo). The CLI is free
   for every repo and is the same mise.lock-pinned binary the local hk hook runs.
+- **SHA-pinned actions + read-only token** (all stacks, added in v16) — every `uses:` pins a
+  full commit SHA with the release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`), and
+  each workflow declares a top-level `permissions: { contents: read }` (a job needing more
+  declares its own job-level block). Tags are mutable, so an action-account takeover repoints
+  `@v4` to malicious code that every downstream run picks up silently (tj-actions repointed 76
+  of 77 trivy-action tags to an infostealer); a SHA can't be moved, and a read-only default
+  token contains the blast radius if a step is compromised. The checker enforces SHA-pinning
+  (`has_sha_pinned_ci`); `scripts/check_action_refs.sh` verifies each pin's comment resolves to
+  the pinned commit on the remote. Bump pins with `pinact run -u`. See "Keeping GitHub Actions
+  current" in `../SKILL.md` and the **[[github-actions]]** skill's full security checklist.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only

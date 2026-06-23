@@ -30,7 +30,11 @@ Make sure to check all of the following and make sure they are up-to-date after 
    templates, SKILL.md/standard.md current-version mentions, and the upgrade-guide chain
    all match `VERSION` (the hk `dev-env-version-sync` step runs it at commit time when
    skill or test files are staged). Bumping the standard = add the `## vN-1 → vN` guide section
-   first; the tests enumerate every other spot to touch.
+   first; the tests enumerate every other spot to touch. The same test file also asserts the
+   CI templates stay **SHA-pinned** (`uses: owner/repo@<sha> # vX.Y.Z`) with a read-only
+   `permissions:` block (the v16 standard) — when writing or reviewing any workflow, follow the
+   `github-actions` skill's security checklist and verify pins with
+   `skills/dev-env-setup/scripts/check_action_refs.sh`.
 
 On every commit, bump the version of **each plugin whose files the commit touches** (patch for
 small fixes, minor for more substantial changes — a new skill or tool). Commits touching only

@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.4.0
+version: 4.5.0
 description: |
   Audit a repo against Mick's dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **Mick's dev-environment standard** and keep it there. Reference
 implementations: [`bedlam-bacs`], [`readoc`] (Python), [`booking-overview`] (Rails).
 
-## The standard (v15)
+## The standard (v16)
 
-A repo is **compliant at v15** when it has all of:
+A repo is **compliant at v16** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
   `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
-  `DEV_ENV_VERSION = "15"`.
+  `DEV_ENV_VERSION = "16"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -54,6 +54,12 @@ A repo is **compliant at v15** when it has all of:
 - **`.github/workflows/ci.yml`** — mirrors the hk checks plus an `audit` job; gitleaks runs as
   the MIT-licensed **CLI via mise** (never `gitleaks/gitleaks-action`, which needs a paid
   license on org repos).
+- **SHA-pinned actions + read-only token** (added in v16) — every `uses:` pins a full commit
+  SHA with the release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`; tags are mutable
+  and a takeover repoints them — tj-actions, Trivy), and each workflow declares
+  `permissions: { contents: read }` so a compromised step can't write. Checker-enforced
+  (`has_sha_pinned_ci`). See "Keeping GitHub Actions current" and the **[[github-actions]]**
+  skill's security checklist.
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
@@ -206,38 +212,35 @@ subsequent manifest edits, so this skill only bootstraps them.
 
 ## Keeping GitHub Actions current
 
-The `uses:` versions in `references/templates/ci.*.yml` are a snapshot from when the template
-was written — they drift. **Whenever you write or touch a workflow** (fresh setup *and*
-upgrade), check every Action against its latest release and pin to the latest major tag.
+From v16 every `uses:` is **pinned to a full commit SHA with the release tag in a trailing
+comment** — `owner/repo@<40-hex-sha> # vX.Y.Z`. Tags are mutable, so an action takeover can
+repoint `@v4` to malicious code that every downstream run picks up silently (tj-actions, Trivy);
+a SHA can't be moved. The pins in `references/templates/ci.*.yml` are a snapshot and drift, so
+**whenever you write or touch a workflow** (fresh setup *and* upgrade) bump every action to its
+latest release SHA. See the **[[github-actions]]** skill for the full security checklist and the
+fleet-wide bump.
 
-For each `uses: OWNER/REPO@vX`, find the current latest tag and bump it:
+The mechanical bump is `pinact` (install with `mise use -g pinact`): `pinact run` pins any
+tag refs to SHAs with version comments, `pinact run -u` also updates pinned SHAs to the latest
+release. Without pinact, resolve a single action by hand:
 
 ```bash
-# Latest published release tag for an action (e.g. v4.2.1):
-gh release view --repo actions/checkout --json tagName -q .tagName
-# Fallback if the action publishes no GitHub Releases — newest version tag:
-gh api repos/actions/checkout/tags --jq '.[].name' | grep -E '^v[0-9]' | sort -V | tail -1
+a=actions/checkout
+tag=$(gh release view --repo "$a" --json tagName -q .tagName)   # e.g. v7.0.0
+sha=$(gh api "repos/$a/commits/$tag" --jq .sha)                 # dereferences annotated tags
+echo "uses: $a@$sha # $tag"
 ```
 
-Pin to the latest **major** (`@v4`) unless the user wants an exact tag. Do this for the Actions
-in the templates — currently `actions/checkout`, `astral-sh/setup-uv`, `ruby/setup-ruby`,
-`actions/upload-artifact`, `jdx/mise-action` — and any others a repo already uses.
-Caveat: some actions don't publish a floating major tag for their newest release (e.g.
-`astral-sh/setup-uv` ships `v8.x` releases but only floats `@v1`…`@v7`), so `@v8` fails to
-resolve in CI. Always verify the chosen ref actually exists —
-`git ls-remote --tags --refs https://github.com/OWNER/REPO refs/tags/<ref>` — and if the floating
-major is missing, pin the exact latest release tag (e.g. `astral-sh/setup-uv@v8.2.0`) instead.
-When upgrading an existing repo, list each Action with its current vs. latest version and bump
-the stale ones in the same pass. If `gh` is unavailable or unauthenticated, say so and ask Mick
-to check, rather than guessing a version.
+Do this for every action a repo uses. If `gh`/`pinact` is unavailable or unauthenticated, say
+so and ask Mick — never guess a SHA or a version.
 
-**Always verify the pins resolve before finishing.** After writing or bumping any `uses:` pin,
-run the bundled checker — it `git ls-remote`s every referenced action and fails on any ref that
-doesn't exist on the remote, catching the floating-major trap above before CI does:
+**Always verify the pins before finishing.** The bundled checker resolves each pin's `# vX.Y.Z`
+comment on the remote and fails if the tag is missing or its commit doesn't match the pinned
+SHA (a lying / stale pin), and also flags any ref left as a mutable tag:
 
 ```bash
 bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows
-# → "N ok, 0 unresolved" and exit 0; any FAIL line is a pin that will break CI.
+# → "N ok, 0 unresolved" and exit 0; any FAIL line is a pin that lies or won't resolve.
 ```
 
 (The `ci-action-ref-reminder` hook nudges you to run this whenever a workflow is edited.)
