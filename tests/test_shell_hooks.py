@@ -823,6 +823,56 @@ def test_verify_work_fires_when_no_tools_detected(tmp_path):
     assert_json_with(r.stdout, "No test suite")
 
 
+def _make_fake_rtk(tmp_path):
+    """A stand-in `rtk` on PATH: `rtk test <cmd...>` prints a marker then runs <cmd>, so a
+    test can prove verify-work routed through `rtk test` without needing the real binary
+    (CI has none). Returns the bin dir to prepend to PATH."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    fake = bindir / "rtk"
+    fake.write_text(
+        "#!/bin/bash\n"
+        'if [ "$1" = test ]; then shift; echo "[FAKE-RTK-TEST]"; exec "$@"; fi\n'
+        'exec "$@"\n'
+    )
+    fake.chmod(0o755)
+    return bindir
+
+
+def _verify_work_py_repo(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "test_x.py").write_text("def test_bad():\n    assert 7 == 42\n")
+
+
+@requires_python3
+def test_verify_work_routes_tests_through_rtk_when_present(tmp_path):
+    # With rtk on PATH, the pytest run goes through `rtk test pytest` (failure still reported).
+    _verify_work_py_repo(tmp_path)
+    bindir = _make_fake_rtk(tmp_path)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert "[FAKE-RTK-TEST]" in body  # proves the run went through `rtk test`
+
+
+@requires_python3
+def test_verify_work_opt_out_skips_rtk(tmp_path):
+    # DEV_HOOKS_VERIFY_RTK=false runs the bare command even though rtk is on PATH.
+    _verify_work_py_repo(tmp_path)
+    bindir = _make_fake_rtk(tmp_path)
+    env = base_env(
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_RTK="false",
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert "[FAKE-RTK-TEST]" not in body  # opt-out → bare pytest, rtk not used
+
+
 # ── debug-leftover-reminder.sh ──────────────────────────────────────────────────────
 DEBUG_SENTINEL = "[debug-leftover] new debug statements detected this session"
 

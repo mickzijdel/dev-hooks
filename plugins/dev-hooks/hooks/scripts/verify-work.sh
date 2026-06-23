@@ -25,6 +25,19 @@ TMPFILE=$REPLY
 
 TOOLS_RAN=0
 
+# Run a test command through rtk's `test` wrapper when rtk (github.com/rtk-ai/rtk) is on
+# PATH: it keeps the failures, drops the passing-test noise, and propagates the exit code —
+# so the feedback Claude gets stays small without losing the signal. Falls back to the bare
+# command when rtk isn't installed (CI, other machines). Opt out with DEV_HOOKS_VERIFY_RTK=false.
+# Only test runners are wrapped — linters stay raw, since their output is small (already
+# capped below) and rtk's generic filter mangles per-linter formats.
+run_test() {
+  case "${DEV_HOOKS_VERIFY_RTK:-}" in
+    false | 0 | no | off) "$@" ;;
+    *) if command -v rtk >/dev/null 2>&1; then rtk test "$@"; else "$@"; fi ;;
+  esac
+}
+
 # ── Ruby ──────────────────────────────────────────────────────────────────────
 if [ "$HAS_RUBY" = "1" ]; then
   # RuboCop (check only — autocorrect already runs on each file write)
@@ -39,14 +52,14 @@ if [ "$HAS_RUBY" = "1" ]; then
   # Minitest via Rails
   if [ -f "bin/rails" ] && [ -f "Gemfile" ] && grep -q 'minitest' Gemfile 2>/dev/null; then
     TOOLS_RAN=1
-    out=$(bin/rails test 2>&1)
+    out=$(run_test bin/rails test 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== Minitest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   # RSpec (if no Rails test runner)
   elif [ -f ".rspec" ] || [ -d "spec" ]; then
     TOOLS_RAN=1
-    out=$(bundle exec rspec 2>&1)
+    out=$(run_test bundle exec rspec 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== RSpec ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
@@ -68,7 +81,7 @@ if [ "$HAS_PYTHON" = "1" ]; then
   if command -v pytest >/dev/null 2>&1 &&
     ([ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]); then
     TOOLS_RAN=1
-    out=$(pytest 2>&1)
+    out=$(run_test pytest 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== pytest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
@@ -96,7 +109,7 @@ if [ "$HAS_JS" = "1" ]; then
   if [ -f "package.json" ] && python3 -c \
     "import json; d=json.load(open('package.json')); exit(0 if 'test' in d.get('scripts',{}) else 1)" 2>/dev/null; then
     TOOLS_RAN=1
-    out=$($PM test 2>&1)
+    out=$(run_test $PM test 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== JS Tests ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
