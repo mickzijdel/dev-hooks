@@ -12,7 +12,7 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, env-to-fnox, dockerfile, popovers-tooltips, tailwind). See its plugin.json / README for the full list.",
+      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, github-actions, dependency-upgrade, env-to-fnox, dockerfile, popovers-tooltips, tailwind). See its plugin.json / README for the full list.",
       "source": "./plugins/dev-hooks",
       "category": "workflow",
       "author": {
