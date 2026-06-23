@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 
-import pytest
 
 from conftest import HOOKS, requires_jq
 
@@ -68,7 +67,9 @@ def test_docs_context_uses_doc_dir(tmp_path):
 def test_docs_context_uses_yaml_frontmatter_title(tmp_path):
     docs = tmp_path / "docs"
     docs.mkdir()
-    (docs / "api.md").write_text('---\ntitle: "API Reference"\n---\n\n# Something Else\n')
+    (docs / "api.md").write_text(
+        '---\ntitle: "API Reference"\n---\n\n# Something Else\n'
+    )
     r = run_docs_context(tmp_path)
     ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "API Reference" in ctx
