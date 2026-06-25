@@ -610,12 +610,15 @@ Set `DEV_ENV_VERSION = "17"` in `mise.toml` and you're done.
      #   gem "rubocop-rails", require: false
      #   gem "rubocop-performance", require: false
    end
-   group :development do
-     gem "strong_migrations"   # NOT require:false — it's a runtime railtie that guards migrations
-   end
+   # strong_migrations goes in the MAIN Gemfile (ungrouped, NOT require:false) — its
+   # config/initializers/strong_migrations.rb references the StrongMigrations constant in EVERY
+   # environment, so a :development-only gem crashes the test/production boot; ungrouped also lets
+   # it do its real job — guarding `rails db:migrate` in production.
+   gem "strong_migrations"
    ```
    Then `bundle install`. (`importmap audit` ships with importmap-rails — no new gem; skip it on a
-   jsbundling/esbuild app.)
+   jsbundling/esbuild app. `strong_migrations` only enforces its checks on Postgres/MySQL — on
+   SQLite the railtie loads but is a no-op.)
 
    **rubocop plugins depend on your existing config.** `rubocop-rails-omakase` already loads
    rubocop-rails + rubocop-performance and then *disables both departments wholesale* (it's a

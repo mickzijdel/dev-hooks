@@ -191,8 +191,11 @@ Rails 8's own default `bin/rails new` CI). All are glob-gated in `hk.pkl` and mi
   philosophy. **Plain-rubocop repos** add the full `rubocop-rails` + `rubocop-performance` +
   `rubocop-minitest`/`-rspec`.
 - **strong_migrations** — runtime gem that raises on unsafe migrations (NOT NULL adds, column
-  removes, in-transaction backfills). Not a CI/hk step; install with
-  `bin/rails g strong_migrations:install`.
+  removes, in-transaction backfills). Not a CI/hk step; goes in the **main Gemfile (ungrouped, not
+  `require: false`)** — its `config/initializers/strong_migrations.rb` references the
+  `StrongMigrations` constant in every environment, so a `:development`-only gem crashes the
+  test/production boot; ungrouped also lets it guard production `db:migrate`. Install with
+  `bin/rails g strong_migrations:install`. Only enforces on Postgres/MySQL — a no-op on SQLite.
 - **database_consistency** — compares model validations/associations to the DB schema (missing
   NOT NULL, indexes, etc.). Needs a reachable DB, so the hk step probes with `bin/rails runner
   "ActiveRecord::Base.connection"` and **gates when a dev/test DB is up, skips (exit 0) otherwise**
