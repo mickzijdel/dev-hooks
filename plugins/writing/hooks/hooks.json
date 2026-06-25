@@ -9,6 +9,12 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/readme-reminder.sh\"",
             "timeout": 30,
             "statusMessage": "Auditing README structure..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/voice-reminder.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking voice profile..."
           }
         ]
       }

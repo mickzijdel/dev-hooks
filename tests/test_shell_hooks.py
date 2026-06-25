@@ -16,6 +16,7 @@ import pytest
 from conftest import (
     DEV_HOOKS,
     HOOKS,
+    WRITING,
     WRITING_HOOKS,
     init_git_repo,
     make_transcript,
@@ -349,6 +350,92 @@ def test_readme_reminder_fallback_fires_once_when_audit_missing(tmp_path):
     second = _run_readme(payload, env)
     assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+# ── voice-reminder.sh (writing plugin; self-contained, no reminder-common.sh) ────────
+_DEFAULT_RULES = (
+    WRITING / "skills" / "voice-profile" / "references" / "default-rules.md"
+)
+
+
+def _run_voice(payload, env):
+    return run_hook("voice-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS)
+
+
+def _voice_repo(tmp_path):
+    """A repo whose .claude/voice_profile.md is the shipped default-rules profile."""
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / "voice_profile.md").write_text(_DEFAULT_RULES.read_text())
+    return tmp_path
+
+
+@requires_python3
+def test_voice_reminder_flags_banned_words(tmp_path):
+    repo = _voice_repo(tmp_path)
+    doc = repo / "draft.md"
+    doc.write_text("This is the cleanest design.\n")
+    payload = json.dumps({"tool_input": {"file_path": str(doc)}, "cwd": str(repo)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path)))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "flagged banned words")
+    assert_json_with(r.stdout, "voice-profile")
+
+
+@requires_python3
+def test_voice_reminder_silent_on_clean_prose(tmp_path):
+    repo = _voice_repo(tmp_path)
+    doc = repo / "draft.md"
+    doc.write_text("This is a solid design that rescales the metric.\n")
+    payload = json.dumps({"tool_input": {"file_path": str(doc)}, "cwd": str(repo)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_reminder_silent_without_profile(tmp_path):
+    # No profile anywhere (HOME has none, cwd has none) → opt-in posture stays silent.
+    doc = tmp_path / "draft.md"
+    doc.write_text("This is the cleanest design.\n")
+    payload = json.dumps({"tool_input": {"file_path": str(doc)}, "cwd": str(tmp_path)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path / "nohome")))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_reminder_silent_for_non_prose(tmp_path):
+    repo = _voice_repo(tmp_path)
+    code = repo / "script.py"
+    code.write_text("clean = 'the cleanest'\n")
+    payload = json.dumps({"tool_input": {"file_path": str(code)}, "cwd": str(repo)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_reminder_silent_when_opted_out(tmp_path):
+    repo = _voice_repo(tmp_path)
+    doc = repo / "draft.md"
+    doc.write_text("This is the cleanest design.\n")
+    payload = json.dumps({"tool_input": {"file_path": str(doc)}, "cwd": str(repo)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path), WRITING_VOICE="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_voice_reminder_honors_env_profile_override(tmp_path):
+    # $WRITING_VOICE_PROFILE wins over the lookup paths, and .mdx/.txt/.tex count as prose.
+    profile = tmp_path / "custom_profile.md"
+    profile.write_text("## Banned words\n\n- `foobar` -> something else\n")
+    doc = tmp_path / "note.txt"
+    doc.write_text("the foobar appears here\n")
+    payload = json.dumps({"tool_input": {"file_path": str(doc)}, "cwd": str(tmp_path)})
+    r = _run_voice(
+        payload, base_env(HOME=str(tmp_path), WRITING_VOICE_PROFILE=str(profile))
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "foobar")
 
 
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────

@@ -37,6 +37,8 @@ RA = WRITING / "skills" / "readability" / "scripts" / "readability_audit.py"
 FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
 VP = WRITING / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
 A11Y = DEV_HOOKS / "skills" / "accessibility" / "scripts" / "a11y_audit.py"
+VOICE = WRITING / "skills" / "voice-profile" / "scripts" / "voice_audit.py"
+DEFAULT_RULES = WRITING / "skills" / "voice-profile" / "references" / "default-rules.md"
 
 # (golden name, script, args, stdin fixture filename or None)
 CASES = [
@@ -422,4 +424,88 @@ def test_a11y_audit_runs_via_uv_shebang(tmp_path):
     f = tmp_path / "ok.html"
     f.write_text(_GOOD_MARKUP)
     r = subprocess.run([str(A11Y), str(f)], capture_output=True, text=True)
+    assert r.returncode == 0
+
+
+# ── voice_audit.py (voice-profile skill; banned-word scanner) ───────────────────────
+def _run_voice_audit(profile, *files):
+    return subprocess.run(
+        [sys.executable, str(VOICE), "--profile", str(profile), *map(str, files)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_voice_audit_flags_banned_words(tmp_path):
+    doc = tmp_path / "draft.md"
+    doc.write_text(
+        "This is the cleanest design.\n"
+        "The model converts the metric into a score.\n"
+        "This reads as a warning.\n"
+    )
+    r = _run_voice_audit(DEFAULT_RULES, doc)
+    assert r.returncode == 1
+    assert f"{doc}:1: avoid" in r.stdout
+    assert "cleanest" in r.stdout
+    assert "converts the metric into" in r.stdout  # `converts ... into` wildcard
+    assert "reads as" in r.stdout
+    assert "(use:" in r.stdout  # rewrite hint surfaced from the profile
+
+
+def test_voice_audit_clean_prose(tmp_path):
+    doc = tmp_path / "ok.md"
+    doc.write_text("This is a solid design that rescales the metric.\n")
+    r = _run_voice_audit(DEFAULT_RULES, doc)
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert "No banned words" in r.stderr
+
+
+def test_voice_audit_skips_code_blocks_and_inline_code(tmp_path):
+    doc = tmp_path / "doc.md"
+    doc.write_text(
+        "Prose stays plain here.\n\n"
+        "```\nclean up the cleanest code\n```\n\n"
+        "Inline `clean` is ignored too.\n"
+    )
+    r = _run_voice_audit(DEFAULT_RULES, doc)
+    assert r.returncode == 0, r.stdout
+
+
+def test_voice_audit_word_boundaries(tmp_path):
+    # `clean` must not fire inside "cleanly"; `cleanest` is its own banned term.
+    doc = tmp_path / "doc.md"
+    doc.write_text("She wrote cleanly and the cleanup went well.\n")
+    r = _run_voice_audit(DEFAULT_RULES, doc)
+    assert r.returncode == 0, r.stdout
+
+
+def test_voice_audit_missing_profile(tmp_path):
+    doc = tmp_path / "draft.md"
+    doc.write_text("text\n")
+    r = _run_voice_audit(tmp_path / "nope.md", doc)
+    assert r.returncode == 2
+    assert "profile not found" in r.stderr
+
+
+def test_voice_audit_profile_without_terms(tmp_path):
+    profile = tmp_path / "empty_profile.md"
+    profile.write_text("# Voice\n\n## Do\n\n- be plain\n")
+    doc = tmp_path / "draft.md"
+    doc.write_text("the cleanest thing\n")
+    r = _run_voice_audit(profile, doc)
+    assert r.returncode == 2
+    assert "no banned terms" in r.stderr
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_voice_audit_runs_via_uv_shebang(tmp_path):
+    """The shipping path: the PEP 723 script self-resolves via `uv run --script`."""
+    doc = tmp_path / "ok.md"
+    doc.write_text("A solid design.\n")
+    r = subprocess.run(
+        [str(VOICE), "--profile", str(DEFAULT_RULES), str(doc)],
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0
