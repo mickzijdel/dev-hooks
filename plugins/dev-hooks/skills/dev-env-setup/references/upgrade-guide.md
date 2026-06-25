@@ -588,7 +588,7 @@ you don't enumerate files by hand.
 v17 modernizes the **Ruby/Rails** stack: an ERB-aware linter (`herb`), Rails security scanning
 (`brakeman`), dependency-CVE scanning (`bundler-audit` + `importmap audit`), an unsafe-migration
 guard (`strong_migrations`), schema/model consistency (`database_consistency`), a perf advisory
-(`fasterer`), and Rails/perf cops on top of omakase rubocop. It mirrors what Rails 8's own
+(`fasterer`), and Minitest/RSpec cops alongside rubocop. It mirrors what Rails 8's own
 `bin/rails new` CI ships (brakeman + importmap audit) and goes beyond it. **Other stacks are a
 no-op — just re-stamp.**
 
@@ -605,9 +605,10 @@ Set `DEV_ENV_VERSION = "17"` in `mise.toml` and you're done.
      gem "bundler-audit", require: false  # gem CVE scan
      gem "fasterer", require: false       # perf anti-patterns (advisory)
      gem "database_consistency", require: false  # model validations vs DB schema
-     gem "rubocop-rails", require: false
-     gem "rubocop-performance", require: false
      gem "rubocop-minitest", require: false   # or rubocop-rspec for an RSpec app
+     # Plain-rubocop (non-omakase) repos also add:
+     #   gem "rubocop-rails", require: false
+     #   gem "rubocop-performance", require: false
    end
    group :development do
      gem "strong_migrations"   # NOT require:false — it's a runtime railtie that guards migrations
@@ -616,11 +617,26 @@ Set `DEV_ENV_VERSION = "17"` in `mise.toml` and you're done.
    Then `bundle install`. (`importmap audit` ships with importmap-rails — no new gem; skip it on a
    jsbundling/esbuild app.)
 
+   **rubocop plugins depend on your existing config.** `rubocop-rails-omakase` already loads
+   rubocop-rails + rubocop-performance and then *disables both departments wholesale* (it's a
+   formatter-plus-a-few-lints config; Security is off too — brakeman covers it). Re-adding those
+   two as plugins is **inert** under omakase, and force-enabling their departments fights the
+   omakase philosophy and floods you with offenses — so on an omakase repo add **only**
+   `rubocop-minitest` (or `rubocop-rspec`). A **plain-rubocop** repo (no omakase) gets the full
+   `rubocop-rails` + `rubocop-performance` + `rubocop-minitest`/`-rspec` set.
+
 2. **Add `.herb.yml`** — copy `templates/herb.ruby.yml`, or generate the current default with
    `bundle exec herb lint --init` (recommended ruleset is on by default). Optionally enable the
    formatter for editor format-on-save.
 
-3. **Enable the rubocop plugins** in `.rubocop.yml` (omakase already provides the base style):
+3. **Enable the rubocop plugins** in `.rubocop.yml`. **Omakase repo** (inherits
+   `rubocop-rails-omakase` — rails+performance are already loaded and curated) — add only the
+   testing plugin:
+   ```yaml
+   plugins:
+     - rubocop-minitest   # or rubocop-rspec
+   ```
+   **Plain-rubocop repo** (no omakase) — add the full set:
    ```yaml
    plugins:
      - rubocop-rails

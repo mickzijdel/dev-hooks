@@ -94,7 +94,7 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 | Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
-| Ruby/Rails | `bin/rubocop` (omakase + rubocop-rails/-performance/-minitest\|-rspec), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
+| Ruby/Rails | `bin/rubocop` (omakase + rubocop-minitest\|-rspec; plain-rubocop adds rubocop-rails/-performance too), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
 | Go | `golangci-lint run` + `golangci-lint fmt` (gofmt/goimports), `shellcheck`/`shfmt` (shipped `.sh`) | `go test` (CI: `go build`/`go vet`/`go test -race`) | gitleaks | `check-added-large-files` | golangci-lint `unused` (built in) | `jscpd` (`-f golang`) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
@@ -183,9 +183,13 @@ Rails 8's own default `bin/rails new` CI). All are glob-gated in `hk.pkl` and mi
   bundled-or-updated DB — a real gate either way, just fresher with network.
 - **importmap audit** — scans pinned JS for advisories (`bin/importmap audit`), guarded so it skips
   cleanly on jsbundling/esbuild apps. Mirrors Rails 8's `scan_js` job.
-- **rubocop plugins** — `rubocop-rails`, `rubocop-performance`, `rubocop-minitest` (or
-  `rubocop-rspec`) enabled via `.rubocop.yml`'s `plugins:` key. No new step — they enrich the
-  existing `bin/rubocop` run with Rails/perf cops.
+- **rubocop plugins** — enabled via `.rubocop.yml`'s `plugins:` key; no new step, they enrich the
+  existing `bin/rubocop` run. **Omakase repos** (`rubocop-rails-omakase`) add only
+  `rubocop-minitest`/`rubocop-rspec`: omakase already loads rubocop-rails + rubocop-performance and
+  disables both departments wholesale (formatter-plus-a-few-lints; Security off too — brakeman
+  covers it), so re-adding them is inert and force-enabling their cops fights the omakase
+  philosophy. **Plain-rubocop repos** add the full `rubocop-rails` + `rubocop-performance` +
+  `rubocop-minitest`/`-rspec`.
 - **strong_migrations** — runtime gem that raises on unsafe migrations (NOT NULL adds, column
   removes, in-transaction backfills). Not a CI/hk step; install with
   `bin/rails g strong_migrations:install`.

@@ -122,9 +122,11 @@ proposing additions.
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
    the templates assume: `vulture` to the Python dev group; for **Ruby** (v17) the dev-group gems
    `flay`, `debride`, `herb`, `brakeman`, `bundler-audit`, `fasterer`, `database_consistency`
-   (all `require: false`) plus the rubocop plugins `rubocop-rails`/`rubocop-performance`/
-   `rubocop-minitest` (or `rubocop-rspec`) enabled via `.rubocop.yml`'s `plugins:` key, and
-   `strong_migrations` as a runtime gem in `:development` (mise pulls `node` for jscpd + `herb
+   (all `require: false`) plus a rubocop testing plugin `rubocop-minitest` (or `rubocop-rspec`)
+   enabled via `.rubocop.yml`'s `plugins:` key — omakase repos stop there (omakase already
+   bundles+disables rails/performance, so re-adding them is inert); a plain-rubocop repo also adds
+   `rubocop-rails` + `rubocop-performance` — and `strong_migrations` as a runtime gem in
+   `:development` (mise pulls `node` for jscpd + `herb
    lint`, which run via `npx`, on all jscpd stacks incl. Ruby); JS repos need no extra audit deps
    (jscpd runs via `npx`, `node` is already the stack tool). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
    `golangci-lint run`/`fmt` both read); no extra audit deps are needed — golangci-lint's
