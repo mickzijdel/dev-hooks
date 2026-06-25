@@ -1,5 +1,6 @@
 .DS_Store
 tmp/
+.worktrees/
 
 # Local-only weekly automation review reports (weekly-automation-review skill)
 plans/automation-reviews/
