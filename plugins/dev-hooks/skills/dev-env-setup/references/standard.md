@@ -1,4 +1,4 @@
-# The standard (v16) — full specification
+# The standard (v17) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,14 +6,14 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v16** when it has all of:
+A repo is **compliant at v17** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
   run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`
   and `minimum_release_age = "4d"` (4-day supply-chain cooldown on `mise upgrade`; `mise install`
   always reproduces `mise.lock` exactly — see "Lockfile & supply-chain verification" in
-  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "16"`.
+  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "17"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -94,7 +94,7 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 | Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
-| Ruby/Rails | `bin/rubocop` (omakase) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
+| Ruby/Rails | `bin/rubocop` (omakase + rubocop-rails/-performance/-minitest\|-rspec), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
 | Go | `golangci-lint run` + `golangci-lint fmt` (gofmt/goimports), `shellcheck`/`shfmt` (shipped `.sh`) | `go test` (CI: `go build`/`go vet`/`go test -race`) | gitleaks | `check-added-large-files` | golangci-lint `unused` (built in) | `jscpd` (`-f golang`) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
@@ -164,6 +164,38 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > `ruff check .` covers them too — list them explicitly, never a blanket `bin/*` (it would
 > make ruff try to parse a bash hook as Python). jscpd still keys off extensions, so verbatim
 > duplication in extensionless scripts remains uncovered (acceptable).
+
+## Ruby/Rails: ERB + security + correctness tooling (v17)
+
+Beyond rubocop/flay/debride, v17 brings the Rails stack in line with modern practice (and with
+Rails 8's own default `bin/rails new` CI). All are glob-gated in `hk.pkl` and mirrored in
+`ci.ruby.yml`; the gems go in the Gemfile dev group (`require: false`) except `strong_migrations`
+(a runtime railtie in `:development`). Non-Rails Ruby gems (no `app/` views) get none of these.
+
+- **herb** — HTML-aware ERB toolchain. `herb analyze app/` is pure libherb (parse errors, offline);
+  `herb lint app/` enforces `.herb.yml`'s HTML/ERB/a11y rules and delegates to
+  `npx @herb-tools/linter` (version pinned to the herb gem, so deterministic — needs `node`, which
+  the Ruby template already pins for jscpd). `lint-on-edit` applies `herb lint --fix` on write.
+- **brakeman** — Rails SAST (`-q --no-pager --exit-on-warn`); offline, gates. Mirrors Rails 8's
+  `scan_ruby` job.
+- **bundler-audit** — gem CVE / insecure-source scan. Best-effort `bundle-audit update` refreshes
+  the advisory DB when online (swallowed offline), then `bundle-audit check` gates against the
+  bundled-or-updated DB — a real gate either way, just fresher with network.
+- **importmap audit** — scans pinned JS for advisories (`bin/importmap audit`), guarded so it skips
+  cleanly on jsbundling/esbuild apps. Mirrors Rails 8's `scan_js` job.
+- **rubocop plugins** — `rubocop-rails`, `rubocop-performance`, `rubocop-minitest` (or
+  `rubocop-rspec`) enabled via `.rubocop.yml`'s `plugins:` key. No new step — they enrich the
+  existing `bin/rubocop` run with Rails/perf cops.
+- **strong_migrations** — runtime gem that raises on unsafe migrations (NOT NULL adds, column
+  removes, in-transaction backfills). Not a CI/hk step; install with
+  `bin/rails g strong_migrations:install`.
+- **database_consistency** — compares model validations/associations to the DB schema (missing
+  NOT NULL, indexes, etc.). Needs a reachable DB, so the hk step probes with `bin/rails runner
+  "ActiveRecord::Base.connection"` and **gates when a dev/test DB is up, skips (exit 0) otherwise**
+  so a fresh/un-migrated worktree won't block commits; in CI it gates unconditionally (the `test`
+  job prepares the DB). Keep the probe loop-free — hk's internal `sh` aborts on `while read` in
+  `$(...)`.
+- **fasterer** — perf anti-pattern advisory (`|| true`).
 
 ## Executable bits on shipped scripts (v15)
 

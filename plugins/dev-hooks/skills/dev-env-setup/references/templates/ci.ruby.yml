@@ -25,7 +25,14 @@ jobs:
       - name: Make bin files executable
         run: chmod +x bin/*
       - name: Lint code for consistent style
+        # rubocop loads the rubocop-rails/-performance/-minitest(or -rspec) plugins via .rubocop.yml.
         run: bin/rubocop -f github
+      - name: Analyze ERB templates for parse errors (herb)
+        run: bundle exec herb analyze app/
+      - name: Lint ERB templates (herb)
+        # `herb lint` delegates to npx @herb-tools/linter (version pinned to the herb gem); the
+        # runner ships Node. --github emits Actions annotations; --fail-level error (default) gates.
+        run: bundle exec herb lint app/ --github
       - name: Executable bits on shipped scripts
         # Any tracked file whose first line is a shebang must be mode 100755 in the
         # index (binstubs especially) — with core.fileMode=false a local chmod never
@@ -54,6 +61,34 @@ jobs:
         env:
           RAILS_ENV: test
         run: bin/rails db:test:prepare test
+      - name: Model/DB consistency (database_consistency)
+        # The test DB is prepared above, so this gates (not advisory). Checks model
+        # validations/associations against the actual schema (missing NOT NULL, indexes, etc.).
+        env:
+          RAILS_ENV: test
+        run: bundle exec database_consistency
+
+  # Security scanning — mirrors Rails 8's default scan_ruby/scan_js jobs, plus a gem CVE check.
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ruby/setup-ruby@9eb537ca036ebaed86729dcb9309076e4c5c3b74 # v1.314.0
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+      - name: Make bin files executable
+        run: chmod +x bin/*
+      - name: Rails security scan (brakeman)
+        run: bundle exec brakeman -q --no-pager --exit-on-warn
+      - name: Dependency CVE scan (bundler-audit)
+        # Best-effort DB refresh (network); `check` always gates against the bundled-or-updated DB.
+        run: |
+          bundle exec bundle-audit update >/dev/null 2>&1 || true
+          bundle exec bundle-audit check
+      - name: JS dependency scan (importmap audit)
+        # Only meaningful for importmap-rails apps; skip cleanly on jsbundling/esbuild apps.
+        run: '[ -f bin/importmap ] && bin/importmap audit || echo "no bin/importmap — skipping"'
 
   # Run the MIT-licensed gitleaks CLI (via mise, version-pinned in mise.lock) rather than
   # gitleaks/gitleaks-action: the action requires a paid GITLEAKS_LICENSE on org-owned repos,
@@ -84,6 +119,8 @@ jobs:
         run: bundle exec debride .
       - name: Duplication (flay — Ruby structural, advisory)
         run: bundle exec flay . || true   # flay exits 0 anyway; surfaces structural clones
+      - name: Performance anti-patterns (fasterer — advisory)
+        run: bundle exec fasterer || true
       - name: Duplication (jscpd — polyglot gate)
         # -f scopes to code formats (no config equivalent); .jscpd.json carries
         # minTokens/threshold/reporters/gitignore/ignore globs (excludes generated

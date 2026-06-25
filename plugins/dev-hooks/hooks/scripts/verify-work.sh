@@ -49,6 +49,37 @@ if [ "$HAS_RUBY" = "1" ]; then
     fi
   fi
 
+  # herb — ERB lint + parse check, when an ERB file changed and herb is bundled (v17 standard)
+  if echo "$CHANGED" | grep -qE '\.erb$' && [ -f "Gemfile" ] && grep -qw herb Gemfile.lock 2>/dev/null; then
+    TOOLS_RAN=1
+    out=$(bundle exec herb lint app/ 2>&1 && bundle exec herb analyze app/ 2>&1)
+    if [ $? -ne 0 ]; then
+      printf '=== herb (ERB) ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+    fi
+  fi
+
+  # Security + correctness scanners, when Ruby code changed and the gems are bundled (v17 standard).
+  # Each is guarded by its Gemfile.lock entry so only repos that adopted v17 pay the cost.
+  if echo "$CHANGED" | grep -qE '\.rb$' && [ -f "Gemfile" ]; then
+    if grep -qw brakeman Gemfile.lock 2>/dev/null; then
+      TOOLS_RAN=1
+      out=$(bundle exec brakeman -q --no-pager --exit-on-warn 2>&1)
+      [ $? -ne 0 ] && printf '=== Brakeman ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+    fi
+    if grep -q bundler-audit Gemfile.lock 2>/dev/null; then
+      TOOLS_RAN=1
+      bundle exec bundle-audit update >/dev/null 2>&1 || true
+      out=$(bundle exec bundle-audit check 2>&1)
+      [ $? -ne 0 ] && printf '=== bundler-audit ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+    fi
+    if grep -q database_consistency Gemfile.lock 2>/dev/null &&
+      bin/rails runner "ActiveRecord::Base.connection" >/dev/null 2>&1; then
+      TOOLS_RAN=1
+      out=$(bundle exec database_consistency 2>&1)
+      [ $? -ne 0 ] && printf '=== database_consistency ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+    fi
+  fi
+
   # Minitest via Rails
   if [ -f "bin/rails" ] && [ -f "Gemfile" ] && grep -q 'minitest' Gemfile 2>/dev/null; then
     TOOLS_RAN=1

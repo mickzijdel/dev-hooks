@@ -38,6 +38,9 @@ UPGRADE_GUIDE = (
 )
 MISSING_TEST_HOOK = DEV_HOOKS / "hooks" / "scripts" / "missing-test-reminder.sh"
 GITLEAKS_TEMPLATE = TEMPLATES_DIR / ".gitleaks.toml"
+HERB_TEMPLATE = TEMPLATES_DIR / "herb.ruby.yml"
+RUBY_CI = TEMPLATES_DIR / "ci.ruby.yml"
+RUBY_HK = TEMPLATES_DIR / "hk.ruby.pkl"
 
 # Templates carrying shebang-based companion-step detectors for extensionless scripts.
 SHEBANG_DETECTOR_TEMPLATES = [
@@ -254,6 +257,54 @@ def test_jscpd_template_uses_ignore_key():
     data = json.loads((TEMPLATES_DIR / ".jscpd.json").read_text())
     assert "ignore" in data
     assert "ignorePattern" not in data
+
+
+def test_herb_template_enables_linter():
+    """v17: the Ruby stack ships a .herb.yml (herb ERB-linter config) with the linter on."""
+    assert HERB_TEMPLATE.exists(), "templates/herb.ruby.yml is missing"
+    text = HERB_TEMPLATE.read_text()
+    assert re.search(r"^linter:\n\s+enabled: true$", text, re.M), (
+        "herb.ruby.yml must enable the linter (`linter:` → `enabled: true`)"
+    )
+
+
+def test_ruby_ci_has_v17_tooling():
+    """v17: ci.ruby.yml runs herb (analyze + lint) in the lint job, database_consistency in
+    the test job, a dedicated security `scan` job (brakeman + bundler-audit + importmap audit),
+    and fasterer in the audit job. Mirrors Rails 8's scan_ruby/scan_js plus a gem CVE check."""
+    text = RUBY_CI.read_text()
+    assert "herb analyze app/" in text
+    assert "herb lint app/ --github" in text
+    assert "\n  scan:\n" in text, "ci.ruby.yml is missing the security `scan` job"
+    for needle in (
+        "brakeman -q --no-pager --exit-on-warn",
+        "bundle-audit check",
+        "importmap audit",
+        "database_consistency",
+        "fasterer",
+    ):
+        assert needle in text, f"ci.ruby.yml is missing {needle!r}"
+
+
+def test_ruby_hk_has_v17_steps():
+    """v17: hk.ruby.pkl carries every new glob-gated step so the pre-commit gate matches CI."""
+    text = RUBY_HK.read_text()
+    for key in (
+        '["herb-analyze"]',
+        '["herb-lint"]',
+        '["brakeman"]',
+        '["bundler-audit"]',
+        '["importmap-audit"]',
+        '["fasterer"]',
+        '["database_consistency"]',
+    ):
+        assert key in text, f"hk.ruby.pkl is missing the {key} step"
+    # The database_consistency probe must stay loop-free — hk's internal `sh` aborts on a
+    # while/read loop inside $(...). Guard against a future refactor reintroducing one.
+    db_step = text.split('["database_consistency"]')[1].split("}")[0]
+    assert "while" not in db_step, (
+        "database_consistency step must stay loop-free (hk `sh` aborts on while/read in $())"
+    )
 
 
 def test_missing_test_fallback_matches_jscpd_template():

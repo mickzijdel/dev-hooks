@@ -699,6 +699,60 @@ def test_lint_on_edit_exits_zero_for_python_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
+def _fake_bundle(tmp_path, body):
+    """Install a fake `bundle` on PATH whose body decides exit codes per subcommand, so the
+    herb/brakeman/etc. branches can be exercised without a real Ruby toolchain (v17)."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir(exist_ok=True)
+    fake = bindir / "bundle"
+    fake.write_text("#!/bin/bash\n" + body)
+    fake.chmod(0o755)
+    return bindir
+
+
+def test_lint_on_edit_erb_runs_herb_when_bundled(tmp_path):
+    # With herb in Gemfile.lock, the ERB branch runs `herb lint --fix` then `herb analyze`;
+    # a non-zero analyze (parse error) surfaces a message Claude can see.
+    init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("gem 'herb'\n")
+    (tmp_path / "Gemfile.lock").write_text("    herb (0.10.1)\n")
+    erb = tmp_path / "app" / "views" / "x.html.erb"
+    erb.parent.mkdir(parents=True)
+    erb.write_text("<div>\n")
+    bindir = _fake_bundle(
+        tmp_path,
+        'if [ "$1" = exec ] && [ "$2" = herb ] && [ "$3" = analyze ]; then exit 1; fi\nexit 0\n',
+    )
+    r = run_hook(
+        "lint-on-edit.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"tool_input": {"file_path": str(erb)}}),
+        env=base_env(PATH=f"{bindir}:{os.environ['PATH']}"),
+    )
+    assert r.returncode == 0
+    assert "ERB parse error" in r.stdout
+    assert "herb analyze" in r.stdout
+
+
+def test_lint_on_edit_erb_silent_when_herb_clean(tmp_path):
+    # herb bundled and analyze clean (exit 0) → no message.
+    init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("gem 'herb'\n")
+    (tmp_path / "Gemfile.lock").write_text("    herb (0.10.1)\n")
+    erb = tmp_path / "app" / "views" / "x.html.erb"
+    erb.parent.mkdir(parents=True)
+    erb.write_text("<div></div>\n")
+    bindir = _fake_bundle(tmp_path, "exit 0\n")
+    r = run_hook(
+        "lint-on-edit.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"tool_input": {"file_path": str(erb)}}),
+        env=base_env(PATH=f"{bindir}:{os.environ['PATH']}"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── memory-reminder.sh ──────────────────────────────────────────────────────────────
 MEMORY_SENTINEL = "[memory-reminder] session learnings not yet captured this session"
 
@@ -871,6 +925,37 @@ def test_verify_work_opt_out_skips_rtk(tmp_path):
     assert r.returncode == 2
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "[FAKE-RTK-TEST]" not in body  # opt-out → bare pytest, rtk not used
+
+
+def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
+    # An ERB change + herb in Gemfile.lock → verify-work runs `herb lint app/`; a failure is
+    # fed back to Claude. The fake bundle fails herb lint and no-ops everything else (so the
+    # rubocop/test/scanner branches stay quiet — only herb surfaces).
+    init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("gem 'herb'\n")
+    (tmp_path / "Gemfile.lock").write_text("    herb (0.10.1)\n")
+    (tmp_path / "x.html.erb").write_text(
+        "<div>\n"
+    )  # root file → not collapsed in porcelain
+    bindir = _fake_bundle(
+        tmp_path,
+        'if [ "$1" = exec ] && [ "$2" = herb ] && [ "$3" = lint ]; then echo "HERB LINT FAIL"; exit 1; fi\nexit 0\n',
+    )
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert "herb (ERB)" in body
+
+
+def test_verify_work_skips_herb_when_not_bundled(tmp_path):
+    # An ERB change but no herb in Gemfile.lock → the herb branch is skipped (no false failure
+    # from a missing toolchain). With no other Ruby tooling, verify-work reports no test suite.
+    init_git_repo(tmp_path)
+    (tmp_path / "x.html.erb").write_text("<div>\n")
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "No test suite")
 
 
 # ── debug-leftover-reminder.sh ──────────────────────────────────────────────────────

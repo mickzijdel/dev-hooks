@@ -12,6 +12,20 @@ local linters = new Mapping<String, Step> {
         glob = "**/*.rb"
         check = "bin/rails test"
     }
+    // --- ERB linting (herb) -----------------------------------------------------
+    // HTML-aware ERB toolchain. `analyze` is pure libherb (parse errors, no network);
+    // `lint` delegates to npx @herb-tools/linter (version pinned to the herb gem, needs `node`
+    // — see mise.toml) and reads `.herb.yml`. Glob-gated to ERB so a Ruby-only commit skips them.
+    // Add `gem "herb", require: false` to the Gemfile dev group.
+    ["herb-analyze"] {
+        glob = "**/*.erb"
+        check = "bundle exec herb analyze app/"
+    }
+    ["herb-lint"] {
+        glob = "**/*.erb"
+        check = "bundle exec herb lint app/"
+        fix = "bundle exec herb lint app/ --fix"
+    }
     // Shipped scripts (bin/*, script/*) must carry the executable bit IN THE GIT INDEX
     // (mode 100755): with core.fileMode=false a local chmod +x never reaches git, so
     // clones get binstubs that die with exit 126 "Permission denied". Detects scripts
@@ -48,6 +62,36 @@ local linters = new Mapping<String, Step> {
     ["jscpd"] {
         glob = List("**/*.rb", "**/*.erb", "**/*.js", "**/*.css", "**/*.scss")
         check = "bash scripts/run-jscpd.sh ruby,erb,javascript,typescript,css,scss,sass,vue"
+    }
+    // --- Security + correctness -------------------------------------------------
+    // brakeman = Rails SAST (offline, gates). bundler-audit = gem CVE scan: best-effort
+    // `update` refreshes the advisory DB when online (swallowed offline), then `check` gates
+    // against the bundled-or-updated DB. importmap-audit scans pinned JS (importmap apps only,
+    // guarded). fasterer = perf advisory (exits non-zero on offenses → `|| true`).
+    // database_consistency compares model validations/associations to the DB schema; it needs a
+    // reachable dev/test DB, so a cheap `bin/rails runner` connection probe gates when one is up
+    // and skips (exit 0) otherwise — a fresh/un-migrated worktree won't block commits. Keep every
+    // command loop-free: hk's internal `sh` aborts on `while read` inside `$(...)`.
+    // Gems (dev group, require:false): brakeman, bundler-audit, fasterer, database_consistency.
+    ["brakeman"] {
+        glob = "**/*.rb"
+        check = "bundle exec brakeman -q --no-pager --exit-on-warn"
+    }
+    ["bundler-audit"] {
+        glob = "**/Gemfile.lock"
+        check = "bundle exec bundle-audit update >/dev/null 2>&1 || true; bundle exec bundle-audit check"
+    }
+    ["importmap-audit"] {
+        glob = "**/importmap.rb"
+        check = "if [ -f bin/importmap ]; then bin/importmap audit; else echo 'no bin/importmap — skipping'; fi"
+    }
+    ["fasterer"] {
+        glob = "**/*.rb"
+        check = "bundle exec fasterer || true"
+    }
+    ["database_consistency"] {
+        glob = List("db/schema.rb", "db/structure.sql", "app/models/**/*.rb")
+        check = "if bin/rails runner \"ActiveRecord::Base.connection\" >/dev/null 2>&1; then bundle exec database_consistency; else echo 'database_consistency: no DB reachable, skipping'; fi"
     }
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks

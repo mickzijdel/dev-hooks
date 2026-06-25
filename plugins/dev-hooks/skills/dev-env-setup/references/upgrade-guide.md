@@ -583,6 +583,80 @@ you don't enumerate files by hand.
 
 ---
 
+## v16 → v17 (Ruby: ERB + security + correctness tooling)
+
+v17 modernizes the **Ruby/Rails** stack: an ERB-aware linter (`herb`), Rails security scanning
+(`brakeman`), dependency-CVE scanning (`bundler-audit` + `importmap audit`), an unsafe-migration
+guard (`strong_migrations`), schema/model consistency (`database_consistency`), a perf advisory
+(`fasterer`), and Rails/perf cops on top of omakase rubocop. It mirrors what Rails 8's own
+`bin/rails new` CI ships (brakeman + importmap audit) and goes beyond it. **Other stacks are a
+no-op — just re-stamp.**
+
+**Non-Rails repos (Python, JS, Go, shell, and Ruby gems with no `app/` views):** nothing applies.
+Set `DEV_ENV_VERSION = "17"` in `mise.toml` and you're done.
+
+**Rails apps — apply all of the following:**
+
+1. **Add the gems** to the Gemfile (dev group, `require: false`, except where noted):
+   ```ruby
+   group :development, :test do
+     gem "herb", require: false           # HTML-aware ERB lint/analyze (lint delegates to npx @herb-tools/linter)
+     gem "brakeman", require: false       # Rails SAST
+     gem "bundler-audit", require: false  # gem CVE scan
+     gem "fasterer", require: false       # perf anti-patterns (advisory)
+     gem "database_consistency", require: false  # model validations vs DB schema
+     gem "rubocop-rails", require: false
+     gem "rubocop-performance", require: false
+     gem "rubocop-minitest", require: false   # or rubocop-rspec for an RSpec app
+   end
+   group :development do
+     gem "strong_migrations"   # NOT require:false — it's a runtime railtie that guards migrations
+   end
+   ```
+   Then `bundle install`. (`importmap audit` ships with importmap-rails — no new gem; skip it on a
+   jsbundling/esbuild app.)
+
+2. **Add `.herb.yml`** — copy `templates/herb.ruby.yml`, or generate the current default with
+   `bundle exec herb lint --init` (recommended ruleset is on by default). Optionally enable the
+   formatter for editor format-on-save.
+
+3. **Enable the rubocop plugins** in `.rubocop.yml` (omakase already provides the base style):
+   ```yaml
+   plugins:
+     - rubocop-rails
+     - rubocop-performance
+     - rubocop-minitest   # or rubocop-rspec
+   ```
+   (Older rubocop used `require:` instead of `plugins:` — use `plugins:` on rubocop ≥ 1.72.)
+
+4. **Install strong_migrations:** `bin/rails generate strong_migrations:install` (writes an
+   initializer pinning `start_after` to the latest migration so it only guards new ones).
+
+5. **Add the hk steps** to `hk.pkl`'s `linters` mapping — copy them verbatim from
+   `templates/hk.ruby.pkl`: `herb-analyze`, `herb-lint` (glob `**/*.erb`), `brakeman` (`**/*.rb`),
+   `bundler-audit` (`**/Gemfile.lock` — best-effort `bundle-audit update` then gate on `check`),
+   `importmap-audit` (`**/importmap.rb`, guarded on `bin/importmap`), `fasterer` (`**/*.rb`,
+   advisory), and `database_consistency` (DB-reachability-guarded so a fresh worktree without a
+   migrated DB doesn't block commits).
+
+6. **Add the CI steps** to `.github/workflows/ci.yml` — copy from `templates/ci.ruby.yml`:
+   `herb analyze`/`herb lint --github` in the `lint` job, `database_consistency` in the `test` job
+   (after `db:test:prepare`), a new **`scan` job** (brakeman + bundler-audit + importmap audit),
+   and `fasterer` in the `audit` job. Keep every `uses:` SHA-pinned (v16) — do not introduce
+   unpinned tags.
+
+7. **Triage the first run.** `bundle exec rubocop -A` (autocorrect) then
+   `--auto-gen-config` for a `.rubocop_todo.yml` if the new cops are noisy; run `brakeman`,
+   `bundle-audit check`, and `database_consistency` and **fix or deliberately baseline** real
+   findings — do not blanket-suppress. Surface any non-trivial security finding to the user.
+
+8. **Bump the stamp.** Set `DEV_ENV_VERSION = "17"` in `mise.toml`.
+
+9. **Verify:** `hk run check` passes (herb/brakeman/etc. green or only intended offenses);
+   `bash scripts/dev_env_check.sh .` → `status=compliant`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

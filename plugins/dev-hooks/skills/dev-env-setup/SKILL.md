@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v16)
+## The standard (v17)
 
-A repo is **compliant at v16** when it has all of:
+A repo is **compliant at v17** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
   `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
-  `DEV_ENV_VERSION = "16"`.
+  `DEV_ENV_VERSION = "17"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -120,10 +120,13 @@ proposing additions.
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless
    note in `references/standard.md`). The templates
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
-   the templates assume: `vulture` to the Python dev group; `flay` + `debride` to the Ruby
-   Gemfile dev group (mise pulls `node` for jscpd, which runs via `npx`, on all jscpd stacks
-   incl. Ruby); JS repos need no extra audit deps (jscpd runs via `npx`, `node` is already the
-   stack tool). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
+   the templates assume: `vulture` to the Python dev group; for **Ruby** (v17) the dev-group gems
+   `flay`, `debride`, `herb`, `brakeman`, `bundler-audit`, `fasterer`, `database_consistency`
+   (all `require: false`) plus the rubocop plugins `rubocop-rails`/`rubocop-performance`/
+   `rubocop-minitest` (or `rubocop-rspec`) enabled via `.rubocop.yml`'s `plugins:` key, and
+   `strong_migrations` as a runtime gem in `:development` (mise pulls `node` for jscpd + `herb
+   lint`, which run via `npx`, on all jscpd stacks incl. Ruby); JS repos need no extra audit deps
+   (jscpd runs via `npx`, `node` is already the stack tool). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
    `golangci-lint run`/`fmt` both read); no extra audit deps are needed — golangci-lint's
    `unused` covers dead code (so no vulture), and `golangci-lint` itself is mise-pinned. The Go
    template carries `shellcheck`/`shfmt` for any shipped shell script (it ships

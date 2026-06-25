@@ -64,12 +64,18 @@ case "$FILE" in
 
   # ── ERB ─────────────────────────────────────────────────────────────────────
   *.erb)
-    # erb_lint autocorrect if the project bundles it
-    if [ -f Gemfile ] && grep -q erb_lint Gemfile.lock 2>/dev/null; then
+    if [ -f Gemfile ] && grep -qw herb Gemfile.lock 2>/dev/null; then
+      # herb (HTML-aware ERB toolchain): autocorrect, then a parse check that surfaces a message.
+      bundle exec herb lint --fix "$FILE" >/dev/null 2>&1
+      bundle exec herb analyze "$FILE" >/dev/null 2>&1 || echo "ERB parse error in $FILE (herb analyze) - please fix"
+    elif [ -f Gemfile ] && grep -q erb_lint Gemfile.lock 2>/dev/null; then
+      # erb_lint autocorrect if the project bundles it (herb supersedes this)
       bundle exec erblint -a "$FILE" >/dev/null 2>&1
+      erb -x "$FILE" 2>/dev/null | ruby -c >/dev/null 2>&1 || echo "ERB syntax error in $FILE - please fix"
+    else
+      # No ERB linter bundled — preserve the plain syntax check (surfaces a message Claude can see)
+      erb -x "$FILE" 2>/dev/null | ruby -c >/dev/null 2>&1 || echo "ERB syntax error in $FILE - please fix"
     fi
-    # Preserve existing syntax check (surfaces a message Claude can see)
-    erb -x "$FILE" 2>/dev/null | ruby -c >/dev/null 2>&1 || echo "ERB syntax error in $FILE - please fix"
     ;;
 
   # ── Rails routes (preserve existing check) ───────────────────────────────────
