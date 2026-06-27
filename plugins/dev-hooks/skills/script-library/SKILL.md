@@ -39,10 +39,13 @@ who's cloned it.
 
 ## When to save (and when not to)
 
-Save a script when it's **reusable beyond the current task** — you'd plausibly run it again in
-another session or project. Don't save genuinely single-use throwaways, or logic that belongs in
-the project's own repo (commit it there instead). If nothing qualifies, say so and move on — do
-not manufacture a tool to satisfy the reminder.
+Save a script when it's **a broadly useful tool** — you'd plausibly run it again in another
+session or project. This is a judgment you make per script, regardless of where the script
+currently lives: a script you wrote **into a project repo** can still be worth promoting to a
+general tool (keep the project copy if the repo needs it, and add a generalized copy to the
+library). Don't save genuinely single-use throwaways or logic that's meaningless outside its
+project. If nothing qualifies, say so and move on — do not manufacture a tool to satisfy the
+reminder.
 
 ## The standard for a saved script
 

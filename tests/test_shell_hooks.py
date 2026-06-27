@@ -2312,19 +2312,23 @@ def test_save_script_fires_for_ephemeral(tmp_path):
 
 
 @requires_python3
-def test_save_script_excludes_project_and_library(tmp_path):
+def test_save_script_flags_in_repo_scripts_too(tmp_path):
+    # A script written into the project repo IS flagged now (Claude decides whether to promote
+    # it); only scripts already in a library root and non-scripts are excluded.
     proj, lib = tmp_path / "proj", tmp_path / "bin"
     transcript = make_transcript(
         tmp_path / "t.jsonl",
         extra_lines=[
-            _write_block(proj / "app.py", SHEBANG_PY),  # committed repo work
-            _write_block(lib / "already", SHEBANG_PY),  # already in the library
-            _write_block(proj / "data.txt", "not a script\n"),  # no shebang
+            _write_block(proj / "in_repo_tool.py", SHEBANG_PY),  # in-repo -> flagged
+            _write_block(lib / "saved_lib_tool", SHEBANG_PY),  # in library -> excluded
+            _write_block(proj / "data.txt", "not a script\n"),  # no shebang -> excluded
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
+    assert r.returncode == 2
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "in_repo_tool.py" in ctx
+    assert "saved_lib_tool" not in ctx
 
 
 @requires_python3
@@ -2372,9 +2376,7 @@ def test_save_script_opt_out(tmp_path):
 @requires_python3
 def test_save_script_fire_once(tmp_path):
     scratch = tmp_path / "scratch"
-    sentinel = (
-        "[save-script-reminder] reusable one-off scripts not yet saved this session"
-    )
+    sentinel = "[save-script-reminder] scripts written this session not yet triaged for the library"
     transcript = make_transcript(
         tmp_path / "t.jsonl",
         extra_lines=[

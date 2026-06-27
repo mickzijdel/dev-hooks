@@ -46,7 +46,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 | `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
 | `Stop` | `big-change-reminder.sh` | On stop, if the working tree holds a very large **uncommitted** change (default: ≥ 25 files or ≥ 800 added lines), nudge Claude (exit 2) to slow down — commit the working pieces in small, focused commits, run tests, get a review, and consider plan mode for the next chunk. Stays silent when a multi-session plan is already in progress (`.claude/current_plan.md`). Aimed at beginners, for whom a giant uncommitted diff is hard to review and easy to lose. Fires once per session. Thresholds tunable via `DEV_HOOKS_BIG_CHANGE_FILES`/`DEV_HOOKS_BIG_CHANGE_LINES`; opt out with `DEV_HOOKS_BIG_CHANGE=false`. |
-| `Stop` | `save-script-reminder.sh` | On stop, if Claude wrote a one-off script this session (a `Write` of shebang-prefixed content to an **ephemeral** location — scratchpad/`/tmp`, excluding the project repo and every library root), nudge it (exit 2) to keep the reusable ones: genericize to the saved-script standard (PEP 723 + `uv run` shebang + `# short-description:` + `chmod +x`) and move into a library root (or a subdirectory of one) so the `script-index` hook surfaces them next session. Points at the `script-library` skill. Fires at most once per session. Library roots come from `DEV_HOOKS_SCRIPT_DIR`; opt out with `DEV_HOOKS_SAVE_SCRIPT=false`. |
+| `Stop` | `save-script-reminder.sh` | On stop, if Claude wrote a script this session (a `Write` of shebang-prefixed content, **wherever** it landed — scratchpad, `/tmp`, or inside a project repo; only scripts already in a library root are excluded), nudge it (exit 2) to **decide per script**: a broadly useful tool gets genericized to the saved-script standard (PEP 723 + `uv run` shebang + `# short-description:` + `chmod +x`) and added to a library root (or a subdirectory) so the `script-index` hook surfaces it next session — even one already committed to a repo can be worth promoting — while a genuinely task-specific or throwaway script is left where it is. Points at the `script-library` skill. Fires at most once per session. Library roots come from `DEV_HOOKS_SCRIPT_DIR`; opt out with `DEV_HOOKS_SAVE_SCRIPT=false`. |
 
 ## Skills
 
@@ -135,8 +135,10 @@ $ claude
   `uv run <path>` rather than bare name. `script-index` reads only the **first lines** of each
   executable shebang file (for the `# short-description:`); it never runs a script.
   `save-script-reminder` detects a script Claude wrote via the **Write** tool whose content
-  starts with a shebang and lives outside both the project working dir and every library root —
-  a script created through a Bash heredoc isn't detected (the Write path is the common case).
+  starts with a shebang, **wherever** it landed (only scripts already in a library root are
+  excluded — in-repo scripts are listed too, so Claude can decide whether each is project-
+  specific or a general tool worth promoting); a script created through a Bash heredoc isn't
+  detected (the Write path is the common case).
   Disable independently with `DEV_HOOKS_SCRIPT_INDEX=false` / `DEV_HOOKS_SAVE_SCRIPT=false` (in
   `.claude/settings.local.json` `"env"`). See the `script-library` skill for the saved-script
   standard and how to share a scripts repo.
