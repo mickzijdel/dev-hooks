@@ -102,41 +102,65 @@ def is_test_path(path):
 SHORT_DESC_RE = re.compile(r"#\s*short-description:\s*(.+)", re.IGNORECASE)
 
 
-def scan_script_dir(dirpath):
-    """Inventory a directory of CLI scripts for the SessionStart index. Returns
-    (described, undescribed): `described` is a sorted list of (name, short_description) and
-    `undescribed` a sorted list of names. A file counts as a script only when it is a regular,
-    executable file whose first bytes are a shebang (`#!`) — binaries and data files are
-    skipped, matching the dev-env "extensionless CLI = shebang on line 1" rule. The
-    description is the first `# short-description:` line within the first ~20 lines."""
-    described, undescribed = [], []
+# Don't recurse below this many levels under a root — a scripts repo is organised a couple
+# of levels deep; a deeper walk only risks scanning an accidental large tree.
+_SCAN_MAX_DEPTH = 4
+
+
+def _script_description(full):
+    """If `full` is an executable file whose first bytes are a shebang, return its
+    `# short-description:` text (or "" when it has none); return None when it isn't a script.
+    Matches the dev-env "extensionless CLI = shebang on line 1" rule, so binaries and data
+    files are skipped."""
+    if not os.path.isfile(full) or not os.access(full, os.X_OK):
+        return None
     try:
-        names = sorted(os.listdir(dirpath))
+        with open(full, "rb") as fh:
+            head = fh.read(4096)
     except OSError:
-        return described, undescribed
-    for name in names:
-        if name.startswith("."):
+        return None
+    if not head.startswith(b"#!"):
+        return None
+    for line in head.decode("utf-8", errors="replace").splitlines()[:20]:
+        m = SHORT_DESC_RE.match(line.strip())
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def scan_script_dirs(roots):
+    """Inventory one or more library roots — each scanned recursively into subdirectories —
+    for the SessionStart index. `roots` is an iterable of directory paths (a script repo can be
+    organised into subdirs like `git/` or `images/`). Returns (described, undescribed):
+    `described` is a sorted list of (abspath, short_description) and `undescribed` a sorted list
+    of abspaths, for every executable shebang script found. Deduped across roots by abspath;
+    hidden dirs (`.git`, …) are skipped and the walk is depth-limited."""
+    described, undescribed, seen = [], [], set()
+    for root in roots:
+        root = os.path.abspath(os.path.expanduser(root))
+        if not os.path.isdir(root):
             continue
-        full = os.path.join(dirpath, name)
-        if not os.path.isfile(full) or not os.access(full, os.X_OK):
-            continue
-        try:
-            with open(full, "rb") as fh:
-                head = fh.read(4096)
-        except OSError:
-            continue
-        if not head.startswith(b"#!"):
-            continue
-        desc = None
-        for line in head.decode("utf-8", errors="replace").splitlines()[:20]:
-            m = SHORT_DESC_RE.match(line.strip())
-            if m:
-                desc = m.group(1).strip()
-                break
-        if desc:
-            described.append((name, desc))
-        else:
-            undescribed.append(name)
+        base_depth = root.rstrip(os.sep).count(os.sep)
+        for dirpath, dirnames, filenames in os.walk(root):
+            # Prune hidden dirs (.git, …) and stop descending past the depth cap.
+            if dirpath.count(os.sep) - base_depth >= _SCAN_MAX_DEPTH:
+                dirnames[:] = []
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for name in sorted(filenames):
+                if name.startswith("."):
+                    continue
+                full = os.path.abspath(os.path.join(dirpath, name))
+                if full in seen:
+                    continue
+                desc = _script_description(full)
+                if desc is None:
+                    continue
+                seen.add(full)
+                (described if desc else undescribed).append(
+                    (full, desc) if desc else full
+                )
+    described.sort()
+    undescribed.sort()
     return described, undescribed
 
 

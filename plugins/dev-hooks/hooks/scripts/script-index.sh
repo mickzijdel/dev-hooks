@@ -1,17 +1,20 @@
 #!/bin/bash
-# SessionStart hook: advertise the user's saved CLI script library (~/.local/bin by
-# default) so Claude knows which custom tools already exist — a lightweight skill-style
-# index. Lists each executable shebang script with its `# short-description:` line.
-# Scripts lacking that marker are listed under a placeholder telling Claude to run
-# `<name> --help` for detail and ask the user to add a description (see the
-# script-library skill).
+# SessionStart hook: advertise the user's saved CLI script library so Claude knows which
+# custom tools already exist — a lightweight skill-style index. Lists each executable
+# shebang script (recursively, so a script repo organised into subdirectories works) with
+# its `# short-description:` line. Scripts lacking that marker are listed under a placeholder
+# telling Claude to run `<path> --help` for detail and ask the user to add a description
+# (see the script-library skill).
+#
+# The library is one or more roots in DEV_HOOKS_SCRIPT_DIR — a colon-separated list like
+# PATH (default ~/.local/bin), so you can keep personal scripts AND a cloned, shareable
+# scripts repo, e.g. ~/.local/bin:~/code/team-scripts. Each root is scanned recursively.
 #
 # The hook never EXECUTES any script — running every tool's --help at session start would
 # be slow and could have side effects. It only reads the first lines for the description
 # and tells Claude it may run --help itself when it decides to use one.
 #
-# Opt out with DEV_HOOKS_SCRIPT_INDEX=false. Override the scanned dir with
-# DEV_HOOKS_SCRIPT_DIR (defaults to ~/.local/bin; used mainly by the tests).
+# Opt out with DEV_HOOKS_SCRIPT_INDEX=false.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -20,35 +23,43 @@ source "$SELF_DIR/lib/reminder-common.sh"
 reminder_opt_out DEV_HOOKS_SCRIPT_INDEX
 
 SCRIPT_DIR="${DEV_HOOKS_SCRIPT_DIR:-$HOME/.local/bin}"
-[ -d "$SCRIPT_DIR" ] || exit 0
 
-# python3 builds the message from the directory inventory (scan_script_dir). It prints
-# nothing — and exits 0 — when there are no shebang scripts, so we stay silent. Pass the
-# lib dir and target dir as argv (heredocs can't read piped stdin — see CLAUDE.md).
+# python3 builds the message from the library inventory (scan_script_dirs). It prints nothing
+# — and exits 0 — when no root holds a shebang script, so we stay silent. The colon-separated
+# root list and $HOME (for ~-collapsing the displayed paths) are passed as argv, then the
+# roots; heredocs can't read piped stdin (see CLAUDE.md).
 MSG=$(
-  python3 - "$SELF_DIR/lib" "$SCRIPT_DIR" <<'PYEOF'
+  python3 - "$SELF_DIR/lib" "$SCRIPT_DIR" "$HOME" <<'PYEOF'
 import sys
 
 sys.path.insert(0, sys.argv[1])
-from hook_helpers import scan_script_dir
+from hook_helpers import scan_script_dirs
 
-script_dir = sys.argv[2]
-described, undescribed = scan_script_dir(script_dir)
+roots = [r for r in sys.argv[2].split(":") if r]
+home = sys.argv[3]
+described, undescribed = scan_script_dirs(roots)
 if not described and not undescribed:
     sys.exit(0)
 
+
+def show(path):
+    """Collapse $HOME to ~ for a compact display path."""
+    return "~" + path[len(home) :] if home and path.startswith(home + "/") else path
+
+
 out = [
-    f"Custom CLI tools available in {script_dir} (the user's saved script library, on PATH). "
-    "Reach for one before re-solving a problem it already handles; run `<name> --help` for "
-    "usage before using it."
+    "Custom CLI tools in the user's saved script library. Reach for one before re-solving a "
+    "problem it already handles; run `<path> --help` for usage first. A script in a PATH "
+    "directory (e.g. ~/.local/bin) also runs by bare name; others run by their full path or "
+    "via `uv run <path>`."
 ]
-for name, desc in described:
-    out.append(f"- {name} — {desc}")
+for path, desc in described:
+    out.append(f"- {show(path)} — {desc}")
 if undescribed:
     out.append(
         "No `# short-description:` line, so no summary for: "
-        + ", ".join(undescribed)
-        + ". If you use one of these, run `<name> --help` for detail and tell the user to add "
+        + ", ".join(show(p) for p in undescribed)
+        + ". If you use one of these, run `<path> --help` for detail and tell the user to add "
         "a `# short-description:` line so it is described next time (see the script-library skill)."
     )
 print("\n".join(out))

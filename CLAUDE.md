@@ -81,7 +81,7 @@ Do not include changelog or detective-work where it does not belong, such as in 
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
-  `scan_script_dir()` for the script-index inventory, `authored_scripts()` for the
+  `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the
   save-script-reminder transcript scan) live in `lib/hook_helpers.py` — import them by
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.

@@ -2236,6 +2236,38 @@ def test_script_index_silent_missing_dir(tmp_path):
     assert r.stdout.strip() == ""
 
 
+@requires_python3
+def test_script_index_recurses_subdirectories(tmp_path):
+    # A scripts repo organised into subdirs; the index should find scripts at depth.
+    repo = tmp_path / "repo"
+    (repo / "git").mkdir(parents=True)
+    (repo / ".git").mkdir()  # hidden dir must be skipped
+    _make_script(repo / "git" / "fetch-pr-diff", desc="Fetch a PR diff.")
+    _make_script(repo / ".git" / "pre-commit", desc="hidden, skip me")
+    r = run_index(repo)
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "git/fetch-pr-diff — Fetch a PR diff." in ctx
+    assert "pre-commit" not in ctx  # the .git script was skipped
+
+
+@requires_python3
+def test_script_index_scans_multiple_roots(tmp_path):
+    bin_dir, repo = _bin_dir(tmp_path), tmp_path / "repo"
+    repo.mkdir()
+    _make_script(bin_dir / "dfv", desc="Docker info.")
+    _make_script(repo / "resize", desc="Resize images.")
+    r = run_hook(
+        "script-index.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=f"{bin_dir}:{repo}"),
+    )
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "dfv — Docker info." in ctx
+    assert "resize — Resize images." in ctx
+
+
 # ── save-script-reminder.sh (Stop) ───────────────────────────────────────────────────
 def _write_block(file_path, content):
     """A transcript line recording a Write tool_use of `content` to `file_path`."""
@@ -2291,6 +2323,23 @@ def test_save_script_excludes_project_and_library(tmp_path):
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_save_script_excludes_all_library_roots(tmp_path):
+    # A script written into the SECOND (subdir of a) library root is already kept → silent.
+    proj, bin_dir, repo = tmp_path / "proj", tmp_path / "bin", tmp_path / "repo"
+    transcript = make_transcript(
+        tmp_path / "t.jsonl",
+        extra_lines=[_write_block(repo / "git" / "tool", SHEBANG_PY)],
+    )
+    r = run_hook(
+        "save-script-reminder.sh",
+        stdin=json.dumps({"transcript_path": str(transcript), "cwd": str(proj)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=f"{bin_dir}:{repo}"),
+    )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
