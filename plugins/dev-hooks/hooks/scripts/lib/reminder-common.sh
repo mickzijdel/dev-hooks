@@ -125,6 +125,13 @@ reminder_emit() {
   exit 0
 }
 
+# Emit a SessionStart advisory (additionalContext is injected into Claude's context at the
+# start of the session) and exit 0 — never blocks.
+reminder_emit_session() {
+  jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
+  exit 0
+}
+
 # Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
 # message back to Claude so it acts before finishing.
 reminder_emit_stop() {

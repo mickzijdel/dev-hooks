@@ -63,7 +63,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_old_content` (CONTENT/OLD across Write content, Edit new/old_string, and
   MultiEdit edits[]), `reminder_fire_once <name> [extra]` (once-per-session marker; needs
   $SESSION from reminder_init), and `reminder_emit <msg>` (advisory additionalContext +
-  exit 0). PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
+  exit 0). SessionStart: `reminder_emit_session <msg>` (additionalContext injected into
+  Claude's context + exit 0 — used by `script-index.sh`; `detect-stack-skills.sh`/`docs-context.sh`
+  predate it and still inline the same jq). PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
   reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
   `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
@@ -78,8 +80,10 @@ Do not include changelog or detective-work where it does not belong, such as in 
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_is_frontend_file`,
-  and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`)
-  live in `lib/hook_helpers.py` — import them by passing `"$SELF_DIR/lib"` as an argv:
+  and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
+  `scan_script_dir()` for the script-index inventory, `authored_scripts()` for the
+  save-script-reminder transcript scan) live in `lib/hook_helpers.py` — import them by
+  passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
   copy drifts doesn't error, it silently sees empty content and never fires. The bash

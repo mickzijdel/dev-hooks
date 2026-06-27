@@ -16,6 +16,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/docs-context.sh\"",
             "statusMessage": "Indexing project documentation..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/script-index.sh\"",
+            "statusMessage": "Indexing your saved CLI script library..."
           }
         ]
       }
@@ -155,6 +160,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/big-change-reminder.sh\"",
             "statusMessage": "Checking the size of this session's change..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
+            "statusMessage": "Checking for reusable one-off scripts to save..."
           }
         ]
       }

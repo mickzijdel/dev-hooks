@@ -40,6 +40,7 @@ FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
 VP = WRITING / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
 A11Y = DEV_HOOKS / "skills" / "accessibility" / "scripts" / "a11y_audit.py"
 VOICE = WRITING / "skills" / "voice-profile" / "scripts" / "voice_audit.py"
+SCRIPT_TEMPLATE = DEV_HOOKS / "skills" / "script-library" / "references" / "template.py"
 DEFAULT_RULES = WRITING / "skills" / "voice-profile" / "references" / "default-rules.md"
 
 # (golden name, script, args, stdin fixture filename or None)
@@ -125,6 +126,30 @@ def test_runs_via_uv_shebang():
     )
     assert result.returncode == 0
     assert result.stdout == "Flesch-Kincaid Grade Level: 6.9\n"
+
+
+# ── script-library reference template ────────────────────────────────────────────────
+def test_script_template_help_runs_clean():
+    """The script-library template is the standard it teaches: a real argparse --help."""
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_TEMPLATE), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "usage" in result.stdout.lower()
+
+
+def test_script_template_default_run():
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_TEMPLATE), "claude", "--shout"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout == "HELLO, CLAUDE!\n"
 
 
 # ── dev_env_check.sh (dev-env-setup skill checker; harness lives in conftest) ───────

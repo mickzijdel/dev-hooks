@@ -2147,3 +2147,202 @@ def test_prompt_log_rotates_at_cap(tmp_path):
     lines = log.read_text().splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["prompt"] == "fresh"
+
+
+# ── script-index.sh (SessionStart) ───────────────────────────────────────────────────
+def _make_script(path, *, shebang="#!/usr/bin/env bash", desc=None, executable=True):
+    body = shebang + "\n"
+    if desc is not None:
+        body += f"# short-description: {desc}\n"
+    body += "echo hi\n"
+    path.write_text(body)
+    if executable:
+        path.chmod(0o755)
+    return path
+
+
+def _bin_dir(tmp_path):
+    d = tmp_path / "bin"
+    d.mkdir()
+    return d
+
+
+def run_index(bin_dir, *, cwd=None, **env):
+    return run_hook(
+        "script-index.sh",
+        stdin=json.dumps({"cwd": str(cwd or bin_dir)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=str(bin_dir), **env),
+    )
+
+
+@requires_python3
+def test_script_index_lists_described(tmp_path):
+    b = _bin_dir(tmp_path)
+    _make_script(b / "resize-imgs", desc="Resize images in a folder.")
+    r = run_index(b)
+    assert r.returncode == 0
+    payload = json.loads(r.stdout)
+    assert payload["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    ctx = payload["hookSpecificOutput"]["additionalContext"]
+    assert "resize-imgs — Resize images in a folder." in ctx
+
+
+@requires_python3
+def test_script_index_undescribed_placeholder(tmp_path):
+    b = _bin_dir(tmp_path)
+    _make_script(b / "dfv", desc=None)
+    r = run_index(b)
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "dfv" in ctx
+    assert "short-description" in ctx  # the placeholder/ask-the-user note
+
+
+@requires_python3
+def test_script_index_skips_non_shebang_and_non_executable(tmp_path):
+    b = _bin_dir(tmp_path)
+    (b / "notes.txt").write_text("just data, no shebang\n")
+    (b / "notes.txt").chmod(0o755)
+    _make_script(b / "noexec", desc="present but not executable", executable=False)
+    r = run_index(b)
+    # Neither qualifies → no shebang scripts → silent.
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_script_index_opt_out(tmp_path):
+    b = _bin_dir(tmp_path)
+    _make_script(b / "resize-imgs", desc="x")
+    r = run_index(b, DEV_HOOKS_SCRIPT_INDEX="false")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_script_index_silent_empty_dir(tmp_path):
+    r = run_index(_bin_dir(tmp_path))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_script_index_silent_missing_dir(tmp_path):
+    r = run_hook(
+        "script-index.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=str(tmp_path / "nope")),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── save-script-reminder.sh (Stop) ───────────────────────────────────────────────────
+def _write_block(file_path, content):
+    """A transcript line recording a Write tool_use of `content` to `file_path`."""
+    return json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": str(file_path), "content": content},
+                    }
+                ]
+            }
+        }
+    )
+
+
+SHEBANG_PY = "#!/usr/bin/env python3\nprint(1)\n"
+
+
+def run_save_script(tmp_path, *, transcript, cwd, **env):
+    return run_hook(
+        "save-script-reminder.sh",
+        stdin=json.dumps({"transcript_path": str(transcript), "cwd": str(cwd)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=str(tmp_path / "bin"), **env),
+    )
+
+
+@requires_python3
+def test_save_script_fires_for_ephemeral(tmp_path):
+    scratch, proj = tmp_path / "scratch", tmp_path / "proj"
+    transcript = make_transcript(
+        tmp_path / "t.jsonl",
+        extra_lines=[_write_block(scratch / "one_off.py", SHEBANG_PY)],
+    )
+    r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
+    assert r.returncode == 2
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "[save-script-reminder]" in ctx
+    assert "one_off.py" in ctx
+
+
+@requires_python3
+def test_save_script_excludes_project_and_library(tmp_path):
+    proj, lib = tmp_path / "proj", tmp_path / "bin"
+    transcript = make_transcript(
+        tmp_path / "t.jsonl",
+        extra_lines=[
+            _write_block(proj / "app.py", SHEBANG_PY),  # committed repo work
+            _write_block(lib / "already", SHEBANG_PY),  # already in the library
+            _write_block(proj / "data.txt", "not a script\n"),  # no shebang
+        ],
+    )
+    r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_save_script_silent_no_scripts(tmp_path):
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
+    r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_save_script_opt_out(tmp_path):
+    scratch = tmp_path / "scratch"
+    transcript = make_transcript(
+        tmp_path / "t.jsonl",
+        extra_lines=[_write_block(scratch / "one_off.py", SHEBANG_PY)],
+    )
+    r = run_save_script(
+        tmp_path,
+        transcript=transcript,
+        cwd=tmp_path / "proj",
+        DEV_HOOKS_SAVE_SCRIPT="false",
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_save_script_fire_once(tmp_path):
+    scratch = tmp_path / "scratch"
+    sentinel = (
+        "[save-script-reminder] reusable one-off scripts not yet saved this session"
+    )
+    transcript = make_transcript(
+        tmp_path / "t.jsonl",
+        extra_lines=[
+            _write_block(scratch / "one_off.py", SHEBANG_PY),
+            json.dumps({"message": {"content": sentinel}}),
+        ],
+    )
+    r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_save_script_silent_without_transcript(tmp_path):
+    r = run_hook(
+        "save-script-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(DEV_HOOKS_SCRIPT_DIR=str(tmp_path / "bin")),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""

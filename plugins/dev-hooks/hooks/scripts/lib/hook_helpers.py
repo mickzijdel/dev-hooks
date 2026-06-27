@@ -11,6 +11,7 @@ Import from a heredoc by passing this directory as an argv:
 (Heredocs can't read piped stdin, so argv is already the convention — see CLAUDE.md.)
 """
 
+import json
 import os
 import re
 import subprocess
@@ -91,3 +92,94 @@ def is_test_path(path):
     if re.search(r"[._](?:test|spec)\.", base):
         return True
     return any(p in ("spec", "tests", "test", "__tests__") for p in path.split("/"))
+
+
+# ── Script-library helpers ──────────────────────────────────────────────────────────
+# The marker a saved script carries so the SessionStart index can describe it, e.g.
+#   # short-description: Fetch a PR diff by number.
+# Matches "# short-description: …" (optional space after #). The shebang line "#!…" never
+# matches, so it's safe to scan from line 1. Mirrored by the script-library skill's standard.
+SHORT_DESC_RE = re.compile(r"#\s*short-description:\s*(.+)", re.IGNORECASE)
+
+
+def scan_script_dir(dirpath):
+    """Inventory a directory of CLI scripts for the SessionStart index. Returns
+    (described, undescribed): `described` is a sorted list of (name, short_description) and
+    `undescribed` a sorted list of names. A file counts as a script only when it is a regular,
+    executable file whose first bytes are a shebang (`#!`) — binaries and data files are
+    skipped, matching the dev-env "extensionless CLI = shebang on line 1" rule. The
+    description is the first `# short-description:` line within the first ~20 lines."""
+    described, undescribed = [], []
+    try:
+        names = sorted(os.listdir(dirpath))
+    except OSError:
+        return described, undescribed
+    for name in names:
+        if name.startswith("."):
+            continue
+        full = os.path.join(dirpath, name)
+        if not os.path.isfile(full) or not os.access(full, os.X_OK):
+            continue
+        try:
+            with open(full, "rb") as fh:
+                head = fh.read(4096)
+        except OSError:
+            continue
+        if not head.startswith(b"#!"):
+            continue
+        desc = None
+        for line in head.decode("utf-8", errors="replace").splitlines()[:20]:
+            m = SHORT_DESC_RE.match(line.strip())
+            if m:
+                desc = m.group(1).strip()
+                break
+        if desc:
+            described.append((name, desc))
+        else:
+            undescribed.append(name)
+    return described, undescribed
+
+
+def authored_scripts(transcript_path, exclude_dirs=()):
+    """Scan a session transcript for *ephemeral* scripts Claude wrote this session — Write
+    tool_use blocks whose content starts with a shebang (`#!`). Returns a deduped,
+    order-preserving list of file_paths. Paths under any of `exclude_dirs` are skipped: pass
+    the saved-script library (already kept) and the project working dir (committed work, not a
+    throwaway), so only the genuine one-offs (scratchpad, /tmp, …) remain — the ones worth
+    nudging into the library. Used by the save-script-reminder Stop hook."""
+    prefixes = [
+        os.path.abspath(os.path.expanduser(d)) + os.sep for d in exclude_dirs if d
+    ]
+    found, seen = [], set()
+    try:
+        with open(transcript_path, encoding="utf-8") as f:
+            lines = list(f)
+    except OSError:
+        return found
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        msg = rec.get("message", rec)
+        content = msg.get("content") if isinstance(msg, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            if block.get("name") != "Write":
+                continue
+            inp = block.get("input") or {}
+            path, body = inp.get("file_path"), inp.get("content")
+            if not isinstance(path, str) or not isinstance(body, str):
+                continue
+            if not body.startswith("#!") or path in seen:
+                continue
+            full = os.path.abspath(os.path.expanduser(path))
+            if any(full.startswith(p) for p in prefixes):
+                continue
+            seen.add(path)
+            found.append(path)
+    return found
