@@ -2268,6 +2268,30 @@ def test_script_index_scans_multiple_roots(tmp_path):
     assert "resize — Resize images." in ctx
 
 
+@requires_python3
+def test_script_index_honors_ignore_globs(tmp_path):
+    b = _bin_dir(tmp_path)
+    _make_script(b / "mytool", desc="Real tool.")
+    _make_script(b / "vocalinux", desc=None)  # app launcher, not a tool
+    _make_script(b / "vocalinux-gui", desc=None)
+    _make_script(b / "gext", desc=None)  # third-party install
+    r = run_index(b, DEV_HOOKS_SCRIPT_IGNORE="*vocalinux*:gext")
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "mytool — Real tool." in ctx
+    assert "vocalinux" not in ctx  # neither vocalinux nor vocalinux-gui
+    assert "gext" not in ctx
+
+
+@requires_python3
+def test_script_index_silent_when_all_ignored(tmp_path):
+    b = _bin_dir(tmp_path)
+    _make_script(b / "vocalinux", desc="x")
+    r = run_index(b, DEV_HOOKS_SCRIPT_IGNORE="vocalinux")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── save-script-reminder.sh (Stop) ───────────────────────────────────────────────────
 def _write_block(file_path, content):
     """A transcript line recording a Write tool_use of `content` to `file_path`."""

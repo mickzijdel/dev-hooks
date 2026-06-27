@@ -14,7 +14,11 @@
 # be slow and could have side effects. It only reads the first lines for the description
 # and tells Claude it may run --help itself when it decides to use one.
 #
-# Opt out with DEV_HOOKS_SCRIPT_INDEX=false.
+# Hide scripts you don't want indexed (installed/third-party tools, app launchers) with
+# DEV_HOOKS_SCRIPT_IGNORE — a colon-separated list of globs matched against each script's
+# basename or full path, e.g. "*vocalinux*:gext:gnome-extensions-cli".
+#
+# Opt out entirely with DEV_HOOKS_SCRIPT_INDEX=false.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -26,10 +30,10 @@ SCRIPT_DIR="${DEV_HOOKS_SCRIPT_DIR:-$HOME/.local/bin}"
 
 # python3 builds the message from the library inventory (scan_script_dirs). It prints nothing
 # — and exits 0 — when no root holds a shebang script, so we stay silent. The colon-separated
-# root list and $HOME (for ~-collapsing the displayed paths) are passed as argv, then the
-# roots; heredocs can't read piped stdin (see CLAUDE.md).
+# root list, $HOME (for ~-collapsing the displayed paths), and the colon-separated ignore
+# globs are passed as argv; heredocs can't read piped stdin (see CLAUDE.md).
 MSG=$(
-  python3 - "$SELF_DIR/lib" "$SCRIPT_DIR" "$HOME" <<'PYEOF'
+  python3 - "$SELF_DIR/lib" "$SCRIPT_DIR" "$HOME" "${DEV_HOOKS_SCRIPT_IGNORE:-}" <<'PYEOF'
 import sys
 
 sys.path.insert(0, sys.argv[1])
@@ -37,7 +41,8 @@ from hook_helpers import scan_script_dirs
 
 roots = [r for r in sys.argv[2].split(":") if r]
 home = sys.argv[3]
-described, undescribed = scan_script_dirs(roots)
+ignore = [p for p in sys.argv[4].split(":") if p]
+described, undescribed = scan_script_dirs(roots, ignore)
 if not described and not undescribed:
     sys.exit(0)
 

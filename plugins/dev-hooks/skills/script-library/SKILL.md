@@ -37,6 +37,11 @@ DEV_HOOKS_SCRIPT_DIR=~/.local/bin:~/code/team-scripts   # (in .claude/settings.l
 their `DEV_HOOKS_SCRIPT_DIR`. A saved script committed to that repo is then available to everyone
 who's cloned it.
 
+**To hide non-tools:** a root like `~/.local/bin` often also holds installed/third-party CLIs and
+app launchers that aren't yours to describe. Exclude them from the index with
+`DEV_HOOKS_SCRIPT_IGNORE` — a colon-separated list of globs matched against each script's basename
+or full path (e.g. `*vocalinux*:gext:gnome-extensions-cli`).
+
 ## When to save (and when not to)
 
 Save a script when it's **a broadly useful tool** — you'd plausibly run it again in another

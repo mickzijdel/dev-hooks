@@ -11,6 +11,7 @@ Import from a heredoc by passing this directory as an argv:
 (Heredocs can't read piped stdin, so argv is already the convention — see CLAUDE.md.)
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -128,13 +129,17 @@ def _script_description(full):
     return ""
 
 
-def scan_script_dirs(roots):
+def scan_script_dirs(roots, ignore=()):
     """Inventory one or more library roots — each scanned recursively into subdirectories —
     for the SessionStart index. `roots` is an iterable of directory paths (a script repo can be
-    organised into subdirs like `git/` or `images/`). Returns (described, undescribed):
-    `described` is a sorted list of (abspath, short_description) and `undescribed` a sorted list
-    of abspaths, for every executable shebang script found. Deduped across roots by abspath;
-    hidden dirs (`.git`, …) are skipped and the walk is depth-limited."""
+    organised into subdirs like `git/` or `images/`). `ignore` is an iterable of glob patterns
+    (fnmatch); a script is skipped when its basename OR its absolute path matches any pattern —
+    use it to hide installed/third-party or app-launcher scripts that aren't your own tools.
+    Returns (described, undescribed): `described` is a sorted list of (abspath,
+    short_description) and `undescribed` a sorted list of abspaths, for every executable shebang
+    script found. Deduped across roots by abspath; hidden dirs (`.git`, …) are skipped and the
+    walk is depth-limited."""
+    ignore = [p for p in ignore if p]
     described, undescribed, seen = [], [], set()
     for root in roots:
         root = os.path.abspath(os.path.expanduser(root))
@@ -151,6 +156,10 @@ def scan_script_dirs(roots):
                     continue
                 full = os.path.abspath(os.path.join(dirpath, name))
                 if full in seen:
+                    continue
+                if any(
+                    fnmatch.fnmatch(name, p) or fnmatch.fnmatch(full, p) for p in ignore
+                ):
                     continue
                 desc = _script_description(full)
                 if desc is None:
