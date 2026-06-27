@@ -32,6 +32,8 @@ INVENTORY = (
     DEV_HOOKS / "skills" / "dependency-upgrade" / "scripts" / "upgrade_inventory.sh"
 )
 
+DETECT = DEV_HOOKS / "skills" / "repo-review" / "scripts" / "detect_stack.sh"
+
 GR = WRITING / "skills" / "github-readme" / "scripts" / "github_readme_audit.py"
 RA = WRITING / "skills" / "readability" / "scripts" / "readability_audit.py"
 FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
@@ -348,6 +350,80 @@ def test_inventory_python_manager_pip_fallback(tmp_path):
     out, _ = run_inventory(tmp_path)
     assert out["has_python"] == "1"
     assert out["python_manager"] == "pip"
+
+
+# ── detect_stack.sh (repo-review skill preflight) ────────────────────────────────────
+def run_detect(target, *args):
+    """Run the repo-review preflight (read-only) and parse its key=value block."""
+    r = subprocess.run(
+        ["bash", str(DETECT), str(target), *args],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    return parse_kv(r.stdout), r.stdout
+
+
+def test_detect_empty_repo_finds_no_surfaces(tmp_path):
+    out, _ = run_detect(tmp_path)
+    assert out["is_rails"] == "0"
+    assert out["has_frontend"] == "0"
+    assert out["has_ci"] == "0"
+    assert out["has_tests"] == "0"
+    assert out["has_docker"] == "0"
+    assert out["has_devenv"] == "0"
+    assert out["languages"] == ""
+
+
+def test_detect_languages_by_source_extension(tmp_path):
+    (tmp_path / "main.py").write_text("print('hi')\n")
+    (tmp_path / "app.ts").write_text("export {}\n")
+    out, _ = run_detect(tmp_path)
+    langs = out["languages"].split()
+    assert "python" in langs
+    assert "typescript" in langs
+    assert "ruby" not in langs
+
+
+def test_detect_rails_app_delegates_to_rails_audit(tmp_path):
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\ngem "rails"\n')
+    (tmp_path / "app").mkdir()
+    (tmp_path / "config").mkdir()
+    out, stdout = run_detect(tmp_path)
+    assert out["is_rails"] == "1"
+    assert "rails-audit" in stdout
+
+
+def test_detect_gemfile_without_rails_is_not_rails(tmp_path):
+    # A plain Ruby repo (Gemfile but no rails gem / app+config) stays generic.
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\ngem "sinatra"\n')
+    (tmp_path / "app").mkdir()
+    (tmp_path / "config").mkdir()
+    out, _ = run_detect(tmp_path)
+    assert out["is_rails"] == "0"
+
+
+def test_detect_frontend_triggers_accessibility_axis(tmp_path):
+    (tmp_path / "index.html").write_text("<html></html>\n")
+    out, stdout = run_detect(tmp_path)
+    assert out["has_frontend"] == "1"
+    assert "accessibility" in stdout
+
+
+def test_detect_ci_tests_docker_devenv_surfaces(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("name: ci\non: push\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "Dockerfile").write_text("FROM alpine\n")
+    (tmp_path / "mise.toml").write_text("[tools]\n")
+    out, stdout = run_detect(tmp_path)
+    assert out["has_ci"] == "1"
+    assert out["has_tests"] == "1"
+    assert out["has_docker"] == "1"
+    assert out["has_devenv"] == "1"
+    assert "github-actions" in stdout
+    assert "dev-env-setup" in stdout
 
 
 # ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────
