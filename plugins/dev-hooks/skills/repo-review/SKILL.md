@@ -1,17 +1,11 @@
 ---
 name: repo-review
 description: |
-  Whole-repository health-check / audit of an existing or inherited codebase — across
-  correctness, performance, code smells, architecture, security, test health, dev-env
-  compliance, dependencies, CI supply-chain, secrets hygiene, and (for web repos)
-  accessibility and docs. Use when the user says "review this repository", "do a full
-  code review of the repo", "audit this codebase", "what's wrong with this app",
-  "I just inherited this project", or asks for a multi-axis review (e.g. "1. performance
-  2. code smells 3. structure"). This is the stack-agnostic counterpart to rails-audit:
-  it delegates to specialist skills/commands wherever one exists and produces a single
-  severity-ranked report. Report-only — it never auto-applies fixes. NOT for reviewing a
-  single diff/PR (that's the /code-review command, which this skill calls for the
-  correctness axis) and NOT for one-file changes.
+  Whole-repository review/audit of an existing or inherited codebase. Use when the user
+  says "review this repository", "audit this codebase", "do a full code review of the
+  repo", "what's wrong with this app", "I just inherited this project", or asks for a
+  multi-axis sweep (e.g. "review for 1. performance 2. code smells 3. structure"). NOT
+  for reviewing a single diff/PR (use the /code-review command) or a one-file change.
 allowed-tools:
   - Read
   - Bash
@@ -48,21 +42,35 @@ run `/simplify` on a specific area, or the relevant fix skill).
    ```bash
    bash "$CLAUDE_PLUGIN_ROOT/skills/repo-review/scripts/detect_stack.sh" .
    ```
-   It reports the language(s), package manager(s), whether there's a web frontend, a CI
-   workflow, a test suite, a Dockerfile, and a mise/hk dev-env setup — and names the skill
-   each maps to.
+   It reports the language(s), whether there's a web frontend, a CI workflow, a test suite, a
+   Dockerfile, a mise/hk dev-env setup, whether it's a Rails app — and any **sub-projects**
+   (nested project roots, the monorepo signal).
 
-2. **If it's a Rails app** (`Gemfile` with `gem "rails"` + `app/` + `config/`), **stop and
-   delegate the whole thing to [[rails-audit]]** — it is the authoritative, deeper audit for
-   that stack. Don't run the generic axes on top; rails-audit already covers them better.
+2. **If it's a monorepo holding several projects** (the preflight's `subprojects` lists more
+   than one — e.g. a `frontend/` and a `backend/` each with their own manifest), **offer to
+   review each project separately** rather than treating the whole tree as one. Ask the user
+   whether to review all of them or pick specific ones; then run the per-project flow (steps
+   3–5) **once per chosen project**, rooted at that sub-directory. Review genuinely
+   repo-wide concerns (CI workflows, the root dev-env setup, top-level secrets/docs) once at
+   the root, and write **one report per project** plus the shared-root findings — a single
+   blended report across two unrelated stacks is hard to act on.
 
-3. **Otherwise, work the axis set below.** The axes are independent, so for a large repo
-   dispatch them as **parallel subagents** (one per axis, see [[dispatching-parallel-agents]])
-   and collect their findings — this is how you cover a big codebase without one context
-   holding all of it. Each subagent returns findings in the record format (step 4); you merge
-   and rank them in the final report.
+3. **Pick the per-project flow by stack:**
+   - **Rails app** (`Gemfile` with `gem "rails"` + `app/` + `config/`) → hand the
+     Rails-*shaped* axes — correctness, security, performance, schema/indexes, test health,
+     architecture, dependencies — to **[[rails-audit]]**, which audits those far more deeply
+     than the generic axes here. But repo-review is the **broader umbrella**: rails-audit does
+     **not** cover the cross-cutting axes, so **still run** dev-env compliance (7), CI
+     supply-chain (9), accessibility (11), docs (12), and genericization (13) yourself, and
+     fold rails-audit's findings into the same severity-ranked report. (A future stack may grow
+     its own specialist audit; the pattern is the same — delegate the stack-shaped axes, keep
+     the cross-cutting ones.)
+   - **Any other stack** → work the full axis set below directly.
 
-4. **For every finding, record four things** (no evidence, no finding — see Common mistakes):
+4. **Run the axes.** They're independent, so for a large repo dispatch them as **parallel
+   subagents** (one per axis, see [[dispatching-parallel-agents]]) and collect their findings —
+   this is how you cover a big codebase without one context holding all of it. For every
+   finding, record four things (no evidence, no finding — see Common mistakes):
    - **Severity** — 🔴 high (security / data loss / broken in prod), 🟡 medium (tech debt,
      performance, missing safety net), 🟢 low (polish, style, docs).
    - **Where** — `file:line` (point at real code, not generalities).
@@ -241,8 +249,13 @@ scope.
   hit / command output / `file:line`. No evidence, no finding.
 - **Re-deriving a delegated axis inline.** Axes 1, 2, 7, 8, 9, 11, 12 have an owner — run the
   cheap detection, then hand off. Don't reimplement dev-env-setup or github-actions here.
-- **Running the generic axes on a Rails repo.** Rails goes to [[rails-audit]] at step 2; it's a
-  deeper audit. Don't double up.
+- **Re-running rails-audit's axes on a Rails repo — or, the opposite, stopping at rails-audit.**
+  Hand the Rails-shaped axes (correctness, security, perf, schema, tests, architecture, deps) to
+  [[rails-audit]] — don't re-derive those. But it doesn't cover the cross-cutting axes (dev-env,
+  CI supply-chain, accessibility, docs, genericization), so don't stop there either; run those
+  yourself and merge the reports.
+- **Blending unrelated sub-projects into one report.** A monorepo's `frontend/` and `backend/`
+  get reviewed (and reported) separately — see step 2. One mixed-stack report is hard to act on.
 - **Applying fixes.** This skill is report-only. Fixes are a separate, scoped follow-up.
 - **Reporting coverage on a suite you couldn't run.** Suite runnability is its own finding —
   surface the missing infra (DB role, service, env) rather than glossing over it.

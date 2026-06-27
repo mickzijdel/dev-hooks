@@ -5,19 +5,22 @@
 # skill/command owns each, so the repo-review skill can dispatch deliberately instead
 # of guessing. It does NOT read package contents, run linters, or mutate anything.
 #
-# The single most important output is is_rails: a Rails app should be handed wholesale
-# to the deeper rails-audit skill rather than reviewed with the generic axes.
+# Two outputs steer the dispatch: is_rails (hand the Rails-shaped axes to the deeper
+# rails-audit skill, but still run the cross-cutting axes here), and subprojects (a
+# monorepo's nested project roots — review each separately rather than as one tree).
 #
 # Usage: detect_stack.sh [DIR]   (DIR default: $PWD)
 #
 # Emits machine-readable KEY=VALUE lines on stdout, then "# " summary lines. Keys:
-#   is_rails     1 if a Rails app (Gemfile names rails + app/ + config/) → delegate to rails-audit
+#   is_rails     1 if a Rails app (Gemfile names rails + app/ + config/) → delegate Rails axes
 #   has_frontend 1 if web/template files present (html/erb/jsx/tsx/vue) → accessibility axis applies
 #   has_ci       1 if any .github/workflows/*.y{a,}ml present → github-actions axis
 #   has_tests    1 if a test/spec/__tests__ dir present
 #   has_docker   1 if a Dockerfile/Containerfile present
 #   has_devenv   1 if mise.toml or hk.pkl present → dev-env-setup axis
 #   languages    space-separated languages detected by source extension
+#   subprojects  space-separated nested project-root dirs (manifest below the root);
+#                two or more = monorepo → offer to review each separately
 
 set -u
 
@@ -74,6 +77,27 @@ has_docker=0
 has_devenv=0
 { [ -f "$DIR/mise.toml" ] || [ -f "$DIR/hk.pkl" ]; } && has_devenv=1
 
+# ── Sub-projects (monorepo): nested dirs that are their own project roots ─────────────
+# A manifest BELOW the root (depth 2-3, so the root's own manifest is excluded) marks a
+# child project — e.g. frontend/package.json + backend/pyproject.toml. Two or more means
+# the skill should offer to review each separately instead of as one blended tree.
+subprojects=""
+add_subproject() {
+  case " $subprojects " in
+    *" $1 "*) ;;
+    *) subprojects="$subprojects $1" ;;
+  esac
+}
+while IFS= read -r manifest; do
+  [ -n "$manifest" ] || continue
+  rel="${manifest#"$DIR"/}"
+  add_subproject "${rel%/*}"
+done < <(find "$DIR" -mindepth 2 -maxdepth 3 -type f \
+  \( -name package.json -o -name Gemfile -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml \) \
+  -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/vendor/*' \
+  -not -path '*/.venv/*' -not -path '*/.worktrees/*' 2>/dev/null)
+subprojects="${subprojects# }"
+
 # ── Output: KEY=VALUE block first (parseable), then human summary ────────────────────
 cat <<EOF
 is_rails=$is_rails
@@ -83,10 +107,18 @@ has_tests=$has_tests
 has_docker=$has_docker
 has_devenv=$has_devenv
 languages=$languages
+subprojects=$subprojects
 EOF
 
+subproject_count=0
+for _p in $subprojects; do subproject_count=$((subproject_count + 1)); done
+if [ "$subproject_count" -ge 2 ]; then
+  echo "# Monorepo: $subproject_count sub-projects ($subprojects) → offer to review each separately."
+fi
+
 if [ "$is_rails" = 1 ]; then
-  echo "# Rails app detected → delegate the whole review to the rails-audit skill (deeper, stack-specific)."
+  echo "# Rails app → hand the Rails-shaped axes to rails-audit (deeper), but STILL run the"
+  echo "#   cross-cutting axes here: dev-env, CI supply-chain, accessibility, docs, genericization."
   exit 0
 fi
 

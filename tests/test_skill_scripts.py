@@ -426,6 +426,27 @@ def test_detect_ci_tests_docker_devenv_surfaces(tmp_path):
     assert "dev-env-setup" in stdout
 
 
+def test_detect_monorepo_lists_subprojects(tmp_path):
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "package.json").write_text("{}\n")
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend" / "pyproject.toml").write_text("[project]\nname='x'\n")
+    out, stdout = run_detect(tmp_path)
+    subs = out["subprojects"].split()
+    assert "frontend" in subs
+    assert "backend" in subs
+    assert "Monorepo: 2 sub-projects" in stdout
+
+
+def test_detect_single_root_project_is_not_a_monorepo(tmp_path):
+    # A manifest at the root only (no nested ones) is one project, not a monorepo.
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (tmp_path / "main.py").write_text("print('hi')\n")
+    out, stdout = run_detect(tmp_path)
+    assert out["subprojects"] == ""
+    assert "Monorepo" not in stdout
+
+
 # ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────
 _BAD_MARKUP = (
     "<html>\n"
