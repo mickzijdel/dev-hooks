@@ -26,3 +26,19 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 /plugin marketplace add mickzijdel/dev-hooks
 /plugin install thinking-tools@dev-hooks
 ```
+
+## Usage
+
+Invoke a tool as a slash command, or just describe the situation and Claude reaches for the
+matching one:
+
+```console
+$ claude
+> /thinking-tools:board       convene the advisor panel on a plan or draft
+> /thinking-tools:premortem   stress-test a decision before committing
+> /thinking-tools:but-for-real  force a real verification before claiming done
+```
+
+## License
+
+[MIT](../../LICENSE)

@@ -39,6 +39,17 @@ already have Claude Code:
 /plugin install coding-onboarding@dev-hooks
 ```
 
+## Usage
+
+Start Claude and ask it to set you up — the `getting-started` skill takes over, audits your
+machine, and installs only what's missing. When you're ready to build, say so and it hands
+off to `starting-a-project`:
+
+```console
+$ claude
+> set me up
+```
+
 ## Bootstrap installer (starting from nothing)
 
 For a complete beginner with nothing installed, the repo ships a curl-able bootstrap at its
@@ -105,3 +116,7 @@ prints "continuing automatically" and never hangs.
   static sites through full-app hosts and containers. It's advisory — Claude reads it to
   recommend, and may run the scaffold command — and stays framework-agnostic, steering to the
   simplest option that fits.
+
+## License
+
+[MIT](../../LICENSE)

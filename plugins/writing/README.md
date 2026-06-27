@@ -35,6 +35,18 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 /plugin install writing@dev-hooks
 ```
 
+## Usage
+
+Invoke a skill by name, or let the hooks nudge you automatically as you write prose and
+READMEs:
+
+```console
+$ claude
+> /writing:humanizer      strip AI tells from a draft
+> /writing:readability    make web copy scannable
+> /writing:voice-profile  match a saved writing voice
+```
+
 ## Notes
 
 - The `github-readme`, `readability`, and `voice-profile` skills bundle optional Python audit
@@ -52,3 +64,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
   `python3` is missing it falls back to a once-per-session nudge. Point
   `WRITING_README_AUDIT_SCRIPT` at another checker to override the path; set
   `WRITING_README=false` to silence the hook entirely.
+
+## License
+
+[MIT](../../LICENSE)

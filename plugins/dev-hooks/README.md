@@ -7,6 +7,15 @@ companion skills the hooks point at. Each hook script detects the project's own 
 Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboarding`,
 `thinking-tools`, and `writing`.
 
+## Contents
+
+- [Hooks](#hooks)
+- [Skills](#skills)
+- [Install](#install)
+- [Usage](#usage)
+- [Notes](#notes)
+- [License](#license)
+
 ## Hooks
 
 | Event | Script | Purpose |
@@ -59,6 +68,21 @@ The companion skills the hooks point at:
 ```bash
 /plugin marketplace add mickzijdel/dev-hooks
 /plugin install dev-hooks@dev-hooks
+```
+
+To receive the latest skills and hooks, enable auto-updates for the plugin in the plugin management overview.
+
+## Usage
+
+Once installed the **hooks fire automatically** — there is nothing to invoke. They lint
+after edits, verify tests/linters before Claude stops, guard dangerous commands, and nudge
+on the patterns documented above. To use a companion **skill**, describe the task and Claude
+reaches for the matching one, or invoke it by name:
+
+```console
+$ claude
+> /dev-hooks:dev-env-setup audit this repo against the dev-env standard
+> /dev-hooks:repo-review     whole-repo severity-ranked audit
 ```
 
 ## Notes
@@ -217,13 +241,21 @@ The companion skills the hooks point at:
   `DEV_HOOKS_BIG_CHANGE_LINES` default 800) and stays silent when `.claude/current_plan.md`
   exists — a plan already means the work is deliberate. Silence it with
   `DEV_HOOKS_BIG_CHANGE=false`.
-- The content-reading hooks (`secret-plaintext-reminder.sh`, `inline-svg-reminder.sh`) share
-  their payload extraction via `hooks/scripts/lib/reminder-common.sh`, which understands
-  Write `content`, Edit `new_string`/`old_string`, and MultiEdit `edits[]` alike.
-- Hooks require `jq` (used to parse hook input) and, for `verify-work.sh`, `memory-reminder.sh`,
-  `debug-leftover-reminder.sh`, `missing-test-reminder.sh`, `review-reminder.sh`,
-  `secret-plaintext-reminder.sh`, and `inline-svg-reminder.sh`, `python3`.
+- Nearly all the hooks build on `hooks/scripts/lib/reminder-common.sh`, the shared library
+  that owns payload extraction, opt-out handling, and advisory/blocking emit. Its content
+  helpers understand Write `content`, Edit `new_string`/`old_string`, and MultiEdit `edits[]`
+  alike, so the content-reading hooks (`secret-plaintext-reminder.sh`, `inline-svg-reminder.sh`,
+  `a11y-reminder.sh`, …) all see the written text the same way.
+- Hooks require `jq` (used to parse hook input) and, for `a11y-reminder.sh`,
+  `debug-leftover-reminder.sh`, `error-swallow-reminder.sh`, `inline-svg-reminder.sh`,
+  `memory-reminder.sh`, `missing-test-reminder.sh`, `review-reminder.sh`,
+  `secret-plaintext-reminder.sh`, `sql-injection-reminder.sh`, `todo-leftover-reminder.sh`,
+  and `verify-work.sh`, `python3`.
 - The `dev-env-setup` skill applies a [mise](https://mise.jdx.dev)/[hk](https://hk.jdx.dev)
   standard, so the repos it sets up depend on `mise`, `hk`, `pkl`, `gitleaks` (and
   `shellcheck`/`shfmt` for shell repos) — all provisioned via the generated `mise.toml`. The
   `dev-env-reminder` hook itself only needs `git`, `jq`, and `bash`.
+
+## License
+
+[MIT](../../LICENSE)
