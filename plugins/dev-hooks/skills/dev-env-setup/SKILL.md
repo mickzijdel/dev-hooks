@@ -1,6 +1,6 @@
 ---
 name: dev-env-setup
-version: 4.5.1
+version: 4.6.0
 description: |
   Audit a repo against an opinionated dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
@@ -25,13 +25,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v17)
+## The standard (v18)
 
-A repo is **compliant at v17** when it has all of:
+A repo is **compliant at v18** when it has all of:
 
-- **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `node` for jscpd),
-  `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version stamp
-  `DEV_ENV_VERSION = "17"`.
+- **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `node` for
+  jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the `[env]` version
+  stamp `DEV_ENV_VERSION = "18"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -40,9 +40,13 @@ A repo is **compliant at v17** when it has all of:
   version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
   so the two gates can't drift. Copied verbatim from the template (repo formatters may re-indent it; never hand-edit the logic).
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
-  `exec-bit-scripts` gate, `gitleaks`, and
+  `exec-bit-scripts` gate, the `zizmor` GitHub Actions security scan, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
-  hooks.
+  hooks. Where a hand-rolled step exactly matched an hk built-in it's now the built-in
+  (`gitleaks`, `check_added_large_files`, `zizmor`, and — in the shell stack, where `ruff` is a
+  mise tool — `ruff`/`ruff_format`); stacks that run a tool through their package manager
+  (`uv run ruff`, `npx prettier`, `bundle exec rubocop`, `golangci-lint`) keep custom steps, as
+  the bare-command built-ins would bypass the project-pinned version.
 - **Executable-bit gate** (added in v15) — the hk `exec-bit-scripts` step + a CI lint-job
   mirror fail when any tracked shebang file is index mode `100644` (a fresh clone/plugin
   install would get a script that dies with exit 126). Fix:
@@ -62,6 +66,13 @@ A repo is **compliant at v17** when it has all of:
   `pages`/`id-token: write` keeps its own wider block). Checker-enforced across all workflow
   files (`has_sha_pinned_ci`). See "Keeping GitHub Actions current" and the
   **[[github-actions]]** skill's security checklist.
+- **GitHub Actions security scan (zizmor)** (added in v18) — the hk `zizmor` step
+  (`Builtins.zizmor`, glob-gated to workflow + `action.yml` files) and a CI `actions-security`
+  job run [zizmor](https://docs.zizmor.sh) over every workflow, catching credential persistence,
+  template injection, and over-broad `GITHUB_TOKEN` permissions. As part of this every
+  `actions/checkout` sets `persist-credentials: false` (zizmor's `artipacked` finding — keeps the
+  repo token out of `.git/config` on the runner). Needs `zizmor` in `mise.toml`; checker-enforced
+  (`has_zizmor`). See the **[[github-actions]]** skill.
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other

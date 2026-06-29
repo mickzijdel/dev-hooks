@@ -2,6 +2,7 @@
 hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
+zizmor = "latest"   # GitHub Actions security static analysis (hk `zizmor` step + CI)
 node = "latest"   # JS/TS stack tool; also provides npx, used to run jscpd 5.x
 # jscpd (duplication) runs via npx — see hk.pkl / .jscpd.json (not a mise tool; jscpd 5.x ships
 # as a Rust binary via npm optional platform packages that npx resolves but mise's npm backend
@@ -21,4 +22,4 @@ minimum_release_age = "4d"
 [env]
 # dev-env standard version this repo targets (dev-hooks:dev-env-setup). Do not
 # hand-edit — bump it by running the skill's upgrade path.
-DEV_ENV_VERSION = "17"
+DEV_ENV_VERSION = "18"

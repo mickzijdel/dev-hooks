@@ -1,4 +1,4 @@
-# The standard (v17) — full specification
+# The standard (v18) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,14 +6,15 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v17** when it has all of:
+A repo is **compliant at v18** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
-  and (all stacks that run jscpd — Python, shell, Ruby/Rails, **and JS/TypeScript**) `node` (to
-  run jscpd via `npx`; for JS it also serves as the stack tool); `[settings] lockfile = true`
-  and `minimum_release_age = "4d"` (4-day supply-chain cooldown on `mise upgrade`; `mise install`
-  always reproduces `mise.lock` exactly — see "Lockfile & supply-chain verification" in
-  `../SKILL.md`); `[env]` carries the version stamp `DEV_ENV_VERSION = "17"`.
+  `zizmor` (GitHub Actions security scan, added in v18), and (all stacks that run jscpd — Python,
+  shell, Ruby/Rails, **and JS/TypeScript**) `node` (to run jscpd via `npx`; for JS it also serves
+  as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
+  supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
+  — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
+  stamp `DEV_ENV_VERSION = "18"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -29,12 +30,19 @@ A repo is **compliant at v17** when it has all of:
   of warn-and-pass — pre-commit keeps warn-and-pass so a commit is never blocked by an
   unreachable registry).
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
-  audits (dead-code + duplication), the `exec-bit-scripts` gate (v15), `gitleaks`, and
-  `check-added-large-files`** (`Builtins.*`),
+  audits (dead-code + duplication), the `exec-bit-scripts` gate (v15), the `zizmor` GitHub
+  Actions security scan (v18), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
   and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
   including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
   **run on pre-commit** too (each is glob-gated, so a docs-only commit skips them); `check` is
-  just the same set under one name that CI invokes.
+  just the same set under one name that CI invokes. **Prefer an hk built-in** (`Builtins.<name>`)
+  over a hand-rolled step whenever the built-in's command matches: `gitleaks`,
+  `check_added_large_files`, and `zizmor` are always built-ins, and the shell stack uses
+  `Builtins.ruff`/`Builtins.ruff_format` because there `ruff` is a mise tool (bare command on
+  PATH). A stack that runs a tool through its package manager — `uv run ruff` (Python),
+  `npx prettier` (JS), `bundle exec rubocop`/`bin/rubocop` (Ruby), `golangci-lint ./...` (Go) —
+  keeps a **custom** step, because the bare-command built-in would resolve a different
+  (or missing) binary and bypass the project-pinned version.
 - **Executable-bit gate** (all stacks, added in v15) — the hk `exec-bit-scripts` step plus a
   mirroring step in CI's `lint` job fail when any git-tracked file whose **first line is a
   shebang** sits at index mode `100644`. A fresh clone or plugin-cache install receives the
@@ -73,6 +81,18 @@ A repo is **compliant at v17** when it has all of:
   pin's comment resolves to the pinned commit on the remote. Bump pins with `pinact run -u`
   (it rewrites every workflow file). See "Keeping GitHub Actions current" in `../SKILL.md` and
   the **[[github-actions]]** skill's full security checklist.
+- **GitHub Actions security scan (zizmor)** (all stacks, added in v18) — the hk `zizmor` step
+  (`Builtins.zizmor`) and a CI `actions-security` job run [zizmor](https://docs.zizmor.sh) over
+  every workflow + `action.yml`, statically catching the workflow-level vulnerabilities the
+  SHA-pin rule doesn't (credential persistence, `${{ … }}` template injection, over-broad
+  `GITHUB_TOKEN` permissions, dangerous triggers). It runs from the mise-pinned `zizmor` binary
+  (so `mise.lock` checksum-verifies it) with offline audits only — no `GH_TOKEN` needed. Pairing
+  it: **every `actions/checkout` sets `persist-credentials: false`** (zizmor's `artipacked`
+  finding) so the workflow's `GITHUB_TOKEN` isn't written into `.git/config` on the runner where
+  a later step could exfiltrate it; a job that genuinely needs the persisted token (e.g. it
+  pushes commits) keeps the default and adds a per-line `# zizmor: ignore[artipacked]`. The
+  checker enforces the `zizmor` tool + hk step (`has_zizmor`). See the **[[github-actions]]**
+  skill.
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
@@ -203,6 +223,34 @@ Rails 8's own default `bin/rails new` CI). All are glob-gated in `hk.pkl` and mi
   job prepares the DB). Keep the probe loop-free — hk's internal `sh` aborts on `while read` in
   `$(...)`.
 - **fasterer** — perf anti-pattern advisory (`|| true`).
+
+## GitHub Actions security: zizmor (v18)
+
+v16 made workflow *supply chain* safe (SHA-pinned actions, read-only `GITHUB_TOKEN`). v18 adds
+[zizmor](https://docs.zizmor.sh), a static analyzer that catches the *workflow-authoring*
+vulnerabilities a pin can't — credential persistence, `${{ … }}` template injection into `run:`,
+over-broad per-job permissions, dangerous `pull_request_target`/`workflow_run` triggers, and more.
+It's the automated enforcement of the **[[github-actions]]** skill's checklist, on every stack
+(every stack ships a `ci.yml`).
+
+- **Tool.** `zizmor = "latest"` in `mise.toml` (registry `aqua:zizmorcore/zizmor`, so `mise.lock`
+  checksum-verifies it). The bare `zizmor` binary is on PATH for both the hk step and CI.
+- **hk step.** `["zizmor"] = Builtins.zizmor` — the built-in globs `.github/workflows/*.yml`,
+  `.github/dependabot.yml`, and `**/action.yml`, so it only fires when a workflow/action file is
+  staged, and uses `check_diff` (scans just the changed files). No config needed.
+- **CI job.** A dedicated `actions-security` job (parallel to `gitleaks`) checks out, installs
+  mise, and runs `zizmor --no-progress .github/workflows/`. Offline audits only — no `GH_TOKEN`,
+  so it's deterministic (online audits that query the GitHub API are skipped; the static audits
+  that matter run regardless).
+- **`persist-credentials: false` on every `actions/checkout`.** zizmor's `artipacked` audit flags
+  a checkout that leaves the job's `GITHUB_TOKEN` in `.git/config` on the runner, where any later
+  step (or a compromised action) can read it. The templates set `persist-credentials: false` on
+  every checkout; `zizmor --fix=all` applies it mechanically (it's an "unsafe" fix only because a
+  job that *pushes* needs the token persisted — those rare jobs keep the default and add a
+  `# zizmor: ignore[artipacked]` comment on the `uses:` line).
+- **Exit behaviour.** zizmor exits non-zero when any finding at/above the default persona's
+  threshold remains, so a real finding fails the hk step and the CI job. The shipped templates
+  are clean (`zizmor --no-progress <file>` → exit 0).
 
 ## Executable bits on shipped scripts (v15)
 

@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — installs go/golangci-lint/shellcheck/shfmt honoring mise.lock
       - name: Lint (golangci-lint)
         run: golangci-lint run ./...
@@ -52,6 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — installs go honoring mise.lock
       - name: go build
         run: go build ./...
@@ -72,9 +76,23 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # gitleaks git scans the full commit history
+          persist-credentials: false
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       - name: Scan git history for secrets
         run: mise exec -- gitleaks git --redact --no-banner .
+
+  # GitHub Actions security static analysis (zizmor) — mirrors the hk `zizmor` step. Runs the
+  # mise-pinned CLI (mise.lock) over the workflow files; offline audits only (no GH token needed).
+  # Flags credential persistence, template injection, over-broad GITHUB_TOKEN permissions, etc.
+  actions-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Scan workflows with zizmor
+        run: zizmor --no-progress .github/workflows/
 
   # Noisier audits — mirror the hk `check` hook.
   audit:
@@ -83,6 +101,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0 — provides node for the npx jscpd run
       - name: Duplication (jscpd)
         # -f golang scopes to Go source; .jscpd.json carries minTokens/threshold/reporters/ignore.

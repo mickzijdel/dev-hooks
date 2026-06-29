@@ -151,6 +151,73 @@ def test_ci_template_declares_read_only_token(name):
     )
 
 
+@pytest.mark.parametrize("name", HK_TEMPLATES)
+def test_zizmor_step_in_every_hk_template(name):
+    """v18: every hk template wires the zizmor GitHub Actions security scan as the hk built-in,
+    so a staged workflow/action file is statically audited at pre-commit."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert '["zizmor"] = Builtins.zizmor' in text, (
+        f'{name} is missing the ["zizmor"] = Builtins.zizmor step'
+    )
+
+
+@pytest.mark.parametrize("name", MISE_TEMPLATES)
+def test_zizmor_tool_in_every_mise_template(name):
+    """v18: every mise template pins `zizmor` so the hk step + CI job have the binary on PATH
+    (and mise.lock checksum-verifies it)."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert re.search(r'^zizmor = "latest"', text, re.M), (
+        f"{name} does not pin the zizmor tool"
+    )
+
+
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_zizmor_job_in_every_ci_template(name):
+    """v18: every CI template runs zizmor in a dedicated `actions-security` job, mirroring the
+    hk `zizmor` step so CI and pre-commit agree."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert "\n  actions-security:\n" in text, (
+        f"{name} is missing the `actions-security` zizmor job"
+    )
+    assert "zizmor --no-progress .github/workflows/" in text, (
+        f"{name}'s actions-security job doesn't run zizmor over the workflows"
+    )
+
+
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_every_checkout_disables_persist_credentials(name):
+    """v18: every `actions/checkout` sets `persist-credentials: false` (zizmor's `artipacked`
+    finding) so the job token isn't left in `.git/config` on the runner. Counts must match —
+    a new checkout without the hardening drops the persist-credentials count and fails."""
+    text = (TEMPLATES_DIR / name).read_text()
+    checkouts = text.count("uses: actions/checkout@")
+    hardened = text.count("persist-credentials: false")
+    assert checkouts > 0, f"{name} has no actions/checkout to check"
+    assert hardened == checkouts, (
+        f"{name} has {checkouts} checkout(s) but {hardened} persist-credentials: false "
+        f"— every checkout must set it (or carry a `# zizmor: ignore[artipacked]`)"
+    )
+
+
+def test_shell_hk_uses_ruff_builtins():
+    """v18: the shell stack swaps its hand-rolled ruff steps for the hk built-ins — there `ruff`
+    is a mise tool (bare command on PATH), so `Builtins.ruff`/`Builtins.ruff_format` match exactly.
+    (Stacks that run ruff via `uv run` deliberately keep custom steps — see hk.python.pkl.)"""
+    text = (TEMPLATES_DIR / "hk.shell.pkl").read_text()
+    assert '["ruff-check"] = Builtins.ruff' in text
+    assert '["ruff-format"] = Builtins.ruff_format' in text
+    # The bare hand-rolled invocation must be gone from the shell template.
+    assert 'check = "ruff check --force-exclude' not in text
+
+
+def test_python_hk_keeps_uv_run_ruff():
+    """v18 guard: the Python stack must NOT adopt Builtins.ruff — its ruff comes from uv
+    (`uv run ruff`), and the bare-command built-in would resolve a different/missing binary."""
+    text = (TEMPLATES_DIR / "hk.python.pkl").read_text()
+    assert "uv run ruff check --force-exclude" in text
+    assert '["ruff-check"] = Builtins.ruff' not in text
+
+
 def test_gitleaks_template_allowlists_gitignored_artifacts():
     """The v10 .gitleaks.toml extends the default ruleset and allowlists the gitignored
     runtime/secret PATHS — gitleaks `dir` scans the whole tree (no respect-gitignore flag),

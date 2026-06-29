@@ -225,6 +225,22 @@ def test_checker_needs_upgrade_with_tag_pinned_action(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_compliant_has_zizmor(tmp_path):
+    # v18: the default compliant repo's hk.pkl carries the zizmor step.
+    make_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["has_zizmor"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_needs_upgrade_without_zizmor(tmp_path):
+    # v18: a current-version repo whose hk.pkl lacks the zizmor step is flagged for upgrade.
+    make_compliant_repo(tmp_path, zizmor=False)
+    out = run_checker(tmp_path)
+    assert out["has_zizmor"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
@@ -236,6 +252,7 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     (tmp_path / "mise.lock").write_text("")
     (tmp_path / "hk.pkl").write_text(
         '["gitleaks"] = Builtins.gitleaks\n["exec-bit-scripts"] { check = "..." }\n'
+        '["zizmor"] = Builtins.zizmor\n'
     )
     (tmp_path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
     wf = tmp_path / ".github" / "workflows"

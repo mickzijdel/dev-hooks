@@ -82,12 +82,13 @@ def make_compliant_repo(
     jscpd_runner=True,
     exec_bit=True,
     sha_pinned=True,
+    zizmor=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
-    allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), or SHA-pinned CI
-    actions (v16). Stamped at the current version (read from VERSION) so it stays compliant as
-    the standard advances."""
+    allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), SHA-pinned CI
+    actions (v16), or the zizmor hk step (v18). Stamped at the current version (read from
+    VERSION) so it stays compliant as the standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -101,6 +102,8 @@ def make_compliant_repo(
     hk = '["gitleaks"] = Builtins.gitleaks\n'
     if exec_bit:
         hk += '["exec-bit-scripts"] { check = "..." }\n'
+    if zizmor:
+        hk += '["zizmor"] = Builtins.zizmor\n'
     (path / "hk.pkl").write_text(hk)
     wf = path / ".github" / "workflows"
     wf.mkdir(parents=True)
