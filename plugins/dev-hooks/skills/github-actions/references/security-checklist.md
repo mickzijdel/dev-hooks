@@ -64,6 +64,11 @@ are actually using.
 - **Exclude secret files from uploads; avoid `path: .`** in `upload-artifact`. A bare `.`
   sweeps up `.env`, credential configs, and `*.pem`. List explicit paths, and keep `.env`,
   `*.pem`, etc. in `.gitignore` and artifact-exclusion patterns.
+- **Set `persist-credentials: false` on every `actions/checkout`** unless a later step in that
+  job genuinely needs the token to push. By default checkout writes the job's `GITHUB_TOKEN`
+  into `.git/config` on the runner, where any later step — or an `upload-artifact: .` that sweeps
+  up `.git/` — can read and exfiltrate it (zizmor's `artipacked` audit). A job that does push
+  keeps the default and scopes its `permissions:` instead.
 
 ## Mutable action references
 
@@ -77,6 +82,25 @@ are actually using.
   target.
 - **Prefer actions with fewer transitive dependencies.** SHA-pinning your direct dep doesn't
   help if it pulls its own deps by mutable tag (tj-actions → reviewdog).
+
+## Automated scanning (zizmor)
+
+- **Run [zizmor](https://docs.zizmor.sh) over your workflows** — it's the static analyzer that
+  enforces most of this checklist automatically (credential persistence, `${{ … }}` template
+  injection, over-broad `GITHUB_TOKEN` permissions, dangerous triggers, unpinned/known-bad
+  actions). `zizmor --no-progress .github/workflows/` exits non-zero on any finding at/above the
+  default persona. The dev-env-setup standard wires it in for every repo (an hk `Builtins.zizmor`
+  pre-commit step + a CI `actions-security` job), but run it by hand on any workflow you write or
+  review.
+- **`zizmor --fix=all`** applies the mechanical fixes (e.g. adding `persist-credentials: false`
+  to every checkout). The `artipacked` checkout fix is "unsafe" only because a job that pushes
+  needs the persisted token — review the diff, then commit.
+- **Suppress a deliberate exception inline**, never by lowering the persona globally: add
+  `# zizmor: ignore[<audit>]` on the offending line (e.g. `# zizmor: ignore[artipacked]` on a
+  checkout in a job that legitimately pushes).
+- **actionlint** is its complement (workflow *syntax/correctness* — typo'd keys, bad `if:`
+  expressions, shellcheck on `run:`). Not required by the standard, but a cheap add (an hk
+  `Builtins.actionlint` step) if you want it.
 
 ## Mutable package dependencies
 

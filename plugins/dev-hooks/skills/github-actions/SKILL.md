@@ -1,12 +1,12 @@
 ---
 name: github-actions
-version: 1.0.1
+version: 1.1.0
 description: |
   Write, review, and harden GitHub Actions workflows against supply-chain attacks, and bump a
   whole fleet of repos' action pins to the latest versions. Use when writing or editing a
   workflow YAML (.github/workflows/*.yml, ci.yml), when asked to review a CI workflow or audit
   GitHub Actions security, when the ci-action-ref-reminder hook fires, or when the user wants to
-  "bump my actions", "update the fleet", "pin actions to SHAs", or close supply-chain /
+  "bump my actions", "update the fleet", "pin actions to SHAs", run zizmor, or close supply-chain /
   pull_request_target / script-injection / GITHUB_TOKEN-permissions gaps. Pairs with
   references/security-checklist.md (the full checklist) and dev-env-setup's CI templates.
 allowed-tools:
@@ -70,6 +70,16 @@ If you do nothing else when writing or reviewing a workflow, get these right:
    # and its SHA must match the pin. A mismatch (lying comment / wrong SHA) FAILs.
    ```
    If `gh`/`pinact` is unavailable or unauthenticated, say so and ask the user — never guess a SHA.
+4. **Run zizmor** to catch the authoring vulnerabilities the checklist names (credential
+   persistence, template injection, over-broad permissions):
+   ```bash
+   zizmor --no-progress .github/workflows/     # exit 0 = clean; non-zero = real findings
+   zizmor --no-progress --fix=all .github/workflows/<file>.yml   # apply mechanical fixes, then review
+   ```
+   `zizmor` is mise-pinned in every dev-env repo (`mise.toml`); install ad hoc with
+   `mise use -g zizmor` elsewhere. Suppress a deliberate exception inline with
+   `# zizmor: ignore[<audit>]`, never by lowering the persona. (Dogfooded: the dev-env-setup CI
+   templates ship an `actions-security` job that runs exactly this.)
 
 ## Fleet-wide bump
 
