@@ -19,6 +19,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `weekly-automation-review` | Weekly cadence — reviews recent activity and recommends 1–2 repetitive tasks to automate; runs as a scheduled Monday remote agent. On a local run it also reads the cross-repo prompt log (`~/.claude/automation-review/prompts.jsonl`, written by the `dev-hooks` `prompt-log` hook) and every repo's memory index to spot what you keep asking for. |
 | `commit-digest` | Weekly cadence — reviews recent commits in tracked external repos (+ optional Atom/RSS feeds), pulls applicable improvements in as separate PRs, and logs every skipped suggestion to the `claude/skipped-log` branch with dedup and a per-run PR comment. Companion to `weekly-automation-review`, which reviews the local repo's own activity. |
 | `adr` | When you've made (or are about to make) a significant architectural decision — captures why in a lightweight Markdown document so future contributors don't re-litigate it. |
+| `quiz-me` | After an agent implements or refactors code — quizzes the developer on key decisions, patterns, and edge cases to build genuine comprehension; active recall beats passive reading. |
 
 ## Install
 
@@ -37,6 +38,7 @@ $ claude
 > /thinking-tools:board       convene the advisor panel on a plan or draft
 > /thinking-tools:premortem   stress-test a decision before committing
 > /thinking-tools:but-for-real  force a real verification before claiming done
+> /thinking-tools:quiz-me     build comprehension of what the agent just implemented
 ```
 
 ## License
