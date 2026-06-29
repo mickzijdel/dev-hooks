@@ -6,16 +6,11 @@ import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtin
 local linters = new Mapping<String, Step> {
     ["shellcheck"] = Builtins.shellcheck
     ["shfmt"] = Builtins.shfmt
-    ["ruff-check"] {
-        glob = "**/*.py"
-        check = "ruff check --force-exclude {{ files }}"
-        fix = "ruff check --force-exclude --fix {{ files }}"
-    }
-    ["ruff-format"] {
-        glob = "**/*.py"
-        check = "ruff format --force-exclude --diff {{ files }}"
-        fix = "ruff format --force-exclude {{ files }}"
-    }
+    // ruff lint + format for the *.py skill scripts and tests. hk builtins — ruff is a mise
+    // tool here (bare `ruff` on PATH), so the builtins' `ruff check`/`ruff format --force-exclude`
+    // commands match what these steps used to spell out by hand.
+    ["ruff-check"] = Builtins.ruff
+    ["ruff-format"] = Builtins.ruff_format
     // Shipped scripts must carry the executable bit IN THE GIT INDEX (mode 100755):
     // with core.fileMode=false a local chmod +x never reaches git, so clones and
     // plugin-cache installs get scripts that die with exit 126 "Permission denied".
@@ -64,6 +59,11 @@ local linters = new Mapping<String, Step> {
         glob = List(".claude-plugin/**", "plugins/**")
         check = "claude plugin validate . --strict && for p in plugins/*/; do claude plugin validate \"$p\" --strict; done"
     }
+    // GitHub Actions security static analysis. hk builtin — globs .github/workflows/*.yml,
+    // .github/dependabot.yml and **/action.yml, so it only fires when a workflow/action file
+    // is staged. Flags credential persistence, template injection, over-broad GITHUB_TOKEN
+    // permissions, etc. (see the github-actions skill). Needs `zizmor` from mise (mise.toml).
+    ["zizmor"] = Builtins.zizmor
     // Secret scanning (defense-in-depth alongside fnox). hk builtin.
     ["gitleaks"] = Builtins.gitleaks
     // Block accidentally-committed large files. hk builtin.

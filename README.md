@@ -87,7 +87,7 @@ ln -s ~/Stack/Programmeren/dev-hooks/plugins/dev-hooks ~/.claude/skills/dev-hook
 ## Development
 
 One repo-wide toolchain covers all four plugins: `mise` pins the tools, `hk` runs the
-pre-commit checks (shellcheck, shfmt, ruff, vulture, jscpd, gitleaks, plus
+pre-commit checks (shellcheck, shfmt, ruff, vulture, jscpd, gitleaks, zizmor, plus
 `claude plugin validate --strict` over the marketplace and every plugin when plugin files
 are staged), and CI mirrors the same checks (except plugin-validate, which needs the Claude
 CLI and runs locally only). The pytest suite at `tests/` exercises every hook and skill
