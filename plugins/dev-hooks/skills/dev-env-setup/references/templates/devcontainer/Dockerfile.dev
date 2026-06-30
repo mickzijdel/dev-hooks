@@ -1,0 +1,96 @@
+# syntax=docker/dockerfile:1
+# mise-driven development container (dev-hooks:dev-env-setup standard).
+#
+# mise (mise.toml + mise.lock at the repo root) is the SINGLE SOURCE OF TRUTH for the
+# toolchain: the language runtime(s) plus the hk / pkl / gitleaks / zizmor / actionlint dev
+# tools. This image therefore installs ONLY mise plus the OS libraries needed to *build* and
+# *run* that toolchain — it pins no language versions itself. The actual tools are installed by
+# `mise install` in setup.sh (postCreateCommand), where the bind-mounted mise.toml/mise.lock are
+# available, so the container always matches the checked-out versions. Do NOT add
+# `apt-get install nodejs`, a nodesource repo, or a `ruby:x.y` / `node:x` / `python:x.y` base
+# back here — that reintroduces the drift this setup exists to remove. To change a tool version,
+# edit mise.toml.
+#
+# KNOB — BASE_IMAGE: use the SAME Debian release your *production* image is built on, so the dev
+# and prod glibc match. Native extensions (Ruby C gems, Python wheels, Node native addons)
+# compiled into a persisted deps volume are linked against the build glibc; a mismatch (e.g.
+# bookworm's glibc 2.36 vs trixie's 2.41) makes them fail at load with "GLIBC_2.xx not found".
+# The example below tracks a `ruby:4.0.2-slim` prod base (Debian 13 / trixie). If your prod base
+# names a different release, change this to match it (and keep them in lockstep on bumps).
+FROM debian:trixie-slim
+
+# System packages, in three groups:
+#  - core dev/devcontainer tooling (git, curl, sudo, ca-certificates, gnupg, extrepo) — keep
+#  - the language runtime's build dependencies — KNOB: OS build deps (varies by stack, see below)
+#  - the app's native dependencies + DB client — KNOB: per project (libvips, DB client, ...)
+#
+# KNOB — OS build deps by stack (mise builds the runtime from source where it has no prebuilt):
+#   Ruby (ruby-build): build-essential autoconf libssl-dev zlib1g-dev libreadline-dev libyaml-dev
+#                      libffi-dev libgdbm-dev libncurses-dev libgmp-dev uuid-dev pkg-config
+#   Python:            build-essential libssl-dev zlib1g-dev libffi-dev libbz2-dev libreadline-dev
+#                      libsqlite3-dev liblzma-dev (or none — mise uses prebuilt CPython by default)
+#   Node / Go:         none beyond core (mise installs prebuilt binaries) — drop the build group
+RUN --mount=type=cache,id=apt-cache-dev,target=/var/cache/apt,sharing=locked \
+    apt-get update -qq && \
+    apt-get install --no-install-recommends -y -o Acquire::Retries=3 \
+      build-essential \
+      ca-certificates \
+      curl \
+      git \
+      gnupg \
+      sudo \
+      extrepo \
+      autoconf \
+      libssl-dev \
+      zlib1g-dev \
+      libreadline-dev \
+      libyaml-dev \
+      libffi-dev \
+      libgdbm-dev \
+      libncurses-dev \
+      libgmp-dev \
+      uuid-dev \
+      libmariadb-dev-compat \
+      pkg-config \
+      default-mysql-client \
+      libvips \
+      libjemalloc2 \
+      tzdata && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install mise from its official apt repository instead of `curl | sh`. Debian's `extrepo`
+# enables the curated mise repo and verifies its metadata against keys shipped in extrepo-data,
+# so the mise package is installed GPG-verified via apt — in line with the standard's
+# supply-chain posture (gitleaks, checksummed mise.lock, SHA-pinned actions).
+RUN --mount=type=cache,id=apt-cache-dev,target=/var/cache/apt,sharing=locked \
+    extrepo enable mise && \
+    apt-get update -qq && \
+    apt-get install --no-install-recommends -y -o Acquire::Retries=3 mise && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create non-root user with passwordless sudo (standard devcontainer pattern). Container runs as
+# root so volume mounts are writable; remoteUser in devcontainer.json switches the developer
+# shell to vscode.
+RUN groupadd --gid 1000 vscode && \
+    useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash vscode && \
+    echo "vscode ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vscode
+
+USER vscode
+
+# The mise toolchain lives under MISE_DATA_DIR, which compose mounts as a named volume so
+# `mise install` (incl. any one-time from-source runtime compile) is cached across container
+# rebuilds. Put the shims on PATH for non-interactive commands (VS Code tasks) and activate mise
+# in interactive shells.
+ENV MISE_DATA_DIR=/home/vscode/.local/share/mise
+ENV PATH=${MISE_DATA_DIR}/shims:${PATH}
+# Pre-create the mise data + state dirs as the vscode user *before* the volume mounts. The
+# compose `mise-data` volume mounts at MISE_DATA_DIR; creating its parents here (owned by vscode)
+# means (a) a fresh volume initialises with vscode ownership and (b) mounting it does not leave
+# ~/.local owned by root — which would block mise from writing ~/.local/state/mise (its
+# trusted-configs live there).
+RUN mkdir -p "${MISE_DATA_DIR}" /home/vscode/.local/state/mise && \
+    echo 'eval "$(mise activate bash)"' >> /home/vscode/.bashrc
+
+# KNOB — workspace path: match devcontainer.json's workspaceFolder and compose's bind mount.
+# Conventionally /workspaces/<your-repo-name>.
+WORKDIR /workspaces/app

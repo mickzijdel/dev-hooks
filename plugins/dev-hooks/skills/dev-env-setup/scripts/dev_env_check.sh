@@ -42,6 +42,18 @@
 #                    with KEY=value lines, a config/credentials/*.key, or source references to
 #                    Rails credentials / ENV[…] / Settings.) AND no fnox.toml yet. Advisory only —
 #                    nudges the env-to-fnox skill; never affects status.
+#   has_devcontainer 1 if a .devcontainer/ exists (carries a devcontainer.json, a compose file,
+#                    or a Dockerfile). The dev container is recommended from v19 but advisory —
+#                    its absence never affects status.
+#   devcontainer_mise_driven  1 unless a .devcontainer/ exists and its build files (Dockerfile* +
+#                    setup scripts, comment lines stripped) show drift from the mise toolchain: a
+#                    hardcoded language base (FROM ruby:/node:/python:/golang:/rust:), a nodesource
+#                    apt repo, a single-line `apt-get install … nodejs`, `npm install -g pnpm`, or
+#                    no reference to mise at all. Base-OS-vs-prod mismatch is best-effort: flagged
+#                    only when BOTH the devcontainer base AND a root ./Dockerfile name a Debian
+#                    codename directly (debian:<codename>) and they differ — a `ruby:X-slim`-style
+#                    prod base isn't mappable to a codename here, so it can't be flagged. Advisory
+#                    only (mirrors suggests_fnox); never affects status.
 #   repo_version     DEV_ENV_VERSION from mise.toml, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
 #   stack            python | ruby | javascript | go | shell | unknown
@@ -186,6 +198,39 @@ if [ ! -f "$DIR/fnox.toml" ]; then
   fi
 fi
 
+# Dev container drift (advisory — recommended from v19, never affects status). A mise-driven
+# devcontainer installs only mise + OS libs and lets `mise install` provision the toolchain from
+# the bind-mounted mise.toml/mise.lock; it pins no language versions itself. Only evaluated when a
+# .devcontainer/ exists; the build files are comment-stripped before scanning so the template's
+# own cautionary comments (e.g. "do NOT add `apt-get install nodejs`", "no `npm install -g pnpm`")
+# don't self-flag.
+has_devcontainer=0
+devcontainer_mise_driven=1
+devcontainer_drift=""
+DC="$DIR/.devcontainer"
+if [ -d "$DC" ] && { [ -f "$DC/devcontainer.json" ] || find "$DC" -maxdepth 1 -type f \( -name 'compose.y*ml' -o -name 'docker-compose.y*ml' -o -name 'Dockerfile*' \) 2>/dev/null | grep -q .; }; then
+  has_devcontainer=1
+fi
+if [ "$has_devcontainer" = 1 ]; then
+  # Real build instructions only (Dockerfile* + setup scripts), comment lines stripped.
+  dc_scan="$(find "$DC" -maxdepth 1 -type f \( -name 'Dockerfile*' -o -name '*.sh' \) -exec cat {} + 2>/dev/null | grep -vE '^[[:space:]]*#')"
+  if [ -n "$dc_scan" ]; then
+    printf '%s\n' "$dc_scan" | grep -qiE '^[[:space:]]*FROM[[:space:]]+(ruby|node|python|golang|rust):' && devcontainer_drift="$devcontainer_drift hardcoded-language-base"
+    printf '%s\n' "$dc_scan" | grep -qiE 'deb\.nodesource\.com|setup_[0-9]+\.x' && devcontainer_drift="$devcontainer_drift nodesource"
+    printf '%s\n' "$dc_scan" | grep -qiE 'apt-get[[:space:]]+install.*[[:space:]]nodejs([[:space:]]|$)' && devcontainer_drift="$devcontainer_drift hardcoded-nodejs"
+    printf '%s\n' "$dc_scan" | grep -qiE 'npm[[:space:]]+(install|i)[[:space:]]+-g[[:space:]]+pnpm' && devcontainer_drift="$devcontainer_drift global-pnpm"
+    printf '%s\n' "$dc_scan" | grep -qi 'mise' || devcontainer_drift="$devcontainer_drift not-mise-driven"
+    # Best-effort base-OS-vs-prod: only when both name a Debian codename directly (debian:<name>).
+    dc_codename="$(printf '%s\n' "$dc_scan" | grep -oiE 'FROM[[:space:]]+debian:[a-z0-9.]+' | head -n1 | sed -E 's/.*[Dd]ebian://')"
+    if [ -f "$DIR/Dockerfile" ]; then
+      prod_codename="$(grep -vE '^[[:space:]]*#' "$DIR/Dockerfile" | grep -oiE 'FROM[[:space:]]+debian:[a-z0-9.]+' | head -n1 | sed -E 's/.*[Dd]ebian://')"
+      [ -n "$dc_codename" ] && [ -n "$prod_codename" ] && [ "$dc_codename" != "$prod_codename" ] && devcontainer_drift="$devcontainer_drift base-os-mismatch($dc_codename!=$prod_codename)"
+    fi
+    [ -n "$devcontainer_drift" ] && devcontainer_mise_driven=0
+  fi
+fi
+devcontainer_drift="${devcontainer_drift# }"
+
 repo_version=0
 if [ -n "$MISE_FILE" ]; then
   v="$(grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$MISE_FILE" 2>/dev/null | head -n1 | tr -dc '0-9')"
@@ -221,6 +266,8 @@ has_sha_pinned_ci=$has_sha_pinned_ci
 has_zizmor=$has_zizmor
 has_actionlint=$has_actionlint
 suggests_fnox=$suggests_fnox
+has_devcontainer=$has_devcontainer
+devcontainer_mise_driven=$devcontainer_mise_driven
 repo_version=$repo_version
 current_version=$current_version
 stack=$stack
@@ -236,6 +283,10 @@ esac
 
 if [ "$suggests_fnox" = 1 ]; then
   echo "# Advisory: plaintext secrets detected and no fnox.toml — consider the env-to-fnox skill to migrate them out of the repo."
+fi
+
+if [ "$has_devcontainer" = 1 ] && [ "$devcontainer_mise_driven" = 0 ]; then
+  echo "# Advisory: .devcontainer/ has drifted from the mise toolchain ($devcontainer_drift) — a mise-driven devcontainer installs only mise + OS libs and lets 'mise install' provision the toolchain. See the 'Dev container' section in references/standard.md."
 fi
 
 exit 0

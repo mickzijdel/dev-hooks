@@ -1,0 +1,15 @@
+{
+    "name": "app",
+    "dockerComposeFile": "compose.yaml",
+    "service": "app",
+    "workspaceFolder": "/workspaces/app",
+    "remoteUser": "vscode",
+    "postCreateCommand": ".devcontainer/setup.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "esbenp.prettier-vscode"
+            ]
+        }
+    }
+}

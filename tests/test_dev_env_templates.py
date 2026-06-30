@@ -411,3 +411,75 @@ def test_missing_test_fallback_matches_jscpd_template():
     assert hook_dirs == template_dirs, (
         f"hook fallback {hook_dirs} != .jscpd.json template dirs {template_dirs}"
     )
+
+
+# ── dev container template (mise-driven, v19) ───────────────────────────────────────
+# setup.sh's exec bit (v15) is covered by test_exec_bits.py's tracked-shebang scan.
+DEVCONTAINER_DIR = TEMPLATES_DIR / "devcontainer"
+
+
+def _noncomment_lines(text):
+    """Real instruction lines (comment lines stripped) — the same view the checker scans, so a
+    template's own cautionary comments don't get mistaken for drift."""
+    return [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
+
+
+def test_devcontainer_dockerfile_is_mise_driven():
+    """The Dockerfile.dev template installs mise via extrepo (not curl|sh), pins no language
+    version (only a debian base), and carries the BuildKit/apt-cache + pre-create-dirs gotchas."""
+    text = (DEVCONTAINER_DIR / "Dockerfile.dev").read_text()
+    assert text.startswith("# syntax=docker/dockerfile:1"), (
+        "Dockerfile.dev must start with the # syntax=docker/dockerfile:1 directive (invariant 6)"
+    )
+    # mise via Debian extrepo, not curl|sh (invariant 2). curl is fine as an apt package and in
+    # comments; what's banned is a real `curl … | sh` install pipe, so scan instruction lines.
+    assert "extrepo enable mise" in text
+    assert not any(
+        "curl" in ln and "|" in ln and "sh" in ln for ln in _noncomment_lines(text)
+    ), "mise must be installed via extrepo, not a curl|sh pipe"
+    # No hardcoded language base — every real FROM is a debian base (invariants 1, 3). The
+    # cautionary comment mentioning `ruby:x.y` must not count, hence the comment strip.
+    froms = [ln for ln in _noncomment_lines(text) if ln.strip().startswith("FROM ")]
+    assert froms, "Dockerfile.dev has no FROM instruction"
+    for fr in froms:
+        assert fr.strip().startswith("FROM debian:"), (
+            f"Dockerfile.dev must use a debian base, not a hardcoded language base: {fr!r}"
+        )
+    # apt cache mount + retries (invariant 6) and pre-create mise dirs as non-root (invariant 4).
+    assert "--mount=type=cache" in text and "Acquire::Retries" in text
+    assert "USER vscode" in text
+    assert 'mkdir -p "${MISE_DATA_DIR}"' in text
+
+
+def test_devcontainer_compose_caches_mise_on_named_volume():
+    """compose.yaml mounts a named volume at the mise data dir (so the toolchain persists across
+    rebuilds — invariant 5) and starts accessory services via depends_on (invariant 9)."""
+    text = (DEVCONTAINER_DIR / "compose.yaml").read_text()
+    assert "mise-data:/home/vscode/.local/share/mise" in text
+    assert "depends_on:" in text
+    assert "mise-data:" in text.split("volumes:")[-1], (
+        "the mise-data named volume must be declared under top-level volumes:"
+    )
+
+
+def test_devcontainer_setup_sh_order():
+    """setup.sh runs in the invariant-8 order: chown the volumes → mise trust → mise install →
+    hk install → install deps. Assert the real commands appear in that sequence."""
+    lines = _noncomment_lines((DEVCONTAINER_DIR / "setup.sh").read_text())
+    body = "\n".join(lines)
+
+    def pos(needle):
+        i = body.find(needle)
+        assert i != -1, f"setup.sh is missing {needle!r}"
+        return i
+
+    assert (
+        pos("sudo chown")
+        < pos("mise trust")
+        < pos("mise install")
+        < pos("mise exec -- hk install")
+    ), (
+        "setup.sh steps are out of order (chown → mise trust → mise install → hk install)"
+    )
+    # No global pnpm in a real command (the comment mentioning it is stripped above).
+    assert "npm install -g pnpm" not in body and "npm i -g pnpm" not in body

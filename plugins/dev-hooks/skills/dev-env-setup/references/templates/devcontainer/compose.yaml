@@ -1,0 +1,51 @@
+# mise-driven devcontainer compose (dev-hooks:dev-env-setup standard).
+# Accessory services (DB, cache, ...) start automatically via the app service's `depends_on`,
+# so the developer never "starts" them — opening the folder in the container is enough.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.dev
+    volumes:
+      # KNOB — workspace path: match Dockerfile WORKDIR + devcontainer.json workspaceFolder.
+      - ..:/workspaces/app:cached
+      # KNOB — dependency cache volume (persists installed deps across rebuilds). Pick per stack:
+      #   Ruby:   bundle-cache:/bundle           (with BUNDLE_PATH: /bundle/vendor below)
+      #   Node:   node-modules:/workspaces/app/node_modules
+      #   Python: uv-cache:/home/vscode/.cache/uv
+      #   Go:     go-mod:/home/vscode/go/pkg/mod
+      - bundle-cache:/bundle
+      # Persist the mise toolchain (runtime + hk/...) across rebuilds so any one-time from-source
+      # compile in `mise install` is not repeated. Path matches MISE_DATA_DIR in the Dockerfile.
+      - mise-data:/home/vscode/.local/share/mise
+    command: sleep infinity
+    environment:
+      # KNOB — per stack / accessory services. The DB_* vars below match the `mysql` example.
+      BUNDLE_PATH: /bundle/vendor
+      DB_HOST: mysql
+      DB_USERNAME: root
+      DB_PASSWORD: password
+    depends_on:
+      # KNOB — accessory services this project needs (drop if none).
+      - mysql
+    ports:
+      - "3000:3000"
+
+  # KNOB — accessory service(s). MySQL shown as the worked example; swap for postgres:17,
+  # redis:7, etc., or delete this block (and the depends_on / DB_* env above) if the project
+  # needs no accessory. The host port is non-standard to avoid clashing with a host instance.
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+
+volumes:
+  mysql-data:
+  bundle-cache:
+  mise-data:

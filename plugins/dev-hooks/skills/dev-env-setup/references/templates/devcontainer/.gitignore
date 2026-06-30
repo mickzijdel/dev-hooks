@@ -1,0 +1,3 @@
+# KNOB — devcontainer-local, gitignored artifacts. The Ruby+MySQL example carries an optional
+# local database dump that setup.sh imports if present (see setup.sh). Adjust per project.
+dump.sql.gz
