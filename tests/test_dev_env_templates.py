@@ -171,16 +171,42 @@ def test_zizmor_tool_in_every_mise_template(name):
     )
 
 
-@pytest.mark.parametrize("name", CI_TEMPLATES)
-def test_zizmor_job_in_every_ci_template(name):
-    """v18: every CI template runs zizmor in a dedicated `actions-security` job, mirroring the
-    hk `zizmor` step so CI and pre-commit agree."""
+@pytest.mark.parametrize("name", HK_TEMPLATES)
+def test_actionlint_step_in_every_hk_template(name):
+    """v18: every hk template wires the actionlint correctness linter, amended with `-shellcheck=`
+    so its run: shellcheck pass doesn't double-cover the dedicated shellcheck step."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert "\n  actions-security:\n" in text, (
-        f"{name} is missing the `actions-security` zizmor job"
+    assert '["actionlint"] = (Builtins.actionlint)' in text, (
+        f"{name} is missing the amended actionlint built-in step"
+    )
+    assert "actionlint -shellcheck= {{ files }}" in text, (
+        f"{name}'s actionlint step must disable the run: shellcheck pass with -shellcheck="
+    )
+
+
+@pytest.mark.parametrize("name", MISE_TEMPLATES)
+def test_actionlint_tool_in_every_mise_template(name):
+    """v18: every mise template pins `actionlint` so the hk step + CI job have the binary on PATH."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert re.search(r'^actionlint = "latest"', text, re.M), (
+        f"{name} does not pin the actionlint tool"
+    )
+
+
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_actions_lint_job_runs_both_tools(name):
+    """v18: every CI template runs actionlint + zizmor in one `actions-lint` job (renamed from
+    the v18-initial `actions-security`), mirroring the hk steps so CI and pre-commit agree."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert "\n  actions-lint:\n" in text, f"{name} is missing the `actions-lint` job"
+    assert "\n  actions-security:\n" not in text, (
+        f"{name} still uses the old `actions-security` job name"
+    )
+    assert "actionlint -shellcheck=" in text, (
+        f"{name}'s actions-lint job doesn't run actionlint"
     )
     assert "zizmor --no-progress .github/workflows/" in text, (
-        f"{name}'s actions-security job doesn't run zizmor over the workflows"
+        f"{name}'s actions-lint job doesn't run zizmor over the workflows"
     )
 
 

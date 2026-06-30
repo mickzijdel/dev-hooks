@@ -3,6 +3,7 @@ hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
 zizmor = "latest"   # GitHub Actions security static analysis (hk `zizmor` step + CI)
+actionlint = "latest"   # GitHub Actions workflow linter — syntax/expressions (hk `actionlint` step + CI)
 shellcheck = "latest"
 shfmt = "latest"
 uv = "latest"     # runs PEP 723 scripts (`uv run --script`) and the pytest suite

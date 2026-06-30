@@ -676,43 +676,53 @@ Set `DEV_ENV_VERSION = "17"` in `mise.toml` and you're done.
 
 ---
 
-## v17 → v18 (GitHub Actions security scan: zizmor + hardened checkouts)
+## v17 → v18 (GitHub Actions checks: actionlint + zizmor + hardened checkouts)
 
-v18 adds [zizmor](https://docs.zizmor.sh) — a static analyzer for GitHub Actions workflows — to
-the standard, on **every stack** (each ships a `ci.yml`). It catches the workflow-authoring
-vulnerabilities SHA-pinning (v16) doesn't: credential persistence, `${{ … }}` template injection
-into `run:`, over-broad `GITHUB_TOKEN` permissions, dangerous triggers. The same step also brought
-the hk configs in line with the **hk built-ins** — where a hand-rolled step exactly matched a
-built-in, it's now the built-in. Apply all of:
+v18 adds two static analyzers for GitHub Actions workflows to the standard, on **every stack**
+(each ships a `ci.yml`): **[actionlint](https://github.com/rhysd/actionlint)** for *correctness*
+(schema/typo errors, invalid `${{ }}` expressions, undefined `needs:`) and
+**[zizmor](https://docs.zizmor.sh)** for *security* (credential persistence, `${{ … }}` template
+injection into `run:`, over-broad `GITHUB_TOKEN` permissions, dangerous triggers) — the
+workflow-authoring problems SHA-pinning (v16) doesn't catch. The same step also brought the hk
+configs in line with the **hk built-ins** — where a hand-rolled step exactly matched a built-in,
+it's now the built-in. Apply all of:
 
-1. **Add `zizmor` to `mise.toml`.** Under `[tools]`, next to `gitleaks`:
+1. **Add `zizmor` + `actionlint` to `mise.toml`.** Under `[tools]`, next to `gitleaks`:
    ```toml
-   zizmor = "latest"   # GitHub Actions security static analysis (hk `zizmor` step + CI)
+   zizmor = "latest"       # GitHub Actions security static analysis (hk `zizmor` step + CI)
+   actionlint = "latest"   # GitHub Actions workflow linter — syntax/expressions (hk `actionlint` step + CI)
    ```
-   Then `mise install && mise lock` and commit the `mise.lock` diff (registry
-   `aqua:zizmorcore/zizmor`, so the lock checksum-verifies it).
-2. **Add the hk step.** In `hk.pkl`'s `linters` mapping, next to `gitleaks`:
+   Then `mise install && mise lock` and commit the `mise.lock` diff (both are aqua-registry
+   tools, so the lock checksum-verifies them).
+2. **Add the hk steps.** In `hk.pkl`'s `linters` mapping, next to `gitleaks`:
    ```pkl
+   // -shellcheck= turns off actionlint's shellcheck-of-run: pass — the standard's run: blocks
+   // deliberately word-split ($files), and real *.sh files are covered by the shellcheck step.
+   ["actionlint"] = (Builtins.actionlint) {
+       check = "actionlint -shellcheck= {{ files }}"
+   }
    ["zizmor"] = Builtins.zizmor
    ```
-   The built-in is glob-gated to `.github/workflows/*.yml`, `.github/dependabot.yml`, and
-   `**/action.yml`, so it only fires when a workflow/action file is staged.
+   Both built-ins are glob-gated to workflow files (zizmor also covers `.github/dependabot.yml`
+   and `**/action.yml`), so they only fire when a workflow/action file is staged.
 3. **Harden every `actions/checkout`.** zizmor's `artipacked` audit fails any checkout that leaves
    the job token in `.git/config` on the runner. Add `persist-credentials: false` to the `with:`
    block of **every** `actions/checkout` in **every** workflow file. The mechanical way is
    `zizmor --no-progress --fix=all .github/workflows/<file>.yml` (it inserts the line correctly,
    merging into an existing `with:` for `fetch-depth: 0` checkouts). A job that *pushes* with the
    token keeps the default and adds `# zizmor: ignore[artipacked]` on the `uses:` line instead.
-4. **Add the CI job.** In each `.github/workflows/ci.yml`, add an `actions-security` job (parallel
-   to `gitleaks`), copied from `templates/ci.<stack>.yml`:
+4. **Add the CI job.** In each `.github/workflows/ci.yml`, add an `actions-lint` job (parallel
+   to `gitleaks`) that runs both tools, copied from `templates/ci.<stack>.yml`:
    ```yaml
-   actions-security:
+   actions-lint:
      runs-on: ubuntu-latest
      steps:
        - uses: actions/checkout@<sha> # v7.0.0
          with:
            persist-credentials: false
        - uses: jdx/mise-action@<sha> # v4.2.0
+       - name: Lint workflows (actionlint)
+         run: actionlint -shellcheck=
        - name: Scan workflows with zizmor
          run: zizmor --no-progress .github/workflows/
    ```
@@ -726,9 +736,9 @@ built-in, it's now the built-in. Apply all of:
    (Ruby), `golangci-lint ./...` (Go) — the bare-command built-in would bypass the project-pinned
    version. This step changes no behaviour, so it's not gated; skip it if you prefer.
 6. **Bump the stamp.** Set `DEV_ENV_VERSION = "18"` in `mise.toml`.
-7. **Verify.** `zizmor --no-progress .github/workflows/` exits 0 (no findings);
-   `hk run check` passes; `bash scripts/dev_env_check.sh .` → `has_zizmor=1` and
-   `status=compliant`.
+7. **Verify.** `actionlint -shellcheck= .github/workflows/*.yml` and
+   `zizmor --no-progress .github/workflows/` both exit 0 (no findings); `hk run check` passes;
+   `bash scripts/dev_env_check.sh .` → `has_zizmor=1 has_actionlint=1` and `status=compliant`.
 
 ---
 
