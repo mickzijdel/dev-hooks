@@ -740,6 +740,41 @@ it's now the built-in. Apply all of:
    `zizmor --no-progress .github/workflows/` both exit 0 (no findings); `hk run check` passes;
    `bash scripts/dev_env_check.sh .` → `has_zizmor=1 has_actionlint=1` and `status=compliant`.
 
+## v18 → v19 (mise-driven dev container, advisory)
+
+v19 ships a **mise-driven `.devcontainer/` scaffold** and an advisory drift check. The dev
+container is **optional/recommended, not gated** — a repo without one is fully compliant, and the
+only mandatory step of this bump is re-stamping the version. The new requirement applies *only if*
+a repo has (or wants) a dev container: it must be mise-driven, i.e. the image installs only mise +
+OS libs and `mise install` (in the postCreate `setup.sh`) provisions the toolchain from the
+bind-mounted `mise.toml`/`mise.lock`. See the **Dev container (mise-driven, advisory)** section in
+`standard.md` for the core principle, the nine invariants, and the per-stack knob table.
+
+1. **If your repo already has a `.devcontainer/`, make it mise-driven.** Run the checker
+   (`bash scripts/dev_env_check.sh .`) and read `devcontainer_mise_driven` + the advisory line. Fix
+   any drift it names, against `references/templates/devcontainer/`:
+   - replace a hardcoded language base (`FROM ruby:x.y` / `FROM node:x` / `FROM python:x.y`) with a
+     Debian base matching your **prod** image's release (invariant 1), and install **mise via
+     `extrepo`** instead of `curl | sh` (invariant 2);
+   - drop nodesource / `apt-get install nodejs` and any `npm install -g pnpm` — pin pnpm in
+     `package.json`'s `packageManager` and enable corepack via a mise
+     `[hooks] postinstall = "corepack enable"` (`experimental = true`) (invariant 7);
+   - pre-create the mise data + state dirs as the non-root user **before** the named volume mounts
+     (invariant 4), cache the toolchain on a named volume at `MISE_DATA_DIR` (invariant 5), and put
+     the `setup.sh` steps in order (invariant 8).
+2. **Optionally scaffold one** if you want containerized dev and don't have it: copy
+   `references/templates/devcontainer/*` → `.devcontainer/` and adapt the `# KNOB:` markers for
+   your stack (base image, OS build deps, accessory service, dep-install + DB step). Keep
+   `setup.sh` executable in the git index (`git update-index --chmod=+x .devcontainer/setup.sh`).
+   Copy `tasks.json.example` → `.vscode/tasks.json` if you use the DB/dev-server tasks.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "19"` in `mise.toml` (this is the only required step
+   for a repo with no dev container).
+4. **Verify.** `bash scripts/dev_env_check.sh .` → either no `.devcontainer/`
+   (`has_devcontainer=0`) or `devcontainer_mise_driven=1` and no devcontainer advisory line, and
+   `status=compliant`. If you scaffolded one, also `docker compose build` and run
+   `.devcontainer/setup.sh` to confirm `mise install` resolves the toolchain and the container
+   comes up green.
+
 ---
 
 ## Adding a future version

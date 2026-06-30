@@ -25,9 +25,9 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v18)
+## The standard (v19)
 
-A repo is **compliant at v18** when it has all of:
+A repo is **compliant at v19** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
@@ -81,6 +81,14 @@ A repo is **compliant at v18** when it has all of:
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
   stacks get the same window via their package manager (recommended). See "Dependency cooldown
   (supply-chain)".
+
+**Recommended, advisory (added v19):** a **mise-driven dev container**. Having a `.devcontainer/`
+is optional and never gates compliance — but *if* a repo ships one, it must be mise-driven (the
+image installs only mise + OS libs; `mise install` in the postCreate `setup.sh` provisions the
+toolchain from the bind-mounted `mise.toml`/`mise.lock` — no hardcoded `ruby:`/`node:` base, no
+`npm install -g pnpm`). The checker flags drift advisorily (`devcontainer_mise_driven=0`). Scaffold
+from `references/templates/devcontainer/`; see "Dev container (mise-driven, advisory)" in
+`references/standard.md` and the **[[dockerfile]]** skill.
 
 The full specification — per-artifact requirements, the per-stack linter/audit matrix, the
 jscpd version policy and exclusion gotchas, extensionless-script (shebang) linting, the
@@ -157,6 +165,16 @@ proposing additions.
    (`mise install && mise lock`) and **commit `mise.lock`** — see "Lockfile & supply-chain
    verification".
 
+   **Offer a mise-driven dev container (opt-in).** Mention the optional `.devcontainer/` scaffold
+   and set one up **only if the user wants it** — don't add Docker files unprompted. If they do,
+   copy `references/templates/devcontainer/*` → `.devcontainer/` and adapt the `# KNOB:` markers
+   for the detected stack: the base image (**match the project's prod image's Debian release** —
+   invariant 1), the OS build deps, the accessory service(s), and the dep-install + DB step in
+   `setup.sh`. Keep `setup.sh` executable in the git index
+   (`git update-index --chmod=+x .devcontainer/setup.sh`), and copy `tasks.json.example` →
+   `.vscode/tasks.json` if the project uses the dev-server/DB tasks. See "Dev container
+   (mise-driven, advisory)" in `references/standard.md`.
+
 4. **Upgrade — apply the guide.** Read [`references/upgrade-guide.md`](references/upgrade-guide.md)
    and apply every section **strictly newer** than `repo_version`, in order. Then set
    `DEV_ENV_VERSION` in `mise.toml` to `current_version`. (Existing v0 repos — hk/mise/CI that
@@ -182,6 +200,11 @@ proposing additions.
    skill to migrate the plaintext secrets to fnox + Bitwarden Secrets Manager. Advisory only —
    don't auto-run it, and it never blocks compliance.
 
+   Likewise, if the checker reports `devcontainer_mise_driven=0` (a `.devcontainer/` exists but has
+   drifted from the mise toolchain — hardcoded base, nodesource, global pnpm, …), surface that in
+   the report and offer to fix it per the v18 → v19 upgrade-guide steps. Advisory only — it never
+   blocks compliance.
+
 8. **Verify** (do this, don't assume):
 
    > **`mise trust` first (gate on the user).** A freshly written or cloned `mise.toml` is
@@ -203,6 +226,15 @@ proposing additions.
    has_claude=1`). A good `.gitleaks.toml` smoke test: with a local `.env`/`log/` present,
    `hk run check` must still pass (no leaks found). Run the project's own tests too (`uv run
    pytest` / `bin/rails test` / `go test ./...`). Report real output.
+
+   **If you scaffolded a dev container**, also verify it boots — don't assume:
+   ```bash
+   docker compose -f .devcontainer/compose.yaml build   # image builds
+   # then run the postCreate inside the container, e.g.:
+   docker compose -f .devcontainer/compose.yaml run --rm app .devcontainer/setup.sh
+   # → mise install resolves the toolchain, deps install, the container comes up green
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → devcontainer_mise_driven=1
+   ```
 
 ## Project docs (README + CLAUDE.md)
 

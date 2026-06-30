@@ -1,0 +1,24 @@
+{
+  "//": "Copy to .vscode/tasks.json. Any task that starts a host accessory container (DB, etc.) must no-op INSIDE the devcontainer: there the service runs via compose `depends_on` (started automatically) and there is no docker CLI in the container. Guard on $REMOTE_CONTAINERS/$CODESPACES or `command -v docker` so the task skips instead of erroring. The MySQL example below mirrors the dev-env-setup standard's invariant 9.",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start MySQL (docker)",
+      "type": "shell",
+      "//": "Host-only: starts the local DB container. In a devcontainer the DB runs as the compose service (depends_on), and there is no docker CLI — so skip there instead of erroring.",
+      "command": "if [ -n \"$REMOTE_CONTAINERS$CODESPACES\" ] || ! command -v docker >/dev/null 2>&1; then echo 'Devcontainer: DB runs as the compose service (no action needed).'; else docker start mysql8; fi",
+      "presentation": { "reveal": "silent", "panel": "shared", "close": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev server",
+      "type": "shell",
+      "command": "bin/dev",
+      "dependsOn": ["Start MySQL (docker)"],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev", "focus": false },
+      "problemMatcher": [],
+      "runOptions": { "runOn": "folderOpen" }
+    }
+  ]
+}

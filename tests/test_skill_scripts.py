@@ -324,6 +324,88 @@ def test_checker_no_fnox_suggestion_from_vendored_dirs(tmp_path, vendor_dir):
     assert out["suggests_fnox"] == "0"
 
 
+# ── dev container drift (advisory, v19) ─────────────────────────────────────────────
+def _mise_driven_dockerfile():
+    return (
+        "# syntax=docker/dockerfile:1\n"
+        "FROM debian:trixie-slim\n"
+        "RUN extrepo enable mise && apt-get install -y mise\n"
+    )
+
+
+def test_checker_no_devcontainer_signal_when_absent(tmp_path):
+    # Default compliant repo has no .devcontainer/ → has_devcontainer=0, no drift, compliant.
+    make_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["has_devcontainer"] == "0"
+    assert out["devcontainer_mise_driven"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_devcontainer_mise_driven(tmp_path):
+    # A mise-driven .devcontainer/ (debian base + extrepo mise) → detected, no drift, and the
+    # repo stays compliant (the devcontainer signal never changes status).
+    make_compliant_repo(tmp_path)
+    dc = tmp_path / ".devcontainer"
+    dc.mkdir()
+    (dc / "devcontainer.json").write_text('{"name": "x"}\n')
+    (dc / "Dockerfile.dev").write_text(_mise_driven_dockerfile())
+    out = run_checker(tmp_path)
+    assert out["has_devcontainer"] == "1"
+    assert out["devcontainer_mise_driven"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_flags_hardcoded_base_devcontainer(tmp_path):
+    # A .devcontainer/ with a hardcoded language base + nodesource-style nodejs + global pnpm
+    # drifts from the mise toolchain → devcontainer_mise_driven=0 (advisory). It must NOT force
+    # status to needs-upgrade — the otherwise-compliant repo stays compliant.
+    make_compliant_repo(tmp_path)
+    dc = tmp_path / ".devcontainer"
+    dc.mkdir()
+    (dc / "devcontainer.json").write_text('{"name": "x"}\n')
+    (dc / "Dockerfile.dev").write_text(
+        "FROM ruby:4.0.2-slim\nRUN apt-get install -y nodejs\nRUN npm install -g pnpm\n"
+    )
+    out = run_checker(tmp_path)
+    assert out["has_devcontainer"] == "1"
+    assert out["devcontainer_mise_driven"] == "0"
+    assert out["status"] == "compliant"
+
+
+def test_checker_devcontainer_drift_does_not_flag_comments(tmp_path):
+    # The shipped Dockerfile.dev template carries cautionary comments ("do NOT add
+    # `apt-get install nodejs`", "no `npm install -g pnpm`"). Comment lines are stripped before
+    # scanning, so a faithful mise-driven devcontainer that merely *mentions* those in comments
+    # must not self-flag.
+    make_compliant_repo(tmp_path)
+    dc = tmp_path / ".devcontainer"
+    dc.mkdir()
+    (dc / "Dockerfile.dev").write_text(
+        "# syntax=docker/dockerfile:1\n"
+        "# Do NOT add `apt-get install nodejs` or a `ruby:x.y` base or `npm install -g pnpm`.\n"
+        "FROM debian:trixie-slim\n"
+        "RUN extrepo enable mise && apt-get install -y mise\n"
+    )
+    out = run_checker(tmp_path)
+    assert out["devcontainer_mise_driven"] == "1"
+
+
+def test_checker_devcontainer_base_os_mismatch(tmp_path):
+    # Both the devcontainer base and a root ./Dockerfile name a Debian codename directly, and
+    # they differ → best-effort base-os-mismatch drift.
+    make_compliant_repo(tmp_path)
+    (tmp_path / "Dockerfile").write_text("FROM debian:trixie-slim\n")
+    dc = tmp_path / ".devcontainer"
+    dc.mkdir()
+    (dc / "Dockerfile.dev").write_text(
+        "FROM debian:bookworm-slim\n"
+        "RUN extrepo enable mise && apt-get install -y mise\n"
+    )
+    out = run_checker(tmp_path)
+    assert out["devcontainer_mise_driven"] == "0"
+
+
 # ── upgrade_inventory.sh (dependency-upgrade skill preflight) ───────────────────────
 def run_inventory(target, *args):
     """Run the dependency-upgrade preflight (default mode — read-only, no tool exec)

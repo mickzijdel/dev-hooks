@@ -1,4 +1,4 @@
-# The standard (v18) — full specification
+# The standard (v19) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v18** when it has all of:
+A repo is **compliant at v19** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v18** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "18"`.
+  stamp `DEV_ENV_VERSION = "19"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -344,6 +344,70 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
   stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
 - **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
   The default already covers this; just don't un-ignore it.
+
+## Dev container (mise-driven, advisory — v19)
+
+**Recommended, not part of the version-checked status** — having a `.devcontainer/` never blocks
+an upgrade, and a repo without one is fully compliant. But *if* a repo ships a dev container, it
+must be **mise-driven**, and the checker flags drift when it isn't (`devcontainer_mise_driven=0`,
+advisory only — mirrors `suggests_fnox`). The scaffold lives in
+[`templates/devcontainer/`](templates/devcontainer/) (`Dockerfile.dev`, `compose.yaml`,
+`devcontainer.json`, `setup.sh`, `.gitignore`, `tasks.json.example`); the worked example is
+Ruby+JS+MySQL, with `# KNOB:` markers for the per-stack axes. Pairs with the **[[dockerfile]]**
+skill.
+
+**Core principle.** `mise.toml` + `mise.lock` is the **single source of truth** for the toolchain.
+The image installs **only mise + the OS libraries needed to build/run that toolchain** and pins
+**no** language versions itself; the toolchain is installed by `mise install` in the postCreate
+`setup.sh`, where the bind-mounted `mise.toml`/`mise.lock` are available — so the container always
+matches the checked-out versions. A devcontainer that hardcodes `FROM ruby:x.y` / `FROM node:x`,
+a nodesource repo, or `npm install -g pnpm` reintroduces the dual-source-of-truth drift this
+standard exists to remove.
+
+**Invariants** (the worked example proves each; don't regress them):
+
+1. **Base image = the same OS/glibc as the project's prod/runtime image** — an explicit,
+   documented KNOB. (Example: prod `ruby:4.0.2-slim` = Debian 13/trixie → devcontainer
+   `debian:trixie-slim`.) Native extensions compiled into a persisted deps volume link against the
+   build glibc; a mismatch (e.g. bookworm's 2.36 vs trixie's 2.41) makes them fail at load with
+   `GLIBC_2.xx not found`. Bump both together.
+2. **Install mise via Debian `extrepo`** (`extrepo enable mise` + GPG-verified apt), **not**
+   `curl | sh` — in line with the standard's supply-chain posture (gitleaks, checksummed
+   `mise.lock`, SHA-pinned actions).
+3. **No hardcoded language versions** — no `ruby:`/`node:`/`python:` base, no nodesource
+   `apt-get install nodejs`. To change a version, edit `mise.toml`.
+4. **Pre-create the mise data + state dirs as the non-root user, BEFORE the named volume mounts**
+   (`USER vscode`, then `mkdir -p "$MISE_DATA_DIR" ~/.local/state/mise`). A named volume mounts
+   root-owned by default; pre-creating the parents as the dev user means a fresh volume
+   initialises with the right ownership and mounting it doesn't leave `~/.local` root-owned —
+   which would block mise from writing `~/.local/state/mise` (its trusted-configs live there).
+5. **Cache the mise toolchain on a named volume** mounted at `MISE_DATA_DIR`, so any one-time
+   from-source runtime compile (e.g. Ruby) persists across rebuilds.
+6. **apt cache mounts + retries** — `# syntax=docker/dockerfile:1`, `--mount=type=cache,…` on the
+   apt `RUN`s, and `-o Acquire::Retries=3`.
+7. **JS: corepack + `package.json` `packageManager`, not a global pnpm.** Pin pnpm/yarn in the
+   `packageManager` field (host, CI, and container all read that one pin) and let corepack provide
+   it via a mise `[hooks] postinstall = "corepack enable"` (needs `experimental = true`). CI's
+   `pnpm/action-setup` then reads `packageManager` too — no hardcoded pnpm version anywhere.
+8. **`setup.sh` order:** chown the named volumes (deps cache + mise-data) to the dev user →
+   `mise trust` → `mise install` (runs the corepack hook) → `hk install` → install project deps →
+   prepare the DB.
+9. **Accessory services (DB, …) start automatically via compose `depends_on`** — the developer
+   doesn't "start" them. Any VS Code task that starts a *host* DB container must **no-op inside the
+   container** (there's no docker CLI there): guard on `$REMOTE_CONTAINERS`/`$CODESPACES` or
+   `command -v docker` (see `templates/devcontainer/tasks.json.example`).
+
+**Per-stack knobs** (the mise-owns-the-toolchain core is identical; only these vary):
+
+| Stack | OS build deps (beyond core) | Accessory service(s) | Dep install + DB step in `setup.sh` |
+|-------|-----------------------------|----------------------|--------------------------------------|
+| Ruby (+JS) | ruby-build chain (build-essential, libssl/libyaml/libffi/… , pkg-config) + DB client/libvips | DB (MySQL/Postgres) | `bundle install` + `pnpm install`; `bin/rails db:prepare` |
+| JS/TS | none beyond core (mise installs prebuilt node) | optional DB | `pnpm install` / `npm ci`; app-specific |
+| Python | optional CPython build deps (or none — mise uses prebuilt CPython) | optional DB | `uv sync`; app-specific |
+| Go | none beyond core (mise installs prebuilt go) | optional DB | `go mod download`; app-specific |
+
+**Checker signals (advisory).** `has_devcontainer` and `devcontainer_mise_driven` — the latter
+drops to 0 (and emits an advisory line) on any drift listed above. Neither ever changes `status`.
 
 ## AGENTS.md symlink (advisory, not gated)
 
