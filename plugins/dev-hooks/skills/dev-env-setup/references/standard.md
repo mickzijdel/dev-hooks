@@ -381,6 +381,11 @@ standard exists to remove.
    root-owned by default; pre-creating the parents as the dev user means a fresh volume
    initialises with the right ownership and mounting it doesn't leave `~/.local` root-owned —
    which would block mise from writing `~/.local/state/mise` (its trusted-configs live there).
+   **The same applies to any cache volume you mount under `~/.cache/<x>`** (e.g. a Playwright
+   browser cache at `~/.cache/ms-playwright`, or a `uv` cache at `~/.cache/uv`): pre-create both
+   that dir **and `~/.cache/mise`** as the dev user, or Docker creates `~/.cache` root-owned at
+   mount time and `mise install` dies with `create_dir_all: ~/.cache/mise/lockfiles: Permission
+   denied`. Chowning only the volume's own subdir in `setup.sh` does not fix the root-owned parent.
 5. **Cache the mise toolchain on a named volume** mounted at `MISE_DATA_DIR`, so any one-time
    from-source runtime compile (e.g. Ruby) persists across rebuilds.
 6. **apt cache mounts + retries** — `# syntax=docker/dockerfile:1`, `--mount=type=cache,…` on the
