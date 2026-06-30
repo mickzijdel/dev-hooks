@@ -3,6 +3,7 @@ hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
 zizmor = "latest"         # GitHub Actions security static analysis (hk `zizmor` step + CI)
+actionlint = "latest"     # GitHub Actions workflow linter — syntax/expressions (hk `actionlint` step + CI)
 go = "latest"             # Go stack tool (go build / go test / go vet)
 golangci-lint = "latest"  # Go meta-linter (govet, staticcheck, unused, errcheck, gofmt/goimports formatters)
 shellcheck = "latest"     # lints any shipped shell scripts (scripts/run-jscpd.sh, bin/*.sh)

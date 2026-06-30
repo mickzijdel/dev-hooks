@@ -3,6 +3,7 @@ hk = "latest"
 pkl = "latest"
 gitleaks = "latest"
 zizmor = "latest"   # GitHub Actions security static analysis (hk `zizmor` step + CI)
+actionlint = "latest"   # GitHub Actions workflow linter — syntax/expressions (hk `actionlint` step + CI)
 node = "latest"   # provides npx, used to run jscpd + herb lint (both npm-distributed)
 # Ruby itself is pinned via .ruby-version + bundler, not mise. jscpd is NOT a mise tool — it's a
 # Rust binary shipped via npm optional platform packages that npx resolves but the mise npm

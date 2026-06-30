@@ -70,16 +70,18 @@ If you do nothing else when writing or reviewing a workflow, get these right:
    # and its SHA must match the pin. A mismatch (lying comment / wrong SHA) FAILs.
    ```
    If `gh`/`pinact` is unavailable or unauthenticated, say so and ask the user — never guess a SHA.
-4. **Run zizmor** to catch the authoring vulnerabilities the checklist names (credential
-   persistence, template injection, over-broad permissions):
+4. **Run actionlint + zizmor** — correctness then security (the two analyzers the standard wires
+   in). actionlint catches schema/expression/`needs:` errors; zizmor catches credential
+   persistence, template injection, over-broad permissions:
    ```bash
-   zizmor --no-progress .github/workflows/     # exit 0 = clean; non-zero = real findings
+   actionlint -shellcheck=                      # correctness; -shellcheck= skips the run: shellcheck pass
+   zizmor --no-progress .github/workflows/       # security; exit 0 = clean, non-zero = real findings
    zizmor --no-progress --fix=all .github/workflows/<file>.yml   # apply mechanical fixes, then review
    ```
-   `zizmor` is mise-pinned in every dev-env repo (`mise.toml`); install ad hoc with
-   `mise use -g zizmor` elsewhere. Suppress a deliberate exception inline with
+   Both are mise-pinned in every dev-env repo (`mise.toml`); install ad hoc with
+   `mise use -g zizmor actionlint` elsewhere. Suppress a deliberate zizmor exception inline with
    `# zizmor: ignore[<audit>]`, never by lowering the persona. (Dogfooded: the dev-env-setup CI
-   templates ship an `actions-security` job that runs exactly this.)
+   templates ship one `actions-lint` job that runs both.)
 
 ## Fleet-wide bump
 
