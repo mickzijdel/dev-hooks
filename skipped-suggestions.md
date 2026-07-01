@@ -8,6 +8,28 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-07-01 (Run 9)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-06-25: none new (most recent commits on `main`, `0eddfc2`/`54757ec`/`270dfe8` from Jun 25, already reviewed in Run 8)
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-06-29 to 2026-07-01 (7 items)
+
+PRs opened this run:
+- rails-toolkit [#6 feat: add rails-mailers skill](https://github.com/mickzijdel/rails-toolkit/pull/6) — own idea (gap: no dedicated ActionMailer guide despite deep coverage of jobs/API/migrations)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Add `rails-mailers` skill (own idea) | own idea | **Implement** | rails-toolkit PR #6 opened. Shallow mailers triggered from commit hooks, multipart+i18n templates, previews, `letter_opener` local delivery, delivery-job error handling (reusing `rails-jobs` Pattern 7), bounce/complaint suppression, and mailer testing patterns. |
+| Chain agent slash-commands (`/ultracode` → `/deep-research` → one-shot implementation → `/code-review` → PR) to build small personal tools | feed item 2026-06-30 (https://x.com/nibzard/status/2072070854825963782) | Duplicate | Composes existing Claude Code skills already present in this session's toolset (`deep-research`, `code-review`); no new hook/skill capability to add. |
+| Ship agent PRs from a single Slack message by layering CI, lint, security scans, e2e tests, and an automated QA bot that records GIFs of itself testing | feed item 2026-06-30 (https://x.com/alvinsng/status/2072078751010316372) | Deferred | The CI/lint/test-before-ship half is already covered by `verify-work.sh` + `but-for-real`; the GIF-recording QA bot needs browser-recording infra beyond a shell hook's scope, and the Slack trigger is environment-specific. Revisit if a lightweight "attach visual proof of testing" pattern emerges for `verify-work.sh`. |
+| Five concrete agent workflows: inspect codebase, monitor Slack for customer signal, prep meetings, pressure-test decisions, build throwaway agents for messy ops | feed item 2026-06-29 (https://x.com/petergyang/status/2071690793899974773) | Duplicate / Out of scope | "Pressure-test decisions" is covered by `premortem` + `board`; Slack monitoring, meeting prep, and throwaway ops agents are business/personal workflows with no dev-hook surface. |
+| When going AI-first, layer small autonomous agent loops (triage, PR review, comment-to-commit) onto your existing process incrementally rather than rebuilding from scratch | feed item 2026-06-29 (https://x.com/dexhorthy/status/2071649145077874983) | Duplicate | `weekly-automation-review` already recommends 1–2 incremental automation opportunities per run rather than a wholesale rebuild. |
+| Build a personal 4-part model benchmark (notes→PRD, prototypes, bug hunting, persona) to decide whether to adopt a new LLM instead of vibe-checking | feed item 2026-06-30 (https://x.com/clairevo/status/2072101101021847962) | Out of scope | About evaluating and switching underlying LLM providers/models; this plugin suite is Claude Code-specific tooling, not a multi-model evaluation harness. |
+| Prep talks by recording a draft video, then have Claude Code convert it to a Notion page with slides+transcript and attach reviewer feedback as inline comments | feed item 2026-07-01 (https://x.com/geoffreylitt/status/2072110805089435973) | Out of scope | Personal talk-prep/Notion workflow; no dev-workflow hook surface. |
+| Use Riverside's Claude MCP integration to record, transcript-edit, auto-clip, draft a newsletter, and schedule social posts in one agentic workflow | feed item 2026-06-30 (https://x.com/itsolelehmann/status/2072031800134943078) | Out of scope | Podcast/media production and social-scheduling workflow; not dev. |
+
+---
+
 ## 2026-06-29 (Run 8)
 
 Sources scanned:
