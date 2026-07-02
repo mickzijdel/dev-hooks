@@ -75,4 +75,5 @@ If the project uses `CLAUDE.md`, add a one-line summary of active ADRs there so 
 
 - Before committing to the decision, run [[board]] to stress-test it from multiple angles.
 - After identifying a risk, run [[premortem]] to imagine failure modes.
+- When a decision hardens a domain term (or vice versa), run [[domain-modeling]] — the term goes in `CONTEXT.md`, the decision goes here.
 - For active work-in-progress coordination across sessions, use `plan.md` (see [[agent-handoff]]) — ADRs record settled decisions; `plan.md` tracks live work.
