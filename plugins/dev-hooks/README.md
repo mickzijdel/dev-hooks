@@ -46,6 +46,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
 | `Stop` | `memory-reminder.sh` | On stop of a substantial session (≥ 6 human turns), remind Claude (exit 2) to capture durable, non-obvious learnings into its file-based memory — memory dir only, never CLAUDE.md, with an explicit "nothing worth saving" escape hatch. Fires at most once per session. Opt-in via `DEV_HOOKS_MEMORY=1`, or auto-enabled once you use Claude's memory feature anywhere. |
 | `Stop` | `big-change-reminder.sh` | On stop, if the working tree holds a very large **uncommitted** change (default: ≥ 25 files or ≥ 800 added lines), nudge Claude (exit 2) to slow down — commit the working pieces in small, focused commits, run tests, get a review, and consider plan mode for the next chunk. Stays silent when a multi-session plan is already in progress (`.claude/current_plan.md`). Aimed at beginners, for whom a giant uncommitted diff is hard to review and easy to lose. Fires once per session. Thresholds tunable via `DEV_HOOKS_BIG_CHANGE_FILES`/`DEV_HOOKS_BIG_CHANGE_LINES`; opt out with `DEV_HOOKS_BIG_CHANGE=false`. |
+| `Stop` | `change-summary-reminder.sh` | On stop, if the session changed a meaningful number of files (default: ≥ 3), nudge Claude (exit 2) to give a short, plain-language summary of what changed in each file — an aid for reviewing the session's work without re-reading the raw diff, for technical and non-technical readers alike. Fires once per session. Threshold tunable via `DEV_HOOKS_CHANGE_SUMMARY_FILES`; opt out with `DEV_HOOKS_CHANGE_SUMMARY=false`. |
 | `Stop` | `save-script-reminder.sh` | On stop, if Claude wrote a script this session (a `Write` of shebang-prefixed content, **wherever** it landed — scratchpad, `/tmp`, or inside a project repo; only scripts already in a library root are excluded), nudge it (exit 2) to **decide per script**: a broadly useful tool gets genericized to the saved-script standard (PEP 723 + `uv run` shebang + `# short-description:` + `chmod +x`) and added to a library root (or a subdirectory) so the `script-index` hook surfaces it next session — even one already committed to a repo can be worth promoting — while a genuinely task-specific or throwaway script is left where it is. Points at the `script-library` skill. Fires at most once per session. Library roots come from `DEV_HOOKS_SCRIPT_DIR`; opt out with `DEV_HOOKS_SAVE_SCRIPT=false`. |
 
 ## Skills
@@ -264,6 +265,13 @@ $ claude
   `DEV_HOOKS_BIG_CHANGE_LINES` default 800) and stays silent when `.claude/current_plan.md`
   exists — a plan already means the work is deliberate. Silence it with
   `DEV_HOOKS_BIG_CHANGE=false`.
+- `change-summary-reminder.sh` counts changed files via the simpler `git status --porcelain`
+  tally (an untracked directory collapses to one entry — unlike `big-change-reminder.sh`'s
+  line-count-accurate expansion, that's fine here since it's only a file-count threshold), and
+  it doesn't inspect diff size at all — it's about getting a **readable account** of the
+  changes, not their bulk. It doesn't check whether a summary was already given earlier in the
+  session; the once-per-session sentinel is enough, and the reminder text itself tells Claude
+  it's fine to skip repeating one.
 - Nearly all the hooks build on `hooks/scripts/lib/reminder-common.sh`, the shared library
   that owns payload extraction, opt-out handling, and advisory/blocking emit. Its content
   helpers understand Write `content`, Edit `new_string`/`old_string`, and MultiEdit `edits[]`
