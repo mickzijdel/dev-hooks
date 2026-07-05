@@ -8,6 +8,38 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-07-05 (Run 10)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-06-25: none new (most recent commits on `main` are `0eddfc2`/`54757ec`/`270dfe8` from Jun 25, already reviewed in Run 8)
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-06-30 to 2026-07-05 (16 items; window is 7 days back from 2026-07-05, several items in the Jun 28–Jul 01 overlap with Run 9's stated window were re-checked but turned out already logged verbatim, so only genuinely new items are rowed below)
+
+PRs opened this run:
+- dev-hooks [#14 feat(dev-hooks): add change-summary-reminder Stop hook](https://github.com/mickzijdel/dev-hooks/pull/14) — inspired by feed item 2026-07-04 (thdxr)
+- rails-toolkit [#7 feat: add rails-i18n skill](https://github.com/mickzijdel/rails-toolkit/pull/7) — own idea (gap: no dedicated I18n guide despite passing mentions in `rails-mailers`/`rails-testing`)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| After a big agent change, ask for a per-file summary of edits instead of reading the diff — anomalies pop out and 1-2 follow-up prompts fix them | feed item 2026-07-04 (https://x.com/thdxr/status/2073238046296924466) | **Implement** | dev-hooks PR #14 opened. New Stop hook `change-summary-reminder.sh`: nudges a plain-language per-file summary once per session when ≥3 files changed, distinct from `big-change-reminder.sh` (diff size) and `review-reminder.sh` (run-a-review). |
+| Add `rails-i18n` skill (own idea) | own idea | **Implement** | rails-toolkit PR #7 opened. Locale organization, lazy lookup, pluralization, number/date/currency formatting, per-request locale selection, fallbacks, `i18n-tasks`, translation-coverage testing. |
+| Combine the X MCP with Claude Live Artifacts to build a self-refreshing custom analytics dashboard | feed item 2026-06-30 (https://x.com/kr0der/status/2071850725311697264) | Out of scope | X/Twitter-specific MCP + personal analytics dashboard; no dev-workflow hook surface. |
+| Run a 'premortem' with Claude: tell it the plan already failed 6 months from now and ask how it died, to surface hidden risks | feed item 2026-06-30 (https://x.com/itsolelehmann/status/2071879321535619222) | Duplicate | Exactly the mechanism of the existing `premortem` skill (thinking-tools): assert the failure as fact, work backwards. |
+| Route all inbound info (feeds, articles, YouTube, news, X, LinkedIn) through an agent that auto-summarizes into a single inbox | feed item 2026-06-30 (https://x.com/intellectronica/status/2071938033440763985) | Out of scope | Personal information-management workflow; no dev-workflow hook surface. |
+| Have coding agents write Notion explainer docs with embedded HTML widgets in a shared space | feed item 2026-07-01 (https://x.com/geoffreylitt/status/2072405278901850508) | Out of scope | Notion-specific integration; no Claude Code plugin surface. |
+| Point Codex at a conference's session list to download, transcribe, and summarize talks | feed item 2026-07-01 (https://x.com/steipete/status/2072433013624033282) | Out of scope | Codex-specific, narrow personal-research workflow. |
+| On long agent runs, explicitly instruct the model to report in plain language or it drifts into weird internal cadence | feed item 2026-07-02 (https://x.com/emollick/status/2072543365124481045) | Duplicate | Same author/idea as the Run 4 entry ("Ask Claude to report in plain English..."), already decided Out of scope — prompting tip with no hook surface. |
+| Connect Granola to Claude Code via MCP to turn meeting transcripts into action dashboards | feed item 2026-07-02 (https://x.com/itsolelehmann/status/2072628018275627368) | Out of scope | Granola-specific meeting-notes product; no dev-workflow hook surface. |
+| Karpathy's reader3 workflow: read a chapter yourself, feed it to an LLM for explanation/Q&A, save notes to a wiki | feed item 2026-07-02 (https://x.com/itsolelehmann/status/2072678166402048478) | Deferred | Same personal-learning territory as the Run 2 "`/teach` skill" entry (also Deferred); still no dev-workflow trigger event to hang a skill on. |
+| Tell the coding agent to pick a lower-power model in a subagent for appropriate tasks using its own judgment | feed item 2026-07-03 (https://x.com/simonw/status/2073117641020215566) | Out of scope | Model-selection/cost tip; reasoning-budget and model choice are user/runtime config, not something a hook enforces (same reasoning as the Run 2 "reasoning budget" Rejected entry). |
+| Bypass bad social APIs by having Codex generate video clips with ffmpeg and drive Meta Business Suite/TikTok UIs via browser use | feed item 2026-07-03 (https://x.com/petergyang/status/2073115061355532429) | Out of scope | Social-media marketing automation; not dev. |
+| When Codex produces poor UI, prompt it to 'use imagegen to re-imagine this design and implement that' | feed item 2026-07-04 (https://x.com/steipete/status/2073277317464682723) | Out of scope | UI-design prompting technique tied to Codex/imagegen; same territory as the Run 5 "avoid AI design slop" Out-of-scope entry. |
+| In Claude Code, drag a chat from the sidebar into the main view to create a split-pane | feed item 2026-07-04 (https://x.com/kr0der/status/2073396616191672484) | Out of scope | Built-in Claude Code UI feature tip; nothing to change in this plugin repo. |
+| Run Claude as a final pre-release reviewer on your work | feed item 2026-07-05 (https://x.com/simonw/status/2073574214280544746) | Duplicate | Covered by `review-reminder.sh` + `board` + the `/code-review` and `/security-review` skills. |
+| Use AI to audit non-code work: try prompts like 'write the eulogy for my business as if it died in 2028' | feed item 2026-07-05 (https://x.com/cathrynlavery/status/2073621820113334643) | Duplicate | Same premortem-by-another-framing as the `itsolelehmann` row above; both are the existing `premortem` skill's mechanism. |
+| Nine prompt moves for Claude: blindspot pass, ask for options, throwaway drafts, interview-me, show-don't-explain, plan-first, decision notes, self-quiz, teach-to-judge | feed item 2026-07-05 (https://x.com/itsolelehmann/status/2073740677175996453) | Duplicate | A listicle whose individual moves are already covered piecemeal: blindspot pass → `board`/`premortem`; plan-first → `plan-reminder.sh`; decision notes → `adr`; self-quiz/teach-to-judge → `self-rate` + `quiz-me` (added Run 8). No single novel gap large enough for its own skill. |
+
+---
+
 ## 2026-07-01 (Run 9)
 
 Sources scanned:
