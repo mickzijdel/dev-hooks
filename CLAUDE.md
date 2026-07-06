@@ -97,7 +97,10 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
   `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the
-  save-script-reminder transcript scan) live in `lib/hook_helpers.py` — import them by
+  save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
+  actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
+  skill_listing attachment names every installed skill, so a plain grep for a skill name
+  matches in every session and permanently suppresses the hook) live in `lib/hook_helpers.py` — import them by
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
