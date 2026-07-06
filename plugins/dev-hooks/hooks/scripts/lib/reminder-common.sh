@@ -61,13 +61,19 @@ reminder_old_content() {
     + "\n" + ([.tool_input.edits[]?.old_string // ""] | join("\n"))' 2>/dev/null)
 }
 
-# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT, and exit 0
-# (silent) when the given sentinel string already appears in the transcript — the
+# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT and SESSION, and
+# exit 0 (silent) when the given sentinel string already appears in the transcript — the
 # once-per-session guard: the sentinel is embedded in the hook's own reminder, so
 # finding it means we already prompted, and a re-fire would loop the Stop hook.
+# Pass "" as the sentinel to skip the guard (a hook managing its own re-arm state).
 reminder_stop_init() {
   INPUT=$(cat 2>/dev/null)
-  TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+  local _si
+  mapfile -t _si < <(printf '%s' "$INPUT" |
+    jq -r '(.transcript_path // ""), (.session_id // "nosession")' 2>/dev/null)
+  TRANSCRIPT=${_si[0]:-}
+  # shellcheck disable=SC2034
+  SESSION=${_si[1]:-nosession}
   if [ -n "$1" ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     grep -qF "$1" "$TRANSCRIPT" 2>/dev/null && exit 0
   fi
@@ -106,16 +112,22 @@ reminder_emit_decision() {
   exit 0
 }
 
-# Fire-at-most-once guard, keyed on hook name + $SESSION (+ an optional extra key,
-# e.g. a manifest category or file hash). Marker files live under ${TMPDIR}. Needs
-# $SESSION, i.e. reminder_init must have run. Callers:
-#   reminder_fire_once <name> [extra] || exit 0
-reminder_fire_once() {
+# Per-session state file, keyed on hook name + $SESSION (+ an optional extra key), under
+# ${TMPDIR}. Sets REPLY to the path. reminder_fire_once tracks bare existence through it;
+# hooks that must re-arm (compress-comments-reminder) read/write a value there instead.
+reminder_state_file() {
   local dir="${TMPDIR:-/tmp}/dev-hooks-$1"
   mkdir -p "$dir" 2>/dev/null
-  local marker="$dir/${SESSION}${2:+-$2}"
-  [ -e "$marker" ] && return 1
-  : >"$marker" 2>/dev/null
+  REPLY="$dir/${SESSION:-nosession}${2:+-$2}"
+}
+
+# Fire-at-most-once guard. Needs $SESSION, i.e. reminder_init/reminder_stop_init must
+# have run. Callers:
+#   reminder_fire_once <name> [extra] || exit 0
+reminder_fire_once() {
+  reminder_state_file "$1" "$2"
+  [ -e "$REPLY" ] && return 1
+  : >"$REPLY" 2>/dev/null
   return 0
 }
 

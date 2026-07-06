@@ -970,7 +970,18 @@ def _stop_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"
     lines = [listing, *(extra_lines or [])]
     transcript = tmp_path / "t.jsonl"
     transcript.write_text("\n".join(lines) + "\n")
-    return json.dumps({"transcript_path": str(transcript)})
+    return json.dumps({"transcript_path": str(transcript), "session_id": tmp_path.name})
+
+
+def _run_cc(tmp_path, payload):
+    """Run the hook with TMPDIR pinned to the test dir so the per-session comment-count
+    marker is hermetic per test."""
+    return run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
 
 
 def _commit_dated(tmp_path, run, date, msg="c"):
@@ -994,9 +1005,7 @@ def test_compress_comments_silent_outside_git(tmp_path):
 def test_compress_comments_fires_on_untracked_comment_heavy_file(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
-    r = run_hook(
-        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path))
     assert r.returncode == 2
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
@@ -1008,9 +1017,7 @@ def test_compress_comments_fires_on_tracked_diff(tmp_path):
     run("add", "-A")
     run("commit", "-q", "-m", "init")
     _comment_heavy_file(f)  # unstaged modification: comments arrive via `git diff`
-    r = run_hook(
-        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path))
     assert r.returncode == 2
     assert_json_with(r.stdout, "compress-comments")
 
@@ -1018,9 +1025,7 @@ def test_compress_comments_fires_on_tracked_diff(tmp_path):
 def test_compress_comments_silent_below_threshold(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "new.py").write_text("# one lonely comment\nx = 1\ny = 2\n")
-    r = run_hook(
-        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -1029,9 +1034,7 @@ def test_compress_comments_silent_for_non_code_files(tmp_path):
     # Markdown headings look like `#` comments; the extension gate must exclude them.
     init_git_repo(tmp_path)
     (tmp_path / "notes.md").write_text("# One\n# Two\n# Three\n# Four\n")
-    r = run_hook(
-        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -1045,9 +1048,7 @@ def test_compress_comments_ignores_shebang_and_directives(tmp_path):
         "# another real comment\n"
         "echo hi\n"
     )
-    r = run_hook(
-        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -1059,13 +1060,15 @@ def test_compress_comments_silent_when_opted_out(tmp_path):
         "compress-comments-reminder.sh",
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path),
-        env=base_env(DEV_HOOKS_COMPRESS_COMMENTS="false"),
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_COMPRESS_COMMENTS="false"),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
 def test_compress_comments_silent_when_skill_already_ran(tmp_path):
+    # A skill run before any reminder sets the baseline: current comments are considered
+    # handled, and only growth beyond them re-arms the hook.
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     skill_line = json.dumps(
@@ -1077,24 +1080,64 @@ def test_compress_comments_silent_when_skill_already_ran(tmp_path):
             }
         }
     )
-    r = run_hook(
-        "compress-comments-reminder.sh",
-        cwd=tmp_path,
-        stdin=_stop_payload(tmp_path, extra_lines=[skill_line]),
-    )
+    payload = _stop_payload(tmp_path, extra_lines=[skill_line])
+    r = _run_cc(tmp_path, payload)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+    # ...but three MORE comment lines after that skill run warrant a fresh reminder.
+    _comment_heavy_file(tmp_path / "more.py")
+    r = _run_cc(tmp_path, payload)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[compress-comments-reminder]")
+
+
+def test_compress_comments_second_stop_without_new_comments_is_silent(tmp_path):
+    # The reminder must not loop: an unchanged comment count stays silent on later stops.
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    payload = _stop_payload(tmp_path)
+    first = _run_cc(tmp_path, payload)
+    assert first.returncode == 2
+    second = _run_cc(tmp_path, payload)
+    assert second.returncode == 0
+    assert second.stdout.strip() == ""
+
+
+def test_compress_comments_refires_when_comment_total_grows(tmp_path):
+    # One large commit full of comments after the first reminder re-arms the hook —
+    # no minimum commit count, growth in comment lines is the only signal.
+    run = init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    payload = _stop_payload(tmp_path)
+    assert _run_cc(tmp_path, payload).returncode == 2
+    _comment_heavy_file(tmp_path / "big.py")
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one large commit")
+    r = _run_cc(tmp_path, payload)
+    assert r.returncode == 2
+    payload_json = assert_json_with(r.stdout, "[compress-comments-reminder]")
+    assert "since the last reminder" in json.dumps(payload_json)
+
+
+def test_compress_comments_no_refire_for_small_growth(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    payload = _stop_payload(tmp_path)
+    assert _run_cc(tmp_path, payload).returncode == 2
+    (tmp_path / "small.py").write_text("# just one more comment\ny = 2\n")
+    r = _run_cc(tmp_path, payload)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
-def test_compress_comments_silent_after_reminder_sentinel(tmp_path):
+def test_compress_comments_rebases_after_cleanup(tmp_path):
+    # Cleaning comments up (count drops) rebases the baseline instead of re-firing.
     init_git_repo(tmp_path)
-    _comment_heavy_file(tmp_path / "new.py")
-    nagged = json.dumps({"text": "[compress-comments-reminder] This session added ..."})
-    r = run_hook(
-        "compress-comments-reminder.sh",
-        cwd=tmp_path,
-        stdin=_stop_payload(tmp_path, extra_lines=[nagged]),
-    )
+    f = tmp_path / "new.py"
+    _comment_heavy_file(f)
+    payload = _stop_payload(tmp_path)
+    assert _run_cc(tmp_path, payload).returncode == 2
+    f.write_text("x = 0\nfor i in range(3):\n    x += i\n")  # comments compressed away
+    r = _run_cc(tmp_path, payload)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -1107,11 +1150,7 @@ def test_compress_comments_fires_on_comments_committed_this_session(tmp_path):
     _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "base")
     _comment_heavy_file(tmp_path / "mod.py")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "session work")
-    r = run_hook(
-        "compress-comments-reminder.sh",
-        cwd=tmp_path,
-        stdin=_stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"),
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
     assert r.returncode == 2
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
@@ -1121,11 +1160,7 @@ def test_compress_comments_silent_for_commits_before_session(tmp_path):
     run = init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "old.py")
     _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "old work")
-    r = run_hook(
-        "compress-comments-reminder.sh",
-        cwd=tmp_path,
-        stdin=_stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"),
-    )
+    r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
