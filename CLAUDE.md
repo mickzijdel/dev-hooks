@@ -90,8 +90,12 @@ Do not include changelog or detective-work where it does not belong, such as in 
   UserPromptSubmit hook appears. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
   into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must never
   print. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
-  (INPUT/TRANSCRIPT + the once-per-session sentinel guard), `reminder_changed_files`
-  (CHANGED from porcelain status), and `reminder_emit_stop <msg>` (continue:false + exit 2).
+  (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
+  guard when the hook manages its own re-arm state), `reminder_changed_files`
+  (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
+  state path in $REPLY — existence for `reminder_fire_once`, a stored value for re-arming
+  hooks like compress-comments-reminder), and `reminder_emit_stop <msg>` (continue:false
+  + exit 2).
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_is_frontend_file`,
