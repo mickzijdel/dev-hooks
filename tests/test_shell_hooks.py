@@ -2119,6 +2119,83 @@ def test_big_change_silent_when_already_prompted(tmp_path):
     assert r.stdout.strip() == ""
 
 
+# ── change-summary-reminder.sh (Stop) ────────────────────────────────────────────────
+CHANGE_SUMMARY_SENTINEL = (
+    "[change-summary] per-file change summary not yet given this session"
+)
+
+
+def _change_summary_env(**overrides):
+    # Force the threshold to 1 so a single tiny untracked file trips it deterministically.
+    base = {"DEV_HOOKS_CHANGE_SUMMARY_FILES": "1"}
+    base.update(overrides)
+    return base_env(**base)
+
+
+def test_change_summary_silent_outside_git(tmp_path):
+    r = run_hook(
+        "change-summary-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_change_summary_silent_under_threshold(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("one file, default threshold of 3\n")
+    r = run_hook(
+        "change-summary-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_change_summary_fires_over_threshold(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("x\n")
+    r = run_hook(
+        "change-summary-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=_change_summary_env(),
+    )
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[change-summary]")
+
+
+def test_change_summary_silent_when_opted_out(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("x\n")
+    r = run_hook(
+        "change-summary-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+        env=_change_summary_env(DEV_HOOKS_CHANGE_SUMMARY="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_change_summary_silent_when_already_prompted(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "a.txt").write_text("x\n")
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=1, extra_lines=[CHANGE_SUMMARY_SENTINEL]
+    )
+    r = run_hook(
+        "change-summary-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+        env=_change_summary_env(),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # Stop hooks: same opt-out and once-per-session (transcript sentinel) contracts.
 # (script, opt-out env var, sentinel, triggering foo.py content)
 STOP_REMINDERS = [

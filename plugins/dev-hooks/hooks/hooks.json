@@ -168,6 +168,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/change-summary-reminder.sh\"",
+            "statusMessage": "Checking for a per-file change summary..."
+          },
+          {
+            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
             "statusMessage": "Checking for reusable one-off scripts to save..."
           }
