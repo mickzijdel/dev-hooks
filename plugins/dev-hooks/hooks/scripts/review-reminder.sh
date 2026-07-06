@@ -35,62 +35,17 @@ reminder_stop_init "$SENTINEL"
 ALREADY=0
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   ALREADY=$(
-    python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
-import sys, json
+    python3 - "$TRANSCRIPT" "$SENTINEL" "$SELF_DIR/lib" <<'PYEOF'
+import sys
 
-path, sentinel = sys.argv[1], sys.argv[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from hook_helpers import transcript_invoked
 
-
-def has_review(value):
-    """True if a string value names a code-review tool/skill/agent."""
-    return isinstance(value, str) and ("code-review" in value or "code_review" in value)
-
-
-found = False
-try:
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            # Fast path: our own reminder sentinel already present.
-            if sentinel in line:
-                found = True
-                break
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            # Walk message content blocks looking for review tool invocations.
-            msg = rec.get("message", rec)
-            content = msg.get("content") if isinstance(msg, dict) else None
-            blocks = content if isinstance(content, list) else []
-            for block in blocks:
-                if not isinstance(block, dict):
-                    continue
-                if block.get("type") != "tool_use":
-                    continue
-                inp = block.get("input") or {}
-                # Skill tool: {"skill": "code-review"} / "superpowers:requesting-code-review"
-                if has_review(inp.get("skill")):
-                    found = True
-                # Agent/Task tool: {"subagent_type": "...code-reviewer"}
-                if has_review(inp.get("subagent_type")):
-                    found = True
-                if found:
-                    break
-            if found:
-                break
-
-            # Slash-command marker: <command-name>code-review</command-name>
-            if "command-name" in line and "code-review" in line:
-                found = True
-                break
-except OSError:
-    pass
-
-print(1 if found else 0)
+ran = transcript_invoked(
+    sys.argv[1], ("code-review", "code_review"), sentinel=sys.argv[2]
+)
+print(1 if ran else 0)
 PYEOF
   )
 fi

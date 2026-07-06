@@ -953,11 +953,36 @@ def _comment_heavy_file(path):
     )
 
 
-def _stop_payload(tmp_path, extra_lines=None):
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=2, extra_lines=extra_lines
+def _stop_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"):
+    # Real transcripts open with a timestamped line and record a skill_listing attachment
+    # naming every installed skill — including "compress-comments". The fixture carries
+    # both so the tests catch any guard that greps the transcript for the bare skill name
+    # (which would match the listing and suppress the hook in every session).
+    listing = json.dumps(
+        {
+            "timestamp": started,
+            "attachment": {
+                "type": "skill_listing",
+                "content": "dev-hooks:compress-comments: Use when a session's work left verbose comments",
+            },
+        }
     )
+    lines = [listing, *(extra_lines or [])]
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join(lines) + "\n")
     return json.dumps({"transcript_path": str(transcript)})
+
+
+def _commit_dated(tmp_path, run, date, msg="c"):
+    """Commit the staged+unstaged tree with a forced commit date, so tests can place
+    commits before/after the fixture session's start time."""
+    run("add", "-A")
+    subprocess.run(
+        ["git", "commit", "-q", "-m", msg],
+        cwd=tmp_path,
+        check=True,
+        env={**os.environ, "GIT_COMMITTER_DATE": date, "GIT_AUTHOR_DATE": date},
+    )
 
 
 def test_compress_comments_silent_outside_git(tmp_path):
@@ -1056,6 +1081,50 @@ def test_compress_comments_silent_when_skill_already_ran(tmp_path):
         "compress-comments-reminder.sh",
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, extra_lines=[skill_line]),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_silent_after_reminder_sentinel(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    nagged = json.dumps({"text": "[compress-comments-reminder] This session added ..."})
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, extra_lines=[nagged]),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_fires_on_comments_committed_this_session(tmp_path):
+    # Commit-as-you-go leaves a clean tree at stop time; comments in commits made after
+    # the session started must still count toward the threshold.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "mod.py").write_text("x = 1\n")
+    _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "base")
+    _comment_heavy_file(tmp_path / "mod.py")
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "session work")
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"),
+    )
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[compress-comments-reminder]")
+
+
+def test_compress_comments_silent_for_commits_before_session(tmp_path):
+    # Comment-heavy commits that PREDATE the session aren't this session's work.
+    run = init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "old.py")
+    _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "old work")
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""

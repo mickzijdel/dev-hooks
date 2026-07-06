@@ -95,6 +95,57 @@ def is_test_path(path):
     return any(p in ("spec", "tests", "test", "__tests__") for p in path.split("/"))
 
 
+def _transcript_lines(transcript_path):
+    """Yield the transcript's stripped, non-empty JSONL lines. An unreadable/missing
+    transcript yields nothing — "no evidence", the safe default for every caller."""
+    try:
+        with open(transcript_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield line
+    except OSError:
+        return
+
+
+def _tool_use_blocks(line):
+    """Yield the tool_use content blocks of one transcript line (nothing for non-JSON)."""
+    try:
+        rec = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    msg = rec.get("message", rec)
+    content = msg.get("content") if isinstance(msg, dict) else None
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "tool_use":
+            yield block
+
+
+def transcript_invoked(transcript_path, needles, sentinel=None):
+    """True when the session transcript shows one of `needles` was actually *invoked*: a
+    tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
+    slash-command line — or when `sentinel` appears verbatim on any line (a hook's own
+    prior reminder). Deliberately ignores plain-text mentions: the transcript records a
+    skill_listing attachment naming every installed skill, so a bare grep for a skill name
+    matches in EVERY session and would permanently suppress the caller. Shared by the
+    review-reminder and compress-comments-reminder Stop hooks."""
+
+    def hit(value):
+        return isinstance(value, str) and any(n in value for n in needles)
+
+    for line in _transcript_lines(transcript_path):
+        if sentinel and sentinel in line:
+            return True
+        # Slash-command marker: <command-name>…</command-name> naming a needle.
+        if "command-name" in line and any(n in line for n in needles):
+            return True
+        for block in _tool_use_blocks(line):
+            inp = block.get("input") or {}
+            if hit(inp.get("skill")) or hit(inp.get("subagent_type")):
+                return True
+    return False
+
+
 # ── Script-library helpers ──────────────────────────────────────────────────────────
 # The marker a saved script carries so the SessionStart index can describe it, e.g.
 #   # short-description: Fetch a PR diff by number.
@@ -184,24 +235,8 @@ def authored_scripts(transcript_path, exclude_dirs=()):
         os.path.abspath(os.path.expanduser(d)) + os.sep for d in exclude_dirs if d
     ]
     found, seen = [], set()
-    try:
-        with open(transcript_path, encoding="utf-8") as f:
-            lines = list(f)
-    except OSError:
-        return found
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        msg = rec.get("message", rec)
-        content = msg.get("content") if isinstance(msg, dict) else None
-        for block in content if isinstance(content, list) else []:
-            if not isinstance(block, dict) or block.get("type") != "tool_use":
-                continue
+    for line in _transcript_lines(transcript_path):
+        for block in _tool_use_blocks(line):
             if block.get("name") != "Write":
                 continue
             inp = block.get("input") or {}
