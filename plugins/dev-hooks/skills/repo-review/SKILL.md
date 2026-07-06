@@ -100,6 +100,9 @@ and record what it *would* change so the user can decide. Cheap signals:
 ```bash
 grep -rinE 'todo|fixme|hack|xxx' --include='*.*' . 2>/dev/null | wc -l   # tech-debt markers
 ```
+Beyond the greps, match the modules you read against the Fowler smell baseline in
+[references/code-smells.md](references/code-smells.md) — twelve named smells, each a judgement
+call, with documented repo standards always overriding.
 
 **3. Performance**
 The axis no other skill owns generically. Look for the language-agnostic footguns: N+1-shaped

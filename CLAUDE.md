@@ -48,6 +48,21 @@ CLI).
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
+## Authoring skills (`plugins/*/skills/*/SKILL.md`)
+
+- **Descriptions are trigger lists, not feature dumps** — every model-invocable description
+  sits in the context window every turn, so it earns harder pruning than the body. Front-load
+  when to fire; the body holds the rest.
+- **No-op test, per sentence**: does this line change behaviour versus what the model does by
+  default? If not, delete the sentence — don't trim words from it.
+- **Prefer a leading word over a restated triad**: one strong pretrained word ("tight",
+  "red", "relentless") anchors behaviour in fewer tokens than "fast, deterministic,
+  low-overhead" ever will.
+- **Completion criteria must be checkable** ("every modified file accounted for", not "be
+  thorough") — a vague criterion invites stopping early.
+- Push material only some runs need into `references/*.md` (progressive disclosure); keep
+  what every run needs in SKILL.md.
+
 ## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 
 - **The `writing` plugin's `readme-reminder.sh` is the one exception to everything below.**

@@ -1,13 +1,14 @@
 ---
 name: dev-env-setup
-version: 4.6.0
+version: 4.7.0
 description: |
   Audit a repo against an opinionated dev-environment standard (mise pinning tools, an hk
   pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
   mirrors those checks, and project docs — README.md + CLAUDE.md recording pinned
   package versions) and set it up or upgrade it. Use when a repo is missing
   the standard setup, when the dev-env-reminder hook flags a gap, when the user mentions
-  hk/mise/gitleaks/"my dev setup", or when starting a new repo. Tracks a standard version
+  hk/mise/gitleaks/"my dev setup", when starting a new repo, or to backfill every
+  standard-tracking repo after a version bump (fleet mode). Tracks a standard version
   via DEV_ENV_VERSION in mise.toml and upgrades behind repos using references/upgrade-guide.md.
 allowed-tools:
   - Read
@@ -235,6 +236,37 @@ proposing additions.
    # → mise install resolves the toolchain, deps install, the container comes up green
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/dev_env_check.sh" .   # → devcontainer_mise_driven=1
    ```
+
+## Fleet mode ("backfill all my repos after a bump")
+
+A standard bump only matters once every tracking repo carries it — backfill the fleet right
+after bumping, while the template changes are fresh. Mirror [[dependency-upgrade]]'s fleet
+cadence, with the dev-env twists below:
+
+1. **Enumerate live + confirm.** Run the roster script — never a remembered repo list (any
+   memory of the fleet holds per-repo quirks at best; it is not the roster source):
+   ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"   # or: fleet_roster.sh ROOT ...
+   ```
+   It prints one line per `DEV_ENV_VERSION`-stamped repo — path, `version`, `branch`, `dirty`,
+   `behind` — plus a summary. **Show the user the roster and confirm the target set before
+   touching anything.**
+2. **Ask disposition up front,** before upgrading anything: (a) which repos to **exclude**
+   entirely; (b) what to do with **dirty repos** — the rule has varied round to round
+   (upgrade-but-don't-commit-and-report one time, skip-entirely another), so ask, don't assume.
+   And if the bump has plausible companion tooling (the actionlint-next-to-zizmor kind),
+   **propose it now** — folding a second tool in after the fleet has been swept means a second
+   sweep.
+3. **Canary first.** Upgrade one repo by hand end-to-end (upgrade → verify → commit) before
+   fanning out; a template bug or an environment gotcha caught on the canary costs one repo,
+   not the whole fleet.
+4. **Fan out one isolated agent per repo** (worktree isolation), each running the single-repo
+   Workflow above: apply only the upgrade-guide sections **strictly newer** than that repo's
+   `version`, verify (checker → `status=compliant`, `check_action_refs.sh`, run the changed
+   command locally), commit with a consistent message, and push to the repo's **own default
+   branch** — the roster's `branch=` field tells you; several repos are on `master`, not `main`.
+5. **Report** one line per repo: upgraded / skipped / deferred, pushed (or left uncommitted,
+   for the dirty-repo disposition that asks for it), and any deviation from the canary recipe.
 
 ## Project docs (README + CLAUDE.md)
 

@@ -19,6 +19,12 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `weekly-automation-review` | Weekly cadence — reviews recent activity and recommends 1–2 repetitive tasks to automate; runs as a scheduled Monday remote agent. On a local run it also reads the cross-repo prompt log (`~/.claude/automation-review/prompts.jsonl`, written by the `dev-hooks` `prompt-log` hook) and every repo's memory index to spot what you keep asking for. |
 | `commit-digest` | Weekly cadence — reviews recent commits in tracked external repos (+ optional Atom/RSS feeds), pulls applicable improvements in as separate PRs, and logs every skipped suggestion to the `claude/skipped-log` branch with dedup and a per-run PR comment. Companion to `weekly-automation-review`, which reviews the local repo's own activity. |
 | `adr` | When you've made (or are about to make) a significant architectural decision — captures why in a lightweight Markdown document so future contributors don't re-litigate it. |
+| `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
+| `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
+| `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+
+`grill`, `domain-modeling`, and `codebase-design` are adapted from
+[mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
 
 ## Install
 

@@ -587,6 +587,97 @@ def test_detect_single_root_project_is_not_a_monorepo(tmp_path):
     assert "Monorepo" not in stdout
 
 
+# ── fleet_roster.sh (dev-env-setup fleet discovery) ──────────────────────────────────
+ROSTER = DEV_HOOKS / "skills" / "dev-env-setup" / "scripts" / "fleet_roster.sh"
+
+
+def run_roster(*roots):
+    """Run the fleet discovery and parse its tab-separated repo lines into
+    {name: {field: value}} (repo paths may contain spaces, hence tabs)."""
+    r = subprocess.run(
+        ["bash", str(ROSTER), *map(str, roots)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    repos = {}
+    for line in r.stdout.splitlines():
+        if line.startswith("repo="):
+            kv = dict(field.partition("=")[::2] for field in line.split("\t"))
+            repos[kv["name"]] = kv
+    return repos, r.stdout
+
+
+def make_fleet_repo(path, version):
+    """A minimal fleet member: a committed git repo whose mise.toml carries
+    DEV_ENV_VERSION."""
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "mise.toml").write_text(f'[env]\nDEV_ENV_VERSION = "{version}"\n')
+    run = init_git_repo(path)
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    return run
+
+
+def test_roster_reports_stamped_repo_with_version_branch_and_clean_state(tmp_path):
+    repo = tmp_path / "alpha"
+    make_fleet_repo(repo, 7)
+    repos, _ = run_roster(tmp_path)
+    assert repos["alpha"]["repo"] == str(repo)
+    assert repos["alpha"]["version"] == "7"
+    assert repos["alpha"]["branch"] == "main"
+    assert repos["alpha"]["dirty"] == "0"
+
+
+def test_roster_excludes_unstamped_repos(tmp_path):
+    make_fleet_repo(tmp_path / "stamped", 5)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "mise.toml").write_text("[tools]\n")
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (bare / "README.md").write_text("no mise here\n")
+    repos, _ = run_roster(tmp_path)
+    assert set(repos) == {"stamped"}
+
+
+def test_roster_flags_dirty_worktree(tmp_path):
+    repo = tmp_path / "messy"
+    make_fleet_repo(repo, 5)
+    (repo / "scratch.txt").write_text("wip\n")
+    repos, _ = run_roster(tmp_path)
+    assert repos["messy"]["dirty"] == "1"
+
+
+def test_roster_behind_iff_older_than_current_standard(tmp_path):
+    current = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
+    make_fleet_repo(tmp_path / "old", 1)
+    make_fleet_repo(tmp_path / "fresh", current)
+    repos, stdout = run_roster(tmp_path)
+    assert repos["old"]["behind"] == "1"
+    assert repos["fresh"]["behind"] == "0"
+    assert f"current_version={current}" in stdout
+
+
+def test_roster_skips_nested_worktree_checkouts(tmp_path):
+    make_fleet_repo(tmp_path / "host", 5)
+    # A stamped checkout under the host's .worktrees/ must not appear as a repo.
+    make_fleet_repo(tmp_path / "host" / ".worktrees" / "feat-x", 5)
+    repos, _ = run_roster(tmp_path)
+    assert set(repos) == {"host"}
+    # Same when the scan root is the repo itself.
+    repos, _ = run_roster(tmp_path / "host")
+    assert set(repos) == {"host"}
+
+
+def test_roster_multiple_roots_and_missing_root(tmp_path):
+    make_fleet_repo(tmp_path / "r1" / "one", 5)
+    make_fleet_repo(tmp_path / "r2" / "two", 5)
+    repos, stdout = run_roster(tmp_path / "r1", tmp_path / "r2", tmp_path / "nope")
+    assert set(repos) == {"one", "two"}
+    assert "# fleet: 2 repo(s)" in stdout
+
+
 # ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────
 _BAD_MARKUP = (
     "<html>\n"
