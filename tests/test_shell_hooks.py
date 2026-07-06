@@ -941,6 +941,126 @@ def test_review_reminder_silent_after_review(tmp_path):
     assert r.stdout.strip() == ""
 
 
+# ── compress-comments-reminder.sh ───────────────────────────────────────────────────
+def _comment_heavy_file(path):
+    path.write_text(
+        "# set up the parser\n"
+        "x = 0\n"
+        "# loop over the items\n"
+        "for i in range(3):\n"
+        "    # add each item to the total\n"
+        "    x += i\n"
+    )
+
+
+def _stop_payload(tmp_path, extra_lines=None):
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=2, extra_lines=extra_lines
+    )
+    return json.dumps({"transcript_path": str(transcript)})
+
+
+def test_compress_comments_silent_outside_git(tmp_path):
+    r = run_hook("compress-comments-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_fires_on_untracked_comment_heavy_file(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    r = run_hook(
+        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
+    )
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[compress-comments-reminder]")
+
+
+def test_compress_comments_fires_on_tracked_diff(tmp_path):
+    run = init_git_repo(tmp_path)
+    f = tmp_path / "mod.py"
+    f.write_text("x = 1\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    _comment_heavy_file(f)  # unstaged modification: comments arrive via `git diff`
+    r = run_hook(
+        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
+    )
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "compress-comments")
+
+
+def test_compress_comments_silent_below_threshold(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "new.py").write_text("# one lonely comment\nx = 1\ny = 2\n")
+    r = run_hook(
+        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_silent_for_non_code_files(tmp_path):
+    # Markdown headings look like `#` comments; the extension gate must exclude them.
+    init_git_repo(tmp_path)
+    (tmp_path / "notes.md").write_text("# One\n# Two\n# Three\n# Four\n")
+    r = run_hook(
+        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_ignores_shebang_and_directives(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "s.sh").write_text(
+        "#!/bin/bash\n"
+        "# shellcheck disable=SC2034\n"
+        "# a real comment\n"
+        "# another real comment\n"
+        "echo hi\n"
+    )
+    r = run_hook(
+        "compress-comments-reminder.sh", cwd=tmp_path, stdin=_stop_payload(tmp_path)
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_silent_when_opted_out(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path),
+        env=base_env(DEV_HOOKS_COMPRESS_COMMENTS="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_silent_when_skill_already_ran(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    skill_line = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {"type": "tool_use", "input": {"skill": "compress-comments"}}
+                ]
+            }
+        }
+    )
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, extra_lines=[skill_line]),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── verify-work.sh ──────────────────────────────────────────────────────────────────
 def test_verify_work_silent_outside_git(tmp_path):
     r = run_hook("verify-work.sh", cwd=tmp_path)
