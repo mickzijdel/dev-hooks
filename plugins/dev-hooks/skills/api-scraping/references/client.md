@@ -48,8 +48,10 @@ requests); prefer it when the API offers both.
 
 ## Skeleton (Python + httpx)
 
-Adapt — don't paste blind. Fill in the minimized headers, the real endpoint, and the
-pagination fields you found.
+To bootstrap from your minimized cURL, `curlconverter` (`uvx curlconverter` /
+[curlconverter.com](https://curlconverter.com)) emits ready `requests`/`httpx` code in one
+step — paste the cURL, get the call, then graft on the pagination/backoff below. Adapt, don't
+paste blind: fill in the minimized headers, the real endpoint, and the pagination fields.
 
 ```python
 # /// script
@@ -102,3 +104,21 @@ if __name__ == "__main__":
 
 Swap `httpx` for `curl_cffi` (same `.get`/`.json` shape, plus `impersonate=`) when the site
 fingerprints TLS — see [anti-bot.md](anti-bot.md).
+
+## If the scrape recurs
+
+A one-off pull can be sloppy; a scraper that runs on a schedule needs three more things,
+because an **undocumented API changes without warning** and a silent break is worse than a
+loud one:
+
+- **Validate the shape.** Pin the fields you depend on with a `pydantic` model (or a JSON
+  Schema) and parse every record through it. When the API renames or drops a field, you get a
+  loud validation error on the next run instead of a table quietly filling with `null`s. Log
+  the first few failures rather than crashing the whole job.
+- **Watch for drift.** Keep a hash or field-set of the response schema; if it changes between
+  runs, alert and eyeball it — the endpoint may have moved, paginated differently, or started
+  gating data behind auth. Cheap to compute, and it's the difference between noticing a break
+  in a day versus a month.
+- **Go incremental.** Don't re-pull everything each run. Track a high-water mark — the largest
+  id, the newest `updated_at`, or the last cursor — and request only rows past it, deduping on
+  a stable key. Lighter on the server (politeness = longevity) and far faster.

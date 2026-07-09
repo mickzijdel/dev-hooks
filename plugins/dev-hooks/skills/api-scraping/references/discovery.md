@@ -112,3 +112,9 @@ fed to `har_scan.py --find "<known value>"`. If you're driving the browser yours
 Playwright `page.on("response", …)` / `context.route` capture or a Chrome-DevTools MCP network
 trace produces the same material. Always capture *after* clicking through pagination once —
 that reveals the pagination params you'll need in step 5.
+
+To turn a whole capture into a structured **OpenAPI 3.0 spec** of every endpoint and its
+params — useful when the site has dozens of endpoints, not one — feed the HAR (or a mitmproxy
+flow) to [`mitmproxy2swagger`](https://github.com/alufers/mitmproxy2swagger) or `har2openapi`.
+It also auto-detects path parameters (`/users/123` → `/users/{id}`), which saves guessing
+which URL segments are variables.

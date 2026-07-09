@@ -57,6 +57,17 @@ Playwright and either:
 This is the slowest, heaviest option — one browser per worker, real memory — so use it as the
 auth/bootstrap step, not the per-row fetch, whenever you can.
 
+**Cheaper than a browser: reverse the signature.** A signing scheme almost always
+HMAC/hashes a *predictable* set of inputs — method, path, query, a timestamp/nonce, sometimes
+the body. Reproduce it and you're back to a plain fast client with no browser at all. Find the
+function: set an XHR/`fetch` breakpoint in DevTools (or search the sources for `sign`, `hmac`,
+`X-Signature`, the header's name), step back to where the header is assembled, and read its
+inputs and the secret. Pretty-print / load source maps / run a JS deobfuscator if it's
+mangled — you only need the handful of lines that build the header, not the whole bundle.
+Mobile apps frequently **hardcode the HMAC key** in the APK/bundle (pull it with the rung-2
+mobile tools), which hands you the secret outright. Port those few lines to Python, verify one
+request matches the browser's, and drop the browser.
+
 ## Hard stop — CAPTCHAs
 
 Cloudflare Turnstile, hCaptcha, reCAPTCHA, and "press and hold" challenges are designed to
