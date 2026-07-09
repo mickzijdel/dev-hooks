@@ -77,3 +77,16 @@ The guard is a seatbelt, not autopilot. Read what the agent proposes, especially
 asks you to confirm something — it exists precisely because that command changes something and
 deserves a human look. As you get comfortable, you'll know which to wave through and which to
 question.
+
+## As you get comfortable: auto mode
+
+Claude Code has an **auto mode** that stops asking permission for most commands and instead lets
+a built-in safety check catch the genuinely dangerous ones on its own — the same kinds of
+protection that, in the normal mode you're starting in, show up as permission prompts and the
+guard above. It's newer and still being refined (Anthropic calls it a research preview), so
+treat it as something to grow into, not a starting point.
+
+The reason to wait: while you're learning, the prompts *are* the lesson. Each one is a moment to
+read what the agent wants to do and ask yourself "do I understand why this is safe?" Turn that
+off too early and you skip the part that builds your judgement. Once reading a command and
+deciding whether to allow it is second nature, auto mode is a reasonable way to cut the noise.
