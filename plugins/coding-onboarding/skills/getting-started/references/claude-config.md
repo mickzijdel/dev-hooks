@@ -49,23 +49,31 @@ PreToolUse hook) is enforcement that runs the instant a command is about to exec
 what the agent intended:
 
 - **Blocks outright** the handful of truly catastrophic, irreversible commands — wiping the disk
-  or home directory, a fork bomb, formatting/overwriting a drive, making the whole system
-  world-writable.
-- **Pauses for your confirmation** on risky-but-legitimate ones — `rm -rf`, throwing away
-  uncommitted work (`git reset --hard`, `git clean -f`), force-pushing, piping a downloaded
-  script into a shell, or `sudo`. With the seeded settings it also asks before
-  committing/pushing straight to `main` (that check is opt-in, via `DEV_HOOKS_GUARD_MAIN=1`
-  in the settings template above).
+  or home directory (`rm -rf /`), a fork bomb, formatting/overwriting a drive, making the whole
+  system world-writable. These are the ones you should never be able to approve by reflex, so
+  the guard doesn't even offer the choice.
+- **Asks before committing/pushing straight to `main`** — a workflow-habit nudge while you're
+  learning the branch-and-PR way of working. This one is opt-in, via `DEV_HOOKS_GUARD_MAIN=1`
+  in the settings template above.
 - **Stays out of the way** for everything else.
 
-Every block/confirmation comes with a plain-language reason so you learn *why* it's risky.
+Everyday risky-but-legitimate commands — `rm -rf some/folder`, throwing away uncommitted work
+(`git reset --hard`), force-pushing, `sudo` — are *not* the guard's job. Layer 1's allowlist
+already leaves all of those asking (only safe, read-only commands are pre-approved), so you
+still get a prompt; and Claude Code's own auto mode flags them too. The guard deliberately
+doesn't pile a second confirmation on top of a built-in one.
 
-Together: the config makes good behaviour the default, and the guard catches the dangerous
-exception before it happens. Both are adjustable — the allowlist and CLAUDE.md are yours to
-edit, and the guard turns off with `DEV_HOOKS_BASH_GUARD=false` if you ever need it gone.
+Every block comes with a plain-language reason so you learn *why* it's dangerous.
+
+Together: the config makes good behaviour the default and leaves anything that changes something
+asking, and the guard is the hard backstop for the catastrophic few. Both are adjustable — the
+allowlist and CLAUDE.md are yours to edit, and the guard's block can be softened to a confirm
+(`DEV_HOOKS_GUARD_DENY=ask`) or turned off entirely (`DEV_HOOKS_BASH_GUARD=false`) if you ever
+need it gone.
 
 ## A note on trust
 
-The guard is a seatbelt, not autopilot. Read what the agent proposes, especially when it asks
-you to confirm something — the prompt exists precisely because that command deserves a human
-look. As you get comfortable, you'll know which to wave through and which to question.
+The guard is a seatbelt, not autopilot. Read what the agent proposes, especially when a prompt
+asks you to confirm something — it exists precisely because that command changes something and
+deserves a human look. As you get comfortable, you'll know which to wave through and which to
+question.

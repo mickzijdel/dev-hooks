@@ -109,7 +109,8 @@ prints "continuing automatically" and never hangs.
   and it points newcomers at a bundled Git reference and, once they're ready to build, hands off
   to the `starting-a-project` skill. It targets macOS, Linux,
   and WSL2 (bash); on native Windows it sets up WSL2 first. Companion to the `dev-hooks` plugin's
-  dangerous-command guard, which enforces at runtime what the seeded CLAUDE.md defaults ask for.
+  dangerous-command guard, which backstops the seeded CLAUDE.md defaults at runtime — a hard
+  block on the catastrophic few, plus the opt-in nudge toward branches over `main`.
 - The `starting-a-project` skill is the build-and-ship companion to `getting-started`: a
   "what are you building?" decision tree (`references/starter-stacks.md`) mapping each common
   beginner goal to a stack + scaffold command, and a deploy guide (`references/deploy.md`) from

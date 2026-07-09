@@ -61,12 +61,16 @@ Missing system libraries. Re-run with system deps (needs `sudo`, so confirm):
 
 ## The dangerous-command guard is blocking something I actually want
 
-If a command is genuinely safe and you want it through, run it yourself in a terminal (outside
-the agent), or temporarily set `DEV_HOOKS_BASH_GUARD=false` in your Claude settings `"env"`.
-If it's only the commit/push-on-`main` confirmation you've outgrown (you now work on `main`
-deliberately), remove just `DEV_HOOKS_GUARD_MAIN` from the settings `"env"` and keep the rest
-of the guard. For the *big-change* nudge, set `DEV_HOOKS_BIG_CHANGE=false`. Turn them back on
-afterwards — they're cheap insurance.
+The guard only ever blocks the truly catastrophic, machine-wiping commands (`rm -rf /` and the
+like). If it's blocked one you genuinely mean to run, the safest route is to run it yourself in
+a terminal (outside the agent). If you're an advanced user who'd rather the guard *ask* instead
+of block — or get out of the way entirely — set `DEV_HOOKS_GUARD_DENY=ask` (downgrade the block
+to a confirmation) or `DEV_HOOKS_GUARD_DENY=allow` in your Claude settings `"env"`; setting
+`DEV_HOOKS_BASH_GUARD=false` turns the whole hook off. If it's only the commit/push-on-`main`
+confirmation you've outgrown (you now work on `main` deliberately), remove just
+`DEV_HOOKS_GUARD_MAIN` from the settings `"env"` and keep the rest of the guard. For the
+*big-change* nudge, set `DEV_HOOKS_BIG_CHANGE=false`. Turn them back on afterwards — they're
+cheap insurance.
 
 ## I want to undo something Claude did
 

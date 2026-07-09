@@ -21,7 +21,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 | Event | Script | Purpose |
 |-------|--------|-------|
 | `UserPromptSubmit` | `prompt-log.sh` | Append one JSON line per user prompt (timestamp, repo cwd, session id, prompt length, first 500 chars) to `~/.claude/automation-review/prompts.jsonl` — the cross-repo data source the `thinking-tools` `weekly-automation-review` skill clusters to spot repetitive requests worth automating. Local-only, silent, never blocks the prompt. Opt out with `DEV_HOOKS_PROMPT_LOG=false`. |
-| `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Inspect the bash command about to run and gate the genuinely dangerous ones: **deny** the catastrophic, irreversible few (wipe the disk/home, fork bomb, format/overwrite a block device, `chmod -R 777 /`) and **ask** (force a human confirmation, with a plain-language reason) on risky-but-legitimate ones (`rm -rf` a path, `git reset --hard`/`clean -f`/`checkout .`, force-push, `curl … \| bash`, `sudo`). Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Everything else passes straight through to the normal permission flow. Aimed at beginners whose agents shouldn't run an irreversible command on their say-so. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by the `coding-onboarding` plugin's `getting-started` skill): ask before committing/pushing straight to `main`/`master`. Opt out with `DEV_HOOKS_BASH_GUARD=false`. |
+| `PreToolUse` (`Bash`) | `dangerous-command-guard.sh` | Block the **catastrophic, irreversible** few before they run: wipe the disk/home (`rm -rf /`), fork bomb, format a filesystem (`mkfs`), overwrite a raw block device (`dd of=/dev/…`), `chmod -R 777 /`. Flags and targets are judged per simple command, so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`. Risky-but-legitimate commands (`rm -rf` a path, `git reset --hard`, force-push, `curl … \| bash`, `sudo`) are **not** gated — the normal permission flow already prompts on them, and Claude Code's auto-mode classifier catches them besides. Aimed at beginners not running auto mode, whose agents shouldn't be able to run a machine-wiping command on their say-so. The deny is configurable with `DEV_HOOKS_GUARD_DENY` (`deny` default / `ask` / `allow`) for advanced users. Opt-in extra (`DEV_HOOKS_GUARD_MAIN=1`, seeded by the `coding-onboarding` plugin's `getting-started` skill): ask before committing/pushing straight to `main`/`master`. Opt out of the whole hook with `DEV_HOOKS_BASH_GUARD=false`. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `lint-on-edit.sh` | Auto-fix/format the file Claude just wrote using the linter **this** project configures (RuboCop/Standard, herb/erb_lint for ERB, Biome/Prettier/ESLint, Ruff/Black). Safe fixes only, never blocks. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `latest-deps-reminder.sh` | When Claude writes a dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, `pyproject.toml`, …) or hand-writes a lockfile, remind it to verify the versions are **current** (training data goes stale) with the right lookup command per ecosystem, or to regenerate lockfiles via the package manager. On manifest edits it also nudges Claude to keep the README/CLAUDE.md key-package versions in sync (creating those docs if missing). Advisory only, never blocks; fires once per session per ecosystem. |
 | `PostToolUse` (`Write`\|`Edit`\|`MultiEdit`) | `scaffold-reminder.sh` | When Claude **creates a new** project manifest or framework entrypoint by hand (`Gemfile`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `mix.exs`, `composer.json`, `build.gradle`/`pom.xml`, `manage.py`, `config/application.rb`, …), remind it to run the framework's official generator (`rails new`, `npm create vite@latest`, `django-admin startproject`, `cargo new`, …) instead of scaffolding from memory — and to check the framework's current stable release and the generator's current flags first, unless the user pinned a version. Write-tool only; files git already tracks are skipped. Advisory only, never blocks; fires once per session. Opt out with `DEV_HOOKS_SCAFFOLD=false`. |
@@ -246,18 +246,25 @@ $ claude
   `"env"`).
 - `dangerous-command-guard.sh` is the only **PreToolUse** hook and the only one that can
   *block* a tool call. It reads the bash command from the hook payload (never runs or modifies
-  it) and emits a `permissionDecision` of `deny` (catastrophic, irreversible commands) or `ask`
-  (risky-but-legitimate — forces a human confirmation); for everything else it stays silent and
-  the normal permission flow proceeds. It never emits `allow`, so it can't widen your own
-  allowlist. Detection is deliberately conservative — a short list of well-known footguns, not
-  "anything that writes" — and it splits the command into simple-command segments (`;`, `&`,
-  `|`, newlines) so flags and targets are only judged against the command they belong to
-  (`cd ~ && rm -rf build/` is not `rm -rf ~`; a commit message that *mentions* `mkfs` is not
-  `mkfs`). The commit/push-on-`main`/`master` check is **opt-in** via `DEV_HOOKS_GUARD_MAIN=1`
-  (the `coding-onboarding` plugin's `getting-started` skill seeds it for beginners when
-  installed — solo main-branch workflows aren't prompted on every commit); when on, it checks
-  the current branch with `git branch --show-current` in the call's cwd. Silence the whole
-  guard with `DEV_HOOKS_BASH_GUARD=false` (in `.claude/settings.local.json` `"env"`).
+  it) and, on a **catastrophic, irreversible** command, emits a `permissionDecision` of `deny`;
+  for everything else it stays silent and the normal permission flow proceeds. It never emits
+  `allow`, so it can't widen your own allowlist. Scope is deliberately narrow — only the
+  machine-wiping few (`rm -rf /`, fork bomb, `mkfs`, `dd` to a raw disk, `chmod -R 777 /`), not
+  "anything that writes". Risky-but-legitimate commands (`rm -rf` a path, `git reset --hard`,
+  force-push, `curl … | bash`, `sudo`) are **left alone**: the normal permission flow already
+  prompts on them, and Claude Code's auto-mode classifier gates them too — a bespoke matcher
+  there would just duplicate a built-in. It splits the command into simple-command segments
+  (`;`, `&`, `|`, newlines) so flags and targets are only judged against the command they belong
+  to (`cd ~ && rm -rf build/` is not `rm -rf ~`; a commit message that *mentions* `mkfs` is not
+  `mkfs`). What happens on a match is configurable via `DEV_HOOKS_GUARD_DENY`: `deny` (default,
+  block outright), `ask` (downgrade to a human confirmation), or `allow`/`off` (pass through
+  silently — for advanced users who rely on auto mode or their own rules). The
+  commit/push-on-`main`/`master` check is **opt-in** via `DEV_HOOKS_GUARD_MAIN=1` (the
+  `coding-onboarding` plugin's `getting-started` skill seeds it for beginners when installed —
+  solo main-branch workflows aren't prompted on every commit; no built-in replaces this
+  workflow-habit nudge); when on, it checks the current branch with `git branch --show-current`
+  in the call's cwd. Silence the whole guard with `DEV_HOOKS_BASH_GUARD=false` (in
+  `.claude/settings.local.json` `"env"`).
 - `big-change-reminder.sh` runs only in a git repo and sizes the **uncommitted** working tree
   (tracked changes from `git status --porcelain` plus untracked files enumerated via
   `git ls-files --others` — so files inside a brand-new directory are counted individually;

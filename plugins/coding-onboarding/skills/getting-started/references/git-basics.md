@@ -67,14 +67,16 @@ switched on by the setup's starter settings; see
 
 - **Unstage a file** you added by accident: `git restore --staged <file>`
 - **Throw away uncommitted edits** to a file: `git restore <file>` *(this deletes those edits —
-  the guard will ask you to confirm a blanket `git restore .`)*
+  a blanket `git restore .` isn't on the pre-approved list, so Claude will ask before running
+  it)*
 - **Undo the last commit but keep the changes:** `git reset --soft HEAD~1`
 - **See history:** `git log --oneline`
 - **Go look at an old version** without changing anything: `git checkout <commit-hash>`, then
   `git checkout main` to come back.
 
 Two commands genuinely destroy work with no undo — `git reset --hard` (wipes uncommitted
-changes) and `git clean -f` (deletes untracked files). The guard asks you to confirm both.
+changes) and `git clean -f` (deletes untracked files). Neither is on the pre-approved list, so
+Claude asks permission before running either — read the prompt and you get a chance to stop.
 **As long as you've committed and pushed, your work is safe** — that's the whole point of the
 everyday loop.
 

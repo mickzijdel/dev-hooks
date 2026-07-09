@@ -1,30 +1,36 @@
 #!/bin/bash
-# PreToolUse(Bash): inspect the bash command Claude is about to run and gate the
-# genuinely dangerous ones before they execute. Aimed at people new to the terminal,
-# whose agents might otherwise run an irreversible command on their say-so.
+# PreToolUse(Bash): block the handful of bash commands that cause catastrophic,
+# irreversible system damage before they execute. Aimed at people new to the terminal,
+# whose agents might otherwise run a machine-wiping command on their say-so, in a mode
+# where nothing else would catch it.
 #
-# Two decisions (everything else is silent → the normal permission flow proceeds):
-#   deny — catastrophic, irreversible system damage (wipe the disk/home, fork bomb,
-#          format/overwrite a block device, chmod the root tree world-writable). Blocked
-#          outright with an explanation.
-#   ask  — risky but legitimate (rm -rf a path, git history/working-tree destruction,
-#          force-push, piping a downloaded script straight to a shell, sudo). Surfaced
-#          to the human to confirm, with a plain-language reason.
+# Only the catastrophic few are gated — wipe the disk/home (rm -rf /), fork bomb,
+# format a filesystem (mkfs), overwrite a raw block device (dd of=/dev/…), or make the
+# whole root tree world-writable (chmod -R 777 /). Everything else — including risky
+# but legitimate commands like `rm -rf some/path`, `git reset --hard`, force-push, or
+# `curl … | sh` — passes straight through to the normal permission flow, which already
+# prompts on them (and Claude Code's own auto-mode classifier catches them besides).
 #
 # The command is split into simple-command segments (newlines and the ;, &, | operators
 # end one), and each command's flags and operands are judged only against that command —
 # so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message that merely
-# *mentions* a footgun doesn't trip it. Detection is deliberately conservative — a short
-# list of well-known footguns, not "anything that writes". Safe commands (ls, git status,
-# npm test, …) pass straight through.
+# *mentions* a footgun doesn't trip it.
+#
+# What happens on a match is configurable with DEV_HOOKS_GUARD_DENY (in .claude
+# settings "env"):
+#   unset / deny / 1 / true  — block outright (default; the command can't run)
+#   ask                      — downgrade to a human confirmation instead of a block
+#   allow / off / false / 0  — pass through silently (advanced users who rely on
+#                              auto-mode or their own permission rules)
 #
 # Extra, opt-in check: committing/pushing while sitting on main/master asks for
 # confirmation when DEV_HOOKS_GUARD_MAIN=1 (the coding-onboarding plugin's
 # getting-started skill seeds this for beginners when installed; anyone can set it
-# manually — solo main-branch workflows aren't nagged by default).
+# manually — solo main-branch workflows aren't nagged by default). No built-in replaces
+# this workflow-habit nudge.
 #
-# Advisory by design; opt out per repo/user with DEV_HOOKS_BASH_GUARD=false
-# (in .claude settings "env").
+# Advisory by design; opt out of the whole hook per repo/user with
+# DEV_HOOKS_BASH_GUARD=false (in .claude settings "env").
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -43,19 +49,15 @@ SEGMENTS=$(printf '%s\n' "$COMMAND" | tr ';&|' '\n')
 
 # Dissect one segment into NAME (the command word, any path prefix stripped) and ARGS.
 # Wrappers (sudo, command, nohup, time, env, xargs) and env assignments are skipped so
-# `sudo rm …` is judged as `rm …`; SUDO=1 records that sudo was involved.
+# `sudo rm …` is judged as `rm …`.
 seg_parse() {
   local -a w
   read -ra w <<<"$1"
-  NAME="" ARGS=() SUDO=""
+  NAME="" ARGS=()
   local i=0
   while [ "$i" -lt "${#w[@]}" ]; do
     case "${w[$i]##*/}" in
-      sudo)
-        SUDO=1
-        i=$((i + 1))
-        ;;
-      command | nohup | time | env | xargs | *=*)
+      sudo | command | nohup | time | env | xargs | *=*)
         i=$((i + 1))
         ;;
       *) break ;;
@@ -117,7 +119,7 @@ seg_git_sub() {
   done
 }
 
-# ── deny: irreversible system damage ─────────────────────────────────────────────
+# ── catastrophic, irreversible system damage ─────────────────────────────────────
 DENY=""
 if cmd_has ':\(\)[[:space:]]*\{[[:space:]]*:[[:space:]]*\|[[:space:]]*:'; then
   DENY="This is a fork bomb — it spawns processes until the machine locks up."
@@ -171,97 +173,51 @@ if [ -z "$DENY" ]; then
     [ -n "$DENY" ] && break
   done <<<"$SEGMENTS"
 fi
-[ -n "$DENY" ] && reminder_emit_decision deny "BLOCKED by dev-hooks guard: $DENY If you genuinely intend this, run it yourself outside the agent."
 
-# ── ask: risky but legitimate — make the human confirm ───────────────────────────
-ASK=""
-GIT_COMMITS="" GIT_PUSHES=""
-while IFS= read -r seg; do
-  seg_parse "$seg"
-  [ -z "$NAME" ] && continue
-  case "$NAME" in
-    rm)
-      seg_rm
-      if [ -n "$RM_FORCE" ] && [ -n "$RM_RECUR" ]; then
-        ASK="This force-deletes files/directories recursively (\`rm -rf\`). Deleted files don't go to a trash/recycle bin — they're gone. Confirm the path is what you mean."
-      fi
+# What to do on a catastrophic match — configurable for advanced users.
+if [ -n "$DENY" ]; then
+  case "${DEV_HOOKS_GUARD_DENY:-deny}" in
+    ask | ASK | Ask)
+      reminder_emit_decision ask "dev-hooks guard — please confirm: $DENY"
       ;;
-    git)
+    allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO)
+      : # advanced opt-out — fall through to the normal permission flow.
+      ;;
+    *)
+      reminder_emit_decision deny "BLOCKED by dev-hooks guard: $DENY If you genuinely intend this, run it yourself outside the agent."
+      ;;
+  esac
+fi
+
+# ── opt-in: committing/pushing while sitting on the main/master branch ────────────
+# A classic beginner footgun that no built-in replaces. Opt-in (DEV_HOOKS_GUARD_MAIN=1):
+# the coding-onboarding plugin's getting-started skill seeds it for beginners;
+# established main-branch workflows shouldn't be prompted on every commit.
+case "${DEV_HOOKS_GUARD_MAIN:-}" in
+  1 | true | TRUE | True)
+    GIT_COMMITS="" GIT_PUSHES=""
+    while IFS= read -r seg; do
+      seg_parse "$seg"
+      [ "$NAME" = git ] || continue
       seg_git_sub
       case "$GIT_SUB" in
         commit) GIT_COMMITS=1 ;;
         push) GIT_PUSHES=1 ;;
       esac
-      case "$GIT_SUB" in
-        reset)
-          for a in "${ARGS[@]}"; do
-            [ "$a" = "--hard" ] && ASK="\`git reset --hard\` throws away all uncommitted changes in your working tree with no undo. Confirm you don't need them."
-          done
-          ;;
-        clean)
-          for a in "${ARGS[@]}"; do
-            case "$a" in
-              --force | -[!-]*f* | -f*) ASK="\`git clean -f\` permanently deletes untracked files (anything not yet committed). Confirm none of them matter." ;;
-            esac
-          done
-          ;;
-        checkout | restore)
-          discard="" staged=""
-          for a in "${ARGS[@]}"; do
-            case "$a" in
-              --staged) staged=1 ;;
-              -- | .) discard=1 ;;
-            esac
-          done
-          # `git restore --staged …` only unstages — nothing is lost.
-          if [ "$GIT_SUB" = restore ] && [ -n "$staged" ]; then
-            discard=""
-          fi
-          [ -n "$discard" ] && ASK="This discards your uncommitted edits (\`git checkout/restore\`) with no undo. Confirm you mean to throw them away."
-          ;;
-        push)
-          for a in "${ARGS[@]}"; do
-            case "$a" in
-              --force | --force-with-lease* | --force-if-includes | -[!-]*f* | -f*)
-                ASK="This is a force-push — it can overwrite commits on the remote that you or others rely on. Confirm this is your own branch and you mean to rewrite its history."
-                ;;
-            esac
-          done
-          ;;
-      esac
-      ;;
-  esac
-  if [ -z "$ASK" ] && [ -n "$SUDO" ]; then
-    ASK="This runs with \`sudo\` (administrator rights), so it can change anything on the system. Read it before approving."
-  fi
-  [ -n "$ASK" ] && break
-done <<<"$SEGMENTS"
-
-if [ -z "$ASK" ] && cmd_has '(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh'; then
-  ASK="This pipes a script downloaded from the internet straight into a shell (\`curl … | sh\`). You're running code you haven't seen. Prefer downloading it first and reading it, or confirm you trust the source."
-fi
-
-# Committing or pushing while sitting on the main/master branch — a classic beginner
-# footgun. Opt-in (DEV_HOOKS_GUARD_MAIN=1): the coding-onboarding plugin's
-# getting-started skill seeds it for beginners when installed; established main-branch
-# workflows shouldn't be prompted on every commit.
-if [ -z "$ASK" ] && { [ -n "$GIT_COMMITS" ] || [ -n "$GIT_PUSHES" ]; }; then
-  case "${DEV_HOOKS_GUARD_MAIN:-}" in
-    1 | true | TRUE | True)
+    done <<<"$SEGMENTS"
+    if [ -n "$GIT_COMMITS" ] || [ -n "$GIT_PUSHES" ]; then
       branch=$(git -C "$CWD" branch --show-current 2>/dev/null)
       case "$branch" in
         main | master)
           verb="change"
           [ -n "$GIT_COMMITS" ] && verb="commit on"
           [ -n "$GIT_PUSHES" ] && verb="push to"
-          ASK="You're about to $verb the \`$branch\` branch directly. The safer habit is to make changes on a separate branch and open a pull request, so \`$branch\` always stays working. Confirm if you really want to change \`$branch\` directly."
+          reminder_emit_decision ask "dev-hooks guard — please confirm: You're about to $verb the \`$branch\` branch directly. The safer habit is to make changes on a separate branch and open a pull request, so \`$branch\` always stays working. Confirm if you really want to change \`$branch\` directly."
           ;;
       esac
-      ;;
-  esac
-fi
-
-[ -n "$ASK" ] && reminder_emit_decision ask "dev-hooks guard — please confirm: $ASK"
+    fi
+    ;;
+esac
 
 # Nothing matched → stay silent, let the normal permission flow handle it.
 exit 0
