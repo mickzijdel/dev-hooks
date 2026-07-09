@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Use when making a significant architectural or technical decision that shouldn't be re-litigated later — choosing a tool, pattern, or approach with real trade-offs. Write one ADR per decision. Triggers on "record this decision", "why did we choose X", "document our approach to Y", "write an ADR", or when completing a decision that cost real deliberation (library selection, database strategy, auth approach, deployment model).
+description: Use when making a significant architectural or technical decision that shouldn't be re-litigated later — choosing a tool, pattern, or approach with real trade-offs. Write one ADR per decision, proactively the moment such a decision lands — don't wait to be asked. Triggers on "record this decision", "why did we choose X", "document our approach to Y", "write an ADR", or when completing a decision that cost real deliberation (library selection, database strategy, auth approach, deployment model).
 ---
 
 # Architecture Decision Records (ADRs)

@@ -1,7 +1,7 @@
 # writing
 
-A Claude Code plugin of writing/content skills, plus hooks that audit READMEs and check prose
-against a voice profile on write.
+A Claude Code plugin of writing/content skills, plus hooks that audit READMEs, nudge you to
+apply your voice profile before writing, and check prose against that profile on write.
 
 Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 `coding-onboarding`, and `thinking-tools`.
@@ -26,7 +26,8 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | Hook | Fires on | Opt out |
 |------|----------|---------|
 | `readme-reminder` | A `Write`/`Edit`/`MultiEdit` of a `README*` (any case/extension) — runs the `github-readme` audit script on the file and feeds the results back, with a nudge to use the `github-readme` skill. Advisory only; never blocks the write. | `WRITING_README=false` |
-| `voice-reminder` | A `Write`/`Edit`/`MultiEdit` of a prose file (`.md`/`.mdx`/`.markdown`/`.tex`/`.txt`) **when a voice profile is discoverable** — scans it with `voice_audit.py` and nudges toward the `voice-profile` skill if banned words appear. Silent without a profile or on clean prose; never blocks. | `WRITING_VOICE=false` |
+| `voice-intent-reminder` | A `UserPromptSubmit` whose prompt reads as a writing/copy task **when a voice profile is discoverable** — nudges Claude to apply the `voice-profile` skill *before* drafting, so your voice is baked into the first draft. Fires once per session; silent without a profile. | `WRITING_VOICE=false` |
+| `voice-reminder` | A `Write`/`Edit`/`MultiEdit` of a prose file (`.md`/`.mdx`/`.markdown`/`.tex`/`.txt`/`.html`/`.htm`/`.xhtml`) **when a voice profile is discoverable** — scans it with `voice_audit.py` and nudges toward the `voice-profile` skill if banned words appear. Silent without a profile or on clean prose; never blocks. | `WRITING_VOICE=false` |
 
 ## Install
 
@@ -57,7 +58,10 @@ $ claude
   `<repo>/.claude/voice_profile.md`, then `~/.claude/voice_profile.md` (first hit wins). With a
   profile in place it runs `skills/voice-profile/scripts/voice_audit.py` on every prose write and
   nudges only when banned words appear. Point `WRITING_VOICE_AUDIT_SCRIPT` at another scanner to
-  override the path; set `WRITING_VOICE=false` to silence the hook entirely.
+  override the path; set `WRITING_VOICE=false` to silence the hook entirely. The
+  `voice-intent-reminder` hook uses the same discovery order and the same `WRITING_VOICE`
+  switch; it fires once per session on a writing-flavoured prompt to nudge Claude to apply the
+  profile *before* drafting.
 - The `readme-reminder` hook also runs `github-readme`'s audit automatically: on every
   README write it shells out to `skills/github-readme/scripts/github_readme_audit.py` with
   `python3` (the script is stdlib-only, so no `uv` needed). If that script can't be found or
