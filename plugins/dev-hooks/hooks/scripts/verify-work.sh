@@ -39,8 +39,12 @@ SLOW_TESTS=0
 # Test scope: full (default) | changed | off. An unknown value falls back to full.
 MODE="${DEV_HOOKS_VERIFY_TESTS:-full}"
 case "$MODE" in changed | off | full) ;; *) MODE=full ;; esac
-# Soft cap on each test run, kept under the hook's 120s hard timeout. 0 disables the cap.
+# Soft cap on EACH test run, kept under the hook's 120s hard timeout (0 disables it). Note
+# this is per-run, not a cumulative budget: uncapped scanners and multiple suites in a polyglot
+# repo can still add up past 120s. A non-numeric value falls back to the default rather than
+# making `timeout` error the run out.
 TEST_TIMEOUT="${DEV_HOOKS_VERIFY_TEST_TIMEOUT:-110}"
+case "$TEST_TIMEOUT" in '' | *[!0-9]*) TEST_TIMEOUT=110 ;; esac
 
 # Print the subset of changed files matching an egrep pattern (empty when none match).
 changed_matching() { echo "$CHANGED" | grep -E "$1"; }
@@ -159,7 +163,10 @@ if [ "$HAS_RUBY" = "1" ]; then
           {
             changed_matching '(^|/)spec/.*_spec\.rb$'
             changed_matching '^app/.*\.rb$' | sed -E 's|^app/|spec/|; s|\.rb$|_spec.rb|'
+            # lib/ specs live at spec/lib/ in a Rails app but flat at spec/ in a conventional
+            # gem — offer both candidates and let `existing` keep whichever is real.
             changed_matching '^lib/.*\.rb$' | sed -E 's|^lib/|spec/lib/|; s|\.rb$|_spec.rb|'
+            changed_matching '^lib/.*\.rb$' | sed -E 's|^lib/|spec/|; s|\.rb$|_spec.rb|'
           } | sort -u | existing
         )
         # shellcheck disable=SC2086
