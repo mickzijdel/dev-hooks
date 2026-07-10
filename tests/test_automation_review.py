@@ -72,9 +72,7 @@ def _write_corrupted_log(home):
             b'{"ts":"2026-01-01T00:00:00Z","prompt":"truncated\n'
         )  # unparseable fragment
         f.write(_line(_rec(9, "too-old")))  # outside the 7-day window
-    (log_dir / "prompts.jsonl.1").write_bytes(
-        _line(_rec(3, "gamma"))
-    )  # rotation spillover
+    (log_dir / "prompts.jsonl.1").write_bytes(_line(_rec(3, "gamma")))
     return log
 
 
