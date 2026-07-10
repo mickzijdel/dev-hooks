@@ -9,11 +9,14 @@ Once a week, look back at recent work, spot the tasks you did by hand more than 
 
 ## What it reviews
 
-- **The prompt log** — `~/.claude/automation-review/prompts.jsonl`, written by the `dev-hooks` plugin's `prompt-log` hook: one JSON line per user prompt (`ts`, `cwd`, `session_id`, `len`, `prompt` ≤ 500 chars) across **all** repos. This is the only **cross-repo** source, and the strongest signal — what you actually keep *asking for* is exactly what's worth automating. Pull the last 7 days (jq-only cutoff, so no GNU/BSD `date` divergence):
+- **The prompt log** — `~/.claude/automation-review/prompts.jsonl`, written by the `dev-hooks` plugin's `prompt-log` hook: one JSON line per user prompt (`ts`, `cwd`, `session_id`, `len`, `prompt` ≤ 500 chars) across **all** repos. This is the only **cross-repo** source, and the strongest signal — what you actually keep *asking for* is exactly what's worth automating. Pull the last 7 days (jq-only cutoff, so no GNU/BSD `date` divergence). Read it **corruption-tolerantly** — a crash mid-append can leave a block of NUL bytes that makes a plain `jq -c` abort at that line and silently drop the whole rest of the file (so the review sees *zero* recent prompts and skips its strongest signal). Strip NULs, parse each line on its own, and drop only the unparseable fragment:
   ```bash
-  jq -c 'select(.ts >= (now - 7*86400 | strftime("%Y-%m-%dT%H:%M:%SZ")))' ~/.claude/automation-review/prompts.jsonl 2>/dev/null
+  for f in ~/.claude/automation-review/prompts.jsonl ~/.claude/automation-review/prompts.jsonl.1; do
+    tr -d '\000' <"$f" 2>/dev/null \
+      | jq -Rc 'fromjson? | select(.ts >= (now - 7*86400 | strftime("%Y-%m-%dT%H:%M:%SZ")))'
+  done
   ```
-  Also read `prompts.jsonl.1` (the rotation spillover) if present. Cluster prompts by intent — same verbs/nouns ("deploy", "fix CI", "regenerate fixtures"), same `cwd`, near-duplicate phrasing — and count repeats; anything asked **3+ times in a week**, or weekly across reports, is a prime candidate. **If the file doesn't exist** (the `dev-hooks` plugin isn't installed, or `DEV_HOOKS_PROMPT_LOG=false`), skip this source silently and rely on the others.
+  (`prompts.jsonl.1` is the rotation spillover; the loop skips it silently when absent. `-R` reads each line as a raw string and `fromjson?` yields nothing for a line that won't parse, so one bad line can never blind the rest.) Cluster prompts by intent — same verbs/nouns ("deploy", "fix CI", "regenerate fixtures"), same `cwd`, near-duplicate phrasing — and count repeats; anything asked **3+ times in a week**, or weekly across reports, is a prime candidate. **If neither file exists** (the `dev-hooks` plugin isn't installed, or `DEV_HOOKS_PROMPT_LOG=false`), the loop prints nothing — skip this source silently and rely on the others.
 - **Every repo's memory index** — glob `~/.claude/projects/*/memory/MEMORY.md` and skim each (follow into an individual memory file only when a line looks automation-relevant). `feedback`/`project` memories record recurring corrections and workflows ("always run X after Y") — patterns worth turning into a hook or skill. Glob may match nothing; degrade silently.
 - **Recent git activity** — commits/branches in the working repo over the last 7 days (`git log --since='7 days ago' --stat`); what kinds of changes repeated?
 - **The off-topic backlog** — `plans/off-topic-improvements.md` if present; recurring themes there are automation candidates.
