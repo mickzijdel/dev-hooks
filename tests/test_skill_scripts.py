@@ -902,9 +902,11 @@ def test_har_scan_rejects_non_har(tmp_path):
     assert "not a valid HAR" in r.stderr
 
 
-def test_har_scan_tolerates_null_sizes(tmp_path):
-    # Some exporters emit an explicit `null` for content.size AND bodySize; ranking must
-    # not choke on it (regression: `None > 0` blew up the whole scan).
+@pytest.mark.parametrize("size,body_size", [(None, None), ("123", "456")])
+def test_har_scan_tolerates_non_numeric_sizes(tmp_path, size, body_size):
+    # HAR spec says size/bodySize are numbers, but exporters emit `null` or even a string;
+    # ranking must not choke on either (regression: `None > 0` / `"123" > 0` blew up the
+    # whole scan in rank_key/analyse).
     har = tmp_path / "capture.har"
     har.write_text(
         json.dumps(
@@ -919,10 +921,10 @@ def test_har_scan_tolerates_null_sizes(tmp_path):
                             },
                             "response": {
                                 "status": 200,
-                                "bodySize": None,
+                                "bodySize": body_size,
                                 "content": {
                                     "mimeType": "application/json",
-                                    "size": None,
+                                    "size": size,
                                     "text": '{"a":1}',
                                 },
                             },

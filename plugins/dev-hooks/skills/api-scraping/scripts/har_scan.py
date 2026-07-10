@@ -118,10 +118,12 @@ def analyse(entry: dict, find_terms: list[str], all_entries: bool) -> dict | Non
         except (ValueError, TypeError):
             operation = ""
 
+    # HAR spec says size/bodySize are numbers, but exporters emit null (or worse, a
+    # string) — coerce anything non-numeric to -1 ('unknown') so ranking never chokes.
     size = content.get("size")
-    if size is None or size < 0:
+    if not isinstance(size, (int, float)) or size < 0:
         size = resp.get("bodySize")
-    if size is None:
+    if not isinstance(size, (int, float)):
         size = -1
 
     return {
