@@ -89,7 +89,10 @@ Do not include changelog or detective-work where it does not belong, such as in 
   inline jq (nothing to drift); promote a `reminder_prompt_init` to the lib when a second
   UserPromptSubmit hook appears. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
   into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must never
-  print. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  print. PostToolUse(Bash) (`ci-watch-reminder.sh`) is likewise the lone consumer of *that*
+  event's Bash payload — it reads `.tool_input.command`/`.cwd` inline and reuses
+  `reminder_opt_out`/`reminder_emit`; promote a `reminder_post_bash_init` when a second
+  PostToolUse(Bash) hook lands. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
   guard when the hook manages its own re-arm state), `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session

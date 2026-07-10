@@ -2761,3 +2761,81 @@ def test_save_script_silent_without_transcript(tmp_path):
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── ci-watch-reminder.sh (PostToolUse Bash) ──────────────────────────────────────────
+def _ci_repo(path, *, workflows=True):
+    """A git repo, optionally with a GitHub Actions workflow (the run there is to watch)."""
+    init_git_repo(path)
+    if workflows:
+        wf = path / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("name: ci\non: push\njobs:\n  x:\n    steps: []\n")
+    return path
+
+
+def _ci_watch(command, *, cwd, **env_overrides):
+    env_overrides.setdefault("DEV_HOOKS_CI_WATCH", None)
+    payload = {"tool_input": {"command": command}, "cwd": str(cwd), "session_id": "c1"}
+    return run_hook(
+        "ci-watch-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(**env_overrides),
+    )
+
+
+PUSH_COMMANDS = [
+    "git push",
+    "git push origin main",
+    "git push --force-with-lease",
+    "git -C sub push",
+    "git commit -m x && git push",
+    "GIT_PAGER=cat git push",
+]
+
+
+@pytest.mark.parametrize("command", PUSH_COMMANDS)
+def test_ci_watch_fires_on_push_with_workflows(command, tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch(command, cwd=repo)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "watch")
+
+
+# Not a `git push`: config with a pushurl, a switch, or a subcommand that only starts "push".
+# (The matcher can't shell-parse, so an *echoed* "git push" would false-fire — a harmless,
+# accepted edge, so it's deliberately not asserted silent here.)
+NON_PUSH_COMMANDS = [
+    "git config remote.origin.pushurl x",
+    "git switch main",
+    "git pushall",
+    "git status",
+]
+
+
+@pytest.mark.parametrize("command", NON_PUSH_COMMANDS)
+def test_ci_watch_silent_on_non_push(command, tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch(command, cwd=repo)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_watch_silent_without_workflows(tmp_path):
+    repo = _ci_repo(tmp_path, workflows=False)
+    r = _ci_watch("git push", cwd=repo)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_watch_silent_outside_git_repo(tmp_path):
+    r = _ci_watch("git push", cwd=tmp_path)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_ci_watch_opt_out(tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH="false")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
