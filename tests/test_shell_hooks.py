@@ -786,6 +786,46 @@ def test_lint_on_edit_exits_zero_for_python_file(tmp_path):
     assert r.stdout.strip() == ""
 
 
+def _ruff_on_path():
+    return any(
+        os.access(os.path.join(d, "ruff"), os.X_OK)
+        for d in os.environ.get("PATH", "").split(os.pathsep)
+        if d
+    )
+
+
+def test_lint_on_edit_keeps_unused_imports_by_default(tmp_path):
+    # The edit-time autofix must NOT delete an unused import (F401) — the agent
+    # often writes the import a beat before the code that uses it. Other safe
+    # fixes/formatting still apply, so `x=1` becomes `x = 1`.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    py = tmp_path / "snippet.py"
+    py.write_text("import os\nx=1\n")
+    r = run_hook(
+        "lint-on-edit.sh", stdin=json.dumps({"tool_input": {"file_path": str(py)}})
+    )
+    assert r.returncode == 0
+    out = py.read_text()
+    assert "import os" in out
+    assert "x = 1" in out
+
+
+def test_lint_on_edit_removes_unused_imports_when_override_empty(tmp_path):
+    # DEV_HOOKS_RUFF_KEEP= (empty) restores full autofix, so F401 strips the import.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    py = tmp_path / "snippet.py"
+    py.write_text("import os\nx = 1\n")
+    r = run_hook(
+        "lint-on-edit.sh",
+        stdin=json.dumps({"tool_input": {"file_path": str(py)}}),
+        env=base_env(DEV_HOOKS_RUFF_KEEP=""),
+    )
+    assert r.returncode == 0
+    assert "import os" not in py.read_text()
+
+
 def _fake_bundle(tmp_path, body):
     """Install a fake `bundle` on PATH whose body decides exit codes per subcommand, so the
     herb/brakeman/etc. branches can be exercised without a real Ruby toolchain (v17)."""
