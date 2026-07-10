@@ -2,7 +2,8 @@
 
 A Claude Code plugin of on-demand "thinking tools" you invoke as slash commands (or that
 Claude reaches for when the trigger fits): critique, decision, verification, and automation
-workflows distilled from the `#ai-productivity-digest` tips.
+workflows distilled from the `#ai-productivity-digest` tips. Ships two advisory hooks that
+nudge Claude to reach for the tools proactively rather than only when asked.
 
 Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 `coding-onboarding`, and `writing`.
@@ -25,6 +26,16 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 
 `grill`, `domain-modeling`, and `codebase-design` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
+
+## Hooks
+
+These skills are model-invocable, but Claude tends to wait for an explicit ask. Two advisory
+hooks push it to reach for them on its own. Both inject context only; neither blocks anything.
+
+| Hook | Fires on | Opt out |
+|------|----------|---------|
+| `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
+| `thinking-tools-nudge` | `UserPromptSubmit` whose prompt matches a situational cue — injects a one-line nudge toward the single matching tool (e.g. "poke holes" → `board`, "is this fixed for real" → `but-for-real`). Silent otherwise. | `THINKING_TOOLS=false` |
 
 ## Install
 

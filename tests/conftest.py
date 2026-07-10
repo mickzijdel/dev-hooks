@@ -16,8 +16,10 @@ ONBOARDING = ROOT / "plugins" / "coding-onboarding"
 WRITING = ROOT / "plugins" / "writing"
 FIXTURES = ROOT / "tests" / "fixtures"
 GOLDEN = ROOT / "tests" / "golden"
+THINKING = ROOT / "plugins" / "thinking-tools"
 HOOKS = DEV_HOOKS / "hooks" / "scripts"
 WRITING_HOOKS = WRITING / "hooks" / "scripts"
+THINKING_HOOKS = THINKING / "hooks" / "scripts"
 
 
 @pytest.fixture(scope="session")

@@ -27,9 +27,9 @@ FILE=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/nu
 [ -z "$FILE" ] && exit 0
 # jscpd:ignore-end
 
-# Prose files only.
+# Prose files only (incl. HTML webcopy).
 case "${FILE,,}" in
-  *.md | *.mdx | *.markdown | *.tex | *.txt) ;;
+  *.md | *.mdx | *.markdown | *.tex | *.txt | *.html | *.htm | *.xhtml) ;;
   *) exit 0 ;;
 esac
 

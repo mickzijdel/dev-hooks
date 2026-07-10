@@ -17,6 +17,7 @@ import pytest
 from conftest import (
     DEV_HOOKS,
     HOOKS,
+    THINKING_HOOKS,
     WRITING,
     WRITING_HOOKS,
     init_git_repo,
@@ -437,6 +438,164 @@ def test_voice_reminder_honors_env_profile_override(tmp_path):
     )
     assert r.returncode == 0
     assert_json_with(r.stdout, "foobar")
+
+
+@requires_python3
+def test_voice_reminder_scans_html_webcopy(tmp_path):
+    # Webcopy in an .html file counts as prose now — the audit still fires on banned words.
+    repo = _voice_repo(tmp_path)
+    page = repo / "landing.html"
+    page.write_text("<h1>This is the cleanest design.</h1>\n")
+    payload = json.dumps({"tool_input": {"file_path": str(page)}, "cwd": str(repo)})
+    r = _run_voice(payload, base_env(HOME=str(tmp_path)))
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "voice-profile")
+
+
+# ── voice-intent-reminder.sh (writing plugin; UserPromptSubmit, self-contained) ─────
+def _run_voice_intent(payload, env):
+    return run_hook(
+        "voice-intent-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def test_voice_intent_fires_on_writing_prompt_with_profile(tmp_path):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps(
+        {
+            "prompt": "Please write the landing page copy",
+            "cwd": str(repo),
+            "session_id": "vi1",
+        }
+    )
+    r = _run_voice_intent(
+        payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t1"))
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "voice-profile")
+
+
+def test_voice_intent_silent_without_profile(tmp_path):
+    # Writing prompt but no discoverable profile → opt-in posture stays silent.
+    payload = json.dumps(
+        {"prompt": "write the blog post", "cwd": str(tmp_path), "session_id": "vi2"}
+    )
+    r = _run_voice_intent(
+        payload, base_env(HOME=str(tmp_path / "nohome"), TMPDIR=str(tmp_path / "t2"))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_intent_silent_on_non_writing_prompt(tmp_path):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps(
+        {
+            "prompt": "refactor the auth module and fix the failing tests",
+            "cwd": str(repo),
+            "session_id": "vi3",
+        }
+    )
+    r = _run_voice_intent(
+        payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t3"))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_intent_silent_when_opted_out(tmp_path):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps(
+        {"prompt": "write the newsletter", "cwd": str(repo), "session_id": "vi4"}
+    )
+    r = _run_voice_intent(
+        payload,
+        base_env(
+            HOME=str(tmp_path), TMPDIR=str(tmp_path / "t4"), WRITING_VOICE="false"
+        ),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_intent_fires_once_per_session(tmp_path):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps(
+        {"prompt": "write the tagline", "cwd": str(repo), "session_id": "vi5"}
+    )
+    env = base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t5"))
+    first = _run_voice_intent(payload, env)
+    second = _run_voice_intent(payload, env)
+    assert_json_with(first.stdout, "voice-profile")
+    assert second.stdout.strip() == ""
+
+
+# ── thinking-tools-reminder.sh (thinking-tools plugin; SessionStart, self-contained) ─
+def test_thinking_reminder_fires(tmp_path):
+    r = run_hook(
+        "thinking-tools-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        scripts=THINKING_HOOKS,
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:premortem")
+
+
+def test_thinking_reminder_silent_when_opted_out(tmp_path):
+    r = run_hook(
+        "thinking-tools-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(THINKING_TOOLS="false"),
+        scripts=THINKING_HOOKS,
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── thinking-tools-nudge.sh (thinking-tools plugin; UserPromptSubmit, self-contained) ─
+def _run_thinking_nudge(prompt, env=None):
+    return run_hook(
+        "thinking-tools-nudge.sh",
+        stdin=json.dumps({"prompt": prompt, "session_id": "tn"}),
+        env=env,
+        scripts=THINKING_HOOKS,
+    )
+
+
+def test_thinking_nudge_fires_for_board_cue():
+    r = _run_thinking_nudge("Can you poke holes in this plan?")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:board")
+
+
+def test_thinking_nudge_fires_for_but_for_real_cue():
+    r = _run_thinking_nudge("Is this actually fixed for real?")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:but-for-real")
+
+
+def test_thinking_nudge_fires_for_premortem_cue():
+    r = _run_thinking_nudge("What could go wrong before we commit to this migration?")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:premortem")
+
+
+def test_thinking_nudge_fires_for_grill_cue():
+    r = _run_thinking_nudge("Grill me on this feature idea until it's fully specified.")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:grill")
+
+
+def test_thinking_nudge_silent_without_cue():
+    r = _run_thinking_nudge("Please add a new column to the users table")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_thinking_nudge_silent_when_opted_out():
+    r = _run_thinking_nudge("poke holes in this", env=base_env(THINKING_TOOLS="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
 
 
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────

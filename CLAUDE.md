@@ -65,13 +65,17 @@ Do not include changelog or detective-work where it does not belong, such as in 
 
 ## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 
-- **The `writing` plugin's `readme-reminder.sh` is the one exception to everything below.**
-  It lives in `plugins/writing/hooks/` and is deliberately self-contained — it does NOT source
-  `reminder-common.sh`, because the `writing` plugin installs without `dev-hooks` and a cross-
-  plugin `source` would break that standalone install. Its small reimplemented bits (opt-out
-  case, jq payload read, `emit`) stay under jscpd's minTokens, so they don't trip the
-  duplication gate against the lib — keep them terse if you extend them. Keep the script
-  dependency-free; don't "DRY" it into the lib.
+- **The standalone-plugin hooks are the exception to everything below.** The `writing` plugin
+  (`readme-reminder.sh`, `voice-reminder.sh`, `voice-intent-reminder.sh`) and the
+  `thinking-tools` plugin (`thinking-tools-reminder.sh`, `thinking-tools-nudge.sh`) live in
+  their own `plugins/*/hooks/` and are deliberately self-contained — they do NOT source
+  `reminder-common.sh` or `hook_helpers.py`, because those plugins install without `dev-hooks`
+  and a cross-plugin `source`/import would break that standalone install. Their small
+  reimplemented bits (opt-out case, jq payload read, `emit`) stay under jscpd's minTokens, or
+  are wrapped in `# jscpd:ignore-start`/`-end` when a block is shared verbatim between two of
+  them (e.g. the voice-profile lookup shared by `voice-reminder.sh` and
+  `voice-intent-reminder.sh`) — keep them terse if you extend them. Keep the scripts
+  dependency-free; don't "DRY" them into the lib.
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
   knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`
   (opt-out + INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` /

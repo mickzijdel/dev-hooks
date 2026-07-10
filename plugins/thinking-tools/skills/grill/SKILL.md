@@ -1,6 +1,6 @@
 ---
 name: grill
-description: Use when a plan, design, or feature idea needs to be interrogated until it is fully specified — the user wants to be interviewed, one question at a time, until every open decision is resolved. Triggers on "grill me", "interview me", "ask me questions about this", "stress-test this plan with me", "help me fully specify this", or before writing a plan/PRD from a still-fuzzy idea. Not for generating ideas from scratch (that's brainstorming), third-party critique (that's [[board]]), or failure-mode hunting (that's [[premortem]]).
+description: Use when a plan, design, or feature idea needs to be interrogated until it is fully specified — the user wants to be interviewed, one question at a time, until every open decision is resolved. Triggers on "grill me", "interview me", "ask me questions about this", "stress-test this plan with me", "help me fully specify this", or before writing a plan/PRD from a still-fuzzy idea — offer to grill first rather than drafting from guesses. Not for generating ideas from scratch (that's brainstorming), third-party critique (that's [[board]]), or failure-mode hunting (that's [[premortem]]).
 ---
 
 # Grill
