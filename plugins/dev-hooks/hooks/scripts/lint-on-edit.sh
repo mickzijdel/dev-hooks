@@ -99,11 +99,16 @@ case "$FILE" in
 
   # ── Python (best-effort: tools are not global) ───────────────────────────────
   *.py)
+    # Keep edit-time autofix from DELETING code the agent is mid-authoring: an
+    # import/binding is often written a beat before the line that uses it, so F401
+    # (unused import) and F841 (unused variable) stay unfixable here (still flagged
+    # by verify-work.sh/CI). DEV_HOOKS_RUFF_KEEP overrides; empty = full autofix.
+    RUFF_UNFIXABLE=${DEV_HOOKS_RUFF_KEEP-F401,F841}
     if [ -x "$ROOT/.venv/bin/ruff" ]; then
-      "$ROOT/.venv/bin/ruff" check --fix "$FILE" >/dev/null 2>&1
+      "$ROOT/.venv/bin/ruff" check --fix ${RUFF_UNFIXABLE:+--unfixable "$RUFF_UNFIXABLE"} "$FILE" >/dev/null 2>&1
       "$ROOT/.venv/bin/ruff" format "$FILE" >/dev/null 2>&1
     elif command -v ruff >/dev/null 2>&1; then
-      ruff check --fix "$FILE" >/dev/null 2>&1
+      ruff check --fix ${RUFF_UNFIXABLE:+--unfixable "$RUFF_UNFIXABLE"} "$FILE" >/dev/null 2>&1
       ruff format "$FILE" >/dev/null 2>&1
     elif [ -x "$ROOT/.venv/bin/black" ]; then
       "$ROOT/.venv/bin/black" "$FILE" >/dev/null 2>&1
