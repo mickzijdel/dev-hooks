@@ -1,4 +1,4 @@
-# The standard (v20) — full specification
+# The standard (v21) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v20** when it has all of:
+A repo is **compliant at v21** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v20** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "20"`.
+  stamp `DEV_ENV_VERSION = "21"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -406,6 +406,12 @@ standard exists to remove.
    doesn't "start" them. Any VS Code task that starts a *host* DB container must **no-op inside the
    container** (there's no docker CLI there): guard on `$REMOTE_CONTAINERS`/`$CODESPACES` or
    `command -v docker` (see `templates/devcontainer/tasks.json.example`).
+10. **Host port publishing is per-worktree-safe** (added in v21) — the app publishes
+    `"${PORT:-3000}:${PORT:-3000}"`, not a fixed `3000:3000`, so parallel per-worktree
+    devcontainers (each on its own `$PORT` from worktree-setup's isolation) don't collide on one
+    host port. Accessory services publish **no** host port at all — the app reaches them over the
+    compose network (`DB_HOST: mysql`), and not publishing keeps two worktrees' DBs from clashing;
+    forward one on demand (`docker compose port mysql 3306`) for an occasional host-side GUI.
 
 **Per-stack knobs** (the mise-owns-the-toolchain core is identical; only these vary):
 

@@ -816,6 +816,36 @@ Steps for a Ruby repo:
 
 ---
 
+## v20 → v21 (devcontainer host ports are per-worktree-safe)
+
+Only the **advisory devcontainer** template changed; repos without a `.devcontainer/` just bump
+the stamp. The old `compose.yaml` published fixed host ports (`3000:3000` for the app, `3307:3306`
+for MySQL). Two per-worktree devcontainers running at once (each on its own `$PORT` from
+worktree-setup's isolation) then collided — `docker compose up` fails with "port is already
+allocated". v21 makes the app's host publish track `$PORT` and stops publishing the DB's host port
+entirely (the app reaches it over the compose network, so nothing is lost).
+
+Steps for a repo **with** a `.devcontainer/compose.yaml` (skip 1–2 if you have none):
+
+1. **App service `ports:`** — change the fixed mapping to track `$PORT`:
+   ```yaml
+   ports:
+     - "${PORT:-3000}:${PORT:-3000}"   # was "3000:3000"
+   ```
+   (`$PORT` is unset in the plain single-checkout case, so it still resolves to `3000`. For
+   per-worktree isolation, worktree-setup writes `PORT` into `.devcontainer/.env`, which compose
+   reads automatically.)
+2. **Accessory service `ports:`** — **delete** the host publish (e.g. the MySQL `ports: -
+   "3307:3306"` block). The app already talks to it via `DB_HOST`; for an occasional host-side GUI,
+   forward it on demand with `docker compose port mysql 3306`.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "21"` in `mise.toml` (the only required step for a
+   repo without a devcontainer).
+4. **Verify.** `docker compose -f .devcontainer/compose.yaml config` shows the app `published` port
+   following `$PORT` (try `PORT=3007 docker compose … config`) and no `published` entry for the DB;
+   opening two worktrees' devcontainers no longer errors on a port clash.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

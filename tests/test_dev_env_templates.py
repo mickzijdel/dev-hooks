@@ -462,6 +462,23 @@ def test_devcontainer_compose_caches_mise_on_named_volume():
     )
 
 
+def test_devcontainer_compose_host_ports_are_per_worktree_safe():
+    """Invariant 10 (v21): the app publishes $PORT (not a fixed 3000) so parallel per-worktree
+    devcontainers don't clash, and the accessory service publishes no host port at all."""
+    instructions = "\n".join(
+        _noncomment_lines((DEVCONTAINER_DIR / "compose.yaml").read_text())
+    )
+    # The app's host publish tracks $PORT with a 3000 fallback …
+    assert '- "${PORT:-3000}:${PORT:-3000}"' in instructions
+    # … and neither a fixed 3000:3000 app publish nor a MySQL 3307:3306 host publish survives.
+    assert '"3000:3000"' not in instructions, (
+        "app must not publish a fixed host port (invariant 10)"
+    )
+    assert "3307:3306" not in instructions, (
+        "accessory must not publish a host port (invariant 10)"
+    )
+
+
 def test_devcontainer_setup_sh_order():
     """setup.sh runs in the invariant-8 order: chown the volumes → mise trust → mise install →
     hk install → install deps. Assert the real commands appear in that sequence."""

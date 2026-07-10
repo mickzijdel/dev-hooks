@@ -88,12 +88,13 @@ Do not include changelog or detective-work where it does not belong, such as in 
   reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
   `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
-  so the normal permission flow proceeds). UserPromptSubmit (`prompt-log.sh`) has **no** init
-  helper yet — it's the lone consumer of that event's payload, so it uses `reminder_opt_out` plus
-  inline jq (nothing to drift); promote a `reminder_prompt_init` to the lib when a second
-  UserPromptSubmit hook appears. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
-  into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must never
-  print. PostToolUse(Bash) (`ci-watch-reminder.sh`) is likewise the lone consumer of *that*
+  so the normal permission flow proceeds). UserPromptSubmit: `reminder_prompt_init <OPT_VAR>`
+  (opt-out + INPUT/PROMPT/CWD/SESSION; reads `.prompt` on its own so a multi-line prompt isn't
+  truncated — shares the `_reminder_cwd_session` tail with `reminder_pre_init`) and
+  `reminder_emit_prompt <msg>` (advisory additionalContext + exit 0), used by both `prompt-log.sh`
+  and `intent-check-reminder.sh`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
+  into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must print only
+  the structured additionalContext JSON (via `reminder_emit_prompt`) or nothing at all. PostToolUse(Bash) (`ci-watch-reminder.sh`) is likewise the lone consumer of *that*
   event's Bash payload — it reads `.tool_input.command`/`.cwd` inline and reuses
   `reminder_opt_out`/`reminder_emit`; promote a `reminder_post_bash_init` when a second
   PostToolUse(Bash) hook lands. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`

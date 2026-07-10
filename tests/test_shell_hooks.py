@@ -2826,6 +2826,94 @@ def test_prompt_log_rotates_at_cap(tmp_path):
     assert json.loads(lines[0])["prompt"] == "fresh"
 
 
+# ── intent-check-reminder.sh (UserPromptSubmit) ──────────────────────────────────────
+def _run_intent_check(prompt, env=None):
+    return run_hook(
+        "intent-check-reminder.sh",
+        stdin=json.dumps({"prompt": prompt, "session_id": "ic"}),
+        env=env,
+    )
+
+
+def test_intent_check_fires_on_thin_task():
+    r = _run_intent_check("add dark mode to the settings page")
+    assert r.returncode == 0
+    payload = assert_json_with(r.stdout, "out of scope")
+    assert payload["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+
+
+def test_intent_check_fires_on_polite_thin_task():
+    # A leading politeness phrase is stripped before the verb check anchors.
+    r = _run_intent_check("can you add a search box to the navbar")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "out of scope")
+
+
+def test_intent_check_silent_when_why_present():
+    r = _run_intent_check("add a logout button because users keep getting stuck")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_purpose_clause():
+    # A "to <purpose>" clause is intent even without a "because"/"so that" marker.
+    r = _run_intent_check("add a rate limiter to stop the API getting hammered")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_when_nongoal_present():
+    r = _run_intent_check("refactor the auth module but don't touch the API")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_question():
+    r = _run_intent_check("how does the parser work?")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_non_task_prompt():
+    r = _run_intent_check("what should I name this variable")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_followup():
+    r = _run_intent_check("now add the header too")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_too_short():
+    r = _run_intent_check("fix it")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_silent_on_long_detailed_brief():
+    r = _run_intent_check("add a feature " + "x" * 1200)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_intent_check_opt_out():
+    r = _run_intent_check(
+        "add dark mode to the settings page",
+        env=base_env(DEV_HOOKS_INTENT_CHECK="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize("stdin", ["not json", ""])
+def test_intent_check_exit0_on_malformed_input(stdin):
+    r = run_hook("intent-check-reminder.sh", stdin=stdin)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── script-index.sh (SessionStart) ───────────────────────────────────────────────────
 def _make_script(path, *, shebang="#!/usr/bin/env bash", desc=None, executable=True):
     body = shebang + "\n"
