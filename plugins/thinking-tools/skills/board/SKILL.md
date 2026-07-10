@@ -1,6 +1,6 @@
 ---
 name: board
-description: Use when you want hard, independent, adversarial critique of an idea, plan, design, draft, proposal, pitch, or landing page — especially when you suspect the default response is too agreeable or sycophantic and you want real pushback before committing. Triggers on "poke holes in this", "what am I missing", "be brutal", "convince me this is wrong", or any decision that benefits from several expert angles at once.
+description: Use when you want hard, independent, adversarial critique of an idea, plan, design, draft, proposal, pitch, or landing page — especially when you suspect the default response is too agreeable or sycophantic and you want real pushback before committing. Convene it on your own initiative before returning a consequential plan or draft, not only when asked. Triggers on "poke holes in this", "what am I missing", "be brutal", "convince me this is wrong", or any decision that benefits from several expert angles at once.
 ---
 
 # Board of Advisors
