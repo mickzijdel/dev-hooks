@@ -65,15 +65,14 @@ is then a harmless no-op inside the container.
 
 Two things still want the offset:
 
-- **Host-forward port** — two running containers must not both publish host `:3000`. Pin the
-  allocated `PORT` in `devcontainer.json`:
-  ```jsonc
-  "forwardPorts": ["${localEnv:PORT}:3000"]   // host:container
-  ```
-  (VS Code also auto-remaps forwarded-port conflicts, but a stable known port is nicer.)
-- **`COMPOSE_PROJECT_NAME`** — emitted for CLI-driven `docker compose` outside VS Code, and
-  written to `WT_COMPOSE_ENV` (docker compose auto-reads `.env` for it). VS Code's folder-derived
-  name already separates worktrees, so this is belt-and-suspenders.
+- **Host-published port** — two running containers must not both publish the same host port. Set
+  `WT_COMPOSE_ENV=.devcontainer/.env` so isolate writes the worktree's `PORT` there, and let the
+  compose file publish it: `ports: - "${PORT:-3000}:${PORT:-3000}"` (docker compose reads
+  `.devcontainer/.env` automatically). The [[dev-env-setup]] devcontainer template does exactly
+  this as of its v21 standard; older templates hardcode `3000:3000` and need the one-line change.
+- **`COMPOSE_PROJECT_NAME`** — also written to `WT_COMPOSE_ENV` for CLI-driven `docker compose`
+  outside VS Code. VS Code's folder-derived project name already separates worktrees, so this is
+  belt-and-suspenders.
 
 ## dotenv projects (alternative to mise)
 

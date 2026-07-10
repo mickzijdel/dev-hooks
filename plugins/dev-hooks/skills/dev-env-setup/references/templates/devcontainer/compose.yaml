@@ -29,11 +29,17 @@ services:
       # KNOB — accessory services this project needs (drop if none).
       - mysql
     ports:
-      - "3000:3000"
+      # Host publish tracks $PORT so parallel per-worktree devcontainers don't clash on one host
+      # port (worktree-setup's isolate writes PORT into .devcontainer/.env; compose reads it).
+      # Falls back to 3000 when $PORT is unset (the plain, single-checkout case).
+      - "${PORT:-3000}:${PORT:-3000}"
 
   # KNOB — accessory service(s). MySQL shown as the worked example; swap for postgres:17,
   # redis:7, etc., or delete this block (and the depends_on / DB_* env above) if the project
-  # needs no accessory. The host port is non-standard to avoid clashing with a host instance.
+  # needs no accessory. No host port is published: the app reaches it over the compose network
+  # (DB_HOST: mysql), and NOT publishing keeps parallel per-worktree devcontainers from clashing
+  # on the DB host port. For an occasional host-side DB GUI, forward it on demand
+  # (`docker compose port mysql 3306`) or add a temporary `ports:` mapping.
   mysql:
     image: mysql:8
     restart: unless-stopped
@@ -42,8 +48,6 @@ services:
       MYSQL_ROOT_HOST: "%"
     volumes:
       - mysql-data:/var/lib/mysql
-    ports:
-      - "3307:3306"
 
 volumes:
   mysql-data:
