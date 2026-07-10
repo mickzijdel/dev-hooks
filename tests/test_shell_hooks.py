@@ -461,7 +461,11 @@ def _run_voice_intent(payload, env):
 def test_voice_intent_fires_on_writing_prompt_with_profile(tmp_path):
     repo = _voice_repo(tmp_path)
     payload = json.dumps(
-        {"prompt": "Please write the landing page copy", "cwd": str(repo), "session_id": "vi1"}
+        {
+            "prompt": "Please write the landing page copy",
+            "cwd": str(repo),
+            "session_id": "vi1",
+        }
     )
     r = _run_voice_intent(
         payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t1"))
@@ -485,7 +489,11 @@ def test_voice_intent_silent_without_profile(tmp_path):
 def test_voice_intent_silent_on_non_writing_prompt(tmp_path):
     repo = _voice_repo(tmp_path)
     payload = json.dumps(
-        {"prompt": "refactor the auth module and fix the failing tests", "cwd": str(repo), "session_id": "vi3"}
+        {
+            "prompt": "refactor the auth module and fix the failing tests",
+            "cwd": str(repo),
+            "session_id": "vi3",
+        }
     )
     r = _run_voice_intent(
         payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t3"))
@@ -501,7 +509,9 @@ def test_voice_intent_silent_when_opted_out(tmp_path):
     )
     r = _run_voice_intent(
         payload,
-        base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t4"), WRITING_VOICE="false"),
+        base_env(
+            HOME=str(tmp_path), TMPDIR=str(tmp_path / "t4"), WRITING_VOICE="false"
+        ),
     )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
@@ -561,6 +571,18 @@ def test_thinking_nudge_fires_for_but_for_real_cue():
     r = _run_thinking_nudge("Is this actually fixed for real?")
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:but-for-real")
+
+
+def test_thinking_nudge_fires_for_premortem_cue():
+    r = _run_thinking_nudge("What could go wrong before we commit to this migration?")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:premortem")
+
+
+def test_thinking_nudge_fires_for_grill_cue():
+    r = _run_thinking_nudge("Grill me on this feature idea until it's fully specified.")
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:grill")
 
 
 def test_thinking_nudge_silent_without_cue():
