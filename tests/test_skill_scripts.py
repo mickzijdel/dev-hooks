@@ -10,6 +10,7 @@ Plus subprocess tests for the dev-env-setup skill's dev_env_check.sh compliance 
 (harness lives in conftest).
 """
 
+import json
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,7 @@ RA = WRITING / "skills" / "readability" / "scripts" / "readability_audit.py"
 FK = WRITING / "skills" / "readability" / "scripts" / "flesch_kincaid.py"
 VP = WRITING / "skills" / "readability" / "scripts" / "vocabulary_profiler.py"
 A11Y = DEV_HOOKS / "skills" / "accessibility" / "scripts" / "a11y_audit.py"
+HAR_SCAN = DEV_HOOKS / "skills" / "api-scraping" / "scripts" / "har_scan.py"
 VOICE = WRITING / "skills" / "voice-profile" / "scripts" / "voice_audit.py"
 SCRIPT_TEMPLATE = DEV_HOOKS / "skills" / "script-library" / "references" / "template.py"
 DEFAULT_RULES = WRITING / "skills" / "voice-profile" / "references" / "default-rules.md"
@@ -752,6 +754,204 @@ def test_a11y_audit_runs_via_uv_shebang(tmp_path):
     f = tmp_path / "ok.html"
     f.write_text(_GOOD_MARKUP)
     r = subprocess.run([str(A11Y), str(f)], capture_output=True, text=True)
+    assert r.returncode == 0
+
+
+# ── har_scan.py (api-scraping skill; find the data endpoint in a HAR) ────────────────
+def _write_har(path):
+    """A capture with a document, a stylesheet, an image (all noise), one JSON XHR that
+    carries the data, and a GraphQL POST — the shape har_scan is built to sift."""
+    har = {
+        "log": {
+            "version": "1.2",
+            "entries": [
+                {
+                    "_resourceType": "document",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://shop.example.com/s?q=x",
+                    },
+                    "response": {
+                        "status": 200,
+                        "content": {
+                            "mimeType": "text/html",
+                            "size": 5120,
+                            "text": "<html></html>",
+                        },
+                    },
+                },
+                {
+                    "_resourceType": "stylesheet",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://shop.example.com/app.css",
+                    },
+                    "response": {
+                        "status": 200,
+                        "content": {"mimeType": "text/css", "size": 800},
+                    },
+                },
+                {
+                    "_resourceType": "xhr",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.example.com/v2/products?q=x&page=1&limit=50",
+                    },
+                    "response": {
+                        "status": 200,
+                        "content": {
+                            "mimeType": "application/json",
+                            "size": 4800,
+                            "text": '{"results":[{"name":"Pixel 9 Pro"}],"next_cursor":"abc"}',
+                        },
+                    },
+                },
+                {
+                    "_resourceType": "fetch",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://api.example.com/graphql",
+                        "postData": {
+                            "mimeType": "application/json",
+                            "text": '{"operationName":"Reviews","query":"query Reviews{x}"}',
+                        },
+                    },
+                    "response": {
+                        "status": 200,
+                        "content": {
+                            "mimeType": "application/json",
+                            "size": 200,
+                            "text": '{"data":{}}',
+                        },
+                    },
+                },
+                {
+                    "_resourceType": "image",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://cdn.example.com/logo.png",
+                    },
+                    "response": {
+                        "status": 200,
+                        "content": {"mimeType": "image/png", "size": 300},
+                    },
+                },
+            ],
+        }
+    }
+    path.write_text(json.dumps(har))
+
+
+def _run_har_scan(*args):
+    return subprocess.run(
+        [sys.executable, str(HAR_SCAN), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_har_scan_ranks_api_candidates_and_skips_noise(tmp_path):
+    har = tmp_path / "capture.har"
+    _write_har(har)
+    r = _run_har_scan(str(har))
+    assert r.returncode == 0
+    # Two JSON XHR/fetch requests are candidates; the html/css/png are dropped.
+    assert "2 API candidate(s) out of 5 request(s)" in r.stdout
+    assert "https://api.example.com/v2/products" in r.stdout
+    assert "https://api.example.com/graphql" in r.stdout
+    assert "logo.png" not in r.stdout
+    # Query params are split out for the parametrize step; GraphQL op is named.
+    assert "? page = 1" in r.stdout
+    assert "graphql: Reviews" in r.stdout
+
+
+def test_har_scan_find_marks_the_matching_request(tmp_path):
+    har = tmp_path / "capture.har"
+    _write_har(har)
+    r = _run_har_scan(str(har), "--find", "Pixel 9 Pro")
+    assert r.returncode == 0
+    assert "1 matched your search" in r.stdout
+    # The match marker sits on the products endpoint, not the reviews one.
+    match_line = next(ln for ln in r.stdout.splitlines() if "MATCH" in ln)
+    assert "v2/products" in match_line
+
+
+def test_har_scan_find_miss_warns_on_stderr(tmp_path):
+    har = tmp_path / "capture.har"
+    _write_har(har)
+    r = _run_har_scan(str(har), "--find", "no-such-value")
+    assert r.returncode == 0
+    assert "0 matched your search" in r.stdout
+    assert "No response body matched" in r.stderr
+
+
+def test_har_scan_all_includes_non_api_entries(tmp_path):
+    har = tmp_path / "capture.har"
+    _write_har(har)
+    r = _run_har_scan(str(har), "--all")
+    assert r.returncode == 0
+    assert "5 API candidate(s) out of 5 request(s)" in r.stdout
+    assert "logo.png" in r.stdout
+
+
+def test_har_scan_rejects_non_har(tmp_path):
+    bad = tmp_path / "notes.txt"
+    bad.write_text("not json at all")
+    r = _run_har_scan(str(bad))
+    assert r.returncode == 2
+    assert "not a valid HAR" in r.stderr
+
+
+@pytest.mark.parametrize("size,body_size", [(None, None), ("123", "456")])
+def test_har_scan_tolerates_non_numeric_sizes(tmp_path, size, body_size):
+    # HAR spec says size/bodySize are numbers, but exporters emit `null` or even a string;
+    # ranking must not choke on either (regression: `None > 0` / `"123" > 0` blew up the
+    # whole scan in rank_key/analyse).
+    har = tmp_path / "capture.har"
+    har.write_text(
+        json.dumps(
+            {
+                "log": {
+                    "entries": [
+                        {
+                            "_resourceType": "xhr",
+                            "request": {
+                                "method": "GET",
+                                "url": "https://api.example.com/v2/x?page=1",
+                            },
+                            "response": {
+                                "status": 200,
+                                "bodySize": body_size,
+                                "content": {
+                                    "mimeType": "application/json",
+                                    "size": size,
+                                    "text": '{"a":1}',
+                                },
+                            },
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    r = _run_har_scan(str(har))
+    assert r.returncode == 0, r.stderr
+    assert "https://api.example.com/v2/x" in r.stdout
+    assert "?" in r.stdout  # unknown size renders as '?', not a traceback
+
+
+def test_har_scan_missing_file(tmp_path):
+    r = _run_har_scan(str(tmp_path / "nope.har"))
+    assert r.returncode == 2
+    assert "no such file" in r.stderr
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_har_scan_runs_via_uv_shebang(tmp_path):
+    """The shipping path: the PEP 723 script self-resolves via `uv run --script`."""
+    har = tmp_path / "capture.har"
+    _write_har(har)
+    r = subprocess.run([str(HAR_SCAN), str(har)], capture_output=True, text=True)
     assert r.returncode == 0
 
 
