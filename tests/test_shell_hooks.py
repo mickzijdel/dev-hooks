@@ -1404,6 +1404,54 @@ def test_verify_work_slow_suite_recommends_changed(tmp_path):
     assert "smoke-test" in body
 
 
+def test_verify_work_changed_mode_maps_lib_to_flat_gem_spec(tmp_path):
+    # changed mode: a conventional (non-Rails) gem keeps lib/foo.rb's spec at spec/foo_spec.rb,
+    # NOT spec/lib/. The mapping must offer the flat candidate too, or it silently runs nothing.
+    run = init_git_repo(tmp_path)
+    (tmp_path / ".rspec").write_text("--require spec_helper\n")
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "foo.rb").write_text("module Foo\nend\n")
+    (tmp_path / "spec").mkdir()
+    (tmp_path / "spec" / "foo_spec.rb").write_text("# spec\n")
+    # Fake `bundle`: on `exec rspec`, echo the file args and fail so the run surfaces.
+    bindir = _fake_bundle(
+        tmp_path,
+        'if [ "$1" = exec ] && [ "$2" = rspec ]; then shift 2; echo "RSPEC-ARGS: $*"; exit 1; fi\nexit 0\n',
+    )
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "lib" / "foo.rb").write_text("module Foo\n  V = 1\nend\n")
+    env = base_env(
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TESTS="changed",
+        DEV_HOOKS_VERIFY_RTK="false",
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert "RSPEC-ARGS: spec/foo_spec.rb" in body
+
+
+@requires_python3
+def test_verify_work_non_numeric_timeout_falls_back(tmp_path):
+    # A typo'd DEV_HOOKS_VERIFY_TEST_TIMEOUT must not make `timeout` error the run out (exit 125)
+    # and get misreported as a test failure — it falls back to the default and tests run normally.
+    _verify_work_py_repo(tmp_path)  # untracked, failing test_x.py
+    env = base_env(
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TEST_TIMEOUT="abc",
+        DEV_HOOKS_VERIFY_RTK="false",
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert (
+        "pytest" in body
+    )  # the real pytest failure surfaced, not a `timeout` usage error
+    assert "too slow" not in body
+
+
 # ── debug-leftover-reminder.sh ──────────────────────────────────────────────────────
 DEBUG_SENTINEL = "[debug-leftover] new debug statements detected this session"
 
