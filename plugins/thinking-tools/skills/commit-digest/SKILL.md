@@ -58,18 +58,14 @@ For each **Implement** decision, open a **separate PR**:
    git checkout main && git pull origin main
    git checkout -b feat/<short-descriptive-name>
    ```
-2. Make the change (new skill, hook update, doc improvement, etc.).
-3. Bump the plugin version in `.claude-plugin/plugin.json`:
-   patch for fixes/docs, minor for new skills or hooks.
-   Also update `README.md` and any affected skill/hook docs per the CLAUDE.md checklist.
-4. Verify locally before pushing:
-   ```bash
-   uv run pytest -q
-   shfmt -d .
-   shellcheck hooks/scripts/**/*.sh
-   bash scripts/run-jscpd.sh python,bash
-   ```
-5. Commit, push, and open a PR with a clear title and description referencing the source
+2. Make the change (new skill, hook update, doc improvement, etc.), following the target
+   repo's own conventions — read its `CLAUDE.md`/`AGENTS.md` for version-bump rules, doc-sync
+   checklists, and where things live. Don't assume a layout; the digest runs against whatever
+   project is current.
+3. Verify the change the way the target repo verifies itself — run its CI-mirroring checks
+   (its pre-commit hook / `hk`, its test suite, its linters). Let the repo's own config tell
+   you what to run; a green local run before pushing is the bar.
+4. Commit, push, and open a PR with a clear title and description referencing the source
    commit SHA or feed item URL.
 
 ### 4. Log everything to the skipped-log branch
