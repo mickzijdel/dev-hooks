@@ -174,6 +174,36 @@ def test_source_override_flag(tmp_path):
     assert (wt / ".env").exists()
 
 
+def test_auto_invokes_isolation_when_configured(tmp_path):
+    """A worktree carrying .worktree-isolate.conf gets an isolated port/DB in the same pass."""
+    src = tmp_path / "src"
+    src.mkdir()
+    _make_source_repo(src)
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+    (wt / ".worktree-isolate.conf").write_text("WT_BASE_PORT=3000\n")
+
+    out, _ = run_setup(wt)
+
+    # Branch 'wt' → first offset 1; the overlay is written.
+    assert out["isolated"] == "1"
+    assert 'PORT = "3001"' in (wt / "mise.local.toml").read_text()
+
+
+def test_no_isolation_without_config(tmp_path):
+    """Absent .worktree-isolate.conf ⇒ setup-worktree behaves exactly as before."""
+    src = tmp_path / "src"
+    src.mkdir()
+    _make_source_repo(src)
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+
+    out, _ = run_setup(wt)
+
+    assert out["isolated"] == "no"
+    assert not (wt / "mise.local.toml").exists()
+
+
 def test_explicit_worktree_arg(tmp_path):
     """A positional worktree path lets the script run from anywhere, not just inside it."""
     src = tmp_path / "src"

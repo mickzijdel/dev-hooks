@@ -136,6 +136,16 @@ while IFS= read -r -d '' line; do
   fi
 done < <(git -C "$WT" ls-files -s -z 2>/dev/null)
 
+# ── 4. per-worktree isolation (opt-in via .worktree-isolate.conf) ─────────────────────
+# When the repo declares isolation, hand off to isolate-worktree.sh so parallel worktrees get
+# distinct ports + databases. Absent the config it's a no-op, so setup stays backward-compatible.
+isolated=no
+SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd -P)"
+if [ -f "$WT/.worktree-isolate.conf" ] && [ -f "$SELF_DIR/isolate-worktree.sh" ]; then
+  iso_offset="$(bash "$SELF_DIR/isolate-worktree.sh" "$WT" 2>/dev/null | sed -n 's/^offset=//p')"
+  [ -n "$iso_offset" ] && isolated="$iso_offset"
+fi
+
 # ── Output ────────────────────────────────────────────────────────────────────────────
 cat <<EOF
 source=$SRC
@@ -144,6 +154,7 @@ mise_trusted=$mise_trusted
 copied=$copied
 skipped_heavy=$skipped_heavy
 exec_fixed=$exec_fixed
+isolated=$isolated
 EOF
 
 echo "# Provisioned worktree $WT"
@@ -156,5 +167,6 @@ else
   echo "# mise not installed — skipped trust; set worktree.baseref=head."
 fi
 echo "# Re-marked $exec_fixed shebang script(s) executable."
+[ "$isolated" != no ] && echo "# Isolated as offset $isolated (per-worktree port/database)."
 
 exit 0
