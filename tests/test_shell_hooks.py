@@ -8,6 +8,7 @@ the silent-gate path and the firing path are exercised for every hook.
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 
@@ -1267,6 +1268,100 @@ def test_verify_work_skips_herb_when_not_bundled(tmp_path):
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
     assert r.returncode == 2
     assert_json_with(r.stdout, "No test suite")
+
+
+requires_timeout = pytest.mark.skipif(
+    shutil.which("timeout") is None, reason="needs coreutils `timeout`"
+)
+
+
+@requires_python3
+def test_verify_work_off_mode_skips_the_test_run(tmp_path):
+    # DEV_HOOKS_VERIFY_TESTS=off → the failing pytest is not run, and the "no tools" nag is
+    # suppressed (the user opted out on purpose), so the hook stays silent.
+    _verify_work_py_repo(tmp_path)  # untracked, failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="off")
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_verify_work_changed_mode_runs_changed_test_file(tmp_path):
+    # changed mode: the modified failing test file IS targeted and its failure surfaces.
+    _verify_work_py_repo(tmp_path)  # untracked (i.e. changed) failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_changed_mode_skips_unchanged_tests(tmp_path):
+    # changed mode: a COMMITTED failing test is not re-run when only an unrelated source file
+    # changed and nothing maps to it — the whole point of `changed`.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "test_x.py").write_text("def test_bad():\n    assert 7 == 42\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "src.py").write_text("x = 1\n")  # unrelated change, no mapped test
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_verify_work_changed_mode_maps_source_to_minitest(tmp_path):
+    # changed mode maps a modified source file to its Rails test path
+    # (app/models/user.rb → test/models/user_test.rb) and runs only that.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "Gemfile").write_text("gem 'minitest'\n")
+    (tmp_path / "bin").mkdir()
+    # Fake bin/rails: on `test`, echo the file args it received, then fail so it surfaces.
+    rails = tmp_path / "bin" / "rails"
+    rails.write_text(
+        '#!/bin/bash\nif [ "$1" = test ]; then shift; echo "RAILS-TEST-ARGS: $*"; exit 1; fi\n'
+    )
+    rails.chmod(0o755)
+    (tmp_path / "app" / "models").mkdir(parents=True)
+    (tmp_path / "app" / "models" / "user.rb").write_text("class User\nend\n")
+    (tmp_path / "test" / "models").mkdir(parents=True)
+    (tmp_path / "test" / "models" / "user_test.rb").write_text("# test\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "app" / "models" / "user.rb").write_text("class User\n  V = 1\nend\n")
+    env = base_env(
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TESTS="changed",
+        DEV_HOOKS_VERIFY_RTK="false",  # raw output, not rtk-filtered
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
+    assert "RAILS-TEST-ARGS: test/models/user_test.rb" in body
+
+
+@requires_python3
+@requires_timeout
+def test_verify_work_slow_suite_recommends_changed(tmp_path):
+    # A test run that exceeds the soft timeout is stopped gracefully (exit 124 internally) and
+    # the hook recommends `changed` mode / smoke tests instead of being hard-killed silently.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "test_slow.py").write_text(
+        "import time\n\n\ndef test_slow():\n    time.sleep(5)\n"
+    )
+    env = base_env(
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TEST_TIMEOUT="1",
+        DEV_HOOKS_VERIFY_RTK="false",
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "too slow"))
+    assert "DEV_HOOKS_VERIFY_TESTS=changed" in body
+    assert "smoke-test" in body
 
 
 # ── debug-leftover-reminder.sh ──────────────────────────────────────────────────────
