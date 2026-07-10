@@ -1,0 +1,7 @@
+# Repos to drop from dev-env fleet discovery even though they still carry a DEV_ENV_VERSION
+# stamp. One repo basename per line; `#` comments and blank lines are ignored. fleet_roster.sh
+# skips these so a fleet backfill never targets them — the repo itself is left untouched.
+#
+# Use for abandoned repos or forks you don't own.
+
+flotilla

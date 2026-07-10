@@ -252,7 +252,9 @@ cadence, with the dev-env twists below:
    ```
    It prints one line per `DEV_ENV_VERSION`-stamped repo — path, `version`, `branch`, `dirty`,
    `behind` — plus a summary. **Show the user the roster and confirm the target set before
-   touching anything.**
+   touching anything.** To retire an abandoned repo (or a fork you don't own) from discovery
+   without touching the repo itself, add its basename to
+   `references/fleet-ignore.txt` — the roster skips listed names.
 2. **Ask disposition up front,** before upgrading anything: (a) which repos to **exclude**
    entirely; (b) what to do with **dirty repos** — the rule has varied round to round
    (upgrade-but-don't-commit-and-report one time, skip-entirely another), so ask, don't assume.

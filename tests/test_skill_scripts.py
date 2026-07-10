@@ -680,6 +680,24 @@ def test_roster_multiple_roots_and_missing_root(tmp_path):
     assert "# fleet: 2 repo(s)" in stdout
 
 
+def test_roster_skips_repos_in_fleet_ignore(tmp_path):
+    """A repo whose basename is listed in references/fleet-ignore.txt (an abandoned repo, a
+    fork you don't own) is dropped from discovery even though it carries a DEV_ENV_VERSION
+    stamp — the retirement lives in the skill, so the repo itself is never touched."""
+    ignore_file = (
+        DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "fleet-ignore.txt"
+    )
+    listed = [ln.split("#")[0].strip() for ln in ignore_file.read_text().splitlines()]
+    listed = [n for n in listed if n]
+    assert listed, (
+        "fleet-ignore.txt should name at least one retired repo to exercise this"
+    )
+    make_fleet_repo(tmp_path / listed[0], 5)  # a retired repo …
+    make_fleet_repo(tmp_path / "keep", 5)  # … and one that stays in the fleet
+    repos, _ = run_roster(tmp_path)
+    assert set(repos) == {"keep"}
+
+
 # ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────
 _BAD_MARKUP = (
     "<html>\n"
