@@ -120,7 +120,9 @@ def analyse(entry: dict, find_terms: list[str], all_entries: bool) -> dict | Non
 
     size = content.get("size")
     if size is None or size < 0:
-        size = resp.get("bodySize", -1)
+        size = resp.get("bodySize")
+    if size is None:
+        size = -1
 
     return {
         "method": req.get("method", "?"),
@@ -141,7 +143,7 @@ def rank_key(c: dict) -> tuple:
     return (-len(c["hits"]), 0 if is_json else 1, -(c["size"] if c["size"] > 0 else 0))
 
 
-def render(candidates: list[dict], find_terms: list[str]) -> str:
+def render(candidates: list[dict]) -> str:
     lines: list[str] = []
     for c in candidates:
         marker = ""
@@ -213,7 +215,7 @@ def main() -> int:
         summary += f"; {matched} matched your search"
     print(summary + "\n")
     if candidates:
-        print(render(candidates, args.find), end="")
+        print(render(candidates), end="")
     if args.find and matched == 0:
         print(
             "No response body matched. The capture may not include response bodies "

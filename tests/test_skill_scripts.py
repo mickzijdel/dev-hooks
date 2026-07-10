@@ -902,6 +902,42 @@ def test_har_scan_rejects_non_har(tmp_path):
     assert "not a valid HAR" in r.stderr
 
 
+def test_har_scan_tolerates_null_sizes(tmp_path):
+    # Some exporters emit an explicit `null` for content.size AND bodySize; ranking must
+    # not choke on it (regression: `None > 0` blew up the whole scan).
+    har = tmp_path / "capture.har"
+    har.write_text(
+        json.dumps(
+            {
+                "log": {
+                    "entries": [
+                        {
+                            "_resourceType": "xhr",
+                            "request": {
+                                "method": "GET",
+                                "url": "https://api.example.com/v2/x?page=1",
+                            },
+                            "response": {
+                                "status": 200,
+                                "bodySize": None,
+                                "content": {
+                                    "mimeType": "application/json",
+                                    "size": None,
+                                    "text": '{"a":1}',
+                                },
+                            },
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    r = _run_har_scan(str(har))
+    assert r.returncode == 0, r.stderr
+    assert "https://api.example.com/v2/x" in r.stdout
+    assert "?" in r.stdout  # unknown size renders as '?', not a traceback
+
+
 def test_har_scan_missing_file(tmp_path):
     r = _run_har_scan(str(tmp_path / "nope.har"))
     assert r.returncode == 2
