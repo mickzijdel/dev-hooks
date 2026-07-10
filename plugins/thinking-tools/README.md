@@ -22,8 +22,9 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+| `diagnosing-bugs` | A hard, flaky, or performance-regression bug that resists a first glance — builds a tight red/green feedback loop first, then reproduces, minimises, ranks falsifiable hypotheses, instruments, and fixes with a regression test at the seam. |
 
-`grill`, `domain-modeling`, and `codebase-design` are adapted from
+`grill`, `domain-modeling`, `codebase-design`, and `diagnosing-bugs` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
 
 ## Install
