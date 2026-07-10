@@ -2,6 +2,11 @@
 # Runs when Claude stops. Detects changed code files, runs applicable linters/tests,
 # and feeds failures back to Claude so it can fix them before finishing.
 #
+# Opt out entirely with DEV_HOOKS_VERIFY=false (per-repo/user, in a .claude/settings.json
+# "env" block). Real linter/test failures re-block on every stop until fixed; the "no tooling
+# detected" advisory fires at most once per session so a repo with no recognised tooling is
+# never trapped in a Stop loop.
+#
 # Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
 #   full     run the whole test suite when code changed (the default; unchanged behaviour)
 #   changed  run only changed test files + tests path-mapped from changed source
@@ -15,6 +20,14 @@
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
+
+# Blanket opt-out (per-repo/user), on top of the per-mode DEV_HOOKS_VERIFY_TESTS.
+reminder_opt_out DEV_HOOKS_VERIFY
+
+# Consume the hook payload and populate SESSION for the once-per-session no-tools nudge below.
+# Pass "" so no sentinel is imposed on the dynamic failure path (real failures must re-fire
+# every stop until fixed — that's ground truth, not a one-shot reminder).
+reminder_stop_init ""
 
 # Must be in a git repo
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
@@ -60,28 +73,12 @@ run_test() {
   shift
   TOOLS_RAN=1
   local out rc
-  out=$(_wrapped_test "$@" 2>&1)
+  out=$(_capped "$@" 2>&1)
   rc=$?
   if [ "$rc" -eq 124 ]; then
     SLOW_TESTS=1
   elif [ "$rc" -ne 0 ]; then
     printf '=== %s ===\n%s\n\n' "$label" "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-  fi
-}
-
-# Route a test run through rtk's `test` filter when rtk (github.com/rtk-ai/rtk) is on PATH:
-# it keeps the failures, drops the passing-test noise, and propagates the exit code — so the
-# feedback Claude gets stays small without losing the signal. Falls back to the bare command
-# when rtk isn't installed (CI, other machines). Opt out with DEV_HOOKS_VERIFY_RTK=false.
-# Only test runners are wrapped — linters stay raw, since their output is small (already
-# capped below) and rtk's generic filter mangles per-linter formats.
-_wrapped_test() {
-  local rtk_off=0
-  case "${DEV_HOOKS_VERIFY_RTK:-}" in false | 0 | no | off) rtk_off=1 ;; esac
-  if [ "$rtk_off" = 0 ] && command -v rtk >/dev/null 2>&1; then
-    _capped rtk test "$@"
-  else
-    _capped "$@"
   fi
 }
 
@@ -240,10 +237,13 @@ Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.
 fi
 
 if [ -n "$MSG" ]; then
+  # Real failures re-fire on every stop attempt until fixed — correct for ground truth.
   reminder_emit_stop "$MSG"
-elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ]; then
-  # No tools detected — remind Claude to check manually (suppressed in `off` mode, where the
-  # user deliberately turned the test run off).
+elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ] && reminder_fire_once verify-work-notools; then
+  # No tools detected — nudge Claude to check manually, but only ONCE per session (suppressed
+  # in `off` mode). Unlike a real failure this is a judgment guess from the absence of known
+  # configs, so a repo with no recognised tooling must not be trapped in a Stop loop: the model
+  # gets the reminder once, then is free to stop.
   reminder_emit_stop "No test suite or linter was auto-detected, but code files were modified. If this project has tests or a linter, please run them now to verify your changes before finishing."
 fi
 

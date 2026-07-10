@@ -1383,25 +1383,10 @@ def test_verify_work_silent_when_no_code_changed(tmp_path):
 def test_verify_work_fires_when_no_tools_detected(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # code changed, no test/lint config
-    r = run_hook("verify-work.sh", cwd=tmp_path)
+    # Isolated TMPDIR so the once-per-session marker can't leak across tests/runs.
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
     assert r.returncode == 2
     assert_json_with(r.stdout, "No test suite")
-
-
-def _make_fake_rtk(tmp_path):
-    """A stand-in `rtk` on PATH: `rtk test <cmd...>` prints a marker then runs <cmd>, so a
-    test can prove verify-work routed through `rtk test` without needing the real binary
-    (CI has none). Returns the bin dir to prepend to PATH."""
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir()
-    fake = bindir / "rtk"
-    fake.write_text(
-        "#!/bin/bash\n"
-        'if [ "$1" = test ]; then shift; echo "[FAKE-RTK-TEST]"; exec "$@"; fi\n'
-        'exec "$@"\n'
-    )
-    fake.chmod(0o755)
-    return bindir
 
 
 def _verify_work_py_repo(tmp_path):
@@ -1411,31 +1396,45 @@ def _verify_work_py_repo(tmp_path):
 
 
 @requires_python3
-def test_verify_work_routes_tests_through_rtk_when_present(tmp_path):
-    # With rtk on PATH, the pytest run goes through `rtk test pytest` (failure still reported).
-    _verify_work_py_repo(tmp_path)
-    bindir = _make_fake_rtk(tmp_path)
-    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
-    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
-    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
-    assert "[FAKE-RTK-TEST]" in body  # proves the run went through `rtk test`
+def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
+    # The "no tooling detected" nudge is a judgment guess (absence of known configs), so it
+    # must fire at most once per session and then let the model stop — never trap it in a loop.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")  # code changed, no test/lint config
+    env = base_env(TMPDIR=str(tmp_path))
+    stdin = json.dumps({"session_id": "vw1"})
+    first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert first.returncode == 2
+    assert_json_with(first.stdout, "No test suite")
+    # Same session + TMPDIR → the marker suppresses the second stop; Claude may finish.
+    second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert second.returncode == 0
+    assert second.stdout.strip() == ""
 
 
 @requires_python3
-def test_verify_work_opt_out_skips_rtk(tmp_path):
-    # DEV_HOOKS_VERIFY_RTK=false runs the bare command even though rtk is on PATH.
-    _verify_work_py_repo(tmp_path)
-    bindir = _make_fake_rtk(tmp_path)
-    env = base_env(
-        PATH=f"{bindir}:{os.environ['PATH']}",
-        TMPDIR=str(tmp_path),
-        DEV_HOOKS_VERIFY_RTK="false",
-    )
+def test_verify_work_blanket_opt_out_silences(tmp_path):
+    # DEV_HOOKS_VERIFY=false turns the whole hook off, even with a real failing test.
+    _verify_work_py_repo(tmp_path)  # failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY="false")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
-    body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
-    assert "[FAKE-RTK-TEST]" not in body  # opt-out → bare pytest, rtk not used
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@requires_python3
+def test_verify_work_real_failure_refires_every_stop(tmp_path):
+    # Unlike the no-tools nudge, a REAL failure is ground truth: it must re-block on every stop
+    # attempt (no once-per-session guard) until the model fixes it.
+    _verify_work_py_repo(tmp_path)  # failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path))
+    stdin = json.dumps({"session_id": "vw2"})
+    first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert first.returncode == 2
+    assert_json_with(first.stdout, "Verification failed")
+    second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert second.returncode == 2  # still blocks — real failures don't fire once
+    assert_json_with(second.stdout, "Verification failed")
 
 
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
@@ -1533,7 +1532,6 @@ def test_verify_work_changed_mode_maps_source_to_minitest(tmp_path):
     env = base_env(
         TMPDIR=str(tmp_path),
         DEV_HOOKS_VERIFY_TESTS="changed",
-        DEV_HOOKS_VERIFY_RTK="false",  # raw output, not rtk-filtered
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
     assert r.returncode == 2
@@ -1554,7 +1552,6 @@ def test_verify_work_slow_suite_recommends_changed(tmp_path):
     env = base_env(
         TMPDIR=str(tmp_path),
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="1",
-        DEV_HOOKS_VERIFY_RTK="false",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
     assert r.returncode == 2
@@ -1584,7 +1581,6 @@ def test_verify_work_changed_mode_maps_lib_to_flat_gem_spec(tmp_path):
         PATH=f"{bindir}:{os.environ['PATH']}",
         TMPDIR=str(tmp_path),
         DEV_HOOKS_VERIFY_TESTS="changed",
-        DEV_HOOKS_VERIFY_RTK="false",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
     assert r.returncode == 2
@@ -1600,7 +1596,6 @@ def test_verify_work_non_numeric_timeout_falls_back(tmp_path):
     env = base_env(
         TMPDIR=str(tmp_path),
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="abc",
-        DEV_HOOKS_VERIFY_RTK="false",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
     assert r.returncode == 2
