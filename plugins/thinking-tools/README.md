@@ -22,6 +22,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+| `checkup` | Monthly cadence, or "what's slowing me down" — audits installed skills, MCP servers, hooks, and CLAUDE.md files for what's never used, ambient noise, or duplicated, and reports prune candidates. The subtracting half of `weekly-automation-review`. |
 
 `grill`, `domain-modeling`, and `codebase-design` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
