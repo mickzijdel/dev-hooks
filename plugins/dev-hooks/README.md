@@ -107,7 +107,15 @@ $ claude
   (in `.claude/settings.local.json` `"env"`); delete the `~/.claude/automation-review/` directory
   to purge history.
 - `verify-work.sh` only runs inside a git repo and only when relevant code files have
-  changed; it no-ops otherwise.
+  changed; it no-ops otherwise. Test-suite scope is set per repo (in `.claude/settings.json`
+  `"env"`, which hooks inherit) via `DEV_HOOKS_VERIFY_TESTS`: `full` (default — run the whole
+  suite when code changed), `changed` (run only changed test files plus tests path-mapped from
+  changed source, e.g. `app/models/user.rb` → `test/models/user_test.rb`; JS tests can't be
+  targeted so `changed` skips them and linters still run), or `off` (skip the test run
+  entirely; linters/scanners still run). Each test run is capped by a soft timeout
+  (`DEV_HOOKS_VERIFY_TEST_TIMEOUT`, default `110` seconds, under the hook's 120s hard limit; `0`
+  disables it): a run that exceeds it is stopped gracefully and the hook recommends switching to
+  `changed` and/or adding a fast smoke-test subset, instead of being silently hard-killed.
 - `dev-env-reminder.sh` only nudges on repos it judges **yours** and only when the standard
   applies but isn't met; it's advisory and never edits anything. Ownership = origin remote
   owner listed in `DEV_HOOKS_DEVENV_OWNERS` **or** ≥80% of the last month's commits authored by

@@ -1,6 +1,16 @@
 #!/bin/bash
 # Runs when Claude stops. Detects changed code files, runs applicable linters/tests,
 # and feeds failures back to Claude so it can fix them before finishing.
+#
+# Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
+#   full     run the whole test suite when code changed (the default; unchanged behaviour)
+#   changed  run only changed test files + tests path-mapped from changed source
+#            (app/models/user.rb -> test/models/user_test.rb); nothing mapped -> skip tests
+#   off      skip the test run entirely; linters and scanners still run
+# Set it per repo via the "env" block of that repo's .claude/settings.json (hooks inherit it).
+# Test runs are wrapped in a soft timeout (DEV_HOOKS_VERIFY_TEST_TIMEOUT, default 110s, under
+# the 120s hook limit): a run that exceeds it is stopped gracefully and the hook recommends
+# switching to "changed" and/or adding a fast smoke-test subset, rather than being hard-killed.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -24,18 +34,61 @@ reminder_mktemp # result in $REPLY; the lib owns the cleanup trap
 TMPFILE=$REPLY
 
 TOOLS_RAN=0
+SLOW_TESTS=0
 
-# Run a test command through rtk's `test` wrapper when rtk (github.com/rtk-ai/rtk) is on
-# PATH: it keeps the failures, drops the passing-test noise, and propagates the exit code —
-# so the feedback Claude gets stays small without losing the signal. Falls back to the bare
-# command when rtk isn't installed (CI, other machines). Opt out with DEV_HOOKS_VERIFY_RTK=false.
+# Test scope: full (default) | changed | off. An unknown value falls back to full.
+MODE="${DEV_HOOKS_VERIFY_TESTS:-full}"
+case "$MODE" in changed | off | full) ;; *) MODE=full ;; esac
+# Soft cap on each test run, kept under the hook's 120s hard timeout. 0 disables the cap.
+TEST_TIMEOUT="${DEV_HOOKS_VERIFY_TEST_TIMEOUT:-110}"
+
+# Print the subset of changed files matching an egrep pattern (empty when none match).
+changed_matching() { echo "$CHANGED" | grep -E "$1"; }
+
+# Filter a newline list down to paths that exist on disk (one per line).
+existing() { while read -r f; do [ -n "$f" ] && [ -f "$f" ] && echo "$f"; done; }
+
+# Run a test command, honouring the soft timeout, and report the outcome.
+#   $1 = failure-section label, rest = command (plus any targeted files)
+# Sets TOOLS_RAN and, on timeout, SLOW_TESTS; appends real failures to $TMPFILE.
+run_test() {
+  local label=$1
+  shift
+  TOOLS_RAN=1
+  local out rc
+  out=$(_wrapped_test "$@" 2>&1)
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    SLOW_TESTS=1
+  elif [ "$rc" -ne 0 ]; then
+    printf '=== %s ===\n%s\n\n' "$label" "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+  fi
+}
+
+# Route a test run through rtk's `test` filter when rtk (github.com/rtk-ai/rtk) is on PATH:
+# it keeps the failures, drops the passing-test noise, and propagates the exit code — so the
+# feedback Claude gets stays small without losing the signal. Falls back to the bare command
+# when rtk isn't installed (CI, other machines). Opt out with DEV_HOOKS_VERIFY_RTK=false.
 # Only test runners are wrapped — linters stay raw, since their output is small (already
 # capped below) and rtk's generic filter mangles per-linter formats.
-run_test() {
-  case "${DEV_HOOKS_VERIFY_RTK:-}" in
-    false | 0 | no | off) "$@" ;;
-    *) if command -v rtk >/dev/null 2>&1; then rtk test "$@"; else "$@"; fi ;;
-  esac
+_wrapped_test() {
+  local rtk_off=0
+  case "${DEV_HOOKS_VERIFY_RTK:-}" in false | 0 | no | off) rtk_off=1 ;; esac
+  if [ "$rtk_off" = 0 ] && command -v rtk >/dev/null 2>&1; then
+    _capped rtk test "$@"
+  else
+    _capped "$@"
+  fi
+}
+
+# Cap a command with the soft timeout when `timeout` is available (coreutils; absent on a
+# bare macOS). A timed-out command exits 124, which run_test turns into the slow-suite advice.
+_capped() {
+  if [ "$TEST_TIMEOUT" != 0 ] && command -v timeout >/dev/null 2>&1; then
+    timeout "$TEST_TIMEOUT" "$@"
+  else
+    "$@"
+  fi
 }
 
 # ── Ruby ──────────────────────────────────────────────────────────────────────
@@ -80,19 +133,40 @@ if [ "$HAS_RUBY" = "1" ]; then
     fi
   fi
 
-  # Minitest via Rails
-  if [ -f "bin/rails" ] && [ -f "Gemfile" ] && grep -q 'minitest' Gemfile 2>/dev/null; then
-    TOOLS_RAN=1
-    out=$(run_test bin/rails test 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== Minitest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
-  # RSpec (if no Rails test runner)
-  elif [ -f ".rspec" ] || [ -d "spec" ]; then
-    TOOLS_RAN=1
-    out=$(run_test bundle exec rspec 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== RSpec ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+  # Test suite (skipped entirely in `off` mode; `changed` mode targets only affected files)
+  if [ "$MODE" != off ]; then
+    # Minitest via Rails
+    if [ -f "bin/rails" ] && [ -f "Gemfile" ] && grep -q 'minitest' Gemfile 2>/dev/null; then
+      TOOLS_RAN=1
+      if [ "$MODE" = changed ]; then
+        targets=$(
+          {
+            changed_matching '(^|/)test/.*_test\.rb$'
+            changed_matching '^app/.*\.rb$' | sed -E 's|^app/|test/|; s|\.rb$|_test.rb|'
+            changed_matching '^lib/.*\.rb$' | sed -E 's|^lib/|test/lib/|; s|\.rb$|_test.rb|'
+          } | sort -u | existing
+        )
+        # shellcheck disable=SC2086
+        [ -n "$targets" ] && run_test "Minitest (changed)" bin/rails test $targets
+      else
+        run_test "Minitest" bin/rails test
+      fi
+    # RSpec (if no Rails test runner)
+    elif [ -f ".rspec" ] || [ -d "spec" ]; then
+      TOOLS_RAN=1
+      if [ "$MODE" = changed ]; then
+        targets=$(
+          {
+            changed_matching '(^|/)spec/.*_spec\.rb$'
+            changed_matching '^app/.*\.rb$' | sed -E 's|^app/|spec/|; s|\.rb$|_spec.rb|'
+            changed_matching '^lib/.*\.rb$' | sed -E 's|^lib/|spec/lib/|; s|\.rb$|_spec.rb|'
+          } | sort -u | existing
+        )
+        # shellcheck disable=SC2086
+        [ -n "$targets" ] && run_test "RSpec (changed)" bundle exec rspec $targets
+      else
+        run_test "RSpec" bundle exec rspec
+      fi
     fi
   fi
 fi
@@ -100,7 +174,7 @@ fi
 # ── Python ────────────────────────────────────────────────────────────────────
 if [ "$HAS_PYTHON" = "1" ]; then
   # ruff
-  if [ -f "ruff.toml" ] || ([ -f "pyproject.toml" ] && grep -q '\[tool\.ruff\]' pyproject.toml 2>/dev/null); then
+  if [ -f "ruff.toml" ] || { [ -f "pyproject.toml" ] && grep -q '\[tool\.ruff\]' pyproject.toml 2>/dev/null; }; then
     TOOLS_RAN=1
     out=$(ruff check . 2>&1)
     if [ $? -ne 0 ]; then
@@ -109,12 +183,15 @@ if [ "$HAS_PYTHON" = "1" ]; then
   fi
 
   # pytest
-  if command -v pytest >/dev/null 2>&1 &&
-    ([ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]); then
+  if [ "$MODE" != off ] && command -v pytest >/dev/null 2>&1 &&
+    { [ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]; }; then
     TOOLS_RAN=1
-    out=$(run_test pytest 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== pytest ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+    if [ "$MODE" = changed ]; then
+      targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing)
+      # shellcheck disable=SC2086
+      [ -n "$targets" ] && run_test "pytest (changed)" pytest $targets
+    else
+      run_test "pytest" pytest
     fi
   fi
 fi
@@ -136,22 +213,30 @@ if [ "$HAS_JS" = "1" ]; then
     fi
   fi
 
-  # JS tests (only if a "test" script exists in package.json)
-  if [ -f "package.json" ] && python3 -c \
-    "import json; d=json.load(open('package.json')); exit(0 if 'test' in d.get('scripts',{}) else 1)" 2>/dev/null; then
+  # JS tests (only if a "test" script exists in package.json). There's no portable way to run a
+  # subset by file, so `changed` mode marks the tooling detected but skips the run (linters
+  # still ran); `full` runs the whole `<pm> test` script.
+  if [ "$MODE" != off ] && [ -f "package.json" ] && python3 -c \
+    "import json,sys; d=json.load(open('package.json')); sys.exit(0 if 'test' in d.get('scripts',{}) else 1)" 2>/dev/null; then
     TOOLS_RAN=1
-    out=$(run_test $PM test 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== JS Tests ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
+    [ "$MODE" = full ] && run_test "JS Tests" "$PM" test
   fi
 fi
 
 # ── Report ────────────────────────────────────────────────────────────────────
-if [ -s "$TMPFILE" ]; then
-  reminder_emit_stop "Verification failed. Fix these before finishing:"$'\n'"$(cat "$TMPFILE")"
-elif [ "$TOOLS_RAN" = "0" ]; then
-  # No tools detected — remind Claude to check manually
+MSG=""
+[ -s "$TMPFILE" ] && MSG="Verification failed. Fix these before finishing:"$'\n'"$(cat "$TMPFILE")"
+if [ "$SLOW_TESTS" = "1" ]; then
+  advisory="The test suite exceeded ${TEST_TIMEOUT}s and was stopped before finishing (the Stop hook is hard-killed at 120s). This suite is likely too slow to run on every stop.
+Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.json \"env\" block to run only affected tests, and/or add a fast smoke-test subset (current mode: ${MODE})."
+  if [ -n "$MSG" ]; then MSG="$MSG"$'\n\n'"$advisory"; else MSG="$advisory"; fi
+fi
+
+if [ -n "$MSG" ]; then
+  reminder_emit_stop "$MSG"
+elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ]; then
+  # No tools detected — remind Claude to check manually (suppressed in `off` mode, where the
+  # user deliberately turned the test run off).
   reminder_emit_stop "No test suite or linter was auto-detected, but code files were modified. If this project has tests or a linter, please run them now to verify your changes before finishing."
 fi
 
