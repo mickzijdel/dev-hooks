@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L3 — runs the project's real linters/tests; the no-tools branch is a once-per-session nudge)
+# sunset: never (verification)
 # Runs when Claude stops. Detects changed code files, runs applicable linters/tests,
 # and feeds failures back to Claude so it can fix them before finishing.
 #

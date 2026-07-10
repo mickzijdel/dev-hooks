@@ -7,6 +7,8 @@ description: Use on a weekly (Monday) cadence, or when asked what repetitive wor
 
 Once a week, look back at recent work, spot the tasks you did by hand more than once, and recommend **1–2** of them to automate into a skill, hook, or tool. The discipline is to automate deliberately on a cadence instead of only when something annoys you in the moment.
 
+Automation is a one-way ratchet unless something also **removes** it. So each run also does a **Retire pass**: pick 1–2 existing scaffolds whose capability bet the current model has outgrown and propose deleting them. Adding without ever retiring is how a harness accretes dead weight that fights a better model instead of riding it.
+
 ## What it reviews
 
 - **The prompt log** — `~/.claude/automation-review/prompts.jsonl`, written by the `dev-hooks` plugin's `prompt-log` hook: one JSON line per user prompt (`ts`, `cwd`, `session_id`, `len`, `prompt` ≤ 500 chars) across **all** repos. This is the only **cross-repo** source, and the strongest signal — what you actually keep *asking for* is exactly what's worth automating. Pull the last 7 days (jq-only cutoff, so no GNU/BSD `date` divergence). Read it **corruption-tolerantly** — a crash mid-append can leave a block of NUL bytes that makes a plain `jq -c` abort at that line and silently drop the whole rest of the file (so the review sees *zero* recent prompts and skips its strongest signal). Strip NULs, parse each line on its own, and drop only the unparseable fragment:
@@ -29,7 +31,32 @@ Once a week, look back at recent work, spot the tasks you did by hand more than 
 2. Gather the week's activity — start with the prompt log (when present), then the memory indexes, then git/backlog.
 3. Identify repeated workflows — favor ones that are **high-volume, well-defined, low blast-radius, and measurable**.
 4. Pick the top **1–2** and, for each, specify: what it is, whether it's best as a **skill / hook / tool**, a rough effort estimate, and the first concrete step.
-5. Write the dated report (below) and post a one-paragraph summary to the user.
+5. **Retire pass** (below) — pick 1–2 scaffolds to propose removing.
+6. Write the dated report (below) and post a one-paragraph summary to the user.
+
+## Retire pass — prune scaffolding the model outgrew
+
+The counterweight to the add pass. A hook or skill that compensates for a **model weakness**
+declares its bet in its header (`# bet: <weakness>` / `# sunset: <observable that means delete
+me>` for hooks; a `bet:`/`sunset:` note for capability-compensating skills). A bet of
+`none (L1–L6)` means it encodes preference / private fact / verification / safety — those don't
+depreciate, so skip them. Focus only on the ones making a real capability bet.
+
+Each run, take **1–2** such scaffolds (rotate — favour the oldest, or ones the fire log shows
+firing rarely) and check the bet against the **current** model:
+
+- **Evidence.** If `~/.claude/automation-review/hook-fires.jsonl` exists (opt in with
+  `DEV_HOOKS_FIRE_LOG=1`), see how often the hook actually fires. A hook that never fires is
+  either dead or its trigger is stale; a hook that fires constantly and is always ignored is
+  noise.
+- **The sunset test.** Read the `# sunset:` line — it names the observable that means "delete
+  me." Judge whether the current model now does that thing unprompted (sample a few recent
+  transcripts, or run a quick with/without probe on a representative case).
+- If the bet no longer holds, propose removal (or downgrade a blocking gate to advisory) with
+  the same PR discipline as an add: one change, tests updated, the reasoning recorded.
+
+Run this pass **explicitly on every major model release**, not only weekly — a capability jump
+is exactly when standing bets go stale in bulk.
 
 ## Output
 
@@ -48,6 +75,9 @@ Write to `plans/automation-reviews/YYYY-MM-DD.md`:
 ## Recommended this week (1–2)
 1. <name> — skill | hook | tool — effort: <S/M/L>
    - First step: <…>
+
+## Retire this week (0–2)
+- <hook/skill> — bet: <its bet> — verdict: <still holds / model outgrew it> — <keep / delete / downgrade>
 
 ## Status of prior suggestions
 - <past idea> — shipped / dropped / still open

@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model interpolates values straight into SQL strings
+# sunset: model reliably parameterizes queries / uses bind variables
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes a SQL statement with a value
 # interpolated straight into the string — a Python f-string, Ruby "#{}" interpolation, or
 # explicit string concatenation around SQL keywords — nudge it toward parameterized queries /

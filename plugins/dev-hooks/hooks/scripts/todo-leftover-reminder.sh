@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model leaves TODO/FIXME markers in when finishing
+# sunset: model reliably resolves or consciously flags its own markers
 # Stop hook: list TODO/FIXME/XXX/HACK markers Claude *newly introduced* this session so they
 # get resolved (or consciously kept) before finishing. Advisory — feeds the findings back via
 # exit 2; never edits or hard-blocks.

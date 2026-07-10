@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L1 — Mick's review-before-finishing preference)
+# sunset: never (preference)
 # Stop hook: if Claude changed code this session but never ran a code review,
 # remind it to do one before finishing — and to keep iterating until the review
 # comes back entirely clean.

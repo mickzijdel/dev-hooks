@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L1/L2 — Mick's saved-CLI-library workflow and layout)
+# sunset: never (workflow / private layout)
 # Stop hook: if Claude wrote a script this session, nudge it to DECIDE what the script
 # deserves rather than leaving it where it landed — is it a broadly useful tool worth
 # promoting to the saved-script library (genericized to the standard: PEP 723 + `uv run`

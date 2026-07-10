@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model won't locate the project's docs/ before it needs them
+# sunset: model reliably finds and consults project docs on its own
 # SessionStart hook: if this project has a docs/ or doc/ directory containing
 # Markdown files, emit a brief index (titles + optional descriptions from YAML
 # frontmatter) so Claude knows where documentation lives and can consult the

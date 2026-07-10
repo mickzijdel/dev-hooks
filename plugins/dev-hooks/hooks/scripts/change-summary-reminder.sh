@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model won't volunteer a plain-language per-file change summary before stopping
+# sunset: model reliably summarizes multi-file changes for review unprompted
 # Stop: when the session changed a meaningful number of files, nudge Claude to give (or
 # finish giving, before it stops) a short, plain-language per-file account of what changed
 # in each one — an aid for reviewing the session's work without having to re-read the raw

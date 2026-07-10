@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model writes unsafe migrations (irreversible / locking / backfill-mixed)
+# sunset: model reliably writes reversible, lock-aware, backfill-separated migrations
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes a database migration, nudge it toward
 # safe-migration practice — reversibility, no data backfill mixed into a schema change, and
 # lock-aware DDL (concurrent index creation, multi-step nullable→backfill→constraint). Rails

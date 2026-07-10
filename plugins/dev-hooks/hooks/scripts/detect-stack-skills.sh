@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model won't check the skill list against the project stack on its own
+# sunset: model reliably discovers and applies stack-relevant skills unprompted
 # SessionStart hook (global): detect the project's language/framework and remind
 # Claude to consult the applicable skills/conventions before writing code.
 #

@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model writes floating UI without collision-aware positioning
+# sunset: model reliably handles flip/shift/top-layer positioning
 # PostToolUse(Write|Edit): when Claude writes popover/tooltip/dropdown/menu UI, nudge it to
 # use a collision-aware positioner (flip + shift) rendered in the top layer / a portal, and
 # point at the `popovers-tooltips` skill. Advisory only — emits additionalContext and always

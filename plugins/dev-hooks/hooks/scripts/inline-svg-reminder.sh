@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model hand-rolls inline SVG instead of the project's icon library
+# sunset: model reliably prefers an icon library / sprite in app source
 # PostToolUse(Write|Edit|MultiEdit): when Claude hand-writes inline SVG markup (an <svg> blob with
 # real drawing content, or a data:image/svg+xml URI) into a source file, feed a correction
 # back via exit 2: use the project's icon library, or extract the markup to a dedicated

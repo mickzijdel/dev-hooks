@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L5 — points at Mick's post-cutoff SHA-pin-with-version-comment standard)
+# sunset: never (personal standard)
 # PostToolUse(Write|Edit): when Claude writes/edits a GitHub Actions workflow (a YAML file
 # pinning `uses: owner/repo@ref`), point it at the `github-actions` skill (supply-chain
 # security checklist — SHA-pin actions, read-only token, no untrusted input in `run:`) and

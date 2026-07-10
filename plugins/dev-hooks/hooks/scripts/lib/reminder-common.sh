@@ -131,8 +131,23 @@ reminder_fire_once() {
   return 0
 }
 
+# Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
+# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so weekly-automation-
+# review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
+# no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
+# fails the hook. $1 = firing hook's basename.
+_reminder_log_fire() {
+  case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
+  local dir="$HOME/.claude/automation-review"
+  [ -d "$dir" ] || return 0
+  printf '{"hook":"%s","session":"%s","ts":%s}\n' \
+    "$1" "${SESSION:-nosession}" "$(date +%s 2>/dev/null || echo 0)" \
+    >>"$dir/hook-fires.jsonl" 2>/dev/null || true
+}
+
 # Emit an advisory PostToolUse reminder (additionalContext) and exit 0 — never blocks.
 reminder_emit() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
   exit 0
 }
@@ -140,6 +155,7 @@ reminder_emit() {
 # Emit a SessionStart advisory (additionalContext is injected into Claude's context at the
 # start of the session) and exit 0 — never blocks.
 reminder_emit_session() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
   exit 0
 }
@@ -147,6 +163,7 @@ reminder_emit_session() {
 # Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
 # message back to Claude so it acts before finishing.
 reminder_emit_stop() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   jq -cn --arg msg "$1" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
   exit 2
 }

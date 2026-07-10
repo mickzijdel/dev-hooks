@@ -108,6 +108,12 @@ $ claude
   `DEV_HOOKS_PROMPT_LOG_MAX_BYTES`). Disable logging entirely with `DEV_HOOKS_PROMPT_LOG=false`
   (in `.claude/settings.local.json` `"env"`); delete the `~/.claude/automation-review/` directory
   to purge history.
+- **Fire telemetry (opt-in).** Set `DEV_HOOKS_FIRE_LOG=1` (in `"env"`) to have every advisory
+  reminder append one JSONL line (`hook`, `session`, `ts`) to
+  `~/.claude/automation-review/hook-fires.jsonl`. Off by default. It feeds
+  `thinking-tools:weekly-automation-review`'s **Retire** pass: which hooks actually fire (and
+  which never do) is the evidence for pruning scaffolding whose capability bet the model has
+  outgrown — see each hook's `# bet:`/`# sunset:` header for the bet it's making.
 - `ci-watch-reminder.sh` is the only **PostToolUse(`Bash`)** hook. It watches for a completed
   `git push` and, when the repo has GitHub Actions workflows, nudges Claude to watch that push's
   CI run (to completion if idle, or in the background if it has more work) rather than pushing

@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L1 — backstops Mick's multi-session current_plan.md workflow)
+# sunset: never (workflow preference)
 # Stop hook: if a multi-session plan exists at .claude/current_plan.md and hasn't
 # been touched in the last 120s, remind Claude to update it before the session ends.
 

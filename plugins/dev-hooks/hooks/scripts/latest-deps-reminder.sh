@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: training cutoff — version pins written from memory are stale
+# sunset: never (structural — a training cutoff always exists)
 # PostToolUse(Write|Edit): when Claude writes a dependency manifest or lockfile,
 # remind it to verify the versions are current (Claude's training data goes stale,
 # so pinned versions written from memory are often outdated). Advisory only —

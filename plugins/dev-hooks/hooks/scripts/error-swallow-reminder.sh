@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model writes silent error swallows (bare except / empty catch / empty rescue)
+# sunset: model reliably avoids blanket/empty exception handlers
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes an exception handler that silently
 # swallows the error — a Python bare `except:` (or `except ...: pass`), an empty JS/TS
 # `catch {}`, or an empty Ruby `rescue ... end` — nudge it to handle, log, or re-raise rather

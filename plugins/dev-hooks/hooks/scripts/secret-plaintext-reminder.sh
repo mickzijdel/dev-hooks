@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L4 — secret-handling consent boundary)
+# sunset: never (safety)
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes what looks like a plaintext secret *value*
 # into a file, nudge it to migrate to fnox via the env-to-fnox skill instead of committing
 # the value. Advisory only — emits additionalContext and always exits 0, never blocks.

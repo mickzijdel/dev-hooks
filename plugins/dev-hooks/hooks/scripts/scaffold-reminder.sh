@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model hand-writes project manifests instead of using the framework's generator
+# sunset: model reliably reaches for official scaffolding (rails new, npm create, …)
 # PostToolUse(Write): when Claude creates a NEW project-manifest or framework-entrypoint
 # file by hand (Gemfile, package.json, config/application.rb, …), nudge it to run the
 # framework's official generator (`rails new`, `npm create vite@latest`, `cargo new`, …)

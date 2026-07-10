@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model won't catch a11y gaps (missing alt/label/contrast/keyboard) in frontend edits unprompted
+# sunset: model reliably flags these on frontend writes without the nudge
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes frontend markup with common
 # accessibility gaps — an <img> without alt, an icon-only <button>/<a> with no accessible
 # name, a click handler on a non-interactive <div>/<span>, or an unlabeled form <input> —

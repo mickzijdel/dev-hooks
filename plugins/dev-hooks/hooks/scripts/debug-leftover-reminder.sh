@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model leaves debug prints in when finishing
+# sunset: model reliably strips its own debug statements before stopping
 # Stop hook: flag debug statements Claude *newly introduced* this session (console.log,
 # debugger, binding.pry, breakpoint(), pdb, Ruby `p`, ...) so they get stripped before
 # finishing. Advisory — feeds the findings back via exit 2; never edits or hard-blocks.

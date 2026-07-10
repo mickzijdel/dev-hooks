@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L3 — runs hadolint, a deterministic verifier)
+# sunset: never (verification)
 # PostToolUse(Write|Edit): when Claude writes a Dockerfile/Containerfile, lint it with
 # hadolint and report the findings back to Claude. Advisory only — emits additionalContext
 # and always exits 0, never blocks the write (Claude decides whether to fix).

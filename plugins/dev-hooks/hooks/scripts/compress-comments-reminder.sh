@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model over-narrates in comments and won't prune them before finishing
+# sunset: model writes minimal comments and self-prunes redundant ones
 # Stop hook: if this session's work added a noticeable number of code comments, remind
 # Claude to run the dev-hooks `compress-comments` skill before finishing, so comments
 # that restate the code (narration, code-echo, planning forensics) get deleted and the

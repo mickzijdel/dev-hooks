@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: model won't review a session for durable facts worth persisting to memory
+# sunset: model reliably captures durable, non-obvious facts unprompted
 # Stop hook: once per substantial session, remind Claude to review the session for
 # durable, non-obvious facts worth saving to its file-based memory — then stop.
 #

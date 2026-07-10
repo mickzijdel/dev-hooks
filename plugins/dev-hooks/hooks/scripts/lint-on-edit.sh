@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L3 — runs the project's own formatter/linter in safe-fix mode)
+# sunset: never (verification)
 # PostToolUse(Write|Edit): auto-fix/format the file Claude just wrote, using the
 # linter that THIS project actually configures. Safe fixes only. Never blocks
 # (always exits 0). Project-wide *checking* is handled separately by verify-work.sh.

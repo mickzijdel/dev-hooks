@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L1 — Mick's watch-CI-after-push workflow preference)
+# sunset: never (preference)
 # PostToolUse(Bash) hook: after a `git push`, remind Claude to watch the CI run to
 # completion (or background the watch / schedule a check-in if it has more work) so a red
 # pipeline comes back to it instead of going unnoticed. Advisory only — never blocks.

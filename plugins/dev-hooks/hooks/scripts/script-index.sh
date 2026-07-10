@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L2 — advertises Mick's private script inventory, uninferable)
+# sunset: never (private fact)
 # SessionStart hook: advertise the user's saved CLI script library so Claude knows which
 # custom tools already exist — a lightweight skill-style index. Lists each executable
 # shebang script (recursively, so a script repo organised into subdirectories works) with

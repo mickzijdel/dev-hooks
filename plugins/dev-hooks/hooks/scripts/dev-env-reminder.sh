@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L2/L5 — surfaces Mick's private, versioned dev-env standard state)
+# sunset: never (private standard)
 # SessionStart hook: if this looks like the user's own repo, the dev-env standard applies, and
 # the repo doesn't meet it (missing mise/hk/CI/gitleaks, or behind the version stamp), nudge
 # Claude to flag the gap and offer to run the dev-hooks:dev-env-setup skill. Advisory only —

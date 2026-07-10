@@ -1,4 +1,6 @@
 #!/bin/bash
+# bet: none (L4 — consent boundary on irreversible commands, not a capability gap)
+# sunset: never (safety)
 # PreToolUse(Bash): block the handful of bash commands that cause catastrophic,
 # irreversible system damage before they execute. Aimed at people new to the terminal,
 # whose agents might otherwise run a machine-wiping command on their say-so, in a mode
