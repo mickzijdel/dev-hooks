@@ -93,14 +93,20 @@ reminder_pre_init() {
   INPUT=$(cat 2>/dev/null)
   COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
   [ -z "$COMMAND" ] && exit 0
-  local _pi
-  mapfile -t _pi < <(printf '%s' "$INPUT" |
+  _reminder_cwd_session
+}
+
+# Shared tail of the PreToolUse(Bash)/UserPromptSubmit preambles: from INPUT set
+# CWD (.cwd, → $PWD) and SESSION (.session_id). Keeps the two init helpers DRY.
+_reminder_cwd_session() {
+  local _cs
+  mapfile -t _cs < <(printf '%s' "$INPUT" |
     jq -r '(.cwd // ""), (.session_id // "nosession")' 2>/dev/null)
   # shellcheck disable=SC2034
-  CWD=${_pi[0]:-$PWD}
+  CWD=${_cs[0]:-$PWD}
   [ -z "$CWD" ] && CWD=$PWD
   # shellcheck disable=SC2034
-  SESSION=${_pi[1]:-nosession}
+  SESSION=${_cs[1]:-nosession}
 }
 
 # Emit a PreToolUse permission decision ("deny" | "ask") with a reason, then exit 0.
@@ -141,6 +147,29 @@ reminder_emit() {
 # start of the session) and exit 0 — never blocks.
 reminder_emit_session() {
   jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
+  exit 0
+}
+
+# ── UserPromptSubmit helpers ─────────────────────────────────────────────────────
+# UserPromptSubmit preamble: opt-out, read stdin, and set in the caller's scope:
+#   INPUT   — raw hook stdin
+#   PROMPT  — .prompt (the submitted prompt; may be multi-line)
+#   CWD     — .cwd (→ $PWD)   SESSION — .session_id (or "nosession")
+# Exits 0 (silent) on opt-out or empty prompt. PROMPT is read on its own (not via
+# mapfile) so a multi-line prompt isn't truncated — mirrors reminder_pre_init.
+reminder_prompt_init() {
+  reminder_opt_out "$1"
+  INPUT=$(cat 2>/dev/null)
+  # shellcheck disable=SC2034
+  PROMPT=$(printf '%s' "$INPUT" | jq -r '.prompt // ""' 2>/dev/null)
+  [ -z "$PROMPT" ] && exit 0
+  _reminder_cwd_session
+}
+
+# Emit a UserPromptSubmit advisory (additionalContext is injected into Claude's context
+# before it acts on the prompt) and exit 0 — never blocks.
+reminder_emit_prompt() {
+  jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $msg}}'
   exit 0
 }
 

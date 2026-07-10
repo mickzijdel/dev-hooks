@@ -32,6 +32,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/prompt-log.sh\"",
             "statusMessage": "Logging prompt for the weekly automation review..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/intent-check-reminder.sh\"",
+            "statusMessage": "Checking the task brief states a goal and non-goals..."
           }
         ]
       }
