@@ -15,17 +15,14 @@
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
-reminder_opt_out DEV_HOOKS_PROMPT_LOG
+# Shared UserPromptSubmit preamble: opt-out (DEV_HOOKS_PROMPT_LOG), read stdin, require a
+# non-empty .prompt, and set INPUT/PROMPT/CWD/SESSION. Silent no-op on drift/empty.
+reminder_prompt_init DEV_HOOKS_PROMPT_LOG
 
-INPUT=$(cat 2>/dev/null)
-[ -z "$INPUT" ] && exit 0
-
-# One jq spawn: validate JSON, require a non-empty prompt, build the log line.
-# `// ""` fallbacks mean any payload-schema drift degrades to a silent no-op.
-LINE=$(printf '%s' "$INPUT" | jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
-  (.prompt // "") as $p | select($p != "")
-  | {ts: $ts, cwd: (.cwd // ""), session_id: (.session_id // "nosession"),
-     len: ($p | length), prompt: ($p[0:500])}' 2>/dev/null)
+# Build the log line from the extracted fields; jq handles JSON-escaping and truncation.
+LINE=$(jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg cwd "$CWD" --arg sid "$SESSION" --arg p "$PROMPT" \
+  '{ts: $ts, cwd: $cwd, session_id: $sid, len: ($p | length), prompt: ($p[0:500])}' 2>/dev/null)
 [ -z "$LINE" ] && exit 0
 
 DIR="$HOME/.claude/automation-review"
