@@ -775,6 +775,45 @@ bind-mounted `mise.toml`/`mise.lock`. See the **Dev container (mise-driven, advi
    `.devcontainer/setup.sh` to confirm `mise install` resolves the toolchain and the container
    comes up green.
 
+## v19 → v20 (scope Ruby audits to project source)
+
+**Ruby repos only** — non-Ruby repos have no functional change and only re-stamp the version.
+
+CI's `ruby/setup-ruby` with `bundler-cache: true` installs gems into `vendor/bundle` **inside the
+repo checkout**. The audit gems (debride, flay, fasterer) walk `.` recursively, so they scanned
+every vendored gem's source — reporting thousands of lines of "dead code" / "clones" / "perf
+smells" and burning huge CI time (debride alone measured **818s** on one repo; flay ~91s,
+fasterer ~113s). It only passed locally because gems live outside the checkout there. v20 scopes
+each to project source:
+
+- **debride** — has `--exclude` (comma-separated dirs): `bundle exec debride --exclude
+  vendor,node_modules,tmp,log .`
+- **flay** — has **no** dir `--exclude`, so pass explicit source dirs: `bundle exec flay app lib`
+  (a missing dir is tolerated; non-Rails Ruby repos adjust to their source dirs, e.g. `lib`).
+- **fasterer** — reads a root `.fasterer.yml` automatically, so it takes an `exclude_paths` config
+  (no command change).
+
+Debride/flay still exit 0 and still report **project-level** findings; only the vendored noise is
+gone. Result on the reference repo: debride step 818s → ~1s, audit job ~16 min → ~4 min, green.
+
+Steps for a Ruby repo:
+
+1. **Edit `.github/workflows/ci.yml`** (the `audit` job): change the debride step to `bundle exec
+   debride --exclude vendor,node_modules,tmp,log .` and the flay step to `bundle exec flay app lib
+   || true`.
+2. **Edit `hk.pkl`** to match (lockstep): the `["debride"]` check → `bundle exec debride --exclude
+   vendor,node_modules,tmp,log .`, the `["flay"]` check → `bundle exec flay app lib`.
+3. **Add `.fasterer.yml`** at the repo root (copy `references/templates/.fasterer.yml`) with
+   `exclude_paths: ['vendor/**', 'node_modules/**', 'tmp/**']`. Merge into an existing one if
+   present.
+4. **Bump the stamp.** Set `DEV_ENV_VERSION = "20"` in `mise.toml` (the only required step for a
+   non-Ruby repo).
+5. **Verify.** `actionlint -shellcheck= .github/workflows/*.yml` + `zizmor --no-progress
+   .github/workflows/` exit 0; `pkl eval hk.pkl` succeeds; `bundle exec debride --exclude
+   vendor,node_modules,tmp,log .`, `bundle exec flay app lib`, and `bundle exec fasterer` each
+   still surface real project findings; on the next push the `audit` job is green and the debride
+   step runs in ~1s.
+
 ---
 
 ## Adding a future version

@@ -1,0 +1,7 @@
+# fasterer reads this from the project root automatically. In CI, bundler-cache installs
+# gems into vendor/bundle inside the checkout, so without these excludes fasterer scans every
+# vendored gem's source (~113s of pure noise). Mirrors the debride/flay project-source scoping.
+exclude_paths:
+  - 'vendor/**'
+  - 'node_modules/**'
+  - 'tmp/**'

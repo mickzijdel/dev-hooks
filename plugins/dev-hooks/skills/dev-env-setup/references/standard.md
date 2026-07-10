@@ -1,4 +1,4 @@
-# The standard (v19) — full specification
+# The standard (v20) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v19** when it has all of:
+A repo is **compliant at v20** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v19** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "19"`.
+  stamp `DEV_ENV_VERSION = "20"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -59,6 +59,11 @@ A repo is **compliant at v19** when it has all of:
   gitignored runtime/secret **paths only** (source stays fully scanned). gitleaks auto-loads it
   from the scan root, so neither the hk builtin nor CI's `gitleaks git` needs a `--config`.
   See "gitleaks whole-tree allowlist" in `../SKILL.md`.
+- **`.fasterer.yml`** (Ruby only, added in v20) — a root config with `exclude_paths`
+  (`vendor/**`, `node_modules/**`, `tmp/**`). fasterer walks the tree, and CI's `bundler-cache`
+  installs gems into `vendor/bundle` **inside the checkout**, so without this it scans every
+  vendored gem's source (~113s). debride and flay have the same problem but no config file, so
+  they're scoped in their ci/hk commands instead (`debride --exclude …`, `flay app lib`).
 - **`.github/workflows/ci.yml`** — runs the same lint + test + gitleaks checks, plus an
   `audit` job (dead-code + duplication + a large-file guard), on push/PR. The `gitleaks` job
   runs the MIT-licensed gitleaks **CLI** via mise — `jdx/mise-action` +

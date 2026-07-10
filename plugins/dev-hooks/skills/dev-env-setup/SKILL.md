@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v19)
+## The standard (v20)
 
-A repo is **compliant at v19** when it has all of:
+A repo is **compliant at v20** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "18"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "20"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -152,7 +152,9 @@ proposing additions.
    **main Gemfile (ungrouped, not `require: false`)** — its initializer references the
    `StrongMigrations` constant in every env, so a `:development`-only gem crashes the test/prod boot (mise pulls `node` for jscpd + `herb
    lint`, which run via `npx`, on all jscpd stacks incl. Ruby); JS repos need no extra audit deps
-   (jscpd runs via `npx`, `node` is already the stack tool). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
+   (jscpd runs via `npx`, `node` is already the stack tool). **For a Ruby repo**, also copy
+   `.fasterer.yml` → repo root — its `exclude_paths` keep fasterer off the bundler-cache
+   `vendor/bundle` gems (debride/flay are scoped in the ci/hk commands instead). **For a Go repo**, also copy `golangci.go.yml` → `.golangci.yml` (the v2 config
    `golangci-lint run`/`fmt` both read); no extra audit deps are needed — golangci-lint's
    `unused` covers dead code (so no vulture), and `golangci-lint` itself is mise-pinned. The Go
    template carries `shellcheck`/`shfmt` for any shipped shell script (it ships

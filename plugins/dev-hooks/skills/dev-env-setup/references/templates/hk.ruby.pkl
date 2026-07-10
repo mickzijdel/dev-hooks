@@ -46,11 +46,13 @@ local linters = new Mapping<String, Step> {
     // Gemfile dev group. Each carries a glob, so a docs-only commit skips them.
     ["debride"] {
         glob = "**/*.rb"
-        check = "bundle exec debride ."
+        check = "bundle exec debride --exclude vendor,node_modules,tmp,log ."
     }
     ["flay"] {
         glob = "**/*.rb"
-        check = "bundle exec flay ."
+        // flay has no dir --exclude, so scope to source dirs — otherwise it (like debride) scans
+        // the bundler-cache vendor/bundle gems. Non-Rails Ruby repos: adjust the paths. Mirrors CI.
+        check = "bundle exec flay app lib"
     }
     // `-f` scopes to code formats (no config equivalent) so docs/configs aren't flagged;
     // `.jscpd.json` `ignore` globs exclude vendored/generated paths (vendor/, db/schema.rb etc.).
