@@ -8,6 +8,39 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-07-13 (Run 12)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-07-09 (Run 11's cutoff, `96f24de`): none new. `96f24de` remains the tip of `main`.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-07-09 through 2026-07-13 (20 items; feed's `lastBuildDate` is 2026-07-13T13:42Z, so this is a complete window)
+
+PRs opened this run: none — nothing this cycle cleared the relevance/novelty bar for `dev-hooks`, `thinking-tools`, or `rails-toolkit`. No Rails-specific items surfaced either.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| When models upgrade, audit and remove old skills/prompts that force subagent use or over-advertise capability | feed item 2026-07-12 (https://x.com/dexhorthy/status/2076381087203475772) | Duplicate | Same territory as the `checkup` skill proposed in Run 11 (dev-hooks PR #19) — the user closed that PR without merging, so this repeat of the same "prune stale skills automatically" idea doesn't change that decision. |
+| After any AI coding task, run a follow-up prompt in the same context asking it to review its own work, referencing any user redirects along the way | feed item 2026-07-11 (https://x.com/lucasmeijer/status/2076066050148299234) | Duplicate | `review-reminder.sh` already nudges toward a review pass after edits, and `but-for-real` already forces re-verification before a done/fixed claim. Same-context vs. fresh-agent review is a judgement call already covered by those two. |
+| Parallel agent pattern: one master agent spins up multiple sub-agents on the same task with separate approaches, then merges the best result | feed item 2026-07-11 (https://x.com/petergyang/status/2075943229430833234) | Duplicate | This is exactly the `Workflow` tool's judge-panel / parallel() pattern already available at the harness level (and what `board`/`grill` already apply to critique specifically) — not a gap in this plugin's skill set. |
+| Multi-model pipeline: a planner model drafts the plan, an explorer deepens it, a stronger closer finalizes | feed item 2026-07-10 (https://x.com/xeophon/status/2075468440874143767) | Out of scope | Model-selection strategy is user/runtime config (the `Workflow` tool's per-agent `model` override already supports it); no hook or skill surface to add. |
+| GitHub found rewriting Copilot's review instructions — not adding tools — was what improved code review quality | feed item 2026-07-10 (https://x.com/github/status/2075629694792409356) | Deferred | Interesting validation of prompt-engineering-over-tooling, and arguably relevant to how `review-reminder.sh`/`board`/`grill` phrase their own instructions, but there's no concrete rewrite identified yet — revisit if a specific wording weakness in one of those surfaces turns up. |
+| Build a custom Claude skill (e.g. `/apple-design`) by distilling knowledge from a favorite video/doc source | feed item 2026-07-10 (https://x.com/RayFernando1337/status/2075726264082788863) | Duplicate | Generic "how to author a skill" advice already covered by this repo's own "Authoring skills" section in `CLAUDE.md`; not a new skill or hook to add. |
+| Route high-volume, well-defined prompts (classification, title-gen, repeatable markdown workflows) to a cheaper/faster model | feed item 2026-07-09 (https://x.com/davis7/status/2075301275479224589) | Out of scope | Model/cost selection is user-controlled Claude Code config, not something a hook enforces (same reasoning as prior "reasoning budget"/"model selection" entries in Runs 2 and 10). |
+| Build an AI-native workflow: numbered context folders per project, persona skills, template library | feed item 2026-07-09 (https://x.com/amirmxt/status/2075253183618732138) | Out of scope | Personal project-organization convention, not a Claude Code plugin concern; no concrete hook/skill surface. |
+| Feed a full book/long PDF to Codex for a 30-minute automated proofreading pass | feed item 2026-07-09 (https://x.com/emollick/status/2075294040971464959) | Out of scope | Codex-specific; no Claude Code equivalent, and not a dev-workflow surface. |
+| Shopping research via Codex + a Chrome tool skill looped over listings | feed item 2026-07-10 (https://x.com/0xSero/status/2075544637930893622) | Out of scope | Personal/consumer research workflow tied to Codex; not dev. |
+| Set up a dedicated AI "house/life manager" agent that researches options and pauses for approval | feed item 2026-07-10 (https://x.com/cathrynlavery/status/2075680629791023504) | Out of scope | Personal task management; same territory as prior "house manager"/personal-assistant entries, already ruled out repeatedly. |
+| For research over many files, try NotebookLM instead of ChatGPT Work | feed item 2026-07-10 (https://x.com/emollick/status/2075695604575903767) | Out of scope | Tool-comparison tip for a different product; no Claude Code or dev-workflow surface. |
+| In ChatGPT, `@study` invokes a tutor-like study mode | feed item 2026-07-11 (https://x.com/emollick/status/2075741472712728924) | Out of scope | ChatGPT-specific feature; not Claude. |
+| GPT-5.6 prompting tips: state instructions once, concrete tone descriptions, set verbosity globally | feed item 2026-07-11 (https://x.com/itsolelehmann/status/2075952515762257969) | Out of scope | Different model family; prompting tips with no hook/skill surface for this plugin. |
+| Install a Codex plugin inside Claude Code to delegate code reviews or subtasks to Codex | feed item 2026-07-12 (https://x.com/Saboo_Shubham_/status/2076131184145494349) | Out of scope | Cross-agent delegation tool, not something this plugin marketplace would build or need. |
+| ChatGPT Work runs on an always-on cloud computer with connectors so tasks continue when you're away | feed item 2026-07-12 (https://x.com/Dimillian/status/2076254387131797640) | Out of scope | ChatGPT product feature; Claude Code's own remote/background execution already covers the equivalent need natively (not a plugin concern). |
+| Ask Codex to ping you when blocked so you can walk away and only return when input is needed | feed item 2026-07-12 (https://x.com/gabrielchua/status/2076300026612269105) | Out of scope | Codex-specific; Claude Code's own notification/remote-control support already covers this natively, no hook surface needed. |
+| Import Wispr Flow's learned dictionary from its local SQLite DB into Codex for custom vocabulary | feed item 2026-07-12 (https://x.com/steipete/status/2076359405000646770) | Out of scope | Codex + Wispr Flow specific integration; not applicable. |
+| The open-source `/last30days` skill pulls recent content from X, Reddit, YouTube, arXiv for personal research digests | feed item 2026-07-12 (https://x.com/Saboo_Shubham_/status/2076380344631398606) | Out of scope | Personal research/content-aggregation skill, not a dev-workflow tool; no overlap with this plugin's scope. |
+| Delegate tedious support-chat negotiations to Codex + a Chrome tool that can patiently handle in-site chat | feed item 2026-07-13 (https://x.com/intellectronica/status/2076584134735241413) | Out of scope | Consumer support-chat automation via Codex; not dev, not Claude. |
+
+---
+
 ## 2026-07-10 (Run 11)
 
 Sources scanned:
