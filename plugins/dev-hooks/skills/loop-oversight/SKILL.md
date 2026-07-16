@@ -49,7 +49,9 @@ Stop when the bound is hit, or the ledger has no un-done item two turns running.
 | Away / recurring | `/schedule` cron routine | PR-per-unit, no auto-merge, a digest you read later |
 
 Detail and the budget/until-dry patterns: [substrate-selection.md](references/substrate-selection.md).
-Ready generate + verify prompts: [prompt-scaffolds.md](references/prompt-scaffolds.md).
+Ready generate + verify prompts, plus a poll-until-true scaffold for "wait for a condition, then
+take one action" (merge once CI/main settles, confirm a deploy went live):
+[prompt-scaffolds.md](references/prompt-scaffolds.md).
 
 ## Completion criteria
 
