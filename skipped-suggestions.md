@@ -8,6 +8,47 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-07-21 (Run 14)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-07-17 (Run 13's cutoff, `38db688`): `cdf057d` (Jul 20), `16e29af` (Jul 21), `22babb5` (Jul 21), `d0c0b43` (Jul 21), `c8380fa` (Jul 21). (`cd1699d`/`38db688`, dated Jul 16/17, were already reviewed in Run 13 — not re-logged.)
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-07-17 through 2026-07-21 (20 items; feed's `lastBuildDate` is 2026-07-21T13:32Z, so this is a complete window). Items dated 2026-07-14 through 2026-07-16 were already reviewed in Run 13 — not re-logged.
+
+PRs opened this run:
+- dev-hooks [#21 thinking-tools: self-rate — recommend an independent grader for subjective calls](https://github.com/mickzijdel/dev-hooks/pull/21) — inspired by feed item 2026-07-20 (petergyang)
+
+No Rails-specific items surfaced this run, so no PR to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| For subjective outputs, use a separate verification agent with a rubric to review the work — avoids self-preferential bias when a model grades its own output | feed item 2026-07-20 (https://x.com/petergyang/status/2079257646939742542) | **Implement** | dev-hooks PR #21 opened. Added a "When self-scoring isn't enough" section to `self-rate`: dispatch a separate subagent as the grader for genuinely subjective/high-stakes calls, rather than always self-scoring. |
+| Allow Heroku installation with Aube | dotfiles commit `c8380fa` (Jul 21) | Out of scope | One-line personal mise pin change (`claude = "2.1.211"` bump alongside Heroku/Aube install allowance) specific to Nate's machine config; no equivalent surface here. |
+| Remove model specification from agent settings | dotfiles commit `d0c0b43` (Jul 21) | Out of scope | Personal `~/.pi/agent/settings.json` tweak; not applicable outside Nate's own pi-agent config. |
+| Fix Pi package version reconciliation (compare exact npm pins against installed node_modules manifests, wait for settings sync before reconciling) | dotfiles commit `22babb5` (Jul 21) | Out of scope | Bug fix internal to Nate's `dotf` CLI's Pi-package-install step; dev-hooks/rails-toolkit have no equivalent package-reconciliation runner. |
+| Update pi enabled models and reconcile settings (model roster refresh, retry/theme schema reconciliation) | dotfiles commit `16e29af` (Jul 21) | Out of scope | Personal model-roster and settings-schema housekeeping for Nate's own `~/.pi` config. |
+| Update pinned package versions (mise config, agent settings, CI workflow versions) | dotfiles commit `cdf057d` (Jul 20) | Out of scope | Routine personal pin bumps across Nate's own dotfiles; no generalizable pattern beyond what `dependency-upgrade`'s cooldown already encodes. |
+| Use Claude's `find-skills` skill to search for and install expert-built skills before doing a task | feed item 2026-07-21 (https://x.com/itsolelehmann/status/2079391997639720989) | Out of scope | Usage tip for a built-in Claude Code feature; nothing to build. |
+| Prompt template: ask a smart LLM to teach a topic 3blue1brown-style, personalizing to your background | feed item 2026-07-21 (https://x.com/geoffreylitt/status/2079366818221740529) | Out of scope | General learning-prompt template; unrelated to this marketplace's dev-workflow domain. |
+| AI social-post workflow: scan company data, interview yourself via AI panel, train voice, run an editorial council loop, convert feedback into reusable skills | feed item 2026-07-20 (https://x.com/clairevo/status/2079248971625844819) | Out of scope | Social-content production pipeline; too specific/complex a workflow to generalize into this repo's `writing` plugin. |
+| Before building, ask Claude to inspect the codebase/plan and surface blind spots and unknown unknowns | feed item 2026-07-20 (https://x.com/petergyang/status/2079209983984677210) | Duplicate | This is exactly `premortem`'s use case (surface failure modes/hidden assumptions before committing to a plan). |
+| Default your coding agent to create new git worktrees off the latest remote main so parallel runs stay isolated and current | feed item 2026-07-20 (https://x.com/dexhorthy/status/2079016387876692098) | Rejected | `worktree-setup` deliberately does the opposite (`git config worktree.baseref head`) — branching from local HEAD, not origin, because local `main` often leads/lags origin and a worktree off origin silently drops local commits. Already a considered tradeoff, not a gap. |
+| Use Claude Cowork to manage your calendar with a prompt that caps meeting hours, dedupes conflicts, learns decline patterns | feed item 2026-07-20 (https://x.com/_catwu/status/2079011428380602526) | Out of scope | Product-feature usage idea, not a hook/skill this marketplace builds. |
+| Keep agent memory as a plain folder of markdown files — improves automatically with each model release, no migration needed | feed item 2026-07-19 (https://x.com/steipete/status/2078914010871992443) | Duplicate | Already this repo's own convention (`CLAUDE.md`, skill markdown, `domain-modeling`'s `CONTEXT.md`). |
+| Have your browser-controlling agent record network traffic to a HAR file, then read it back to debug or reverse-engineer API calls | feed item 2026-07-19 (https://x.com/steipete/status/2078907212731400488) | Duplicate | `api-scraping`'s HAR-capture step already covers this end-to-end. |
+| Don't glaze over an agent's plan; use HTML artifacts to plan/learn, set up /loop and /goal for long agent runs | feed item 2026-07-19 (https://x.com/petergyang/status/2078846124828545179) | Duplicate | `loop-oversight` already covers the long-running-agent cadence; the HTML-artifact-for-planning piece is a vague preference with no concrete gap identified. |
+| Instead of driving a browser repeatedly, record network requests to a HAR file and derive a reusable API client | feed item 2026-07-19 (https://x.com/thdxr/status/2078727284865827140) | Duplicate | Same as above — `api-scraping` already covers HAR capture through client generation. |
+| In Claude Code, block the deep-research skill via a settings.json deny list to avoid burning usage | feed item 2026-07-19 (https://x.com/kr0der/status/2078703381766631692) | Out of scope | A user's own personal settings.json tuning for a different (global) skill's cost; not something this plugin marketplace packages. |
+| Before building a feature with AI, write the customer-facing launch blog post first to surface edge cases | feed item 2026-07-18 (https://x.com/dexhorthy/status/2078592010852982977) | Out of scope | Planning technique already in the territory the user said is covered by their existing planning/TDD toolkit (superpowers). |
+| In Codex, fan out subtasks into separate threads and tag other threads by name to orchestrate work | feed item 2026-07-18 (https://x.com/HamelHusain/status/2078567781621219377) | Duplicate | Same territory as prior runs' "parallel agent pattern" entries — already the `Workflow` tool / `dispatching-parallel-agents`. |
+| To actually learn from AI output, ask Claude to generate an HTML report of changes and quiz you on it to expose knowledge gaps | feed item 2026-07-18 (https://x.com/petergyang/status/2078502566095474807) | Deferred | Interesting personal-learning workflow, but narrow and no concrete skill gap identified yet — revisit if a specific need for this surfaces. |
+| Have your AI agent ask multiple clarifying questions in one pass so you can voice-ramble answers down the list | feed item 2026-07-17 (https://x.com/dexhorthy/status/2078223341652189423) | Rejected | Contradicts `grill`'s deliberate one-question-at-a-time design — each answer reshapes what's worth asking next, so batching questions upfront breaks the dependency ordering the skill is built around. |
+| Treat agent memory as a curated file library: grow and prune a garden of reusable prompts rather than one giant rulebook | feed item 2026-07-17 (https://x.com/NickADobos/status/2078159728975429646) | Duplicate | `script-library` (save/genericize/prune tools) plus `weekly-automation-review`'s retire pass already do exactly this curation. |
+| Point an agent at your own setup: mine Claude Code/Codex sessions daily for recurring friction and stage fixes to tools, skills, memory, context | feed item 2026-07-17 (https://x.com/cathrynlavery/status/2078153739740012809) | Duplicate | `weekly-automation-review` already mines the cross-repo prompt log and memory indexes for recurring friction (weekly cadence rather than daily, same mechanism). |
+| Ask Codex to review past sessions, archive one-off queries, and reorganize projects to keep your workspace tidy | feed item 2026-07-17 (https://x.com/Dimillian/status/2078134928282182021) | Out of scope | Codex-specific workspace/session reorganization feature; no equivalent surface in this repo. |
+| Set a daily Codex scheduled task to triage your inbox: action items, unsubscribe candidates, meeting briefs | feed item 2026-07-17 (https://x.com/petergyang/status/2078125090659811585) | Out of scope | Product-feature usage idea (inbox triage), not dev-workflow tooling. |
+
+---
+
 ## 2026-07-17 (Run 13)
 
 Sources scanned:
