@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v21)
+## The standard (v22)
 
-A repo is **compliant at v21** when it has all of:
+A repo is **compliant at v22** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "21"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "22"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -146,7 +146,10 @@ proposing additions.
    the templates assume: `vulture` to the Python dev group; for **Ruby** (v17) the dev-group gems
    `flay`, `debride`, `herb`, `brakeman`, `bundler-audit`, `fasterer`, `database_consistency`
    (all `require: false`) plus a rubocop testing plugin `rubocop-minitest` (or `rubocop-rspec`)
-   enabled via `.rubocop.yml`'s `plugins:` key — omakase repos stop there (omakase already
+   and the house-cops gem `rubocop-mick` (`github: "mickzijdel/rubocop-mick"`, `require: false`),
+   both enabled via `.rubocop.yml`'s `plugins:` key (v22 adds `rubocop-mick` to **every** Ruby repo;
+   the `plugins:` line alone activates its cops — the gem ships their defaults, no `inherit_gem:`) —
+   omakase repos stop there (omakase already
    bundles+disables rails/performance, so re-adding them is inert); a plain-rubocop repo also adds
    `rubocop-rails` + `rubocop-performance` — and `strong_migrations` as a runtime gem in the
    **main Gemfile (ungrouped, not `require: false`)** — its initializer references the

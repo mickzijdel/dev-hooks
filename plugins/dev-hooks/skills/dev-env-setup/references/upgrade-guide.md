@@ -846,6 +846,43 @@ Steps for a repo **with** a `.devcontainer/compose.yaml` (skip 1–2 if you have
 
 ---
 
+## v21 → v22 (Ruby: house cops via `rubocop-mick`)
+
+**Ruby repos only**; every other stack just bumps the stamp. v22 adds the personal RuboCop
+extension gem [`rubocop-mick`](https://github.com/mickzijdel/rubocop-mick) to the Ruby stack, so
+semantic house cops omakase can't express (starting with `Mick/ParamsMutation` — forbids in-place
+mutation of the request `params`) run inside the existing `bin/rubocop`. It's orthogonal to the
+omakase-vs-plain split, so **both** kinds of Ruby repo add it. No new hk/CI step — `bin/rubocop`
+already runs whatever `.rubocop.yml` loads.
+
+Steps for a **Ruby** repo (non-Ruby repos: do only step 3):
+
+1. **Gemfile** — add to the same dev group as the other rubocop plugins:
+   ```ruby
+   gem "rubocop-mick", github: "mickzijdel/rubocop-mick", require: false
+   ```
+   Then `bundle install` (commits `Gemfile.lock`).
+2. **`.rubocop.yml`** — add `rubocop-mick` to the `plugins:` list:
+   ```yml
+   plugins:
+     - rubocop-mick
+     # …existing: rubocop-minitest / rubocop-rspec, and rubocop-rails/-performance on plain repos
+   ```
+   The gem ships its cops' defaults (each `Enabled: true`), so the `plugins:` line alone activates
+   them — **do not** add an `inherit_gem:` line for it. On RuboCop < 1.72 (no `plugins:` key), use
+   `require: rubocop-mick` instead.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "22"` in `mise.toml`.
+4. **Verify.** `bundle exec rubocop --show-cops Mick/ParamsMutation` lists the cop (proves the
+   plugin loaded), and `bin/rubocop` on a controller that does `params.merge!(…)` / `params[:x] = …`
+   / `params.delete(…)` reports `Mick/ParamsMutation` offenses. A clean tree should stay clean —
+   the cop is scoped to `app/controllers/**/*.rb` and ignores reads and non-bang copies.
+
+> The gem is a public repo, so the `github:` source resolves without bundler auth (matters for CI).
+> New house cops land in the gem and reach every repo on the next `bundle update rubocop-mick`; this
+> section pins only the wiring, not the cop list, so no future standard bump is needed to add a cop.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

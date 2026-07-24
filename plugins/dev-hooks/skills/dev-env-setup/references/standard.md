@@ -1,4 +1,4 @@
-# The standard (v21) — full specification
+# The standard (v22) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v21** when it has all of:
+A repo is **compliant at v22** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v21** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "21"`.
+  stamp `DEV_ENV_VERSION = "22"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -123,7 +123,7 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 | Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
 |-------|---------|-------|---------|------------|-----------|-------------|
 | Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
-| Ruby/Rails | `bin/rubocop` (omakase + rubocop-minitest\|-rspec; plain-rubocop adds rubocop-rails/-performance too), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
+| Ruby/Rails | `bin/rubocop` (omakase + rubocop-minitest\|-rspec + house cops `rubocop-mick`; plain-rubocop adds rubocop-rails/-performance too), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
 | Go | `golangci-lint run` + `golangci-lint fmt` (gofmt/goimports), `shellcheck`/`shfmt` (shipped `.sh`) | `go test` (CI: `go build`/`go vet`/`go test -race`) | gitleaks | `check-added-large-files` | golangci-lint `unused` (built in) | `jscpd` (`-f golang`) |
 | Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
@@ -219,6 +219,16 @@ Rails 8's own default `bin/rails new` CI). All are glob-gated in `hk.pkl` and mi
   covers it), so re-adding them is inert and force-enabling their cops fights the omakase
   philosophy. **Plain-rubocop repos** add the full `rubocop-rails` + `rubocop-performance` +
   `rubocop-minitest`/`-rspec`.
+- **house cops — `rubocop-mick`** (added in v22) — a personal RuboCop extension gem
+  ([mickzijdel/rubocop-mick](https://github.com/mickzijdel/rubocop-mick)) carrying semantic cops
+  omakase can't express (e.g. `Mick/ParamsMutation`, forbidding in-place mutation of the request
+  `params`). Added to **every** Ruby repo regardless of omakase-vs-plain — it's orthogonal to the
+  testing-framework plugins. A github-sourced gem in the dev group
+  (`gem "rubocop-mick", github: "mickzijdel/rubocop-mick", require: false`) plus `rubocop-mick`
+  under the `.rubocop.yml` `plugins:` key. The gem ships its cops' defaults (each `Enabled: true`),
+  so the `plugins:` line alone activates them — **no `inherit_gem:` line needed**. New cops land in
+  the gem and reach every repo on the next `bundle update rubocop-mick`; the standard only pins the
+  wiring, not the cop list.
 - **strong_migrations** — runtime gem that raises on unsafe migrations (NOT NULL adds, column
   removes, in-transaction backfills). Not a CI/hk step; goes in the **main Gemfile (ungrouped, not
   `require: false`)** — its `config/initializers/strong_migrations.rb` references the
