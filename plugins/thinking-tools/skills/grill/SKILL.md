@@ -1,6 +1,8 @@
 ---
 name: grill
 description: Use when a plan, design, or feature idea needs to be interrogated until it is fully specified — the user wants to be interviewed, one question at a time, until every open decision is resolved. Triggers on "grill me", "interview me", "ask me questions about this", "stress-test this plan with me", "help me fully specify this", or before writing a plan/PRD from a still-fuzzy idea — offer to grill first rather than drafting from guesses. Not for generating ideas from scratch (that's brainstorming), third-party critique (that's [[board]]), or failure-mode hunting (that's [[premortem]]).
+license: "MIT; copyright Matt Pocock; see ../matt-pocock-skills-LICENSE.txt"
+source: "adapted/merged from https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me, https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling, https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs"
 ---
 
 # Grill

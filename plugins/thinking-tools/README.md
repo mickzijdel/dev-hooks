@@ -25,7 +25,9 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
 
 `grill`, `domain-modeling`, and `codebase-design` are adapted from
-[mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
+[mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill's frontmatter
+carries its precise upstream `source:` and `license:`; the shared license text lives at
+[`skills/matt-pocock-skills-LICENSE.txt`](skills/matt-pocock-skills-LICENSE.txt).
 
 ## Hooks
 
