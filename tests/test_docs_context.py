@@ -105,6 +105,48 @@ def test_docs_context_includes_description(tmp_path):
     assert "How to deploy to production" in ctx
 
 
+def test_docs_context_no_flag_without_staleness_fields(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "api.md").write_text(
+        "---\ntitle: API Reference\ndescription: How to call the API\n---\n"
+    )
+    r = run_docs_context(tmp_path)
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "⚠" not in ctx
+
+
+def test_docs_context_flags_past_stale_after(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "api.md").write_text(
+        "---\ntitle: API Reference\nstale_after: 2020-01-01\n---\n"
+    )
+    r = run_docs_context(tmp_path)
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "⚠ stale since 2020-01-01" in ctx
+
+
+def test_docs_context_does_not_flag_future_stale_after(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "api.md").write_text(
+        "---\ntitle: API Reference\nstale_after: 2099-01-01\n---\n"
+    )
+    r = run_docs_context(tmp_path)
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "⚠" not in ctx
+
+
+def test_docs_context_flags_deprecated_status(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "old.md").write_text("---\ntitle: Old Design\nstatus: deprecated\n---\n")
+    r = run_docs_context(tmp_path)
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "⚠ status: deprecated" in ctx
+
+
 def test_docs_context_opt_out(tmp_path):
     docs = tmp_path / "docs"
     docs.mkdir()
