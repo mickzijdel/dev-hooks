@@ -1,6 +1,6 @@
 ---
 name: env-to-fnox
-version: 1.1.0
+version: 1.2.0
 description: |
   Migrate a project's plaintext .env file to fnox, a secret manager that stores
   only *references* in a committed fnox.toml and resolves real values from a vault
@@ -47,6 +47,19 @@ step 4 for a different backend.
 ## Workflow
 
 Work through these in order. Verify a real secret resolves before deleting anything.
+
+> **Automation shortcut:** for the common case, `scripts/migrate_env_to_fnox.py`
+> automates steps 3, 4, and (with `--verify`) 7 — it runs `bws secret create` for every
+> variable in a `.env` and writes the `fnox.toml` step 4 shows by hand:
+> ```bash
+> scripts/migrate_env_to_fnox.py --env-file .env --project-id <PROJECT_ID> --verify
+> ```
+> `--dry-run` previews the plan without calling `bws`/`fnox` or writing anything;
+> `--delete-source` removes the `.env` afterward, gated behind a typed `DELETE`
+> confirmation. Still do steps 1 (categorise secrets vs. plain config by hand — the
+> script migrates every assignment in the file, so run it only after separating those
+> out) and 2 (install + auth) first, and step 5/6 (runtime wiring, commit-vs-gitignore)
+> after. `--help` lists all flags.
 
 ### 1. Analyze the existing `.env`
 
