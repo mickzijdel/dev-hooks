@@ -1,6 +1,8 @@
 ---
 name: codebase-design
 description: Use when designing or restructuring a module's interface — deciding what hides behind a seam, judging whether an abstraction earns its keep, or making code testable through its interface. Triggers on "design this interface", "is this abstraction worth it", "where should this boundary go", "make this more testable", or when another skill needs the deep-module vocabulary. Not for domain terminology (that's [[domain-modeling]]) or whole-repo audits.
+license: "MIT; copyright Matt Pocock; see ../matt-pocock-skills-LICENSE.txt"
+source: https://github.com/mattpocock/skills/tree/main/skills/engineering/codebase-design
 ---
 
 # Codebase Design
