@@ -42,7 +42,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 | `Stop` | `missing-test-reminder.sh` | On stop, if Claude **added** a new source file this session with no matching test (`*_spec.rb`/`*_test.rb`, `test_*.py`/`*_test.py`, `*.test.*`/`*.spec.*`), nudge it (exit 2) to add one. Skips test files, low-value targets (barrels, type defs, config, migrations, `__init__`/`conftest`), and vendored/generated code (dirs from the repo's `.jscpd.json`, plus minified `*.min.*`). Fires at most once per session. |
 | `SessionStart` | `detect-stack-skills.sh` | Detect the project's stack and remind Claude to consult applicable skills/conventions before writing code. |
 | `SessionStart` | `dev-env-reminder.sh` | If the repo is **yours** and the dev-env standard applies but isn't met (missing `mise`/`hk`/CI/`gitleaks`, or behind the version stamp), nudge Claude to flag it and offer the `dev-env-setup` skill. Advisory only — never edits. Owner-gated (see env vars below); opt out per repo. |
-| `SessionStart` | `docs-context.sh` | If the project has a `docs/` or `doc/` directory containing Markdown files, emit a brief index (titles + optional descriptions from YAML frontmatter) so Claude knows where documentation lives and can consult the right files when working on related features. Advisory only — never blocks. Opt out with `DEV_HOOKS_DOCS_CONTEXT=false`. |
+| `SessionStart` | `docs-context.sh` | If the project has a `docs/` or `doc/` directory containing Markdown files, emit a brief index (titles + optional descriptions from YAML frontmatter) so Claude knows where documentation lives and can consult the right files when working on related features. Docs whose frontmatter carries an opt-in `stale_after: YYYY-MM-DD` (past) or `status: stale`/`deprecated`/`draft` get their line flagged with `⚠` so Claude doesn't blindly trust an out-of-date doc; docs without the fields are unaffected. Advisory only — never blocks. Opt out with `DEV_HOOKS_DOCS_CONTEXT=false`. |
 | `SessionStart` | `script-index.sh` | List the custom CLI tools in your saved script library — each executable shebang script's path + its `# short-description:` line — so Claude knows what already exists and reaches for it instead of re-solving the problem, like a lightweight skill index. The library is `DEV_HOOKS_SCRIPT_DIR`, a colon-separated list of roots like `PATH` (default `~/.local/bin`), each scanned **recursively** so a cloned scripts repo with subdirectories works. Scripts with no `# short-description:` are listed under a placeholder telling Claude to run `<path> --help` and ask you to add one. Hide scripts that aren't your own tools (installed/third-party CLIs, app launchers) with `DEV_HOOKS_SCRIPT_IGNORE` — a colon-separated list of globs matched against each script's basename or full path (e.g. `*vocalinux*:gext`). Never executes a script (so no `--help` side effects at startup). Paired with the `script-library` skill. Advisory only — never blocks. Opt out with `DEV_HOOKS_SCRIPT_INDEX=false`. |
 | `Stop` | `plan-reminder.sh` | If `.claude/current_plan.md` exists and is stale, remind Claude to update the multi-session plan before ending. |
 | `Stop` | `review-reminder.sh` | On stop, if code files changed but no code review ran this session (scans the transcript for `/code-review`, the code-reviewer agent, or `requesting-code-review`), remind Claude (exit 2) to run a review and keep iterating until it comes back clean. Fires at most once per session. |
@@ -144,9 +144,12 @@ $ claude
   Per-repo opt-out also via a `dev-env: skip` line in the project's `CLAUDE.md`.
 - `docs-context.sh` scans `docs/` (falling back to `doc/`) at the project root for Markdown
   files up to two levels deep. Titles come from YAML frontmatter (`title:`) or the first `#`
-  heading; an optional frontmatter `description:` field is included after an em-dash. Hidden
-  paths (`.*`) are ignored. Silence it with `DEV_HOOKS_DOCS_CONTEXT=false` (in
-  `.claude/settings.local.json` `"env"`).
+  heading; an optional frontmatter `description:` field is included after an em-dash. Two more
+  frontmatter fields are opt-in and off by default: `stale_after: YYYY-MM-DD` flags the line
+  with `⚠ stale since <date>` once that date has passed, and `status: stale`/`deprecated`/`draft`
+  flags it with `⚠ status: <status>` regardless of date. Neither field is required — docs
+  without them render exactly as before. Hidden paths (`.*`) are ignored. Silence it with
+  `DEV_HOOKS_DOCS_CONTEXT=false` (in `.claude/settings.local.json` `"env"`).
 - `memory-reminder.sh` targets Claude Code's file-based memory feature. It stays a no-op
   unless you set `DEV_HOOKS_MEMORY=1` or have already used memory somewhere (it detects any
   existing `~/.claude/projects/*/memory/` dir), so it's safe for installers who don't use

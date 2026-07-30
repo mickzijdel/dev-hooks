@@ -4,7 +4,10 @@
 # SessionStart hook: if this project has a docs/ or doc/ directory containing
 # Markdown files, emit a brief index (titles + optional descriptions from YAML
 # frontmatter) so Claude knows where documentation lives and can consult the
-# right files when working on related features.
+# right files when working on related features. If a doc's frontmatter carries
+# an opt-in `stale_after: YYYY-MM-DD` (past) or `status: stale|deprecated|draft`,
+# its index line is flagged so Claude doesn't blindly trust an out-of-date doc.
+# Neither field is required — docs without them render exactly as before.
 # Advisory only — never blocks. Opt out: DEV_HOOKS_DOCS_CONTEXT=false.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -34,27 +37,42 @@ MAX_FILES=30
 TOTAL=${#MD_FILES[@]}
 LINES=""
 COUNT=0
+TODAY=$(date +%Y-%m-%d 2>/dev/null)
 for f in "${MD_FILES[@]}"; do
   [ "$COUNT" -ge "$MAX_FILES" ] && break
   REL="${f#"$DIR/"}"
-  # Parse YAML frontmatter for title + description, falling back to first # heading
+  # Parse YAML frontmatter for title + description, falling back to first # heading.
+  # stale_after/status are opt-in staleness metadata (see header comment) — absent for
+  # most docs, in which case FLAG below stays empty and the line is unchanged.
   mapfile -t _meta < <(awk '
     /^---/{c++; if(c>1){exit}}
     c==1 && /^title:/{sub(/^title:[[:space:]]*/,""); gsub(/"/,""); _t=$0; next}
     c==1 && /^description:/{sub(/^description:[[:space:]]*/,""); gsub(/"/,""); _d=$0; next}
+    c==1 && /^stale_after:/{sub(/^stale_after:[[:space:]]*/,""); gsub(/"/,""); _s=$0; next}
+    c==1 && /^status:/{sub(/^status:[[:space:]]*/,""); gsub(/"/,""); _u=$0; next}
     c==0 && _t=="" && /^#[^#]/{sub(/^#+[[:space:]]*/,""); _t=$0}
-    END{print _t; print _d}
+    END{print _t; print _d; print _s; print _u}
   ' "$f" 2>/dev/null)
   TITLE="${_meta[0]:-}"
   DESC="${_meta[1]:-}"
+  STALE_AFTER="${_meta[2]:-}"
+  STATUS="${_meta[3]:-}"
   if [ -z "$TITLE" ]; then
     TITLE="${f##*/}"
     TITLE="${TITLE%.md}"
   fi
+  FLAG=""
+  case "$STATUS" in
+    stale | deprecated | draft) FLAG=" ⚠ status: ${STATUS}" ;;
+  esac
+  if [ -z "$FLAG" ] && [[ "$STALE_AFTER" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ -n "$TODAY" ]; then
+    # ISO dates compare correctly as plain strings.
+    [[ "$STALE_AFTER" < "$TODAY" ]] && FLAG=" ⚠ stale since ${STALE_AFTER}"
+  fi
   if [ -n "$DESC" ]; then
-    LINES="${LINES}  - ${REL}: ${TITLE} — ${DESC}\n"
+    LINES="${LINES}  - ${REL}: ${TITLE} — ${DESC}${FLAG}\n"
   else
-    LINES="${LINES}  - ${REL}: ${TITLE}\n"
+    LINES="${LINES}  - ${REL}: ${TITLE}${FLAG}\n"
   fi
   COUNT=$((COUNT + 1))
 done
