@@ -8,6 +8,33 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-08-01 (Run 17)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-07-29 (Run 16's cutoff, `7049c14`): 8 commits through `485b302`.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-07-29 through 2026-08-01 (13 items not already logged in Run 16; feed's `lastBuildDate` is 2026-08-01T13:30Z, so this is a complete window).
+
+PRs opened this run: none — every source this run evaluated as Out of scope, Deferred, or Duplicate.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Personal macOS/Debian machine-provisioning bootstrap: finish converging `dotf run` onto `mise` (quieter bootstrap output, drop unused Codespaces probe/repository injection/LaunchCtl generality/Debian non-APT helper, flatten runner result aggregation) across 8 commits | dotfiles commits `bced80b`, `36a41ca`, `8c1e9ec`, `509a5e3`, `977f491`, `e9998af`, `e98c109`, `485b302` | Out of scope | Continuation of Nate's personal `dotf`/mise machine-provisioning runner, same category already rejected in Runs 3/13/14/16; dev-hooks and rails-toolkit have no equivalent machine-provisioning surface. |
+| With cheaper models, run always-on automations monitoring email, Slack, Linear, and analytics MCPs | feed item 2026-08-01 (https://x.com/kr0der/status/2083474384002617810) | Out of scope | Personal inbox/Slack/Linear monitoring automation; same territory as prior Codex/ChatGPT inbox-triage rejections (Runs 15/16) — no dev-workflow hook surface. |
+| Build a personal AI wardrobe from camera-roll photos | feed item 2026-07-31 (https://x.com/itsolelehmann/status/2083327115995615469) | Out of scope | Personal/consumer use case; no bearing on dev-workflow hooks. |
+| Create a Claude skill that generates multiple design/layout explorations side-by-side for inline notes and feedback | feed item 2026-07-31 (https://x.com/amirmxt/status/2083190128596365535) | Deferred | Plausible skill idea, but none of this marketplace's four plugins (dev-hooks, coding-onboarding, thinking-tools, writing) target visual design generation/comparison; no natural home. Revisit if a design-focused plugin is ever added. |
+| Use a small local model (Gemma on Cerebras) to OCR/scan receipts for bookkeeping | feed item 2026-07-31 (https://x.com/0xSero/status/2083001174639399307) | Out of scope | Personal bookkeeping automation; no dev-workflow surface. |
+| Build a reusable "company brain" for agents: scrape site + Perplexity market context into numbered context files | feed item 2026-07-30 (https://x.com/amirmxt/status/2082966266000638437) | Out of scope | Marketing/product-context tooling; no dev-workflow surface. |
+| Pair Codex with a Teenage Engineering walky-talky and Stream Deck for voice/shortcut control | feed item 2026-07-30 (https://x.com/emollick/status/2082924870497681712) | Out of scope | Hardware-specific personal control interface; no generalizable hook or skill surface. |
+| Don't build an AI "factory" upfront — stack small tested automations, find the bottleneck, automate it, repeat | feed item 2026-07-30 (https://x.com/dexhorthy/status/2082895696181817767) | Out of scope | Methodology tip with no concrete hook trigger; same category as prior methodology-tip rejections. |
+| Bake stable knowledge into a model adapter; keep per-request/verbatim content in RAG/context to save KV cache | feed item 2026-07-30 (https://x.com/EyalToledano/status/2082837247393415596) | Out of scope | Model fine-tuning/serving technique; not something a Claude Code plugin marketplace builds. |
+| Turn customer research (reports, transcripts, surveys) into an AI persona panel Claude skill to consult on daily decisions | feed item 2026-07-29 (https://x.com/chasing_next/status/2082571636520415258) | Duplicate | `board`'s buyer-persona variant (simulated target-customer personas reviewing decisions) already covers this; same reasoning as Run 16's `chasing_next` customer-panel entry. |
+| Avoid generic "purple slop" AI designs by first creating a `design.md` style guide sourced from Mobbin's MCP or designmd.sh | feed item 2026-07-29 (https://x.com/petergyang/status/2082519030859264086) | Out of scope | Frontend visual-design generation guidance; no plugin in this marketplace targets UI/design generation. |
+| Ask a reasoning model to deliberately "over-analyze" a topic to surface non-obvious insights | feed item 2026-07-29 (https://x.com/simonw/status/2082487009642479972) | Out of scope | Prompting technique; no concrete hook/skill surface. |
+| Do heavy upfront planning (problem definition, `design.md`, HTML spec, flows) before launching coding agents | feed item 2026-07-29 (https://x.com/petergyang/status/2082473770741272747) | Out of scope | Planning methodology already covered by the user's separately-installed superpowers plugin toolkit (per this run's instructions, not duplicated here). |
+| Pair ChatGPT Voice with Codex to operate a computer hands-free via dictation | feed item 2026-07-29 (https://x.com/Dimillian/status/2082465475729019037) | Out of scope | ChatGPT/Codex-specific; no Claude Code equivalent. |
+
+---
+
 ## 2026-07-29 (Run 16)
 
 Sources scanned:
