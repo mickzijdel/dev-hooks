@@ -113,6 +113,7 @@ _reminder_cwd_session() {
 # Safe commands never call this — the hook stays silent and the normal permission flow
 # proceeds. We never emit "allow": that would bypass the user's own allowlist.
 reminder_emit_decision() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   jq -cn --arg decision "$1" --arg reason "$2" \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: $decision, permissionDecisionReason: $reason}}'
   exit 0
@@ -158,6 +159,19 @@ reminder_emit() {
   exit 0
 }
 
+# SessionStart preamble: read hook stdin into INPUT and set in the caller's scope:
+#   DIR     — .cwd, the project directory the session opened in (falls back to $PWD)
+#   SESSION — .session_id (or "nosession")
+# No opt-out argument: SessionStart hooks gate differently from one another (a plain env
+# var, a CLAUDE.md marker, an ownership heuristic), so each calls reminder_opt_out itself.
+reminder_session_init() {
+  INPUT=$(cat 2>/dev/null)
+  _reminder_cwd_session
+  # SessionStart hooks name the project directory DIR; CWD is _reminder_cwd_session's.
+  # shellcheck disable=SC2034
+  DIR=$CWD
+}
+
 # Emit a SessionStart advisory (additionalContext is injected into Claude's context at the
 # start of the session) and exit 0 — never blocks.
 reminder_emit_session() {
@@ -188,6 +202,15 @@ reminder_emit_prompt() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $msg}}'
   exit 0
+}
+
+# Emit a PostToolUse correction on stderr and exit 2 — the write already landed, so the
+# message is fed back to Claude to fix it now. Louder than reminder_emit's advisory
+# additionalContext; use it only for a hook that fires on every occurrence.
+reminder_emit_correction() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
+  printf '%s\n' "$1" >&2
+  exit 2
 }
 
 # Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the

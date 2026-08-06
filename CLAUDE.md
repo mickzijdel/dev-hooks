@@ -82,9 +82,13 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_old_content` (CONTENT/OLD across Write content, Edit new/old_string, and
   MultiEdit edits[]), `reminder_fire_once <name> [extra]` (once-per-session marker; needs
   $SESSION from reminder_init), and `reminder_emit <msg>` (advisory additionalContext +
-  exit 0). SessionStart: `reminder_emit_session <msg>` (additionalContext injected into
-  Claude's context + exit 0 — used by `script-index.sh`; `detect-stack-skills.sh`/`docs-context.sh`
-  predate it and still inline the same jq). PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
+  exit 0), and `reminder_emit_correction <msg>` (stderr + exit 2 — the louder PostToolUse
+  path for a hook that fires on every occurrence, used by `inline-svg-reminder.sh`).
+  SessionStart: `reminder_session_init` (INPUT/DIR/SESSION; no opt-out argument, since these
+  hooks gate differently from one another — a plain env var, a CLAUDE.md marker, an ownership
+  heuristic — so each calls `reminder_opt_out` itself) and `reminder_emit_session <msg>`
+  (additionalContext injected into Claude's context + exit 0).
+  PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
   reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
   `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
@@ -116,7 +120,13 @@ Do not include changelog or detective-work where it does not belong, such as in 
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
-  copy drifts doesn't error, it silently sees empty content and never fires. The bash
+  copy drifts doesn't error, it silently sees empty content and never fires.
+- **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
+  telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq or
+  `printf >&2` never reaches `hook-fires.jsonl` and its "0 fires" becomes undecidable for
+  weekly-automation-review's Retire pass. `tests/test_hook_sunset_bets.py` gates both halves:
+  every emit function in the lib must call `_reminder_log_fire`, and no hook may contain
+  `hookSpecificOutput` or a bare `exit 2`. The bash
   `reminder_is_test_path` and python `is_test_path` deliberately mirror each other — change
   both or neither.
 - **Embedded-python heredocs can't read piped stdin.** `python3 - <<'PYEOF'` consumes the

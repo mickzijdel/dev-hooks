@@ -21,10 +21,11 @@
 # (a relative $0 would otherwise resolve against the wrong directory).
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}"
-
-INPUT=$(cat 2>/dev/null)
-DIR=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
-[ -z "$DIR" ] && DIR="$PWD"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+# Sets INPUT, DIR (the session's cwd) and SESSION. Gate 2 below does this hook's own
+# opt-out, which is richer than reminder_opt_out (env var OR a CLAUDE.md marker).
+reminder_session_init
 
 cd "$DIR" 2>/dev/null || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
@@ -92,5 +93,4 @@ case "$status" in
     ;;
 esac
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
-exit 0
+reminder_emit_session "$MSG"

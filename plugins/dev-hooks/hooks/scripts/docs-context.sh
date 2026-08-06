@@ -14,10 +14,8 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
 reminder_opt_out DEV_HOOKS_DOCS_CONTEXT
-
-INPUT=$(cat 2>/dev/null)
-DIR=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
-[ -z "$DIR" ] && DIR="$PWD"
+# Sets INPUT, DIR (the session's cwd) and SESSION.
+reminder_session_init
 
 # Locate a docs directory at the project root
 DOCS_DIR=""
@@ -88,5 +86,4 @@ MSG="Project documentation found in ${LABEL}/:
 $(printf '%b' "$LINES")
 Consult these files when working on related features."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
-exit 0
+reminder_emit_session "$MSG"

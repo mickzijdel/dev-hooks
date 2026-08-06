@@ -10,9 +10,11 @@
 #
 # Extensible: add a stack by appending a detection block that pushes onto STACKS.
 
-INPUT=$(cat 2>/dev/null)
-DIR=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
-[ -z "$DIR" ] && DIR="$PWD"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/reminder-common.sh
+source "$SELF_DIR/lib/reminder-common.sh"
+# Sets INPUT, DIR (the session's cwd) and SESSION.
+reminder_session_init
 
 STACKS=()
 
@@ -34,5 +36,4 @@ LIST=$(printf '%s; ' "${STACKS[@]}")
 LIST=${LIST%; }
 MSG="Stack detected for this project: ${LIST}. Before writing or changing code, check for any installed skills relevant to this stack (via the Skill tool) and follow the project's existing conventions and tooling."
 
-jq -cn --arg msg "$MSG" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
-exit 0
+reminder_emit_session "$MSG"

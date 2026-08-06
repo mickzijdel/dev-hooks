@@ -181,5 +181,4 @@ Don't hand-write <svg>/<path> blobs (or data:image/svg+xml URIs) in source files
 3. Keep it inline only if the user explicitly asked for inline SVG — say so and continue.
 The write already landed; fix the file now."
 
-printf '%s\n' "$MSG" >&2
-exit 2
+reminder_emit_correction "$MSG"
