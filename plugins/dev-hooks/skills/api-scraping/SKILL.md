@@ -8,8 +8,8 @@ description: |
   loop: capture network traffic (HAR), find the request carrying the data, replay it outside
   the browser, minimize headers/auth to only what's required, then generate a paginating,
   rate-limited, resumable client. Escalates only as far as it must (headers → cookies/token →
-  TLS impersonation → headless browser) and stops at CAPTCHAs and anything needing the user's
-  legal/ToS call.
+  TLS impersonation → headless browser) and stops at bot challenges and anything needing the
+  user's legal/ToS call.
 allowed-tools:
   - Read
   - Write
@@ -96,7 +96,8 @@ Before capturing anything, settle scope and permission — this is cheap and non
    | Needs login / returns empty without it | Replay the auth cookie or bearer token; script the login/refresh that mints it |
    | Correct headers, still blocked, browser-only | TLS/HTTP-2 fingerprinting — switch to `curl_cffi` with `impersonate` |
    | A request-signing / JS-computed param you can't reproduce | Run the page in a headless browser (Playwright) and call the API from its context, or intercept the response |
-   | CAPTCHA / Cloudflare Turnstile / hCaptcha | **Stop. Ask the user.** Do not attempt to defeat it |
+   | A **bot challenge** — Cloudflare managed challenge / "Shields are up" / Turnstile, hCaptcha, press-and-hold. The site works in the user's browser; every client you write is challenged | **Do not climb higher.** Stealth-patching a browser, reusing a persistent profile, or transplanting a `cf_clearance` token is bypass, whether or not the challenge was interactive. If the data is for the user's own use, drop to the console rung below; otherwise **stop and ask the user** |
+   | Same, and the data is for the user's own use | Hand the user a paced `fetch` loop to run in **their own browser's devtools console**, in the session they already have. No token leaves the browser; it fails closed if challenged. See [anti-bot.md](references/anti-bot.md) rung 5 |
 
    Details, `curl_cffi` example, proxies, and pacing in
    [references/anti-bot.md](references/anti-bot.md).
@@ -113,4 +114,6 @@ Before capturing anything, settle scope and permission — this is cheap and non
   page), not a hardcoded page count.
 - 429s back off and honor `Retry-After`; the run is rate-limited and resumable.
 - Output is spot-checked against the live site and totals reconcile where the site reports one.
-- No CAPTCHA-bypass, no credentialed access you weren't handed, `robots.txt`/ToS accounted for.
+- No bot-challenge bypass — no solved or farmed challenge tokens, no stealth-patched or
+  profile-persisted browser used to pass one — no credentialed access you weren't handed,
+  `robots.txt`/ToS accounted for.
