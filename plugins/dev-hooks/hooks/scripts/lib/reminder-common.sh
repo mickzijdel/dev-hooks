@@ -213,6 +213,15 @@ reminder_emit_correction() {
   exit 2
 }
 
+# Emit a plain Stop-hook note on stdout and exit 0 — shown to the user, NOT fed back to
+# Claude (that's reminder_emit_stop). The quietest emit path; use it when the session
+# should end regardless and the message is just a heads-up.
+reminder_emit_note() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
+  printf '%s\n' "$1"
+  exit 0
+}
+
 # Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
 # message back to Claude so it acts before finishing.
 reminder_emit_stop() {

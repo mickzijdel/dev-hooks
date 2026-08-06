@@ -98,6 +98,42 @@ def test_no_hook_emits_outside_the_lib():
     )
 
 
+# Hooks that legitimately never emit, so they can't log a fire. Keep this list tiny and
+# justified — anything else that speaks to the user or to Claude must go through the lib.
+SILENT_HOOKS = {
+    "lint-on-edit.sh": "side-effect only — formats the file, says nothing",
+    "prompt-log.sh": "data capture — appends to prompts.jsonl and always exits 0 silently",
+}
+
+
+def test_every_hook_either_emits_via_the_lib_or_is_declared_silent():
+    """The positive form of the check above. A hook printing a bare `echo` to stdout is an
+    emission too — plan-reminder did exactly that and so never reached the fire log, which
+    the negative pattern check couldn't see. Requiring an explicit reminder_emit_* call
+    means a new hook has to either route through the lib or be consciously declared silent."""
+    unaccounted = [
+        s.name
+        for s in sorted(HOOKS.glob("*.sh"))
+        if "reminder_emit" not in s.read_text() and s.name not in SILENT_HOOKS
+    ]
+    assert not unaccounted, (
+        "hooks that neither emit via the lib nor appear in SILENT_HOOKS — if the hook does "
+        "speak, use a reminder_emit_* helper so the fire is logged; if it genuinely never "
+        f"does, add it to SILENT_HOOKS with a reason: {unaccounted}"
+    )
+
+
+def test_silent_hooks_are_still_silent():
+    """Guard the allowlist from going stale: a hook listed as silent must stay silent."""
+    still_silent = {
+        name: "reminder_emit" not in (HOOKS / name).read_text() for name in SILENT_HOOKS
+    }
+    assert all(still_silent.values()), (
+        f"hooks in SILENT_HOOKS that now emit — drop them from the list: "
+        f"{[n for n, ok in still_silent.items() if not ok]}"
+    )
+
+
 def test_session_start_hook_logs_a_fire(tmp_path):
     """End-to-end: the SessionStart hooks predated reminder_emit_session and inlined their
     own jq, so none of them ever reached the fire log. Prove one really does now."""
