@@ -120,15 +120,19 @@ Do not include changelog or detective-work where it does not belong, such as in 
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
-  copy drifts doesn't error, it silently sees empty content and never fires.
-- **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
-  telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq or
-  `printf >&2` never reaches `hook-fires.jsonl` and its "0 fires" becomes undecidable for
-  weekly-automation-review's Retire pass. `tests/test_hook_sunset_bets.py` gates both halves:
-  every emit function in the lib must call `_reminder_log_fire`, and no hook may contain
-  `hookSpecificOutput` or a bare `exit 2`. The bash
+  copy drifts doesn't error, it silently sees empty content and never fires. The bash
   `reminder_is_test_path` and python `is_test_path` deliberately mirror each other — change
   both or neither.
+- **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
+  telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq, `echo`,
+  or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
+  weekly-automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
+  exit 0, shown to the user) < `reminder_emit`/`_session`/`_prompt` (additionalContext) <
+  `reminder_emit_correction`/`_stop` (exit 2, fed back to Claude). `reminder_emit_decision`
+  is its own thing (PreToolUse permission). `tests/test_hook_sunset_bets.py` gates all of it:
+  every emit function in the lib must call `_reminder_log_fire`; every hook must call some
+  `reminder_emit_*` or sit in that test's `SILENT_HOOKS` allowlist with a reason (only
+  `lint-on-edit.sh` and `prompt-log.sh` qualify — they genuinely never speak).
 - **Embedded-python heredocs can't read piped stdin.** `python3 - <<'PYEOF'` consumes the
   heredoc as the program *source*, so `sys.stdin.read()` is empty even if you `printf … |`
   into it. Pass data via argv or a temp file instead — e.g. write to `mktemp`, then
