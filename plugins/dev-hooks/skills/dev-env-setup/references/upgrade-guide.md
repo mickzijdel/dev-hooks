@@ -902,6 +902,10 @@ Steps:
 1. **Copy the script.** `references/templates/check_version_sync.sh` → `scripts/check_version_sync.sh`,
    then `chmod +x` it and — because the v15 exec-bit gate reads the *index* mode —
    `git update-index --chmod=+x scripts/check_version_sync.sh` after staging.
+   **Then run `shfmt -w scripts/check_version_sync.sh`.** The template is 2-space indented
+   because this marketplace's own `.editorconfig` says so; a repo without one gets shfmt's
+   default tabs, so a byte-for-byte copy fails that repo's `shfmt -d .` lint job. Reindenting
+   is expected (same as `run-jscpd.sh`) — just never touch the logic.
 2. **hk step.** Add to the `linters` mapping in `hk.pkl` (adjust the glob to the version files
    and manifests this repo actually has):
    ```pkl

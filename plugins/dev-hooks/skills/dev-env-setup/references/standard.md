@@ -340,6 +340,22 @@ Two things it deliberately does **not** do:
 `go.mod`'s `go` directive is also left alone: it declares the module's *minimum* language version,
 not a toolchain pin, so it is routinely and correctly older than `mise.toml`'s `go`.
 
+**Two blind spots to know about** — both found on the v23 fleet rollout, both real gaps rather
+than design choices:
+
+- **Repo root only.** The toolchain half reads `./mise.toml`, `./.<lang>-version`, `./Dockerfile`
+  and `./package.json`. A monorepo that keeps its pins in `backend/` and `frontend/` gets a
+  green gate that compared nothing — e.g. a `frontend/Dockerfile` on `FROM node:24-alpine` while
+  CI builds on whatever `node = "latest"` resolved to. The skip lines make the thin coverage
+  visible, but the drift itself is invisible.
+- **`ARG NAME=value` only, not `FROM`.** A Dockerfile that pins its toolchain as
+  `FROM node:22-alpine` rather than `ARG NODE_VERSION=22` carries a real pin the gate never
+  reads. Per-repo fix: add a `.<lang>-version` and switch the image to
+  `ARG NODE_VERSION` / `FROM node:${NODE_VERSION}-alpine`.
+
+Both are candidates for a future bump (subdirectory discovery; `FROM` parsing). Until then, a
+pass on a monorepo or a `FROM`-pinned image means less than it looks like — read the skip lines.
+
 ## Executable bits on shipped scripts (v15)
 
 Any git-tracked file whose **first line is a shebang** must be index mode `100755`. Clones,

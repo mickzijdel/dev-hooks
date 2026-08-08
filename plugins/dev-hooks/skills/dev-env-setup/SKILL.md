@@ -143,7 +143,9 @@ proposing additions.
    `scripts/check_version_sync.sh` (`chmod +x` both — and if the repo has
    `core.fileMode = false`, `git update-index --chmod=+x scripts/*.sh` after staging,
    or the v15 exec-bit gate will flag them; these are the shared jscpd runner and version-sync
-   gate that both the hk steps and CI call), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
+   gate that both the hk steps and CI call — run `shfmt -w` on both copies afterwards, since a
+   repo without an `.editorconfig` defaults shfmt to tabs and would fail its own lint job on the
+   2-space template), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
    whole-tree scan from failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks
    whole-tree allowlist").
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
