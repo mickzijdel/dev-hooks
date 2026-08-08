@@ -121,6 +121,34 @@ def test_exec_bit_gate_in_every_template(name):
         )
 
 
+@pytest.mark.parametrize("name", HK_TEMPLATES + CI_TEMPLATES)
+def test_version_sync_gate_in_every_template(name):
+    """v23: every hk template carries the `versions` step and every CI template mirrors it in a
+    `versions` job, both invoking the *same* shared script — a hand-rolled copy in either place
+    would let the local and CI gates drift, which is exactly the failure the gate exists to catch.
+    The hk step must stay glob-gated so an unrelated commit skips it."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert "bash scripts/check_version_sync.sh" in text, (
+        f"{name} doesn't run the shared version-sync script"
+    )
+    if name.startswith("hk."):
+        assert '["versions"]' in text, f"{name} is missing the versions step"
+        step = text.split('["versions"]')[1].split("}")[0]
+        assert "glob = List(" in step and "mise.toml" in step, (
+            f"{name}'s versions step must be glob-gated to the files that carry pins"
+        )
+    else:
+        assert "\n  versions:\n" in text, f"{name} is missing the `versions` job"
+
+
+def test_version_sync_template_script_is_shipped():
+    """The hk step and CI job both reference scripts/check_version_sync.sh, so the template they
+    are copied from must exist and be the runnable script (not a fragment)."""
+    script = TEMPLATES_DIR / "check_version_sync.sh"
+    assert script.exists(), "templates/check_version_sync.sh is missing"
+    assert script.read_text().startswith("#!/usr/bin/env bash\n")
+
+
 @pytest.mark.parametrize("name", CI_TEMPLATES)
 def test_ci_actions_are_sha_pinned_with_version_comment(name):
     """v16: every remote `uses: owner/repo@ref` in a CI template pins a full 40-hex commit SHA

@@ -1,4 +1,4 @@
-# The standard (v22) — full specification
+# The standard (v23) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v22** when it has all of:
+A repo is **compliant at v23** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v22** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "22"`.
+  stamp `DEV_ENV_VERSION = "23"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -29,8 +29,15 @@ A repo is **compliant at v22** when it has all of:
   job runs the same with `--require` (offline + no cached jscpd then *fails* the job instead
   of warn-and-pass — pre-commit keeps warn-and-pass so a commit is never blocked by an
   unreachable registry).
+- **`scripts/check_version_sync.sh`** (all stacks, added in v23) — the shared version-pin
+  agreement gate, copied verbatim from `templates/check_version_sync.sh` (same
+  never-hand-edit-the-logic rule as the jscpd runner). It asserts that every file naming a
+  toolchain or service version names the *same* one; the hk `versions` step and CI's `versions`
+  job both run `bash scripts/check_version_sync.sh`, so the two gates can't drift. See
+  "Version pins must agree across files" below.
 - **`hk.pkl`** — amends a pinned hk `Config.pkl`, defines per-stack linter steps **plus the
-  audits (dead-code + duplication), the `exec-bit-scripts` gate (v15), the `actionlint` + `zizmor`
+  audits (dead-code + duplication), the `exec-bit-scripts` gate (v15), the `versions` gate (v23),
+  the `actionlint` + `zizmor`
   GitHub Actions checks (v18), `gitleaks`, and `check-added-large-files`** (`Builtins.*`),
   and wires `pre-commit` (`fix = true`, `stash = "git"`), `fix`, and `check` hooks. Every step —
   including the audits — lives in one `linters` mapping shared by all three hooks, so the audits
@@ -279,6 +286,59 @@ enforcement of the **[[github-actions]]** skill's checklist.
 - **Exit behaviour.** Each tool exits non-zero on a real finding (zizmor at/above the default
   persona's threshold), failing the hk step and the CI job. The shipped templates are clean —
   `actionlint -shellcheck= <file>` and `zizmor --no-progress <file>` both → exit 0.
+
+## Version pins must agree across files (v23)
+
+One version, many files — because different consumers read different ones:
+
+| Pin | Read by |
+| --- | --- |
+| `mise.toml` `[tools]` | local dev, `mise-action` in CI |
+| `.ruby-version` / `.node-version` / `.python-version` / `.go-version` | `ruby/setup-ruby`, `actions/setup-node`, … |
+| `Dockerfile` `ARG RUBY_VERSION` / `NODE_VERSION` / `YARN_VERSION` / … | the production image build |
+| `package.json` `packageManager` | corepack (yarn/pnpm) |
+| `docker-compose.yml` / `config/deploy.yml` / `.devcontainer/compose.yaml` service `image:` tags | what production and the dev container actually run |
+| `.github/workflows/*.yml` `services:` `image:` tags | what CI tests against |
+
+Nothing makes them agree, so a bump that misses one file is **silent**: the image builds on a
+different Ruby than the tests ran on, or the suite goes green against a database server nobody
+deploys. It surfaces as different behaviour in production. On its first run in one repo the check
+found `docker-compose.yml` on `mysql:8.3` while CI tested `mysql:8.4` — invisible to every other
+gate.
+
+Two gates run the same script so they can't drift: the hk **`versions`** step (glob-gated to the
+pin files, so an unrelated commit skips it) and CI's **`versions`** job (needs no toolchain — it
+only reads files, making it the cheapest job in the workflow).
+
+- **Degrades on absence, never assumes presence.** Only files that exist are checked, and every
+  skip is printed (`- no Dockerfile, so no image-build ARGs to cross-check`). A JS repo with no
+  Dockerfile exits 0 — and its pass never looks like more coverage than it is.
+- **Normalises version-file spellings.** `.ruby-version` may be bare (`3.4.10`) or prefixed
+  (`ruby-3.4.10`); `.node-version` may carry a leading `v`. All are valid for `setup-*` and mise.
+- **Matches the image *tag* only.** CI pins by digest (`mysql:8.4@sha256:…`), so the digest is
+  stripped before comparing. Commented-out, templated (`${…}`, `{{…}}`, `<%…%>`) and untagged
+  images are skipped.
+- **Compares only services present in ≥2 files.** An image named in one file alone is not drift
+  (CI may legitimately not need Redis) — it is reported, not failed.
+- **Floating mise specs are not compared.** `node = "latest"` names no fixed version (`mise.lock`
+  is its real pin), so it is reported as skipped rather than diffed against a version file.
+- **Prints what it verified on success**, not just silence:
+  `✓ ruby 3.4.10 — .ruby-version, mise.toml ruby, Dockerfile ARG RUBY_VERSION`. A gate that says
+  nothing when it passes teaches nobody what it covers.
+- **Names the offending file on failure**, with both values:
+  `✗ Dockerfile ARG RUBY_VERSION (3.3.3) != .ruby-version (3.4.10)`.
+
+Two things it deliberately does **not** do:
+
+- **It doesn't mandate a Dockerfile style.** Hardcoding `ARG NODE_VERSION` and deriving the Node
+  major from `.node-version` are both internally consistent choices; the check verifies that
+  whatever pins exist agree. Enforcing one style would force a Dockerfile rewrite on every repo
+  adopting the standard.
+- **It doesn't auto-fix.** Which file holds the correct value is a judgement call — in the
+  `mysql:8.3` case above the right answer was to upgrade production, not to downgrade CI.
+
+`go.mod`'s `go` directive is also left alone: it declares the module's *minimum* language version,
+not a toolchain pin, so it is routinely and correctly older than `mise.toml`'s `go`.
 
 ## Executable bits on shipped scripts (v15)
 
