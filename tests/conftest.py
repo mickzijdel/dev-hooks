@@ -95,6 +95,7 @@ def make_compliant_repo(
     cooldown=True,
     gitleaks_config=True,
     jscpd_runner=True,
+    version_sync=True,
     exec_bit=True,
     sha_pinned=True,
     zizmor=True,
@@ -103,8 +104,9 @@ def make_compliant_repo(
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
     allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), SHA-pinned CI
-    actions (v16), or the zizmor / actionlint hk steps (v18). Stamped at the current version
-    (read from VERSION) so it stays compliant as the standard advances."""
+    actions (v16), the zizmor / actionlint hk steps (v18), or the shared version-sync gate
+    (v23). Stamped at the current version (read from VERSION) so it stays compliant as the
+    standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -140,6 +142,9 @@ def make_compliant_repo(
     if jscpd_runner:
         (path / "scripts").mkdir(exist_ok=True)
         (path / "scripts" / "run-jscpd.sh").write_text("#!/usr/bin/env bash\n")
+    if version_sync:
+        (path / "scripts").mkdir(exist_ok=True)
+        (path / "scripts" / "check_version_sync.sh").write_text("#!/usr/bin/env bash\n")
 
 
 def make_transcript(path: Path, *, human_turns=0, extra_lines=None):

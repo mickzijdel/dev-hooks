@@ -26,6 +26,10 @@
 #                    stacks / repos without pyproject.toml, so it never blocks them.
 #   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
 #                    shared jscpd runner both the hk step and CI's audit job call).
+#   has_version_sync 1 if scripts/check_version_sync.sh present (required from standard v23 — the
+#                    shared pin-agreement gate both the hk `versions` step and CI's `versions`
+#                    job call: mise.toml, the .<lang>-version files, the Dockerfile ARGs and the
+#                    compose/deploy `image:` tags must all name the same versions).
 #   has_exec_bit     1 if hk.pkl carries the exec-bit-scripts step (required from standard
 #                    v15 — fails commits when a tracked shebang script sits at index mode
 #                    100644, which would exit 126 on every fresh clone / plugin install).
@@ -147,6 +151,11 @@ fi
 has_jscpd_runner=0
 [ -f "$DIR/scripts/run-jscpd.sh" ] && has_jscpd_runner=1
 
+# Shared version-sync gate (v23): the pin-agreement check lives in scripts/check_version_sync.sh,
+# called by both the hk `versions` step and CI's `versions` job so the two gates can't drift.
+has_version_sync=0
+[ -f "$DIR/scripts/check_version_sync.sh" ] && has_version_sync=1
+
 # Exec-bit gate (v15): hk.pkl carries the exec-bit-scripts step (CI mirrors it), so a
 # tracked shebang script can't ship at index mode 100644.
 has_exec_bit=0
@@ -242,7 +251,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; } || { [ "$current_version" -ge 23 ] && [ "$has_version_sync" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -261,6 +270,7 @@ has_readme=$has_readme
 has_claude=$has_claude
 has_cooldown=$has_cooldown
 has_jscpd_runner=$has_jscpd_runner
+has_version_sync=$has_version_sync
 has_exec_bit=$has_exec_bit
 has_sha_pinned_ci=$has_sha_pinned_ci
 has_zizmor=$has_zizmor
@@ -277,7 +287,7 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or scripts/check_version_sync.sh missing (has_version_sync=$has_version_sync), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
 

@@ -203,6 +203,14 @@ def test_checker_needs_upgrade_without_jscpd_runner(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_needs_upgrade_without_version_sync(tmp_path):
+    # v23: a current-version repo missing scripts/check_version_sync.sh is flagged for upgrade.
+    make_compliant_repo(tmp_path, version_sync=False)
+    out = run_checker(tmp_path)
+    assert out["has_version_sync"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_needs_upgrade_without_exec_bit_step(tmp_path):
     # v15: a current-version repo whose hk.pkl lacks the exec-bit-scripts step is flagged.
     make_compliant_repo(tmp_path, exec_bit=False)
@@ -280,6 +288,7 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("# project instructions\n")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "run-jscpd.sh").write_text("#!/usr/bin/env bash\n")
+    (tmp_path / "scripts" / "check_version_sync.sh").write_text("#!/usr/bin/env bash\n")
     out = run_checker(tmp_path)
     assert out["stack"] == "ruby"
     assert out["has_cooldown"] == "1"

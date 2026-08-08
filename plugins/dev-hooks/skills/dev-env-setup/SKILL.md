@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v22)
+## The standard (v23)
 
-A repo is **compliant at v22** when it has all of:
+A repo is **compliant at v23** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "22"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "23"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -40,8 +40,15 @@ A repo is **compliant at v22** when it has all of:
 - **`scripts/run-jscpd.sh`** (added in v14) — the shared jscpd runner holding the
   version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
   so the two gates can't drift. Copied verbatim from the template (repo formatters may re-indent it; never hand-edit the logic).
+- **`scripts/check_version_sync.sh`** (added in v23) — the shared version-pin agreement gate:
+  every file naming a toolchain or service version (`mise.toml`, the `.<lang>-version` files, the
+  Dockerfile `ARG`s, `package.json`'s `packageManager`, and the compose/deploy/CI `image:` tags)
+  must name the same one. Both the hk `versions` step and CI's `versions` job run it. It checks
+  only the files that exist and prints what it skipped, reports rather than auto-fixes, and
+  mandates no Dockerfile style. See "Version pins must agree across files" in
+  `references/standard.md`.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
-  `exec-bit-scripts` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and
+  `exec-bit-scripts` gate, the `versions` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
   hooks. Where a hand-rolled step exactly matched an hk built-in it's now the built-in
   (`gitleaks`, `check_added_large_files`, `zizmor`, `actionlint`, and — in the shell stack, where
@@ -132,10 +139,11 @@ proposing additions.
 3. **Fresh setup — write the config** from `references/templates/` for the stack:
    copy `mise.<stack>.toml` → `mise.toml`, `hk.<stack>.pkl` → `hk.pkl`,
    `ci.<stack>.yml` → `.github/workflows/ci.yml`, and (all stacks) `.jscpd.json`,
-   `run-jscpd.sh` → `scripts/run-jscpd.sh` (`chmod +x` — and if the repo has
-   `core.fileMode = false`, `git update-index --chmod=+x scripts/run-jscpd.sh` after staging,
-   or the v15 exec-bit gate will flag it; the shared jscpd runner both the hk
-   step and CI call), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
+   `run-jscpd.sh` → `scripts/run-jscpd.sh` and `check_version_sync.sh` →
+   `scripts/check_version_sync.sh` (`chmod +x` both — and if the repo has
+   `core.fileMode = false`, `git update-index --chmod=+x scripts/*.sh` after staging,
+   or the v15 exec-bit gate will flag them; these are the shared jscpd runner and version-sync
+   gate that both the hk steps and CI call), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
    whole-tree scan from failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks
    whole-tree allowlist").
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`

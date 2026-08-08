@@ -883,6 +883,63 @@ Steps for a **Ruby** repo (non-Ruby repos: do only step 3):
 
 ---
 
+## v22 → v23 (version pins must agree across files)
+
+**Every stack.** A toolchain or service version is spelled out in several files at once because
+different consumers read different ones — `mise.toml` for local dev, `.ruby-version` /
+`.node-version` / `.python-version` for CI's `setup-*` actions, the `Dockerfile` `ARG`s for the
+production image, `package.json`'s `packageManager` for corepack, and the `image:` tags in a
+compose file / `config/deploy.yml` for what production runs versus what CI tests against. Nothing
+made them agree, so a bump that missed one file was silent: the image built on a different Ruby
+than the tests ran on, or the suite went green against a database server nobody deploys. v23 adds
+`scripts/check_version_sync.sh` plus an hk `versions` step and a CI `versions` job that run it.
+
+The check only inspects files that exist and prints what it skipped, so a repo with no Dockerfile
+or no compose file passes — but its pass never looks like more coverage than it is.
+
+Steps:
+
+1. **Copy the script.** `references/templates/check_version_sync.sh` → `scripts/check_version_sync.sh`,
+   then `chmod +x` it and — because the v15 exec-bit gate reads the *index* mode —
+   `git update-index --chmod=+x scripts/check_version_sync.sh` after staging.
+2. **hk step.** Add to the `linters` mapping in `hk.pkl` (adjust the glob to the version files
+   and manifests this repo actually has):
+   ```pkl
+   ["versions"] {
+       glob = List("mise.toml", ".ruby-version", ".node-version", "Dockerfile", "docker-compose.yml", "compose.yaml", "config/deploy.yml", ".devcontainer/compose.yaml", ".github/workflows/*.yml")
+       check = "bash scripts/check_version_sync.sh"
+   }
+   ```
+3. **CI job.** Add to `.github/workflows/ci.yml` (keep the repo's existing `actions/checkout` pin):
+   ```yaml
+   versions:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@<sha> # vX.Y.Z
+         with:
+           persist-credentials: false
+       - name: Toolchain and service versions agree across files
+         run: bash scripts/check_version_sync.sh
+   ```
+   It reads files only, so it needs no toolchain — the cheapest job in the workflow.
+4. **Fix whatever it reports.** Expect real findings on the first run; that is the point. The gate
+   never rewrites a pin, because which file holds the *correct* value is a judgement call — on its
+   first run in one repo the answer was to upgrade production, not to downgrade CI.
+5. **Bump the stamp.** Set `DEV_ENV_VERSION = "23"` in `mise.toml`.
+6. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0 and
+   prints a `✓` line per pin it compared plus a `-` line per thing it skipped. Then **break a pin
+   deliberately** — edit `ARG RUBY_VERSION` (or a compose `image:` tag) to a different value — and
+   confirm the script exits 1 and names the offending file with both values, e.g.
+   `✗ Dockerfile ARG RUBY_VERSION (3.3.3) != .ruby-version (3.4.10)`. Restore the file. A gate
+   nobody has watched fail is not known to work.
+
+> The check verifies that whatever pins exist **agree**; it does not mandate a Dockerfile style.
+> Hardcoding `ARG NODE_VERSION` and deriving the Node major from `.node-version` are both fine, so
+> adopting v23 never forces a Dockerfile rewrite. `go.mod`'s `go` directive is deliberately not
+> compared either — it is a *minimum*, not a pin, and is routinely older than `mise.toml`'s `go`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
