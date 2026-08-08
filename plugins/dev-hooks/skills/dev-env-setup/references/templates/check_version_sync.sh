@@ -100,7 +100,6 @@ normalize() {
   printf '%s' "$v"
 }
 
-# Count of non-empty lines in $1.
 lines() { printf '%s' "$1" | grep -c .; }
 
 n=0
