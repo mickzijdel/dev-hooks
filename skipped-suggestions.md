@@ -8,6 +8,40 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-08-09 (Run 19)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-08-05 (Run 18's cutoff, `167e11e`): 1 commit through `98afa49`.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-08-05 through 2026-08-09 (20 items not already logged in Run 18; feed's `lastBuildDate` is 2026-08-09T13:21Z, so this is a complete window).
+
+PRs opened this run: none — every source this run evaluated as Out of scope, Duplicate, Rejected, or Deferred.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Count thinking and tool-call tokens (not just text deltas) in the `toksec` token-rate meter | dotfiles commit `98afa49` ("Count thinking and tool-call tokens in toksec", Aug 7) | Out of scope | Nate's personal TypeScript `pi`-agent extension for token-rate metering; dev-hooks has no equivalent tool/extension surface (same territory as prior Pi-tooling rejections in Runs 3/13/14/16–18). |
+| Produce a detailed HTML report for code/PR reviews and point agents at specific sections to update as issues are fixed | feed item 2026-08-09 (https://x.com/ivanfioravanti/status/2086387010462191666) | Duplicate | Overlaps both the user's own `code-review`-family tooling (out of this marketplace's scope per this run's instructions) and the standalone `human-review` tool logged below — no gap for dev-hooks itself. |
+| When an agent over-delegates to sub-agents and misses details, tell the top model to stop delegating and inspect the work itself | feed item 2026-08-09 (https://x.com/emollick/status/2086338988520927368) | Rejected | Prompting/oversight habit with no concrete hook trigger — "missed details" isn't something a hook can detect programmatically. |
+| Codex desktop: press ⌘+⌘ from any app to invoke computer-use on the current screen | feed item 2026-08-08 (https://x.com/romainhuet/status/2086124616486187458) | Out of scope | Codex-desktop-specific UI shortcut; no Claude Code equivalent. |
+| Use ChatGPT's `/visualize` to build interactive inline demos/prototypes in the response | feed item 2026-08-08 (https://x.com/maddiedreese/status/2086114954105827485) | Out of scope | ChatGPT-specific UI feature. |
+| Build better agents by trimming context, giving them tools to fetch what they need, and nailing a few core use cases over broad coverage | feed item 2026-08-08 (https://x.com/petergyang/status/2086093833880895515) | Duplicate | Already the stated approach in this repo's own skill-authoring guidance (progressive disclosure via `references/*.md`, trigger-focused descriptions, no-op-per-sentence pruning) — no new surface to add. |
+| Claude Code sessions can now message each other with summaries, handing off work without re-explaining context | feed item 2026-08-07 (https://x.com/ClaudeDevs/status/2085817074816070014) | Duplicate | Platform-capability note (the agent-to-agent messaging tool itself), not a dev-hooks gap; the existing `agent-handoff` skill (open PR #8) already covers the shared multi-session coordination goal via `plan.md`. |
+| Deep research workflow: draft the prompt in Claude Code, run it in parallel across ChatGPT/Gemini/Claude/Perplexity, then synthesize | feed item 2026-08-07 (https://x.com/chasing_next/status/2085765660928569533) | Out of scope | Multi-provider personal research workflow; no hook surface. |
+| ChatGPT mobile: long-press the send button to adjust reasoning effort per message | feed item 2026-08-07 (https://x.com/simonw/status/2085749476275450219) | Out of scope | ChatGPT-mobile-specific UI feature. |
+| Put an explicit operating philosophy (e.g. "less is more", "settled is settled", "default to removing") in CLAUDE.md/AGENTS.md so agents follow team norms | feed item 2026-08-07 (https://x.com/cathrynlavery/status/2085730428053524849) | Deferred | Same territory as Run 3's "objectives + verification, not steps" entry — useful CLAUDE.md-writing guidance for `dev-env-setup`'s project-docs section, but no concrete hook surface and too thin alone for its own PR. Revisit together if the project-docs section gets a broader pass. |
+| Run a second parallel chat with a reasoning model to interrogate its thinking trace and pivot on new leads | feed item 2026-08-07 (https://x.com/ivanfioravanti/status/2085728727380484417) | Out of scope | Prompting technique; no hook surface. |
+| Add "report only in ASD-STE100 Simplified Technical English" to AGENTS.md/CLAUDE.md for clearer, less flowery output | feed item 2026-08-07 (https://x.com/kr0der/status/2085600601212408140) | Deferred | Same CLAUDE.md style-directive territory as the `cathrynlavery` row above; bundle the two if that project-docs section is ever revisited. |
+| Comment `@codex security review` on a GitHub PR to have Codex analyze the diff for security issues | feed item 2026-08-07 (https://x.com/Dimillian/status/2085544985353748739) | Out of scope | Codex-bot-specific GitHub integration; dev-hooks' own `review-reminder.sh` + CI already cover local self-review, and this is a hosted product feature rather than a hook pattern. |
+| Use ChatGPT's `/visualize` in a pinned thread to turn ongoing context into visual summaries | feed item 2026-08-06 (https://x.com/Dimillian/status/2085492396750524482) | Out of scope | Same ChatGPT-specific feature as the `maddiedreese` row above. |
+| Use X/Twitter folders as a swipe file — save posts, feed them to AI as expert context on demand | feed item 2026-08-06 (https://x.com/chasing_next/status/2085434220533715101) | Out of scope | Personal research habit; no dev-workflow surface. |
+| Chain a Codex heartbeat task to a ChatGPT Scheduled Task for free usage-limit push notifications at 20/5/1% | feed item 2026-08-06 (https://x.com/maddiedreese/status/2085409979381792844) | Out of scope | OpenAI-ecosystem-specific product chaining; no portable pattern for Claude Code hooks. |
+| Paste a messy Slack/bug thread into an agent and have it split issues into separate sessions/tabs with initial prompts each | feed item 2026-08-06 (https://x.com/thdxr/status/2085238230442533175) | Out of scope | Multi-session-spawning workflow habit; creating sessions/tabs is a host-app capability, not something a bash hook or skill can drive. |
+| Chain Codex → ChatGPT Work scheduled task to get free native push notifications for any monitored event | feed item 2026-08-05 (https://x.com/maddiedreese/status/2085123717148152051) | Duplicate | Same OpenAI-ecosystem chaining pattern as the row above. |
+| Reliable agent coding workflow: research with subagents, plan by asking many questions, implement, review with subagents | feed item 2026-08-05 (https://x.com/davis7/status/2085113373805687241) | Duplicate | Generic plan→implement→review loop; covered by the user's own superpowers plugin (planning/TDD workflows) plus `board`'s parallel-subagent-review pattern here. |
+| Install the `/human-review` Claude/Codex skill: open Markdown/HTML in a visual editor, leave inline comments like a Google Doc, batch feedback back to the agent | feed item 2026-08-05 (https://x.com/petergyang/status/2085055745410945126) | Out of scope | Verified via web search — this is a complete standalone open-source tool (`github.com/petergyang/human-review`) that runs its own local server. It isn't a gap in dev-hooks and doesn't fit the plugin suite's dependency-free, self-contained hook philosophy; users who want it can install it directly. |
+| Use a meeting notetaker transcript as agent context to start work immediately after a meeting | feed item 2026-08-05 (https://x.com/itsolelehmann/status/2085046104811589987) | Out of scope | Personal meeting-workflow habit; no dev-workflow hook surface. |
+
+---
+
 ## 2026-08-05 (Run 18)
 
 Sources scanned:
