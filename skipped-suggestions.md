@@ -8,6 +8,47 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-08-13 (Run 20)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-08-07 (Run 19's cutoff, `98afa49`): 6 commits through `5d5ca95`.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-08-09 (after the Run 19 cutoff, 13:21Z) through 2026-08-13 (19 items not already logged in Run 19; feed's `lastBuildDate` is 2026-08-13T13:30Z, so this is a complete window).
+
+PRs opened this run:
+- dev-hooks [#26 feat(thinking-tools): add wait-what skill](https://github.com/mickzijdel/dev-hooks/pull/26)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Add Matt Pocock's `wait-what` skill: manually re-pitch the last message in plain, ASD-STE100-style English | dotfiles commit `0fb276e` ("Add Matt Pocock's wait-what skill", Aug 10) | **Implement** | dev-hooks PR #26 opened. Direct extension of the existing pattern (`grill`, `domain-modeling`, `codebase-design` already vendored from `mattpocock/skills` with per-skill `license:`/`source:` attribution); `disable-model-invocation: true` carried over since re-pitching only makes sense on explicit ask. |
+| Let `mise` self-manage/self-update its own binary with a 3-day release-age cooldown, via a new `bin/dotf` helper | dotfiles commit `5d5ca95` ("Let mise self-manage and self-update", Aug 10) | Out of scope | Part of Nate's personal machine-bootstrap runner (`bin/dotf`/`bin/bootstrap`); dev-hooks' `dev-env-setup` standard governs *project* mise config (tool versions, cooldown on `mise upgrade`), not a personal-machine mise-binary installer/updater. No equivalent runner exists here to extend. |
+| Set `AUBE_DISABLE_TARBALL_STREAM=1` for CI download resilience | dotfiles commit `ae6ca12` (Aug 10) | Deferred | Downstream of the standing `aube` deferral (Runs 3/13 etc.) — dev-hooks hasn't adopted aube, so this CI env var has nothing to attach to. Revisit alongside the aube decision if it's ever reopened. |
+| Filter woodblock wallpaper selection to museum accounts, move selection logic to Ruby | dotfiles commit `373596a` (Aug 10) | Out of scope | Personal macOS wallpaper-rotation tool; no dev-workflow surface. |
+| Configure Pi subagent (`oracle`/`advisor`/`worker`) thinking levels | dotfiles commit `ca1ef78` (Aug 10) | Out of scope | Nate's personal `pi`-agent config; same territory as prior Pi-tooling rejections (Runs 3/13/14/16–19). |
+| Add conversation-aware terminal titles as a Pi agent extension | dotfiles commit `ef578c4` (Aug 10) | Out of scope | Pi-agent-specific TypeScript extension; no Claude Code equivalent surface. |
+| Cut Claude/Codex token costs ~95% with an Agents.md "delegate-wave" skill routing read/discovery/edit work to a cheaper local model via `pi` | feed item 2026-08-13 (https://x.com/0xSero/status/2087844279624323159) | Out of scope | The routing mechanism is `pi`-specific (local-model delegation); Claude Code's equivalent — subagent model overrides (`Agent`/`Task` tools' `model` param, the built-in `Explore` agent for read/discovery work) — already exists natively and needs no new skill to unlock. |
+| Give multiple agents a shared notes/memory store to "check the notes and pick up where we left off" across sessions/models | feed item 2026-08-13 (https://x.com/iannuttall/status/2087825738342998239) | Duplicate | Same shared-coordination goal as the existing `agent-handoff` skill's `plan.md` protocol (dev-hooks PR #8). |
+| Name Claude Code sessions (`claude --name backend`) so parallel agents can DM each other | feed item 2026-08-13 (https://x.com/bcherny/status/2087752313700319456) | Out of scope | Built-in Claude Code platform capability, not a hook/skill gap — same category as Run 19's `ClaudeDevs` agent-messaging entry. |
+| Hamel Husain's condensed notes from 13 AI engineering sessions (retrieval, evals, post-training) | feed item 2026-08-12 (https://x.com/HamelHusain/status/2087679097468334120) | Out of scope | External reading-list content aggregator; no dev-workflow hook/skill surface. |
+| Add a global AGENTS.md instruction so the coding agent auto-moves its session into any git worktree it creates | feed item 2026-08-12 (https://x.com/thdxr/status/2087649518498062656) | Duplicate | This session's own toolset already ships `EnterWorktree`/`ExitWorktree` as first-class Claude Code tools; no CLAUDE.md workaround needed. |
+| OpenCode: prefix side-requests with "in the background do…" to spin up a subagent | feed item 2026-08-11 (https://x.com/thdxr/status/2087348700624412836) | Out of scope | OpenCode-specific UI convention; no Claude Code equivalent (same as prior OpenCode rejections). |
+| Catch modern LLM bugs via adversarial code review, e.g. Claude's `/code-review` | feed item 2026-08-11 (https://x.com/bcherny/status/2087284684103537011) | Out of scope | References the user's own `/code-review`-family tooling, which prior runs have treated as out of this marketplace's scope. |
+| Diagram Design skill for Claude Code: 29 editorial diagram types as self-contained HTML+SVG | feed item 2026-08-11 (https://x.com/cathrynlavery/status/2087277922658955564) | Duplicate | Already covered by the platform's own `artifact-diagramming` skill; not a dev-hooks gap. |
+| Schedule recurring reports (funnel, support summary, sprint review) directly into Slack | feed item 2026-08-11 (https://x.com/amirmxt/status/2087241281898520987) | Out of scope | Personal/product reporting automation; no dev-workflow hook surface. |
+| Weighted 100-pt rubric to score local service business opportunities for AI-fed arbitrage ranking | feed item 2026-08-11 (https://x.com/boringmarketer/status/2087178571873693744) | Out of scope | Business/marketing methodology; no bearing on dev-workflow tooling. |
+| Concrete Claude uses for non-engineers: proposal/onboarding pipeline, voice guide, inbox rebuild | feed item 2026-08-10 (https://x.com/clairevo/status/2086879791685476862) | Out of scope | Personal/business workflow examples, not a coding-onboarding gap (that plugin teaches non-coders to code, not general Claude usage). |
+| Keep a portable `~/.agents` folder (`/skills`, `/commands`, `/scripts`, `/prompts`) so an AI workspace survives machine changes | feed item 2026-08-10 (https://x.com/cathrynlavery/status/2086876997339509030) | Out of scope | Personal dotfiles-organization pattern; dev-hooks already ships/distributes its skills via the marketplace + `install.sh`, so there's no analogous "sync my personal skills folder" gap here. |
+| Periodically run `/doctor` (or ask Codex to audit) to prune unused skills, MCPs, and context bloat | feed item 2026-08-10 (https://x.com/addyosmani/status/2086871426653356066) | Duplicate | Same "automation is a one-way ratchet unless something also removes it" territory already encoded in `weekly-automation-review`'s Retire pass — that skill's scope is this repo's own hooks, `/doctor`'s is skills/MCPs generally, but the underlying discipline is already present. |
+| Claude Code connectors (e.g. Supabase) bias every project's answers — disconnect unused ones | feed item 2026-08-10 (https://x.com/kr0der/status/2086829179199431000) | Rejected | Genuinely useful hygiene tip, but connector state is per-user/global Claude Code config, not something a repo-scoped hook can detect or act on. |
+| Building agents that work: map the real workflow first, tools over prompt-stuffing, start with one job, strongest model until proven, convert failures to evals | feed item 2026-08-10 (https://x.com/petergyang/status/2086824976800436676) | Duplicate | Same territory as Run 19's identical `petergyang` entry (context-trimming, tools-to-fetch-context, few-core-use-cases). |
+| Cloudflare Email Routing for unlimited free disposable aliases on a custom domain | feed item 2026-08-10 (https://x.com/kr0der/status/2086789409131884667) | Out of scope | Personal email-management trick; no dev-workflow surface. |
+| Record family history interviews with Granola, compile into a physical keepsake book | feed item 2026-08-10 (https://x.com/petergyang/status/2086660536528420998) | Out of scope | Personal/family use case; no dev-workflow surface. |
+| Wire an app's feedback form to a free Discord webhook with zero backend setup | feed item 2026-08-10 (https://x.com/kr0der/status/2086622312913322383) | Out of scope | Product-feature suggestion, not a dev-workflow hook/skill; same territory as prior "wire X into Y" product tips. |
+| For voice prompting, don't bother speaking cleanly — models handle messy, rambling speech fine | feed item 2026-08-09 (https://x.com/thdxr/status/2086523544754593854) | Out of scope | Prompting/voice-input habit; no hook surface. |
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+---
+
 ## 2026-08-09 (Run 19)
 
 Sources scanned:
