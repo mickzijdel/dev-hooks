@@ -79,6 +79,20 @@ reminder_stop_init() {
   fi
 }
 
+# Session start as a `git log --since` argument, in $REPLY (empty when unknown).
+# It is the transcript's first-line timestamp — git parses that ISO fractional-Z form
+# as-is. Needs $TRANSCRIPT, i.e. reminder_stop_init must have run first.
+#
+# Why every Stop hook that looks at "this session's work" needs it: CLAUDE.md mandates
+# incremental commits, so by the time Stop fires the tree is usually clean and
+# `git status --porcelain` / `git diff HEAD` see nothing. Without this, such a hook
+# measures only the sessions that forgot to commit.
+reminder_session_since() {
+  REPLY=""
+  [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
+  REPLY=$(head -n1 "$TRANSCRIPT" | jq -r '.timestamp // empty' 2>/dev/null)
+}
+
 # ── PreToolUse(Bash) helpers ─────────────────────────────────────────────────────
 # PreToolUse preamble for Bash-command guards: opt-out, read stdin, and set in the
 # caller's scope:
