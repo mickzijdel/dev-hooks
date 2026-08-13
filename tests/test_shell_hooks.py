@@ -1810,6 +1810,73 @@ def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path, jscpd_key):
     assert "thirdparty" not in r.stdout
 
 
+def test_missing_test_fires_for_file_added_in_session_commit(tmp_path):
+    # The commit-as-you-go blind spot: CLAUDE.md mandates incremental commits, so a new
+    # source file is almost always committed before Stop fires and porcelain status alone
+    # sees nothing. Commits made since the session started must still count.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("x\n")
+    _commit_dated(tmp_path, run, "2000-01-01T00:00:00", msg="init")
+    (tmp_path / "widget.py").write_text("def f():\n    return 1\n")
+    _commit_dated(tmp_path, run, "2020-01-01T00:00:00", msg="add widget")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
+    )
+    assert r.returncode == 2
+    assert "widget.py" in r.stdout
+
+
+def test_missing_test_silent_for_file_committed_before_session(tmp_path):
+    # Pre-existing repo files are not this session's work — never nag about them.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "legacy.py").write_text("def f():\n    return 1\n")
+    _commit_dated(tmp_path, run, "2000-01-01T00:00:00", msg="legacy")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_silent_when_session_commit_added_its_test(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("x\n")
+    _commit_dated(tmp_path, run, "2000-01-01T00:00:00", msg="init")
+    (tmp_path / "widget.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "test_widget.py").write_text("def test_f():\n    assert True\n")
+    _commit_dated(tmp_path, run, "2020-01-01T00:00:00", msg="add widget + test")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_missing_test_silent_for_session_file_added_then_deleted(tmp_path):
+    # Added and removed again within the session: nothing left to test.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("x\n")
+    _commit_dated(tmp_path, run, "2000-01-01T00:00:00", msg="init")
+    scratch = tmp_path / "scratch.py"
+    scratch.write_text("def f():\n    return 1\n")
+    _commit_dated(tmp_path, run, "2020-01-01T00:00:00", msg="add scratch")
+    scratch.unlink()
+    _commit_dated(tmp_path, run, "2020-01-02T00:00:00", msg="drop scratch")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── ci-action-ref-reminder.sh (reminder-only; never hits the network) ────────────────
 def _workflow(tmp_path, name="ci.yml", body="      - uses: astral-sh/setup-uv@v8\n"):
     wf = tmp_path / name

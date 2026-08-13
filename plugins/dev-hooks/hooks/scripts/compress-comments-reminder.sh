@@ -40,11 +40,8 @@ CODE_GLOBS=('*.rb' '*.erb' '*.rake' '*.py' '*.js' '*.ts' '*.jsx' '*.tsx' '*.vue'
 COMMENT_RE='^[[:space:]]*(#|//|/\*|\*([[:space:]]|$))'
 NOISE_RE='^[[:space:]]*#!|shellcheck|eslint|noqa|biome-ignore|jscpd:|rubocop:|type:[[:space:]]*ignore|frozen_string_literal'
 
-# Session start = the transcript's first-line timestamp (git parses the ISO form as-is).
-SINCE=""
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  SINCE=$(head -n1 "$TRANSCRIPT" | jq -r '.timestamp // empty' 2>/dev/null)
-fi
+reminder_session_since
+SINCE=$REPLY
 
 COUNT=$(
   {

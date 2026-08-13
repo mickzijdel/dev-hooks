@@ -103,7 +103,11 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_opt_out`/`reminder_emit`; promote a `reminder_post_bash_init` when a second
   PostToolUse(Bash) hook lands. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
-  guard when the hook manages its own re-arm state), `reminder_changed_files`
+  guard when the hook manages its own re-arm state), `reminder_session_since` (session start
+  as a `git log --since` argument in `$REPLY`, from the transcript's first-line timestamp —
+  any Stop hook measuring "this session's work" needs it, because the commit-as-you-go
+  workflow leaves a clean tree that `git status`/`git diff HEAD` see nothing in),
+  `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
   state path in $REPLY — existence for `reminder_fire_once`, a stored value for re-arming
   hooks like compress-comments-reminder), and `reminder_emit_stop <msg>` (continue:false
