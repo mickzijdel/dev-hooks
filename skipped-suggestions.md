@@ -8,6 +8,42 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-08-17 (Run 21)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — no new commits since Run 20's cutoff (`5d5ca95`); HEAD is still `5d5ca95`.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items 2026-08-13 (after Run 20's 13:30Z cutoff) through 2026-08-16 (20 items not already logged in Run 20; feed's `lastBuildDate` is 2026-08-17T13:17Z, so this is a complete window).
+
+PRs opened this run:
+- dev-hooks [#28 feat(dev-hooks): flag hidden Unicode-steganography prompt injection on Read](https://github.com/mickzijdel/dev-hooks/pull/28)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Beware hidden prompt-injection text (e.g. white 3pt font) in documents fed to LLMs — inspect untrusted files before summarizing | feed item 2026-08-14 (https://x.com/itsolelehmann/status/2088364714699190574) | **Implement** | dev-hooks PR #28 opened — but scoped to a reliable signal rather than the tip's own CSS-visibility heuristic: a new `PostToolUse(Read)` hook flags Unicode Tag characters (`U+E0000`-`U+E007F`, the "ASCII smuggling" range) and long zero-width-character runs, both of which have no legitimate use in real documents. Skipped the `font-size:0`/color-on-color detection the tip described — that needs style computation raw-byte scanning can't do reliably, and would false-positive on legitimate hidden UI markup. |
+| Set up a dedicated Slack channel where Claude runs daily maintenance routines (crash-fuzz, dedupe, dead-code, etc.) that open PRs for human review | feed item 2026-08-13 (https://x.com/bcherny/status/2088014489438621990) | Duplicate | Same recurring-maintenance-PR pattern as `commit-digest` (external repos) and `weekly-automation-review` (local repo); the "crash-fuzz" specific isn't covered, but it needs a project-specific fuzzer setup, not a portable hook. Same territory as prior "portfolio of recurring AI loops" rejections (Run 2). |
+| Concrete list of 10 AI automations for a local business: call analysis, ad attribution, bookkeeping, SOPs with screenshots, daily insight reports, and more | feed item 2026-08-13 (https://x.com/boringmarketer/status/2087917170101567579) | Out of scope | Local-business/marketing automation ideas; no dev-workflow surface. |
+| Delegate tedious reimbursement claims to ChatGPT: pull receipts/info from Gmail and Photos, then fill and submit the form | feed item 2026-08-14 (https://x.com/intellectronica/status/2088158551256522810) | Out of scope | Personal admin task; no dev-workflow surface. |
+| Use overnight autoresearch loops (e.g. `/goal`/`/loop`) to build a structured wiki of contacts/resources while you sleep | feed item 2026-08-14 (https://x.com/0xSero/status/2088217374566547912) | Out of scope | Personal research-automation use case; the `/loop` mechanism itself is already a native platform capability, not a dev-hooks gap. |
+| Schedule headless agents (`codex exec`, `claude -p`) as cron-like tasks on macOS to run research/scripts/data updates unattended | feed item 2026-08-14 (https://x.com/iannuttall/status/2088238061435908522) | Duplicate | `commit-digest` and `weekly-automation-review` already demonstrate this exact pattern (a recurring remote agent via `CronCreate`); no new surface. |
+| For LLM classification tasks, use a model cascade: label ~500 records with a big model, route easy cases to a cheap model via a confidence threshold | feed item 2026-08-14 (https://x.com/HamelHusain/status/2088316719601447163) | Out of scope | ML/data-labeling technique; no dev-workflow hook or skill surface. |
+| Set up scheduled AI bots to monitor Search Console weekly for trends/new query ideas and to auto-triage Sentry errors into PRs | feed item 2026-08-14 (https://x.com/kr0der/status/2088324830252920956) | Out of scope | Both halves need external SaaS integration (Search Console API, Sentry API) with credential management — outside the dependency-free hook philosophy this plugin follows. Revisit only if a lightweight, credential-free Sentry webhook pattern emerges. |
+| In the ChatGPT iOS app, use Work mode for searching docs/Slack/analytics/logs and Remote mode for code execution against your actual computer | feed item 2026-08-14 (https://x.com/Dimillian/status/2088330743130779700) | Out of scope | ChatGPT-iOS-specific UI feature. |
+| In Claude Code, run `/compact` before stepping away so the summary uses your still-cached prompt instead of paying to re-summarize later | feed item 2026-08-15 (https://x.com/Saboo_Shubham_/status/2088611763533344845) | Rejected | Usage/cost tip with no hook trigger — a hook can't detect "you're about to step away" (same reasoning as prior "queue steering messages" rejection, Run 2). |
+| For YouTube thumbnails, use Codex to scrape 100 top-performing thumbnails in your niche, then mix/match with your own photos | feed item 2026-08-15 (https://x.com/petergyang/status/2088626815166464507) | Out of scope | Content-creator workflow; no dev-workflow surface. |
+| Use Hermes to record a browser action once and generate a reusable static API for your agent to call | feed item 2026-08-15 (https://x.com/Saboo_Shubham_/status/2088687210900115712) | Out of scope | Third-party standalone tool (Hermes); not a dev-hooks gap, same territory as the prior `/human-review` rejection (Run 19). |
+| Set up a weekly Grok/agent bot to scan Search Console and suggest new content/pages/metadata to update | feed item 2026-08-15 (https://x.com/kr0der/status/2088702967994356089) | Out of scope | SEO/content-marketing automation; same territory as the Search Console half of the `kr0der` row above. |
+| Use a browser-control agent (e.g. opencode) to automate tedious web tasks like filing airline seat-upgrade reimbursements | feed item 2026-08-15 (https://x.com/thdxr/status/2088732993842016386) | Out of scope | Personal task automation; no dev-workflow surface. |
+| To move work between remote and local Codex agents, ask the remote agent for a handoff prompt (or a GitHub repo) to resume locally | feed item 2026-08-16 (https://x.com/Dimillian/status/2088909914399707490) | Duplicate | Same shared-coordination goal as the existing `agent-handoff` skill's `plan.md` protocol (dev-hooks PR #8), already logged as duplicate for near-identical suggestions in Runs 19/20. |
+| Add a hook script that auto-replies "tldr" when your coding agent's response exceeds 3 paragraphs, to curb verbose agent-speak | feed item 2026-08-16 (https://x.com/iannuttall/status/2088992974680084630) | Rejected | No reliable programmatic signal separates justified length (a security review, a migration plan) from padding — a length-only trigger risks truncating exactly the responses that need the detail. Response tone/length is already governed by system-level instructions, not something this plugin's hooks reach into. |
+| Use Codex `/side` chat with a visualise skill to spin up an ad-hoc SQLite browser instead of installing a dedicated DB tool | feed item 2026-08-16 (https://x.com/Dimillian/status/2089037692751274188) | Out of scope | Codex-specific UI feature. |
+| Audit a codebase by having a strong orchestrator inventory subsystems and dispatch fresh read-only sub-agents per area | feed item 2026-08-16 (https://x.com/addyosmani/status/2089061734825017354) | Duplicate | This is exactly the platform's own "Understand" workflow pattern (parallel readers over subsystems → structured map, available via the `Workflow` tool); no dev-hooks/skill gap. |
+| Walk and talk ideas into Wispr Flow for 10 min, then ask AI for an Excalidraw diagram to get 80% of a usable draft | feed item 2026-08-16 (https://x.com/petergyang/status/2089068517979283639) | Out of scope | Personal ideation/note-taking workflow; no dev-workflow surface. |
+| Have Codex drive your Chrome to export X bookmarks (or any siloed data) to a local file, then surface highlights | feed item 2026-08-16 (https://x.com/emollick/status/2089100618648404216) | Out of scope | Personal browser-automation task; no dev-workflow surface. |
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+---
+
 ## 2026-08-13 (Run 20)
 
 Sources scanned:
