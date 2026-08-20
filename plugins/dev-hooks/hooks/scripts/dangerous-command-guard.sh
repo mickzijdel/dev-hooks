@@ -31,6 +31,20 @@
 # manually — solo main-branch workflows aren't nagged by default). No built-in replaces
 # this workflow-habit nudge.
 #
+# Second check: commands whose *output* puts a secret value into the transcript —
+# printing a secret-bearing file (`cat .env`, `cat config/master.key`), a secret
+# manager read that prints to stdout (`bws secret get`, `op read`, `gh auth token`),
+# or echoing a secret-named variable. Once a value is in the transcript it is logged,
+# summarised, and pasted onward, and the only real remedy is rotating the credential.
+# So this asks for a confirmation beat rather than blocking: every one of these is a
+# command you legitimately need. Configurable with DEV_HOOKS_GUARD_SECRETS:
+#   unset / ask              — confirm first (default)
+#   deny                     — block outright
+#   allow / off / false / 0  — pass through silently
+# Deliberately narrow: template files (.env.example), public key halves (*.pub),
+# inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,
+# counting greps, and output redirected to /dev/null all stay silent.
+#
 # Advisory by design; opt out of the whole hook per repo/user with
 # DEV_HOOKS_BASH_GUARD=false (in .claude settings "env").
 
@@ -121,6 +135,89 @@ seg_git_sub() {
   done
 }
 
+# The segment's non-flag operands, space-joined, so a secret-manager read can be
+# recognised by its subcommand chain ("secret get", "kv get") regardless of flags.
+seg_words() {
+  WORDS=""
+  local a
+  for a in "${ARGS[@]}"; do
+    case "$a" in -*) continue ;; esac
+    unquote "$a"
+    WORDS="$WORDS $UQ"
+  done
+  WORDS="${WORDS# } "
+}
+
+# Does this operand resolve to a file that actually exists? The segment parser
+# word-splits without honouring quotes, so a quoted grep pattern arrives as several
+# operands and one of them can look exactly like a key file (`event.key` from
+# `grep 'event.key === "Escape"' src/x.ts`). Requiring the file to exist settles it,
+# and costs no coverage: a path that isn't there can't be printed either.
+file_exists() {
+  local q=$1
+  # shellcheck disable=SC2088,SC2016  # ~ / $HOME are literal *text* in the inspected command; expanding them is this function's job
+  case "$q" in
+    '~/'*) q="$HOME/${q#\~/}" ;;
+    '$HOME/'*) q="$HOME/${q#\$HOME/}" ;;
+    '${HOME}/'*) q="$HOME/${q#\$\{HOME\}/}" ;;
+  esac
+  case "$q" in
+    /*) [ -f "$q" ] ;;
+    *) [ -f "${SEG_CWD:-.}/$q" ] ;;
+  esac
+}
+
+# `cd` in an earlier segment moves where a later relative path resolves, and Mick's
+# commands routinely open with one (`cd repo && cat .env`). Track it so those reads
+# are still recognised.
+seg_cd() {
+  local a
+  for a in "${ARGS[@]}"; do
+    case "$a" in -*) continue ;; esac
+    unquote "$a"
+    # shellcheck disable=SC2088,SC2016  # literal text from the inspected command
+    case "$UQ" in
+      '~' | '$HOME') SEG_CWD="$HOME" ;;
+      '~/'*) SEG_CWD="$HOME/${UQ#\~/}" ;;
+      /*) SEG_CWD="$UQ" ;;
+      *) SEG_CWD="$SEG_CWD/$UQ" ;;
+    esac
+    return
+  done
+  SEG_CWD="$HOME" # bare `cd` goes home
+}
+
+# Does this path name a file whose *contents* are secret values? Judged on the
+# basename as literal text, so an absolute, relative, or quoted path reads alike.
+path_is_secret() {
+  local base=${1##*/}
+  # Templates and public key halves carry placeholders, not values.
+  case "$base" in
+    *.example | *.sample | *.template | *.dist | *.pub) return 1 ;;
+  esac
+  case "$base" in
+    .env | .env.* | *.key | *.pem | *.p12 | *.pfx | *.jks | *.keystore | \
+      id_rsa | id_dsa | id_ecdsa | id_ed25519 | \
+      .netrc | .pgpass | .npmrc | .pypirc | \
+      credentials | credentials.json | credentials.yml.enc | \
+      client_secret*.json | service*account*.json | \
+      secrets.json | secrets.yml | secrets.yaml) return 0 ;;
+  esac
+  return 1
+}
+
+# Is this operand a secret-shaped variable name? Matched on the name's own text, so
+# $PATH and $HOME never qualify. `$` is required for echo/printf ($1 = "ref"), because
+# a bare secret-shaped *word* is almost always a label reporting presence
+# (`echo "BWS_ACCESS_TOKEN present"`) rather than the value; printenv takes the bare
+# name as its argument, so there it is optional ($1 = "name").
+is_secret_var() {
+  local re='[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|_KEY|KEY_)[A-Za-z0-9_]*'
+  local anchored="^\\\$\\{?$re\\}?$"
+  [ "$1" = name ] && anchored="^\\\$?\\{?$re\\}?$"
+  printf '%s' "$2" | grep -Eq "$anchored"
+}
+
 # ── catastrophic, irreversible system damage ─────────────────────────────────────
 DENY=""
 if cmd_has ':\(\)[[:space:]]*\{[[:space:]]*:[[:space:]]*\|[[:space:]]*:'; then
@@ -187,6 +284,87 @@ if [ -n "$DENY" ]; then
       ;;
     *)
       reminder_emit_decision deny "BLOCKED by dev-hooks guard: $DENY If you genuinely intend this, run it yourself outside the agent."
+      ;;
+  esac
+fi
+
+# ── secrets that would land in the transcript ────────────────────────────────────
+SECRET_ASK=""
+case "${DEV_HOOKS_GUARD_SECRETS:-ask}" in
+  allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
+  *)
+    SEG_CWD="${CWD:-.}"
+    while IFS= read -r seg; do
+      # Output that goes nowhere can't reach the transcript.
+      printf '%s' "$seg" | grep -Eq '>[[:space:]]*/dev/null' && continue
+      seg_parse "$seg"
+      [ -z "$NAME" ] && continue
+      if [ "$NAME" = cd ]; then
+        seg_cd
+        continue
+      fi
+      case "$NAME" in
+        cat | head | tail | less | more | bat | batcat | strings | xxd | od | jq | yq | grep | rg | ag)
+          # A grep that reports whether, not what, prints no values.
+          skip=""
+          for a in "${ARGS[@]}"; do
+            case "$a" in
+              --count | --quiet | --silent | --files-with-matches | --files-without-match) skip=1 ;;
+              --*) ;;
+              -*[clLq]*) skip=1 ;;
+            esac
+          done
+          [ -n "$skip" ] && continue
+          for a in "${ARGS[@]}"; do
+            case "$a" in -*) continue ;; esac
+            unquote "$a"
+            if path_is_secret "$UQ" && file_exists "$UQ"; then
+              SECRET_ASK="\`$NAME $UQ\` prints the contents of a file that holds secret values."
+              break
+            fi
+          done
+          ;;
+        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass)
+          seg_words
+          case "$NAME:$WORDS" in
+            bws:'secret get '* | bws:'secret list '* | \
+              fnox:'get '* | fnox:'show '* | \
+              op:'read '* | op:'item get '* | \
+              vault:'kv get '* | vault:'read '* | \
+              gh:'auth token '* | \
+              aws:'secretsmanager get-secret-value '* | aws:'ssm get-parameter '* | \
+              doppler:'secrets get '* | doppler:'secrets download '* | \
+              kubectl:'get secret '* | kubectl:'get secrets '* | \
+              pass:'show '*)
+              SECRET_ASK="\`$NAME\` prints the secret's value to stdout."
+              ;;
+          esac
+          ;;
+        echo | printf | printenv)
+          kind=ref
+          [ "$NAME" = printenv ] && kind=name
+          for a in "${ARGS[@]}"; do
+            unquote "$a"
+            if is_secret_var "$kind" "$UQ"; then
+              SECRET_ASK="This prints the value of \`$UQ\`, a secret-shaped variable."
+              break
+            fi
+          done
+          ;;
+      esac
+      [ -n "$SECRET_ASK" ] && break
+    done <<<"$SEGMENTS"
+    ;;
+esac
+
+if [ -n "$SECRET_ASK" ]; then
+  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential. Prefer a form that doesn't print the value (\`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or asking the user to check it themselves). Confirm if you do need to see it."
+  case "${DEV_HOOKS_GUARD_SECRETS:-ask}" in
+    deny | DENY | 1 | true | TRUE | True)
+      reminder_emit_decision deny "BLOCKED: $REASON"
+      ;;
+    *)
+      reminder_emit_decision ask "$REASON"
       ;;
   esac
 fi
