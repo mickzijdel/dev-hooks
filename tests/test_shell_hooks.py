@@ -1082,21 +1082,91 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
 
 
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
+def _plan_env(tmp_path, session="plan-session"):
+    """Isolate the hook's state dir per test, and give it a stable session id."""
+    return base_env(TMPDIR=str(tmp_path / "state")), json.dumps({"session_id": session})
+
+
+def _write_plan(tmp_path, *, age):
+    plan = tmp_path / ".claude" / "current_plan.md"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text("# plan\n")
+    stamp = time.time() - age
+    os.utime(plan, (stamp, stamp))
+    return plan
+
+
 def test_plan_reminder_silent_without_plan(tmp_path):
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
 def test_plan_reminder_fires_for_stale_plan(tmp_path):
-    plan = tmp_path / ".claude" / "current_plan.md"
-    plan.parent.mkdir()
-    plan.write_text("# plan\n")
-    old = time.time() - 200  # > 120s threshold
-    os.utime(plan, (old, old))
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    _write_plan(tmp_path, age=200)  # > 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert "REMINDER:" in r.stdout
+
+
+def test_plan_reminder_silent_for_fresh_plan(tmp_path):
+    _write_plan(tmp_path, age=10)  # inside the 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_plan_reminder_does_not_repeat_for_an_unchanged_plan(tmp_path):
+    """The Stop hook runs on every stop; an untouched plan must be nagged about once.
+
+    Without a re-arm this fired on every single stop for the rest of the session —
+    84 times in one session in the 2026-08-20 fire log.
+    """
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    first = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in first.stdout
+
+    for _ in range(3):
+        again = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+        assert again.returncode == 0
+        assert again.stdout.strip() == ""
+
+
+def test_plan_reminder_rearms_after_the_plan_is_updated(tmp_path):
+    """Once the plan is actually touched, a later staleness is worth one more nudge."""
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout
+    )
+    assert (
+        run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout.strip()
+        == ""
+    )
+
+    _write_plan(tmp_path, age=300)  # a different mtime => the plan moved on
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in r.stdout
+
+
+def test_plan_reminder_state_is_per_session(tmp_path):
+    """Two sessions in one repo must each get their own reminder."""
+    _write_plan(tmp_path, age=200)
+    env, stdin_a = _plan_env(tmp_path, session="session-a")
+    _, stdin_b = _plan_env(tmp_path, session="session-b")
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_a).stdout
+    )
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_b).stdout
+    )
 
 
 # ── review-reminder.sh ──────────────────────────────────────────────────────────────
@@ -2360,6 +2430,7 @@ def _guard(command, *, cwd=None, **env_overrides):
     env_overrides.setdefault("DEV_HOOKS_BASH_GUARD", None)
     env_overrides.setdefault("DEV_HOOKS_GUARD_MAIN", None)
     env_overrides.setdefault("DEV_HOOKS_GUARD_DENY", None)
+    env_overrides.setdefault("DEV_HOOKS_GUARD_SECRETS", None)
     payload = {"tool_input": {"command": command}, "session_id": "g1"}
     if cwd is not None:
         payload["cwd"] = str(cwd)
@@ -2553,6 +2624,237 @@ def test_guard_silent_when_opted_out():
     r = _guard("rm -rf /", DEV_HOOKS_BASH_GUARD="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── dangerous-command-guard.sh: secrets reaching the transcript ──────────────────────
+# Commands whose output puts a secret *value* in the transcript, where it is logged,
+# summarised, and impossible to recall. These ask for confirmation; they are never
+# denied, because Mick legitimately needs every one of them.
+SECRET_ASK_COMMANDS = [
+    # printing a secret-bearing file
+    "cat .env",
+    "cat .env.local",
+    "head -20 .env.production",
+    "tail -n2 .env.staging",
+    "less config/master.key",
+    "cat config/credentials.yml.enc",
+    "bat $HOME/.ssh/id_ed25519",
+    "cat $HOME/.ssh/id_rsa",
+    "cat $HOME/.netrc",
+    "cat $HOME/.pgpass",
+    "cat service-account.json",
+    "jq . credentials.json",
+    "cat certs/server.pem",
+    "xxd secrets/keystore.p12",
+    # the two real leaks from the 2026-08-20 review window
+    "cat client_secret_298705257701-p83bg2uhc4p4vmko.apps.googleusercontent.com.json",
+    "cd config && cat credentials.yml.enc",
+    # wrapper-stripped and segment-aware forms
+    "sudo cat certs/server.pem",
+    "cd config && cat master.key",
+    "npm ci && cat .env && npm start",
+    # grep prints the matching line, value and all
+    "grep DATABASE_URL .env",
+    # secret managers that print to stdout by default
+    "bws secret get 8a3f-2b1c",
+    "bws secret list",
+    "fnox get DATABASE_URL",
+    "op read op://vault/stripe/api-key",
+    "op item get stripe",
+    "vault kv get secret/prod/db",
+    "gh auth token",
+    "aws secretsmanager get-secret-value --secret-id prod/db",
+    "aws ssm get-parameter --name /prod/token --with-decryption",
+    "doppler secrets get STRIPE_KEY",
+    "kubectl get secret db-creds -o yaml",
+    # echoing a secret-named variable
+    "echo $GITHUB_TOKEN",
+    'echo "$AWS_SECRET_ACCESS_KEY"',
+    "printf '%s' $DATABASE_PASSWORD",
+    "printenv BWS_ACCESS_TOKEN",
+]
+
+
+@pytest.fixture
+def secret_tree(tmp_path):
+    """A checkout holding the real secret-bearing files, plus a fake HOME.
+
+    The guard only flags a *file that exists*: a path it cannot resolve cannot be
+    printed either, and requiring existence is what keeps a quoted grep pattern
+    (`grep 'event.key === "Escape"' src/x.ts`, whose words split into things that
+    look like key files) from being mistaken for a read.
+    """
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    for rel in [
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.staging",
+        ".env.example",
+        ".env.sample",
+        ".env.template",
+        ".env.dist",
+        "config/master.key",
+        "config/credentials.yml.enc",
+        "config/credentials.yml.enc.example",
+        "service-account.json",
+        "credentials.json",
+        "certs/server.pem",
+        "certs/server.pub",
+        "secrets/keystore.p12",
+        "client_secret_298705257701-p83bg2uhc4p4vmko.apps.googleusercontent.com.json",
+        "README.md",
+        "package.json",
+        "docs/secrets-management.md",
+        "app/models/api_key.rb",
+        "src/hooks/useKeyboardListener.ts",
+        ".kamal/secrets",
+    ]:
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    for rel in [
+        ".ssh/id_ed25519",
+        ".ssh/id_ed25519.pub",
+        ".ssh/id_rsa",
+        ".netrc",
+        ".pgpass",
+    ]:
+        f = home / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    return repo, home
+
+
+def _guard_in(secret_tree, command, **env):
+    repo, home = secret_tree
+    return _guard(command, cwd=repo, HOME=str(home), **env)
+
+
+@pytest.mark.parametrize("command", SECRET_ASK_COMMANDS)
+def test_guard_asks_before_a_secret_reaches_the_transcript(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert _decision(r) == "ask"
+    assert (
+        "transcript"
+        in json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    )
+
+
+def test_guard_ignores_a_secret_looking_path_that_does_not_exist(secret_tree):
+    """`cat` on a missing file prints nothing, so there is nothing to confirm."""
+    r = _guard_in(secret_tree, "cat config/nonexistent.key")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# Regressions found by replaying 4633 real Bash commands from one week of transcripts
+# through the guard. Each of these fired, and each was wrong.
+REPLAY_FALSE_POSITIVES = [
+    # A quoted grep pattern is word-split by the segment parser; 'event.key' then
+    # looks exactly like a *.key file.
+    'grep -n \'event.key === "Escape"\\|event.key === "Arrow\' src/hooks/useKeyboardListener.ts',
+    # echo of a secret-shaped *word* — these report presence, never a value.
+    'grep -c "ADMIN_API_KEY" .kamal/secrets && echo "ADMIN_API_KEY present in .kamal/secrets"',
+    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}${BWS_ACCESS_TOKEN:-no}"',
+    '[ -n "$BWS_ACCESS_TOKEN" ] && echo "BWS_ACCESS_TOKEN present" || echo "BWS_ACCESS_TOKEN absent"',
+    'echo "IMPAMP_S3_ACCESS_KEY_ID is set"',
+]
+
+
+@pytest.mark.parametrize("command", REPLAY_FALSE_POSITIVES)
+def test_guard_silent_on_replayed_false_positives(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ...while the two genuine leaks the same replay surfaced must still be caught.
+@pytest.mark.parametrize(
+    "command",
+    [
+        "fnox get REDIS_PASSWORD 2>&1 | head -5",
+        'bws secret list b569f8b6-d0c4-498f | grep -iE "key|kamal"',
+    ],
+)
+def test_guard_catches_replayed_true_positives(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "ask"
+
+
+# The false positives that would make this hook unusable. Every one of these is an
+# ordinary command Mick runs constantly; nagging on them trains him to ignore the hook.
+SECRET_SILENT_COMMANDS = [
+    # example/template files carry placeholders, not values
+    "cat .env.example",
+    "cat .env.sample",
+    "cat .env.template",
+    "cat .env.dist",
+    "cat config/credentials.yml.enc.example",
+    # public halves of keypairs
+    "cat $HOME/.ssh/id_ed25519.pub",
+    "cat certs/server.pub",
+    # ordinary files that merely sound sensitive
+    "cat README.md",
+    "cat package.json",
+    "cat docs/secrets-management.md",
+    "cat app/models/api_key.rb",
+    # secret managers used to *inject*, not print
+    "fnox run -- rails server",
+    "bws run -- npm test",
+    "op run -- ./bin/deploy",
+    "doppler run -- rails c",
+    "vault status",
+    "kubectl get pods",
+    # loading, not printing
+    "source .env",
+    ". .env",
+    "set -a && . ./.env && set +a",
+    # output that goes nowhere
+    "cat .env > /dev/null",
+    # grep asking whether, not what
+    "grep -c DATABASE_URL .env",
+    "grep -q TOKEN .env",
+    "grep -l SECRET .env",
+    # a commit message that merely mentions the topic
+    'git commit -m "rotate the API key and secret token"',
+    "echo done",
+    'echo "deploy finished"',
+    # the variable name is not secret-shaped
+    "echo $PATH",
+    "echo $HOME",
+]
+
+
+@pytest.mark.parametrize("command", SECRET_SILENT_COMMANDS)
+def test_guard_silent_on_ordinary_commands(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_guard_secrets_can_be_escalated_to_deny(secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_GUARD_SECRETS="deny")
+    assert _decision(r) == "deny"
+
+
+@pytest.mark.parametrize("value", ["allow", "off", "false", "0", "no"])
+def test_guard_secrets_can_be_disabled(value, secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_GUARD_SECRETS=value)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_guard_secrets_respects_the_whole_hook_opt_out(secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_BASH_GUARD="false")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_catastrophic_check_still_wins_over_secrets(secret_tree):
+    """A command doing both is reported as the destructive one, and denied."""
+    r = _guard_in(secret_tree, "cat .env && rm -rf /")
+    assert _decision(r) == "deny"
 
 
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
