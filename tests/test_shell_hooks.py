@@ -1082,21 +1082,91 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
 
 
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
+def _plan_env(tmp_path, session="plan-session"):
+    """Isolate the hook's state dir per test, and give it a stable session id."""
+    return base_env(TMPDIR=str(tmp_path / "state")), json.dumps({"session_id": session})
+
+
+def _write_plan(tmp_path, *, age):
+    plan = tmp_path / ".claude" / "current_plan.md"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text("# plan\n")
+    stamp = time.time() - age
+    os.utime(plan, (stamp, stamp))
+    return plan
+
+
 def test_plan_reminder_silent_without_plan(tmp_path):
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
 def test_plan_reminder_fires_for_stale_plan(tmp_path):
-    plan = tmp_path / ".claude" / "current_plan.md"
-    plan.parent.mkdir()
-    plan.write_text("# plan\n")
-    old = time.time() - 200  # > 120s threshold
-    os.utime(plan, (old, old))
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    _write_plan(tmp_path, age=200)  # > 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert "REMINDER:" in r.stdout
+
+
+def test_plan_reminder_silent_for_fresh_plan(tmp_path):
+    _write_plan(tmp_path, age=10)  # inside the 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_plan_reminder_does_not_repeat_for_an_unchanged_plan(tmp_path):
+    """The Stop hook runs on every stop; an untouched plan must be nagged about once.
+
+    Without a re-arm this fired on every single stop for the rest of the session —
+    84 times in one session in the 2026-08-20 fire log.
+    """
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    first = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in first.stdout
+
+    for _ in range(3):
+        again = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+        assert again.returncode == 0
+        assert again.stdout.strip() == ""
+
+
+def test_plan_reminder_rearms_after_the_plan_is_updated(tmp_path):
+    """Once the plan is actually touched, a later staleness is worth one more nudge."""
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout
+    )
+    assert (
+        run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout.strip()
+        == ""
+    )
+
+    _write_plan(tmp_path, age=300)  # a different mtime => the plan moved on
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in r.stdout
+
+
+def test_plan_reminder_state_is_per_session(tmp_path):
+    """Two sessions in one repo must each get their own reminder."""
+    _write_plan(tmp_path, age=200)
+    env, stdin_a = _plan_env(tmp_path, session="session-a")
+    _, stdin_b = _plan_env(tmp_path, session="session-b")
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_a).stdout
+    )
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_b).stdout
+    )
 
 
 # ── review-reminder.sh ──────────────────────────────────────────────────────────────
