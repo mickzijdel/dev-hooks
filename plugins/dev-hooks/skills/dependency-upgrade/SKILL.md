@@ -77,13 +77,18 @@ ecosystem**.
 
 5. **Major pass — one major at a time.** Majors carry breaking changes, so handle them singly:
    - `WebFetch` the changelog / release notes / migration guide (npm package "Changelog",
-     RubyGems/GitHub releases, PyPI "Release notes", the project's UPGRADING/CHANGELOG).
+     RubyGems/GitHub releases, PyPI "Release notes", the project's UPGRADING/CHANGELOG) **and**
+     check whether a security advisory (GitHub Security Advisories, the ecosystem's own CVE/OSV
+     database) affects the version being left behind — state it either way in the commit body
+     ("no known advisories" or the CVE/advisory id).
    - Apply the required code changes for that one bump.
    - Run the full suite. **Green → its own commit** (`chore(deps)!: upgrade <pkg> 2 → 3`, with a
-     one-line migration note in the body).
+     one-line migration note in the body, plus the security-advisory line above).
    - **Can't get green → revert that single major**, append it to a deferred-upgrades report
      (`plans/deferred-upgrades.md` in the repo) with *why* and the manual steps, and move on. Do
-     not leave the tree red.
+     not leave the tree red. **If the advisory check above found a live CVE affecting the current
+     pinned version, say so explicitly at the top of that report entry** — a cooldown or a failed
+     migration shouldn't silently sit on a known vulnerability without the user seeing it flagged.
 
 6. **GitHub Actions.** Hand the Actions part to **[[github-actions]]** (`pinact run -u` to bump
    pins to the latest SHAs, then `check_action_refs.sh` to verify). Commit it separately
@@ -93,7 +98,8 @@ ecosystem**.
    from the resolved manifests/lockfiles (this is what the `latest-deps-reminder` hook nudges
    for). Fold it into the relevant commit or its own `docs:` commit.
 
-8. **Finish — and deploy if asked.** Summarize **upgraded vs deferred (and why)**. If everything
+8. **Finish — and deploy if asked.** Summarize **upgraded vs deferred (and why)**, calling out
+   which of them closed a known security advisory. If everything
    is green, merge the branch back and clean up the worktree (see
    [[finishing-a-development-branch]]). Then handle deploy per the repo's model (see Fleet mode
    step 3 for the full split): a **push-to-deploy** app only gets pushed if the user wants it
