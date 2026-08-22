@@ -363,3 +363,40 @@ def test_single_dockerfile_is_listed_once(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout.count("Dockerfile ARG NODE_VERSION") == 1
     assert "Dockerfile.*" not in r.stdout
+
+
+def test_one_dockerfile_declaring_two_defaults_is_reported_as_conflicting(tmp_path):
+    """A multi-stage build that redeclares `ARG NODE_VERSION` with a *different* default pins
+    two versions in one file, and no comparison against the other pins can be meaningful. The
+    branch that says so was unreachable until the ARG reader stopped deleting the newline
+    between values along with the surrounding whitespace: the two defaults arrived concatenated
+    as one line, so the value reported was the nonsense `24.19.020.0.0`."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\nFROM node:$NODE_VERSION\nARG NODE_VERSION=20.0.0\n",
+        },
+    )
+    assert r.returncode == 1
+    assert (
+        "✗ Dockerfile declares ARG NODE_VERSION with conflicting defaults: 20.0.0 24.19.0"
+        in r.stdout
+    )
+    assert "24.19.020.0.0" not in r.stdout
+
+
+def test_crlf_dockerfile_still_compares(tmp_path):
+    """The reader must keep stripping the CR of a CRLF-checked-out Dockerfile, or every pin in
+    it compares as `24.19.0\\r` and never matches."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\r\nFROM node:$NODE_VERSION\r\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ node 24.19.0" in r.stdout

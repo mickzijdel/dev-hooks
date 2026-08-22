@@ -93,11 +93,16 @@ read_mise() {
   ' "$MISE"
 }
 
-# One Dockerfile's `ARG NAME=value` defaults, deduplicated. A multi-stage build may redeclare a
-# bare `ARG NAME` to pull it into a later stage's scope; those carry no pin, so only `=` lines
-# count. $1 is the file, $2 the ARG name.
+# One Dockerfile's `ARG NAME=value` defaults, one per line, deduplicated. A multi-stage build may
+# redeclare a bare `ARG NAME` to pull it into a later stage's scope; those carry no pin, so only
+# `=` lines count. $1 is the file, $2 the ARG name.
+#
+# Strips blanks, CR and quotes but NOT newlines: `[:space:]` here used to delete the line
+# separators too, which collapsed two differing defaults into one line, so `lines` could only
+# ever answer 0 or 1 and the caller's "conflicting defaults" branch was unreachable. A file
+# declaring 24.19.0 and 20.0.0 reported the value as "24.19.020.0.0" instead.
 read_arg() {
-  sed -n "s/^[[:space:]]*ARG[[:space:]]\{1,\}$2=//p" "$1" | tr -d "[:space:]\"'" | sort -u
+  sed -n "s/^[[:space:]]*ARG[[:space:]]\{1,\}$2=//p" "$1" | tr -d "[:blank:]\r\"'" | sort -u
 }
 
 # package.json's `"packageManager": "pnpm@9.1.0+sha512…"` — corepack's pin, for the JS stack.
