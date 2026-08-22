@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v23)
+## The standard (v24)
 
-A repo is **compliant at v23** when it has all of:
+A repo is **compliant at v24** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "23"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "24"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -45,7 +45,9 @@ A repo is **compliant at v23** when it has all of:
   Dockerfile `ARG`s, `package.json`'s `packageManager`, and the compose/deploy/CI `image:` tags)
   must name the same one. Both the hk `versions` step and CI's `versions` job run it. It checks
   only the files that exist and prints what it skipped, reports rather than auto-fixes, and
-  mandates no Dockerfile style. See "Version pins must agree across files" in
+  mandates no Dockerfile style. **Every** Dockerfile in the repo root is compared, not just the
+  first one found (v24) — `Dockerfile.dev` beside a production `Dockerfile` is the common shape,
+  and it went unchecked under v23. See "Version pins must agree across files" in
   `references/standard.md`.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
   `exec-bit-scripts` gate, the `versions` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and

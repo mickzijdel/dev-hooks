@@ -5,9 +5,11 @@ The script is copied verbatim into every standard-tracking repo and run by both 
 throwaway repos rather than by reading its source. Two properties matter most and are the
 ones a template edit can silently break:
 
-* it **fails** — naming the file and both values — when two pins disagree, and
+* it **fails** — naming the file and both values — when two pins disagree,
 * it **degrades** on absence: a repo with no Dockerfile / no compose file exits 0 and says
-  what it skipped, instead of erroring or silently appearing to have checked.
+  what it skipped, instead of erroring or silently appearing to have checked, and
+* it checks **every** Dockerfile, not just the first one found — a repo with a production
+  `Dockerfile` beside a `Dockerfile.dev` had the second one unchecked for months.
 """
 
 import subprocess
@@ -266,3 +268,135 @@ def test_templated_images_are_ignored(tmp_path, image):
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert "✗" not in r.stdout
+
+
+# ── Every Dockerfile, not just the first ─────────────────────────────────────────────
+# The gate used to `break` on the first of `Dockerfile Containerfile`, so a repo with more than
+# one had all but one unchecked. In one repo that let `Dockerfile.dev` sit on node:22 for months
+# while `.node-version`, `mise.toml` and the production `Dockerfile` all said 24 — with this gate
+# green throughout, and that repo's own docs claiming Node 24 "everywhere".
+
+TWO_DOCKERFILES = {
+    ".node-version": "24.19.0\n",
+    "mise.toml": '[tools]\nnode = "24.19.0"\n',
+    "Dockerfile": "ARG NODE_VERSION=24.19.0\nFROM node:$NODE_VERSION-alpine\n",
+    "Dockerfile.dev": "ARG NODE_VERSION=24.19.0\nFROM node:$NODE_VERSION-alpine\n",
+}
+
+
+def test_every_dockerfile_is_named_when_they_agree(tmp_path):
+    """Both files are compared and both are named, so the pass says how much it covered."""
+    r = run(tmp_path, TWO_DOCKERFILES)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Dockerfile ARG NODE_VERSION" in r.stdout
+    assert "Dockerfile.dev ARG NODE_VERSION" in r.stdout
+
+
+def test_second_dockerfile_alone_disagreeing_fails(tmp_path):
+    """The regression this fix exists for: the *first* Dockerfile agrees with every other pin,
+    so a gate that stops at the first one passes. It must fail, and name Dockerfile.dev."""
+    files = dict(
+        TWO_DOCKERFILES,
+        **{
+            "Dockerfile.dev": "ARG NODE_VERSION=22.11.0\nFROM node:$NODE_VERSION-alpine\n"
+        },
+    )
+    r = run(tmp_path, files)
+    assert r.returncode == 1
+    assert (
+        "✗ Dockerfile.dev ARG NODE_VERSION (22.11.0) != .node-version (24.19.0)"
+        in r.stdout
+    )
+
+
+def test_containerfile_variants_are_checked_too(tmp_path):
+    """Podman's spelling gets the same treatment — `Containerfile` was already the fallback,
+    so `Containerfile.dev` must not be the new blind spot."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Containerfile": "ARG NODE_VERSION=24.19.0\n",
+            "Containerfile.dev": "ARG NODE_VERSION=20.1.0\n",
+        },
+    )
+    assert r.returncode == 1
+    assert "✗ Containerfile.dev ARG NODE_VERSION (20.1.0)" in r.stdout
+
+
+def test_backup_and_template_dockerfiles_are_not_checked(tmp_path):
+    """`Dockerfile.bak` / `.orig` are editor and VCS leftovers, not build inputs, and a
+    `Dockerfile.j2` pins a placeholder no value could ever satisfy — comparing any of them
+    would fail a healthy repo with no correct fix available. `.dockerignore` shares no prefix
+    with either glob, so it can't be picked up at all."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\n",
+            ".dockerignore": "node_modules\n",
+            "Dockerfile.bak": "ARG NODE_VERSION=18.0.0\n",
+            "Dockerfile.dev.orig": "ARG NODE_VERSION=18.0.0\n",
+            "Dockerfile.j2": "ARG NODE_VERSION={{ node_version }}\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ node 24.19.0" in r.stdout
+    for ignored in (".bak", ".orig", ".j2", ".dockerignore"):
+        assert ignored not in r.stdout, f"{ignored} must not be compared"
+
+
+def test_single_dockerfile_is_listed_once(tmp_path):
+    """`Dockerfile` needs a literal dot to match `Dockerfile.*`, so the two globs can never
+    both yield it — but an unmatched `Dockerfile.*` also stays literal in POSIX sh, and only
+    the `[ -f ]` guard drops it. Assert neither shows up in the output."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.count("Dockerfile ARG NODE_VERSION") == 1
+    assert "Dockerfile.*" not in r.stdout
+
+
+def test_one_dockerfile_declaring_two_defaults_is_reported_as_conflicting(tmp_path):
+    """A multi-stage build that redeclares `ARG NODE_VERSION` with a *different* default pins
+    two versions in one file, and no comparison against the other pins can be meaningful. The
+    branch that says so was unreachable until the ARG reader stopped deleting the newline
+    between values along with the surrounding whitespace: the two defaults arrived concatenated
+    as one line, so the value reported was the nonsense `24.19.020.0.0`."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\nFROM node:$NODE_VERSION\nARG NODE_VERSION=20.0.0\n",
+        },
+    )
+    assert r.returncode == 1
+    assert (
+        "✗ Dockerfile declares ARG NODE_VERSION with conflicting defaults: 20.0.0 24.19.0"
+        in r.stdout
+    )
+    assert "24.19.020.0.0" not in r.stdout
+
+
+def test_crlf_dockerfile_still_compares(tmp_path):
+    """The reader must keep stripping the CR of a CRLF-checked-out Dockerfile, or every pin in
+    it compares as `24.19.0\\r` and never matches."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.19.0\n",
+            "mise.toml": '[tools]\nnode = "24.19.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.19.0\r\nFROM node:$NODE_VERSION\r\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ node 24.19.0" in r.stdout
