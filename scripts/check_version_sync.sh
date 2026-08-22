@@ -10,7 +10,7 @@
 # image builds on a different Ruby than the tests ran on, or the suite goes green against a
 # database server nobody deploys.
 #
-# Part of the dev-env standard (dev-hooks:dev-env-setup, v23) — run by the hk `versions` step and
+# Part of the dev-env standard (dev-hooks:dev-env-setup, v24) — run by the hk `versions` step and
 # CI's `versions` job so the local and CI gates can't drift. Don't hand-edit the logic; the next
 # policy change should be a plain re-copy of the template (a repo's own formatter may re-indent
 # this file to local style, which is fine).

@@ -944,6 +944,54 @@ Steps:
 
 ---
 
+## v23 → v24 (the version-sync gate reads every Dockerfile)
+
+**Every stack.** v23's `scripts/check_version_sync.sh` discovered its Dockerfile with a loop that
+`break`s on the first of `Dockerfile Containerfile`, so a repo carrying more than one had all but
+one **silently unchecked**. The shape that costs you: a production `Dockerfile` on the right Node
+beside a `Dockerfile.dev` that is a major behind. In one repo exactly that ran for months —
+`Dockerfile.dev` on `node:22-alpine` while `.node-version`, `mise.toml` and the production
+`Dockerfile` all said `24.19.0` — with the v23 gate green throughout and that repo's own CLAUDE.md
+claiming Node 24 "everywhere". It took writing a *second*, repo-local script to find, so assume
+your repo has the same hole rather than that it doesn't.
+
+v24 iterates `Dockerfile Containerfile Dockerfile.* Containerfile.*` instead and compares each
+file as its own source labelled by name. Output style, skip semantics and the exit-code contract
+are unchanged, so no hk step or CI job needs editing. The same commit also makes the
+"conflicting ARG defaults" branch reachable — it had been dead since v23, reporting a Dockerfile
+that pins two versions as the concatenation of both (`24.19.020.0.0`).
+
+Steps:
+
+1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w scripts/check_version_sync.sh` (the template is
+   2-space indented for this marketplace's `.editorconfig`; a repo without one gets shfmt's
+   default tabs). This is the whole migration — the logic is never hand-edited, and nothing else
+   in the repo changes.
+2. **Fix whatever the wider check now reports.** A second Dockerfile that has been drifting is the
+   expected first finding; that is the point of the bump. As in v23, the gate names the file and
+   both values and never rewrites a pin — which one holds the correct value is a judgement call.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "24"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0. Then,
+   in a repo with two Dockerfiles, **break only the second one** — set `ARG NODE_VERSION` in
+   `Dockerfile.dev` to a different value, leaving the production `Dockerfile` agreeing with every
+   other pin — and confirm the script exits 1 with
+   `✗ Dockerfile.dev ARG NODE_VERSION (22.11.0) != .node-version (24.19.0)`. That exact case
+   exits **0** on the v23 script, so it is the one that proves you re-copied it. Restore the file.
+
+> A repo that carries a workaround for this gap — impamp-3 grew a
+> `scripts/check_extra_dockerfiles.sh` purely to cover the second Dockerfile, wired into its own
+> hk step and CI job — should drop it as part of this upgrade: the shared gate now covers it, and
+> two gates for one rule is how they drift.
+
+> Not checked, and unchanged from v23: `Dockerfile.bak` / `.orig` / `.rej` / editor swap files and
+> templates (`.j2`, `.tpl`, `.erb`) are excluded by suffix. Neither is a build input, and a
+> template's `ARG NODE_VERSION={{ node_version }}` would fail forever with no correct value
+> available to fix it. The two known blind spots in `standard.md` — repo root only, and `ARG
+> NAME=value` rather than `FROM` — are also unchanged.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

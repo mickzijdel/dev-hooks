@@ -1,4 +1,4 @@
-# The standard (v23) — full specification
+# The standard (v24) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v23** when it has all of:
+A repo is **compliant at v24** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v23** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "23"`.
+  stamp `DEV_ENV_VERSION = "24"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -327,6 +327,13 @@ only reads files, making it the cheapest job in the workflow).
   nothing when it passes teaches nobody what it covers.
 - **Names the offending file on failure**, with both values:
   `✗ Dockerfile ARG RUBY_VERSION (3.3.3) != .ruby-version (3.4.10)`.
+- **Reads every Dockerfile in the repo root, not just the first** (v24) —
+  `Dockerfile`, `Containerfile`, and any `Dockerfile.*` / `Containerfile.*` beside them. Each is
+  its own source, labelled by name, so the ✓ line lists them all and a failure says *which* file:
+  `✗ Dockerfile.dev ARG NODE_VERSION (22.11.0) != .node-version (24.19.0)`. Backup and patch
+  leftovers (`.bak`, `.orig`, `.rej`, editor swap files) and templates (`.j2`, `.tpl`, `.erb`)
+  are skipped — neither is a build input, and a template's `ARG NODE_VERSION={{ … }}` would fail
+  forever with no correct value to change it to.
 
 Two things it deliberately does **not** do:
 
@@ -341,10 +348,11 @@ Two things it deliberately does **not** do:
 not a toolchain pin, so it is routinely and correctly older than `mise.toml`'s `go`.
 
 **Two blind spots to know about** — both found on the v23 fleet rollout, both real gaps rather
-than design choices:
+than design choices. (There were three. The first Dockerfile only, with every other one
+unchecked, was the third; v24 closed it — see the bullet above.)
 
-- **Repo root only.** The toolchain half reads `./mise.toml`, `./.<lang>-version`, `./Dockerfile`
-  and `./package.json`. A monorepo that keeps its pins in `backend/` and `frontend/` gets a
+- **Repo root only.** The toolchain half reads `./mise.toml`, `./.<lang>-version`, the root
+  `./Dockerfile*` / `./Containerfile*` and `./package.json`. A monorepo that keeps its pins in `backend/` and `frontend/` gets a
   green gate that compared nothing — e.g. a `frontend/Dockerfile` on `FROM node:24-alpine` while
   CI builds on whatever `node = "latest"` resolved to. The skip lines make the thin coverage
   visible, but the drift itself is invisible.
