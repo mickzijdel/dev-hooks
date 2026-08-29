@@ -8,6 +8,48 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-08-29 (Run 24)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since Run 23's cutoff (`9b7e394`): 9 commits through `a0a5b6a` (2026-08-28).
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items after Run 23's 2026-08-25 13:19Z cutoff through 2026-08-29 (17 items; feed's `lastBuildDate` is 2026-08-29T13:04Z, so this is a complete window).
+
+PRs opened this run: none.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Preinstall Playwright + Chromium headless shell via mise (`pipx`/`pipx:playwright`), and teach the bundled `webapp-testing` skill to discover the managed CLI before installing anything | dotfiles commit `09fc6fa` (Aug 28) | Duplicate | Browser-driven testing is already covered outside dev-hooks by the user's own toolkit (the `run` skill / superpowers-adjacent workflows) per this run's explicit instruction not to duplicate common software-engineering workflows those already cover; dev-hooks itself has no browser-testing surface to preinstall a browser for. |
+| Clear the git hook environment (`unset $(git rev-parse --local-env-vars)`) before running the test suite from a pre-commit hook | dotfiles commit `8a7f251` (Aug 28) | Deferred | Real footgun in general (a hook-run test suite that shells out to `git` can see a stale/locked index via inherited `GIT_INDEX_FILE`/`GIT_DIR`), but doesn't reproduce today: the only pytest hk runs pre-commit (`dev-env-version-sync`, gated to `tests/test_dev_env_templates.py`) does pure file-content assertions and never invokes `git`. Revisit if an hk step ever runs the full suite (which does exercise `hook_helpers.py`'s `git()` via `authored_scripts()`/`scan_script_dirs()`) as a pre-commit check. |
+| Remove Pi todos extension, via a dotfiles-internal migration file | dotfiles commit `a0a5b6a` (Aug 28) | Out of scope | Personal Pi agent extension + Nate's own dotfiles migration mechanism; same territory as prior Pi-extension rejections (Runs 3–4, 22–23). |
+| Add Pi fast mode extension | dotfiles commit `b12ea64` (Aug 28) | Out of scope | Personal Pi agent extension; same territory as above. |
+| Pin pi-btw extension to a CI-available version | dotfiles commit `9d76c53` (Aug 28) | Out of scope | Personal Pi agent extension; same territory as above. |
+| Make Pi conversation titles describe the next outcome | dotfiles commit `cf24900` (Aug 28) | Out of scope | Personal Pi agent extension; same territory as above. |
+| Remove unused `SystemAdapter` wrappers (`readlink`, `cp_r`, `chdir`) | dotfiles commit `eb72df4` (Aug 28) | Out of scope | Dead-code cleanup internal to Nate's own Ruby `dotfiles` gem; no portable pattern to port (dev-hooks' own dead-code gate is `vulture`, already in place). |
+| Remove dotf convergence announcement | dotfiles commit `4e9ec40` (Aug 28) | Out of scope | Specific to Nate's `dotf` CLI runner; dev-hooks has no equivalent runner. |
+| Fix Fish shell dotfiles-update notice | dotfiles commit `517111a` (Aug 28) | Out of scope | Fish-shell- and `dotf`-runner-specific; same territory as Run 23's "nonblocking dotfiles needs a run notice" rejection. |
+| For big features: write a research/product outline, let agents draft overnight, then break into 3–9 small PRs reviewed one at a time | feed item 2026-08-25 (https://x.com/dexhorthy/status/2092244659057909765) | Deferred | Same territory as Run 4's petergyang "detailed specs, visual HTML plans, isolated parallel agents" entry — useful methodology but no concrete hook/skill trigger; partially already covered by `board` (parallel review) and `worktree-setup` (isolated agents). |
+| Build a Claude/ChatGPT skill that ingests docs and drafts structured briefs from trusted clinical-trial APIs | feed item 2026-08-25 (https://x.com/petergyang/status/2092249012913258946) | Out of scope | Health-domain-specific data pipeline; no generalizable dev-workflow surface. |
+| `$visualize` command in ChatGPT Work/Codex to turn any answer into a diagram | feed item 2026-08-25 (https://x.com/Dimillian/status/2092249828092789165) | Out of scope | ChatGPT/Codex-specific product feature from a different vendor. |
+| Maintain a single-source-of-truth brief doc (people, next actions, glossary, update log) kept current by an AI skill | feed item 2026-08-25 (https://x.com/petergyang/status/2092311110871617915) | Out of scope | Personal/project-management document-keeping; same territory as Run 2's "Chief of Threads" and "long-lived thread per feature" rejections — no dev-workflow hook surface. |
+| Maintain only `AGENTS.md` and auto-symlink `CLAUDE.md` to it via a launchd fswatch agent | feed item 2026-08-25 (https://x.com/iannuttall/status/2092341967606763711) | Out of scope | macOS-launchd-specific personal machine automation; dev-hooks' own `CLAUDE.md` files are project instructions maintained directly, not synced from an `AGENTS.md` counterpart. |
+| Give an agent read-only access to Honeycomb, Stripe, and a DB, and let it compose tools via code to spot fraud patterns | feed item 2026-08-26 (https://x.com/thdxr/status/2092605540895506684) | Out of scope | Personal ops-automation tool composition; no dev-workflow hook surface. |
+| Use Codex automations (not just cron-prompts) for recurring work where the goal repeats but steps vary | feed item 2026-08-26 (https://x.com/gabrielchua/status/2092638166071292052) | Out of scope | Codex-specific product feature from a different vendor. |
+| Use ChatGPT/Grok's secure password/API-key entry flow so credentials go to a sandbox, not the model | feed item 2026-08-26 (https://x.com/altryne/status/2092656649882447958) | Out of scope | Different vendor's product feature; no Claude Code equivalent to adopt. |
+| GLM-5.3's `/btw` command for parallel evaluation tracks | feed item 2026-08-27 (https://x.com/ivanfioravanti/status/2092853117452759441) | Out of scope | GLM-specific product feature. |
+| Gemini video prompting tags (`<FIRST_FRAME>`, `<IMAGE_REF_0>`) | feed item 2026-08-27 (https://x.com/_philschmid/status/2093012878211072183) | Out of scope | Video-generation prompting technique; unrelated to a coding-workflow plugin. |
+| For long agent tasks, have the model author an independent, executable completion standard upfront, rather than relying on self-validation | feed item 2026-08-27 (https://x.com/alvinsng/status/2093079488716480541) | Deferred | Distinct from existing self-verification coverage (`but-for-real`, `verify-work.sh` check *after* the fact) and from `agent-brief` (which specs a brief for a *dispatched* subagent, not a solo agent's own upfront done-criteria). Interesting but no concrete hook trigger yet — revisit if a Stop-hook-shaped way to check work against a pre-declared standard emerges. |
+| Run Peter Yang's `/no-ai-slop` skill in reverse to intentionally generate maximally sloppy AI text | feed item 2026-08-27 (https://x.com/petergyang/status/2093132262602920002) | Out of scope | Joke/novelty use of another author's skill; not a workflow improvement. |
+| Multi-Gmail-account support in ChatGPT plugins | feed item 2026-08-27 (https://x.com/gabrielchua/status/2093244887739367718) | Out of scope | ChatGPT-specific product feature; no Claude Code equivalent. |
+| Give a chatbot a SaaS tool's API docs plus an API key to control that tool conversationally | feed item 2026-08-28 (https://x.com/iannuttall/status/2093256242009366715) | Out of scope | Generic integration pattern with no concrete dev-workflow hook/skill surface. |
+| In Claude Code desktop app, `/resume` picks up any CLI-started session with full context | feed item 2026-08-28 (https://x.com/ClaudeDevs/status/2093368017304371503) | Out of scope | Product-feature usage tip, not a hook/skill gap; nothing to build. |
+| Custom sidebar sections in ChatGPT/Codex desktop | feed item 2026-08-28 (https://x.com/Dimillian/status/2093433378859049055) | Out of scope | ChatGPT/Codex-specific product feature. |
+| Connect multiple Gmail accounts to ChatGPT plugins | feed item 2026-08-28 (https://x.com/romainhuet/status/2093450846499655755) | Duplicate | Same as the "multi-Gmail-account" row above (same day, same territory, different author). |
+| "Copy as Markdown" in Codex/ChatGPT desktop app | feed item 2026-08-29 (https://x.com/gabrielchua/status/2093499211530817638) | Out of scope | ChatGPT/Codex-specific product feature. |
+
+---
+
 ## 2026-08-25 (Run 23)
 
 Sources scanned:
