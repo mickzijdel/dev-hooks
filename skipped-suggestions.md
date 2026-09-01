@@ -8,6 +8,37 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-09-01 (Run 25)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since Run 24's cutoff (`a0a5b6a`): 1 commit through `5450ec2` (2026-08-31).
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items after Run 24's 2026-08-29 13:04Z cutoff through 2026-09-01 (15 items; feed's most recent entry is 2026-09-01T06:37Z).
+
+PRs opened this run: none.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Restrict Pi Fireworks-provider models to US-region routers | dotfiles commit `5450ec2` (Aug 31) | Out of scope | Personal Pi agent extension config; same territory as the standing Pi-extension rejections (Runs 3–4, 22–24). |
+| Run a "chief of staff" agent that watches Slack/email/WhatsApp, turns commitments into tasks, and pre-drafts the work | feed item 2026-09-01 (https://x.com/intellectronica/status/2094676079596433453) | Out of scope | Personal ops-automation assistant; same territory as prior "chief of staff"/inbox-triage rejections (this file, `petergyang` "chief of staff" row and the "Marie Kondo bot" row) — no dev-workflow hook surface. |
+| Use Notion as a persistent "persona brain" for Claude — feed it voice memos/links and teach it company jargon so context compounds across chats | feed item 2026-08-31 (https://x.com/clairevo/status/2094558546524561505) | Out of scope | Personal/business context-management workflow tied to a specific third-party note-taking tool; same territory as prior "single source of truth brief doc" and portable-`~/.agents`-folder rejections — no dev-workflow hook surface. |
+| Claude's repo memory uses a `MEMORY.md` index linking to markdown files with YAML frontmatter (name/description/type) | feed item 2026-08-31 (https://x.com/kr0der/status/2094553070239940700) | Duplicate | dev-hooks already has this exact shape: `memory-reminder.sh` captures structured per-project memory files, and `weekly-automation-review` reads that memory index weekly to promote recurring patterns into skills/hooks — no gap to fill. |
+| Give agents a persistent wiki of learned skills/notes — boosts task performance more than scaling model size | feed item 2026-08-31 (https://x.com/Saboo_Shubham_/status/2094517968046874786) | Duplicate | This is exactly what the skills marketplace + `memory-reminder.sh`/`weekly-automation-review` already are — a growing, curated wiki of learned patterns promoted from real usage. No concrete new surface named. |
+| Have a monitoring bot detect changes on flaky external sites daily and dispatch fixes to a background agent that opens+merges PRs | feed item 2026-08-31 (https://x.com/iannuttall/status/2094412406352986463) | Out of scope | Personal site-monitoring/ops automation tied to a specific vendor's (Cursor) background-agent product; no portable dev-hooks surface (and auto-merging agent-authored PRs conflicts with this repo's own human-review-required posture). |
+| To build judgment using AI agents: form a hypothesis before prompting, read the diffs, predict failures, occasionally solve manually | feed item 2026-08-31 (https://x.com/addyosmani/status/2094314241662574915) | Rejected | Usage-discipline tip with no programmatic hook trigger; same territory as prior habit/methodology-tip rejections, and covered by the user's own superpowers debugging workflow per this run's instructions not to duplicate that. |
+| ChatGPT Sites: deploy small internal apps with auth, whitelisting, storage/DB, secrets, and analytics | feed item 2026-08-31 (https://x.com/gabrielchua/status/2094299645182656632) | Out of scope | OpenAI-ecosystem-specific product feature; no Claude Code equivalent. |
+| Watch for Codex admitting it skipped steps without redoing them; explicitly prompt it to complete the missed action | feed item 2026-08-31 (https://x.com/dexhorthy/status/2094225904327438603) | Out of scope | Codex-specific failure mode, and the post itself notes Claude doesn't share it; nothing to port. |
+| Simon Willison's walkthrough of ChatGPT Work's connectors/admin controls | feed item 2026-08-31 (https://x.com/simonw/status/2094214737957691854) | Out of scope | OpenAI-product reading-list content; same territory as prior ChatGPT Work rejections. |
+| Add explicit "do not preserve backward compatibility, remove obsolete paths, no fallbacks" instructions to AGENTS.md | feed item 2026-08-30 (https://x.com/_philschmid/status/2094152154382528996) | Duplicate | Already the harness's own default behavior for this session (no-backward-compat-hacks, no unnecessary fallbacks) independent of any project CLAUDE.md, so restating it here would be a no-op per this repo's own "does this change behaviour vs. default" test; also same CLAUDE.md-style-directive territory as the standing `cathrynlavery`/`kr0der` "operating philosophy" deferrals in this file. |
+| Pair Confetti with Codex for audible/visual alerts when a long-running task finishes | feed item 2026-08-30 (https://x.com/gabrielchua/status/2093962523695558946) | Out of scope | Codex-specific tool pairing; no Claude Code equivalent gap. |
+| Ask Codex to create/rename chat sections and route new chats into them | feed item 2026-08-30 (https://x.com/gabrielchua/status/2093930538365300752) | Out of scope | Codex/ChatGPT-desktop-specific UI feature; same territory as the standing chat-organization rejections. |
+| Customize and reorder chat sections in ChatGPT/Codex desktop | feed item 2026-08-30 (https://x.com/gabrielchua/status/2093884215473713198) | Duplicate | Same chat-sidebar-organization territory as the row above and the standing "custom sidebar sections" rejection (Run 24). |
+| Use Gemini to draft complaint letters citing specific laws | feed item 2026-08-29 (https://x.com/badlogicgames/status/2093842323251601671) | Out of scope | Personal consumer-advocacy use case for a different vendor's model; no dev-workflow surface. |
+| Codex can set its own recurring timers to poll for external events during long tasks | feed item 2026-08-29 (https://x.com/lucasmeijer/status/2093719033665188348) | Out of scope | Codex-specific product feature; Claude Code's own `ScheduleWakeup`/cron-agent scheduling already covers the equivalent need natively. |
+
+---
+
 ## 2026-08-29 (Run 24)
 
 Sources scanned:
