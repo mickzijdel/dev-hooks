@@ -263,6 +263,33 @@ reminder_mktemp() {
   REPLY=$f
 }
 
+# Replace credential-shaped substrings in $1 with [REDACTED]; result in $REPLY. For the
+# logging path (prompt-log.sh), so a token pasted mid-incident is never persisted to disk.
+# Two rule classes: known vendor prefixes (zero false positives, and they caught every real
+# leak found in the log), then one assignment rule reusing the secret-name vocabulary from
+# dangerous-command-guard.sh. The assignment rule requires the value to start with an
+# alphanumeric, which is what keeps "$(cat …)" command substitutions and ../relative paths
+# readable — the log is only useful to the weekly review if ordinary text survives intact.
+# The vendor prefixes deliberately carry NO leading \b: a real leak in the log was typed
+# glued to the previous word ("…here api key to fix" + "ptr_845Hk…"), so requiring a word
+# boundary there silently missed it. Only the loose generic sk- rule keeps its \b.
+reminder_redact_secrets() {
+  REPLY=$(printf '%s' "$1" | sed -E \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\[REDACTED PRIVATE KEY]' \
+    -e 's|(github_pat_)[A-Za-z0-9_]{20,}|\1[REDACTED]|g' \
+    -e 's|(gh[pousr]_)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
+    -e 's|(ptr_)[A-Za-z0-9+/=_-]{20,}|\1[REDACTED]|g' \
+    -e 's|(sk-ant-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
+    -e 's|\b(sk-)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
+    -e 's|(xox[baprs]-)[A-Za-z0-9-]{10,}|\1[REDACTED]|g' \
+    -e 's|AKIA[0-9A-Z]{16}\b|AKIA[REDACTED]|g' \
+    -e 's|(glpat-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
+    -e 's|(bws_)[A-Za-z0-9._-]{20,}|\1[REDACTED]|g' \
+    -e 's|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|[REDACTED JWT]|g' \
+    -e 's#([A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_)[A-Za-z0-9_]*)([[:space:]]*[=:][[:space:]]*)['"'"'"]?[A-Za-z0-9_+][A-Za-z0-9_+/=.~-]{19,}['"'"'"]?#\1\3[REDACTED]#g' \
+    2>/dev/null)
+}
+
 # Frontend markup/script/style files where inline-UI hooks apply. One list for every hook
 # (*.html.erb ends in .erb).
 reminder_is_frontend_file() {

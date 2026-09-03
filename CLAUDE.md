@@ -114,6 +114,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
   + exit 2).
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
+  `reminder_redact_secrets` (strip credential-shaped values from text before it is
+  persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
+  on purpose, because a real leak was typed glued to the previous word),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
   `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the

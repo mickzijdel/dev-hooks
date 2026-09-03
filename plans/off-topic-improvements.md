@@ -21,3 +21,18 @@ Noticed 2026-07-02 while reviewing mattpocock/skills for vendoring:
   — either write that skill (upstream's 15-line `handoff` is a seed) or drop the link.
 - **marketplace.json's thinking-tools description omits `adr`** (and now the three new skills);
   CLAUDE.md says descriptions stay stable, but if it's meant to enumerate skills it's drifting.
+
+Noticed 2026-09-03 while shipping the prompt-log redaction:
+
+- **hk's `gitleaks` step scans gitignored build artifacts.** A stale
+  `tests/__pycache__/*.pyc` holding a *previous* version of a test fixture blocked a commit with
+  a phantom finding that no longer existed in any tracked file. `gitleaks dir` walks the tree
+  rather than reading only the staged blobs. Fix: scope the step with
+  `gitleaks git --staged` (or add `--no-git`-safe excludes for `__pycache__`, `.venv`, `node_modules`)
+  in `hk.pkl`, so a build artifact can never fail a commit.
+- **`tests/test_hook_sunset_bets.py` classifies bets but never checks the reasoning behind a
+  retire verdict.** Three weekly reviews argued `detect-stack-skills` should be deleted from fire
+  counts alone, which cannot distinguish "redundant" from "working" (see
+  `plans/automation-reviews/2026-09-03.md`). Candidate: have the weekly-automation-review skill
+  require a mechanism probe — does the hook's advice point at anything that exists? — before any
+  DELETE verdict, rather than a fire-count argument.
