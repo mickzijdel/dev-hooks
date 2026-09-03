@@ -3195,6 +3195,107 @@ def test_prompt_log_rotates_at_cap(tmp_path):
     assert json.loads(lines[0])["prompt"] == "fresh"
 
 
+# ── prompt-log.sh: secret redaction ─────────────────────────────────────────────────
+# Real credentials were pasted into prompts and persisted verbatim (2026-08-06, 2026-08-15,
+# 2026-09-01 x2). The hook is the one place in the suite whose job is to write user text to
+# disk, so the filter belongs here. Prefix rules are zero-false-positive; the assignment rule
+# reuses the secret-name vocabulary from dangerous-command-guard.sh.
+
+# Fixtures are SYNTHETIC: every value keeps a real token's prefix, charset and length but
+# uses a sequential low-entropy filler, so nothing resembling a live credential is committed
+# and gitleaks' entropy rules stay quiet. Two are still matched by gitleaks on prefix alone
+# (Slack, PEM header) and carry an inline allow.
+_FILL = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+REDACT_CASES = [
+    ("ptr_" + _FILL + "ABCD=", "portainer"),
+    ("ghp_" + _FILL, "github classic"),
+    ("github_pat_11ABCDEFG0" + _FILL + "ABCD", "github fine-grained"),
+    ("sk-ant-api03-" + _FILL + "-_", "anthropic"),
+    ("xoxb-111111111111-2222222222222-" + _FILL, "slack bot"),  # gitleaks:allow
+    ("AKIAIOSFODNN7EXAMPLE", "aws access key id"),
+    ("glpat-" + _FILL, "gitlab pat"),
+    ("bws_" + _FILL, "bitwarden secrets"),
+    ("eyJ" + _FILL + "." + _FILL + "." + _FILL, "jwt"),
+]
+
+
+@pytest.mark.parametrize("secret,label", REDACT_CASES, ids=[c[1] for c in REDACT_CASES])
+def test_prompt_log_redacts_secret_values(tmp_path, secret, label):
+    run_prompt_log(tmp_path, prompt=f"here is the {label} token for you: {secret}")
+    body = _prompt_log_path(tmp_path).read_text()
+    assert secret not in body, f"{label} secret survived redaction"
+    # Marker text varies by rule ([REDACTED], [REDACTED JWT], [REDACTED PRIVATE KEY]).
+    assert "REDACTED" in body
+
+
+def test_prompt_log_redacts_token_glued_to_previous_word(tmp_path):
+    # Regression found by replaying the real log: the 2026-09-01 leak was typed with no space
+    # ("...here api key to fix" + the token), so a leading \\b in the pattern missed it entirely.
+    secret = "ptr_" + _FILL + "ABCD="
+    run_prompt_log(
+        tmp_path, prompt=f"credentials are invalid again, here api key to fix{secret}"
+    )
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert secret not in entry["prompt"]
+    assert entry["prompt"].endswith("to fixptr_[REDACTED]")
+
+
+def test_prompt_log_redacts_secret_shaped_assignment(tmp_path):
+    run_prompt_log(tmp_path, prompt=f"run PRETIX_API_TOKEN={_FILL} bin/rails x")
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert _FILL not in entry["prompt"]
+    assert "PRETIX_API_TOKEN" in entry["prompt"]
+    assert "[REDACTED]" in entry["prompt"]
+
+
+def test_prompt_log_redacts_private_key_block(tmp_path):
+    key = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\n"  # gitleaks:allow
+        + _FILL
+        + "\n-----END OPENSSH PRIVATE KEY-----"
+    )
+    run_prompt_log(tmp_path, prompt=f"my key is\n{key}\nplease use it")
+    body = _prompt_log_path(tmp_path).read_text()
+    assert _FILL not in body
+    assert "REDACTED" in body
+
+
+# Values that merely look secret-ish must survive — the log stays useful for the weekly
+# automation review only if ordinary text is untouched.
+KEEP_CASES = [
+    ("e47b9f4c8a1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "40-char git sha"),
+    ("/home/mick/Stack/Programmeren/dev-hooks/plugins", "absolute path"),
+    ('PRETIX_API_TOKEN="$(cat ../../PRETIX_API_TOKEN)"', "command substitution"),
+    ("I put the token in a file called PRETIX_API_TOKEN", "prose naming a token"),
+    ("https://github.com/Screenly/Anthias/pull/3310", "url"),
+    ("can you run the weekly review please", "ordinary prose"),
+    ("the risk-assessment doc mentions asterisk-notes", "sk- inside a word"),
+]
+
+
+@pytest.mark.parametrize("text,label", KEEP_CASES, ids=[c[1] for c in KEEP_CASES])
+def test_prompt_log_keeps_non_secrets(tmp_path, text, label):
+    run_prompt_log(tmp_path, prompt=text)
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert entry["prompt"] == text, f"{label} was mangled by redaction"
+
+
+def test_prompt_log_len_records_original_length(tmp_path):
+    secret = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    prompt = f"token: {secret}"
+    run_prompt_log(tmp_path, prompt=prompt)
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    # len is the pre-redaction length, so prompt-size signals stay comparable across the log.
+    assert entry["len"] == len(prompt)
+
+
+def test_prompt_log_file_is_owner_only(tmp_path):
+    run_prompt_log(tmp_path, prompt="anything")
+    mode = _prompt_log_path(tmp_path).stat().st_mode & 0o777
+    assert mode == 0o600, f"log is {mode:o}, expected 600"
+
+
 # ── intent-check-reminder.sh (UserPromptSubmit) ──────────────────────────────────────
 def _run_intent_check(prompt, env=None):
     return run_hook(
