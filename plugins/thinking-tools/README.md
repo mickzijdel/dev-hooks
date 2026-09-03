@@ -23,8 +23,9 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+| `wait-what` | Manually invoked (`/thinking-tools:wait-what`) — tells Claude its last message didn't land and to re-pitch it in plain, ASD-STE100-style English at roughly a 10th-grade reading level. Not model-invocable; you have to ask for it. |
 
-`grill`, `domain-modeling`, and `codebase-design` are adapted from
+`grill`, `domain-modeling`, `codebase-design`, and `wait-what` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill's frontmatter
 carries its precise upstream `source:` and `license:`; the shared license text lives at
 [`skills/matt-pocock-skills-LICENSE.txt`](skills/matt-pocock-skills-LICENSE.txt).
