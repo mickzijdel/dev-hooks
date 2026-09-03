@@ -13,7 +13,14 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest",
-    "ruff",
+    # Pinned below 0.16: for a 0.x tool the minor line is the breaking line, and 0.16 both
+    # expands the default rule set (68 new findings here) and the formatter's file scope
+    # (it now reformats Python fences inside Markdown). hk's pre-commit `ruff`/`ruff_format`
+    # steps run mise's pinned 0.15.18 (mise.lock), not this uv-managed copy — keep them on
+    # the same major.minor so this lockfile and the actually-enforced gate agree on what
+    # "clean" means. Revisit as its own reviewed change (68 findings, 21 autofixable, plus
+    # 2 markdown reformats), not a lockfile-refresh side effect.
+    "ruff<0.16",
     "vulture",   # dead-code audit; run via `uvx vulture`
     # The bundled Python scripts are stdlib-only (PEP 723 deps = []), so there is
     # nothing extra to mirror here for the test environment to import.
