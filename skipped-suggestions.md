@@ -8,6 +8,59 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-09-05 (Run 26)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since Run 25's cutoff (`5450ec2`): 25 commits (20 non-merge) through `d570418` (2026-09-05).
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — new items after Run 25's 2026-09-01T06:37Z cutoff through 2026-09-05 (18 items; feed's `lastBuildDate` is 2026-09-05T13:05:58Z, so this is a complete window).
+
+PRs opened this run:
+- dev-hooks [#31 feat: dev-env standard v26 — contain Claude Code worktrees for vulture](https://github.com/mickzijdel/dev-hooks/pull/31)
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Apply Socket Firewall (`sfw`)-wrapped `pip`/`uv`/`cargo` and Aube shims to non-interactive Bash via a `BASH_ENV` script, not just Fish | dotfiles commit `e025a13` (Sep 5) | Deferred | The "revisit if a shell-agnostic wrapper appears" condition from the Run 2 Socket Firewall deferral is now met, but this is still personal shell-rc environment plumbing (a `~/.config/bash/safety.bash` sourced via `BASH_ENV`), not a Claude Code hook surface — a plugin can't install into a user's shell startup. The closer fit would be a PreToolUse(Bash) hook that transparently routes `pip install`/`cargo install`/`uv add` through `sfw` when it's on PATH; parking as a candidate rather than implementing sight-unseen, since it would add a dependency on an external, not-widely-installed tool for a case dev-hooks has had no user report of. Revisit if a concrete request for supply-chain-guarded installs during agent sessions surfaces. |
+| Prioritize Aube shims in Fish PATH | dotfiles commit `6e57493` (Sep 5) | Out of scope | Fish-shell + personal Aube tool-manager plumbing; same territory as the standing Aube/Fish rejections (Runs 3, this run's `4bbae24`-adjacent entries). |
+| Allow active Time Machine backups to continue on battery | dotfiles commit `89b4ca3` (Sep 4) | Out of scope | macOS Time Machine personal backup config; same territory as the standing Time Machine rejections (Run 2 and others in this file). |
+| Skip Time Machine agent in CI bootstrap | dotfiles commit `ab6e69a` (Sep 4) | Out of scope | Same Time Machine territory as above. |
+| Automate AC-only Time Machine backups | dotfiles commit `a061abb` (Sep 4) | Out of scope | Same Time Machine territory as above. |
+| Refresh Time Machine exclusions before validation | dotfiles commit `c212a9e` (Sep 4) | Out of scope | Same Time Machine territory as above. |
+| Exclude developer caches from Time Machine | dotfiles commit `7b3030c` (Sep 3) | Out of scope | Same Time Machine territory as above. |
+| Configure Dock autohide and position | dotfiles commit `b9e059a` (Sep 3) | Out of scope | Personal macOS Dock preference; no dev-workflow surface. |
+| Verify mise lock provenance on each native platform via a two-runner Lock Provenance GitHub Actions workflow | dotfiles commit `7822e0c` (Sep 4) | Out of scope | Follow-on tuning of Nate's own AI-driven "dependency factory" GitHub Actions pipeline (`tools/ci/dependency_factory.rb`, `.github/dependency-updater.md`); same territory as the standing dependency-factory rejections in this file (Run 22-adjacent entries) — no portable surface for a Claude Code plugin, and adopting it whole would mean porting an entire bespoke CI framework dev-hooks doesn't have. |
+| Make OmniWM settings compatible with 0.6.4 | dotfiles commit `a6ef98b` (Sep 3) | Out of scope | Personal macOS window-manager configuration; same territory as the standing OmniWM rejections in this file. |
+| Route Fireworks through US endpoint | dotfiles commit `5e7b6cb` (Sep 3) | Out of scope | Personal Pi agent provider-routing config; same territory as the standing Pi/Fireworks/OpenRouter rejections in this file. |
+| Route OpenRouter through US endpoint | dotfiles commit `c74cc2c` (Sep 3) | Out of scope | Same Pi personal-agent territory as above. |
+| Upgrade Aube from its new repository | dotfiles commit `7ac8a33` (Sep 3) | Deferred | Aube adoption is already deferred (Run 3 and others in this file); changing where it's installed from doesn't change that assessment. |
+| Update managed dependencies | dotfiles commit `0102b19` (Sep 2) | Out of scope | Routine dependency bump internal to Nate's own dotfiles gem/tool set; nothing generalizable. |
+| Fix dependency report verification after lock updates | dotfiles commit `37cc6c9` (Sep 2) | Out of scope | Dependency-factory tooling fix; same territory as `7822e0c` above. |
+| Make dependency factory coverage a property of code, not the model | dotfiles commit `4a7fe42` (Sep 1) | Out of scope | Dependency-factory tooling change; same territory as above. |
+| Look up open dependency PRs before the agent starts | dotfiles commit `4bbae24` (Sep 1) | Out of scope | Dependency-factory tooling change; same territory as above. |
+| Fail dependency factory runs that end without a PR outcome | dotfiles commit `9921bde` (Sep 1) | Out of scope | Dependency-factory tooling change; same territory as above. |
+| Remove the staged-line-addition "large-files" lint (>100 added lines nudges to simplify) from the dev-env-setup standard | dotfiles commit `efe5a36` (Sep 2) | Out of scope | Not applicable here: dev-hooks never adopted this specific check (it was dropped at v1 per `dropped-from-nate.md`'s "no `[tasks]` frontends" note, since it was itself a `mise run lint:large-files` task). dev-hooks' own `check-added-large-files` is an unrelated hk builtin that blocks large binary/byte-size files, not a staged-line-count nudge — nothing to remove. |
+| Give a coding agent an "accountable owner" prompt: audit the repo and agent instructions, fix friction, verify end-to-end, report honestly | feed item 2026-09-05 (https://x.com/boringmarketer/status/2096220825401622701) | Duplicate | Auditing the repo + instructions for friction is `weekly-automation-review`'s job; verifying end-to-end and reporting honestly instead of hand-waving is exactly `but-for-real` + `verify-work.sh`. No new surface. |
+| In GPT-6 Astra, start a thread on low reasoning effort and raise it mid-conversation only when needed | feed item 2026-09-05 (https://x.com/intellectronica/status/2096147298514575613) | Out of scope | OpenAI GPT-6 Astra-specific reasoning-effort UX; no Claude Code equivalent gap. |
+| Pick Astra's thinking level by behavior: low/med for quick edits, high/xhigh for self-verification, ultra for one-shot hard problems | feed item 2026-09-05 (https://x.com/davis7/status/2096046433573261603) | Out of scope | Same OpenAI Astra-specific territory as above. |
+| Ask Codex/ChatGPT to add "Sign-in with ChatGPT" to a Site to restrict access to specific emails | feed item 2026-09-04 (https://x.com/gabrielchua/status/2095731762580410838) | Out of scope | ChatGPT Sites product feature; no Claude Code equivalent. |
+| Check Google Search Console's "Generative AI features" section to see how often your site is cited in AI answers | feed item 2026-09-03 (https://x.com/kr0der/status/2095658197067731040) | Out of scope | SEO/marketing tooling tip; no dev-workflow hook surface. |
+| Brief long-running agents like an outside team: state the goal, how much leeway they have, what to test, when to check in, and what good looks like | feed item 2026-09-03 (https://x.com/emollick/status/2095645030941630763) | Duplicate | This is the `agent-brief` skill's GOAL/WHY/DONE-WHEN/DON'T/AUTONOMY/PROVE-IT skeleton restated as a tweet; no new surface. |
+| Have an agent build a personal wiki from your emails, writings and calendar, then run twice-daily briefings cross-referenced against it | feed item 2026-09-03 (https://x.com/emollick/status/2095606622055760159) | Out of scope | Personal/business context-management workflow; no dev-workflow hook surface. |
+| Hand a surprising vendor bill to an agent to audit for unjustified charges and draft a refund request | feed item 2026-09-03 (https://x.com/intellectronica/status/2095518216818938365) | Out of scope | Personal-finance use case; no dev-workflow surface. |
+| Use Anthropic's official de-flavoring prompt ("Please remove all mannered prose") to strip AI-sounding style from Claude drafts | feed item 2026-09-03 (https://x.com/addyosmani/status/2095402662963646748) | Duplicate | This is exactly what the `writing` plugin's `humanizer` skill already does. |
+| Check Google Search Console's "Generative AI features" report (re-post) | feed item 2026-09-03 (https://x.com/kr0der/status/2095371398143422545) | Duplicate | Same GSC-AI-citations tip as the row above, re-posted. |
+| Check Google Search Console's "Generative AI features" report, AI Overviews vs. clicks (re-post) | feed item 2026-09-02 (https://x.com/kr0der/status/2095279104434282633) | Duplicate | Same GSC-AI-citations tip, re-posted again. |
+| Keep one local folder of skills, commands, and MCP configs and symlink it into every AI tool so updates stay in sync | feed item 2026-09-02 (https://x.com/amirmxt/status/2095231054223376491) | Out of scope | Personal cross-tool dotfiles-symlink management pattern; dev-hooks is the plugin content itself, not a personal config-symlinking scheme, so there's no hook/skill surface to add. |
+| While an agent works on something interesting, tell it to keep a running note documenting the process so you can write it up later | feed item 2026-09-02 (https://x.com/iannuttall/status/2095190192231428596) | Out of scope | Prompting/workflow tip with no concrete hook trigger. |
+| Paste a cold-outreach guide into Claude with the Gmail MCP to research recipients and draft personalized emails | feed item 2026-09-02 (https://x.com/kr0der/status/2095009070323507567) | Out of scope | Marketing/outreach workflow; no dev-workflow surface. |
+| Run a prompt-audit on existing Claude skills after model upgrades to strip redundant rules and reduce drift | feed item 2026-09-02 (https://x.com/petergyang/status/2094987791566622971) | Duplicate | This session's own `skill-creator` skill already covers "optimize a skill's description for better triggering accuracy" and measuring/improving existing skills; no gap for dev-hooks to fill. |
+| Enable Gemini's agentic video processing for long videos to cut tokens/costs | feed item 2026-09-01 (https://x.com/_philschmid/status/2094840645617619036) | Out of scope | Gemini-specific media-processing feature; different vendor, not a dev-workflow gap. |
+| Ask the model to grill you with clarifying questions before it acts, even if you'd accept its default plan | feed item 2026-09-01 (https://x.com/lucasmeijer/status/2094783294915117566) | Out of scope | Prompting-discipline tip with no concrete hook trigger (can't force pre-action clarifying questions from a hook). |
+| End-to-end Meta ads workflow via Claude Code: browser-use setup, quiz funnel LP, CAPI events, broad targeting | feed item 2026-09-01 (https://x.com/boringmarketer/status/2094776379090878718) | Out of scope | Marketing/ads workflow; no dev-workflow surface. |
+
+---
+
 ## 2026-09-01 (Run 25)
 
 Sources scanned:
