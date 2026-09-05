@@ -1,6 +1,8 @@
 .DS_Store
 tmp/
 .worktrees/
+.claude/settings.local.json
+.claude/worktrees/
 
 # Local-only weekly automation review reports (weekly-automation-review skill)
 plans/automation-reviews/

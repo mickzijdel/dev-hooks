@@ -1045,6 +1045,37 @@ Steps:
 
 ---
 
+## v25 → v26 (contain Claude Code worktrees for vulture)
+
+**Python and Shell/CC-plugin stacks only** — Ruby/Rails, JS/TypeScript, and Go never run
+`vulture`, so this bump is a same-number version-stamp update for them with no functional change.
+
+A git worktree Claude Code creates inside the repo — an `Agent` call with
+`isolation: "worktree"`, or a manually created `.claude/worktrees/<name>` — is a full checkout of
+every tracked file, nested under the working tree it was created in. `jscpd` already ignores it
+(`.jscpd.json` sets `"gitignore": true`, so once the path is gitignored jscpd skips it for free),
+but `vulture` walks the filesystem directly and has no `.gitignore` awareness — only its
+`--exclude` flag keeps a path out. Left unexcluded, a local `hk run check` or the CLAUDE.md-listed
+manual run scans every tracked `.py`/shebang script twice: once in the repo proper, once inside
+the nested worktree checkout.
+
+Steps:
+
+1. **Gitignore the path.** Add `.claude/settings.local.json` and `.claude/worktrees/` to
+   `.gitignore` (existing `.worktrees/` entries, if any, are a different, user-chosen convention —
+   keep both).
+2. **Extend the `vulture` exclude list** (Python and Shell stacks only) in `hk.pkl`: append
+   `,.claude/worktrees` to the `--exclude` flag's value, so it reads
+   `--exclude '*/.venv/*,.venv,build,dist,.claude/worktrees'`.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "26"` in `mise.toml` (every stack, even the three
+   whose `vulture` step doesn't apply — the version stamp tracks the standard as a whole).
+4. **Verify.** `hk run check` (or `mise run lint` if you use task frontends) stays green; there is
+   nothing to test locally unless you already have a `.claude/worktrees/` checkout on disk, in
+   which case a pre-fix `vulture .` should show it scanning that nested copy and a post-fix run
+   should not.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

@@ -1,4 +1,4 @@
-# The standard (v25) — full specification
+# The standard (v26) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v25** when it has all of:
+A repo is **compliant at v26** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v25** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "25"`.
+  stamp `DEV_ENV_VERSION = "26"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -200,6 +200,13 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > `ruff check .` covers them too — list them explicitly, never a blanket `bin/*` (it would
 > make ruff try to parse a bash hook as Python). jscpd still keys off extensions, so verbatim
 > duplication in extensionless scripts remains uncovered (acceptable).
+
+> **`vulture` doesn't respect `.gitignore` (v26).** Its `--exclude` flag is the only thing
+> keeping it off gitignored trees, so it must list `.claude/worktrees` explicitly alongside
+> `.venv`/`build`/`dist` — a Claude Code worktree checked out under the repo (see the
+> `.gitignore` gotchas above) is a full copy of every tracked `.py`/shebang script, and an
+> unexcluded one gets scanned twice. `jscpd` doesn't need the same entry: `.jscpd.json` sets
+> `"gitignore": true`, so it already skips the path once `.gitignore` lists it.
 
 ## Ruby/Rails: ERB + security + correctness tooling (v17)
 
@@ -443,6 +450,12 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
   stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
 - **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
   The default already covers this; just don't un-ignore it.
+- **Ignore `.claude/settings.local.json` and `.claude/worktrees/` (v26).** A git worktree Claude
+  Code creates inside the repo (e.g. an `Agent` call with `isolation: "worktree"`, or a manual
+  `git worktree add .claude/worktrees/<name>`) is a full checkout of tracked files nested under
+  the working tree. `jscpd` already skips it (`.jscpd.json` sets `"gitignore": true`), but
+  `vulture` walks the filesystem directly and doesn't consult `.gitignore` — see the Python/Shell
+  `vulture` exclude list below, which must list this path explicitly.
 
 ## Dev container (mise-driven, advisory — v19)
 
