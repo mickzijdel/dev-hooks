@@ -43,7 +43,9 @@
 #   allow / off / false / 0  — pass through silently
 # Deliberately narrow: template files (.env.example), public key halves (*.pub),
 # inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,
-# counting greps, and output redirected to /dev/null all stay silent.
+# counting greps, and output redirected to /dev/null all stay silent. So do the two
+# parameter expansions that cannot print a value — `${VAR:+word}` and `${#VAR}` — since
+# those are the forms to reach for; `${VAR:-word}` is *not* one of them and is caught.
 #
 # Advisory by design; opt out of the whole hook per repo/user with
 # DEV_HOOKS_BASH_GUARD=false (in .claude settings "env").
@@ -211,11 +213,49 @@ path_is_secret() {
 # a bare secret-shaped *word* is almost always a label reporting presence
 # (`echo "BWS_ACCESS_TOKEN present"`) rather than the value; printenv takes the bare
 # name as its argument, so there it is optional ($1 = "name").
+#
+# For a ref the match is deliberately *unanchored*, and that is the whole of the
+# 2026-09-05 fix. It used to require the operand to be exactly `$VAR`, which the
+# segment parser's whitespace splitting satisfied often enough to look like it worked
+# — but only when a space happened to fall before the `$`. `echo "token=$API_TOKEN"`
+# has no such space and sailed through, and so did every parameter expansion carrying
+# a word: `${VAR:-none}` ends in `:-none}`, which the trailing `\}?$` cannot reach.
+#
+# That second gap is the dangerous one, because `${VAR:-word}` *looks* like a presence
+# check and is the opposite of one: it yields `word` only when the variable is unset,
+# so on a machine where the secret is configured it prints the secret. Written as the
+# unset half of a two-branch check — `${VAR:+SET}${VAR:-UNSET}` — it reads as safe to
+# everyone including its author, and it put a live BWS_ACCESS_TOKEN into a deploy
+# transcript. It had even been recorded in the test suite as a false positive, which
+# is why the guard had been taught to stay quiet on it.
+#
+# Only two expansion forms cannot print the value, and both stay silent: `+` and `:+`
+# expand to the *word* rather than the variable, and `${#VAR}` is a character count.
+# Everything else — `:-` `-` `:=` `=` `:?` `?`, the `:off:len` slice, and the `# % / ^ ,`
+# trim and substitute operators — hands back the value or a slice of it, and four
+# characters of a credential is plenty to identify it. Keeping the safe forms quiet is
+# not politeness: they are what Mick should reach for instead, so nagging on them would
+# push him back to the leaky one.
 is_secret_var() {
   local re='[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|_KEY|KEY_)[A-Za-z0-9_]*'
-  local anchored="^\\\$\\{?$re\\}?$"
-  [ "$1" = name ] && anchored="^\\\$?\\{?$re\\}?$"
-  printf '%s' "$2" | grep -Eq "$anchored"
+  if [ "$1" = name ]; then
+    printf '%s' "$2" | grep -Eq "^\\\$?\\{?$re\\}?$"
+    return
+  fi
+  # $VAR, ending at the first character that cannot continue an identifier.
+  local bare="\\\$$re([^A-Za-z0-9_]|\$)"
+  # ${VAR...}, unless what follows the name is `+` or `:+`. `${#VAR}` never matches
+  # here at all: the `#` sits before the name, where the identifier pattern cannot
+  # start.
+  #
+  # Identifier characters are excluded from the final alternative, and that exclusion
+  # is load-bearing rather than tidy. $re ends in `[A-Za-z0-9_]*`, which a regex engine
+  # is free to stop short on, so without it `${AWS_SECRET_ACCESS_KEY+present}` matched
+  # by ending the name at `...KE` and reading the `Y` as the operator. Excluding them
+  # forces the name to run to its own end, which is the only way the character after it
+  # means anything.
+  local braced="\\\$\\{$re(\\}|:[^+]|[^:+}A-Za-z0-9_])"
+  printf '%s' "$2" | grep -Eq "$bare|$braced"
 }
 
 # ── catastrophic, irreversible system damage ─────────────────────────────────────
