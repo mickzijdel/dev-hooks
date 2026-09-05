@@ -2757,7 +2757,6 @@ REPLAY_FALSE_POSITIVES = [
     'grep -n \'event.key === "Escape"\\|event.key === "Arrow\' src/hooks/useKeyboardListener.ts',
     # echo of a secret-shaped *word* — these report presence, never a value.
     'grep -c "ADMIN_API_KEY" .kamal/secrets && echo "ADMIN_API_KEY present in .kamal/secrets"',
-    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}${BWS_ACCESS_TOKEN:-no}"',
     '[ -n "$BWS_ACCESS_TOKEN" ] && echo "BWS_ACCESS_TOKEN present" || echo "BWS_ACCESS_TOKEN absent"',
     'echo "IMPAMP_S3_ACCESS_KEY_ID is set"',
 ]
@@ -2779,6 +2778,41 @@ def test_guard_silent_on_replayed_false_positives(command, secret_tree):
     ],
 )
 def test_guard_catches_replayed_true_positives(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "ask"
+
+
+# Parameter expansions that print the value while *looking* like presence checks.
+#
+# `${VAR:-word}` is the trap: it expands to `word` only when the variable is unset, so
+# on a machine where the secret is configured it prints the secret. Written as the
+# "unset" half of a two-branch check (`${VAR:+SET}${VAR:-UNSET}`) it reads as safe and
+# is not — that exact command put a live BWS_ACCESS_TOKEN into a deploy transcript on
+# 2026-09-05, and it had been sitting in this file as an asserted false positive,
+# which is why the guard was silent on it. Only `+`/`:+` and `${#VAR}` are safe; every
+# other operator yields the value or a slice of it.
+SECRET_EXPANSION_LEAKS = [
+    # the command that actually leaked
+    'echo "BWS_ACCESS_TOKEN: ${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"',
+    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}${BWS_ACCESS_TOKEN:-no}"',
+    # the default-value operators, with and without the colon
+    'echo "${GITHUB_TOKEN:-none}"',
+    'echo "${GITHUB_TOKEN-none}"',
+    'echo "${AWS_SECRET_ACCESS_KEY:=fallback}"',
+    'echo "${DATABASE_PASSWORD:?must be set}"',
+    # a slice is still a leak, and four characters is enough to identify a credential
+    'echo "${DATABASE_PASSWORD:0:6}"',
+    # trimming and substitution operators hand back a modified value
+    'echo "${STRIPE_SECRET_KEY#sk_}"',
+    'echo "${STRIPE_SECRET_KEY/live/test}"',
+    # braced plain form, and one with no space to word-split on
+    'echo "${BWS_ACCESS_TOKEN}"',
+    'echo "token=$STRIPE_SECRET_KEY"',
+    "printf '%s\\n' \"${GITHUB_TOKEN:-}\"",
+]
+
+
+@pytest.mark.parametrize("command", SECRET_EXPANSION_LEAKS)
+def test_guard_catches_secret_parameter_expansions(command, secret_tree):
     assert _decision(_guard_in(secret_tree, command)) == "ask"
 
 
@@ -2823,6 +2857,13 @@ SECRET_SILENT_COMMANDS = [
     # the variable name is not secret-shaped
     "echo $PATH",
     "echo $HOME",
+    # presence checks that genuinely cannot print the value. `:+` and `+` expand to
+    # the *word*, never the variable, and `${#VAR}` is a length — these are the forms
+    # to reach for, so nagging on them would push Mick back to the leaky one.
+    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}"',
+    'echo "${GITHUB_TOKEN:+configured}"',
+    'echo "${AWS_SECRET_ACCESS_KEY+present}"',
+    'echo "${#BWS_ACCESS_TOKEN}"',
 ]
 
 
