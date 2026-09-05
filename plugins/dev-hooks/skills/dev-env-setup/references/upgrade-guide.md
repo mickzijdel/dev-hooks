@@ -992,6 +992,59 @@ Steps:
 
 ---
 
+## v24 → v25 (the gitleaks allowlist covers Python caches)
+
+**Every stack** — but it only bites where Python tests run, so a Ruby or JS repo can apply this
+in seconds and never notice the difference.
+
+`gitleaks dir` has no respect-gitignore flag and walks the whole working tree, which is the
+entire reason the v10 `.gitleaks.toml` allowlist exists. That allowlist grew from a Rails/JS
+starting point and never gained the two directories `pytest` writes: `__pycache__/` and
+`.pytest_cache/`.
+
+The failure is nastier than "a noisy finding". Compiled bytecode is a dense, high-entropy blob,
+and a test file carrying credential-**shaped** fixtures — the synthetic `ghp_…` and `sk-ant-…`
+strings a redaction test needs — puts a `ghp_` prefix into the .pyc near enough to arbitrary
+bytes for gitleaks' `github-pat` rule to match on entropy alone. So:
+
+- `pytest` (or an editor's test runner) regenerates `tests/__pycache__/*.pyc`
+- `git commit` runs hk → gitleaks → `leaks found: 1`
+- the finding names a **gitignored file you never staged**, at a path with no connection to your
+  change, and the byte count in the log is the whole repo rather than your two files
+
+It reads exactly like you committed a credential. It cost two blocked commits in one session
+before the `File:` line was read closely enough to notice it said `.pyc`, and the workaround —
+clear the caches, and do **not** re-run pytest before committing, because a verification run puts
+them straight back — is not something anyone should have to know.
+
+Steps:
+
+1. **Re-copy the allowlist.** `references/templates/.gitleaks.toml` → the repo root's
+   `.gitleaks.toml`. If your copy has repo-specific additions, merge instead — the new entries are
+   the two `(^|/)__pycache__/` and `(^|/)\.pytest_cache/` lines beside the existing `^\.venv/`.
+   They are deliberately **not** `^`-anchored: `tests/__pycache__/` is the common case, a
+   top-level one is the rare one.
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "25"` in `mise.toml`.
+3. **Verify, and verify the negative.** `gitleaks dir --redact --no-banner .` exits 0 with the
+   caches **present** — run `pytest` first so they exist, or the check proves nothing. Then
+   confirm you have not blinded the scanner to real code: write the *same* literal into an
+   ordinary source file and into a `__pycache__/` one, and check that the pair gives exit 1 and
+   exit 0 respectively.
+
+   Generate that literal with `python3 -c 'import secrets,string;
+   print("ghp_"+"".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(36)))'`
+   and delete both files after. It has to be **high-entropy**: the credential-shaped fixtures
+   already in a redaction test suite are built from sequential filler precisely so gitleaks stays
+   quiet about them, so reusing one as a positive control gives a green result that means nothing
+   — which is a mistake worth making once at the terminal rather than trusting in a repo.
+
+> Nothing else is allowlisted here on purpose. `.mypy_cache/` and `.ruff_cache/` are the obvious
+> neighbours and are left scanned: neither has been observed producing a finding, and every path
+> added to this list is a path a `git add -f` could smuggle a real secret through. Add them if and
+> when one actually fires.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

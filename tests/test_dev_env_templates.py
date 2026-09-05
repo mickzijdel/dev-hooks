@@ -280,7 +280,17 @@ def test_gitleaks_template_allowlists_gitignored_artifacts():
     text = GITLEAKS_TEMPLATE.read_text()
     assert "useDefault = true" in text, "must extend the default ruleset"
     # Allowlist must cover the gitignored secret/artifact paths the standard relies on.
-    for needle in (r"^\.env", "log/", r"config/credentials/.*\.key"):
+    # __pycache__ and .pytest_cache are v25: running pytest before committing regenerates
+    # them, and bytecode next to a credential-shaped test fixture matched gitleaks'
+    # github-pat rule on binary adjacency — blocking the commit with a finding in a file
+    # that was never staged, and naming a path the committer had no reason to look at.
+    for needle in (
+        r"^\.env",
+        "log/",
+        r"config/credentials/.*\.key",
+        "__pycache__/",
+        r"\.pytest_cache/",
+    ):
         assert needle in text, f".gitleaks.toml allowlist is missing {needle!r}"
 
 
