@@ -26,7 +26,10 @@ Do this, in order:
 4. Watch out for patterns that feel overdone, excessive, or otherwise obviously
    AI-generated — hero text-left/graphic-right splits, purple/blue gradients, glow and blur
    decoration, glassmorphism cards, three-column icon feature grids, generic sans-serif
-   type, emoji icons, filler copy — and penalize them.
+   type, emoji icons, filler copy, fake product UI built from styled divs (a mock task
+   list, terminal, dashboard, or browser window) — and penalize them. Do not ask for any
+   of these as a fix either: if the hero feels empty, ask for the real product, real
+   imagery, or stronger typography, not a mockup.
 5. Only then score the design out of 10 for how close it is to that studio-level quality
    bar. The rationale comes first; the number follows from it.
 

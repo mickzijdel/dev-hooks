@@ -71,6 +71,11 @@ identity — but still maintains its original high-level aesthetic.
   goalposts and makes scores incomparable. You cannot alter the judge's prompt to relax
   the condition.
 - **Fix the biggest gap first,** not everything the critic listed. Re-screenshot, re-critique.
+- **The brief outranks the critic.** If the critic asks for something on the "never by
+  default" table (a fake dashboard mockup to fill the hero, a stat strip, a glow), don't
+  build it — read it as "this area lacks substance" and answer with the real thing: a
+  product screenshot, generated imagery, stronger type. Say in your notes that you
+  declined the literal ask and why, so a stalled score is explainable.
 - **One owner per pass.** Coupled visual concerns (type + spacing + hierarchy; colour +
   imagery) get worse when several agents edit them in parallel — a published run measured
   parallel fan-out moving the score +0.46 while *adding* defects, and a single sequential
