@@ -128,3 +128,23 @@ The polished design still has to work. Before calling it done:
   fonts subsetted or limited to two families, no shader running on a page that's mostly text.
 - **Verified in a browser, not inferred from the code:** screenshot the final state at every
   breakpoint and look at it. "Should look right" is not done.
+
+## Voice pass
+
+The last pass is over the words, not the pixels. Page copy is prose the user publishes under
+their name, and a design that reads in the model's default register is a tell as sure as a
+purple gradient. Run the `writing:voice-profile` skill over every user-visible string —
+headlines, ledes, button labels, empty states, error messages, footer lines — before calling
+the page done:
+
+- **Profile found** (`$WRITING_VOICE_PROFILE`, `~/.claude/voice_profile.md`, or a project
+  profile): apply it in APPLY mode. Pick the register from its dial that fits the page's job
+  — a landing page and a settings screen sit at different points — and rewrite the copy in
+  that register. Run its `voice_audit.py` over the extracted strings for banned words.
+- **No profile:** the skill's DEFAULT mode still applies — the baseline expository rules,
+  plus the `writing:humanizer` pass for generic AI tells (em-dashes, rule of three, "seamless",
+  "unlock", "elevate").
+
+Keep the copy rules from anti-slop.md in force while rewriting: one job per string, buttons
+say what happens, errors say how to exit, no invented proof. The voice pass changes *how* it
+sounds, never *what* it claims.
