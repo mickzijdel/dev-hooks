@@ -89,6 +89,11 @@ Two rules sit above every step:
    performance, and a real browser screenshot at each breakpoint.
    → [references/deliver.md](references/deliver.md)
 
+7. **Deliver — voice pass.** Run the `writing:voice-profile` skill over every user-visible
+   string (headlines, ledes, buttons, empty and error states) so the copy reads in the
+   user's register, not the model's default; without a profile, its baseline rules plus
+   `writing:humanizer` still apply. → [references/deliver.md](references/deliver.md)
+
 ```mermaid
 flowchart LR
     G[Gate: product, audience,\none action] --> D1[Discover:\nseed or wild prompt]
@@ -100,6 +105,7 @@ flowchart LR
     F --> S
     C -- "9+ or stalled" --> A[Real images / video\nwhere personality is thin]
     A --> P[Deliver: subtract,\nthen verify]
+    P --> W[Voice pass\nover all copy]
 ```
 
 ## Which regime
@@ -136,3 +142,5 @@ Not every design job earns the full loop. Pick the treatment, not whether to des
 - Every remaining element has a job; the copy says only what the product does.
 - Screenshots at phone and desktop widths, light and dark, have been looked at, and the
   `accessibility` audit is clean.
+- Every user-visible string has been through the voice pass; the copy reads as the user
+  would write it, and the voice audit reports no banned words.
