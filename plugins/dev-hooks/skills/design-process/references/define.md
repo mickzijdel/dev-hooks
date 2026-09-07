@@ -139,6 +139,16 @@ Some agents have image tools built in, but they underutilize them. Others don't 
 tools out of the box but can easily use the OpenAI or Gemini APIs to generate images with an
 API key.
 
+**This step is the default, not a fallback.** Treat every visual slot — hero art, feature
+illustrations, background texture, empty-state art — as needing a real asset. Decide the
+route at the gate (step 1 of the skill), before the brief, by looking for, in order: a key
+in `.env.agents` / fnox (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `FAL_KEY`, `REPLICATE_API_TOKEN`),
+a fal/replicate MCP server in `claude mcp list`, the Codex CLI on PATH, or a built-in image
+tool. Nothing → ask the user for a key or for real assets (product screenshots, photos,
+brand illustrations). If they choose type-only, write that in the brief and say it in the
+handoff; a page with no imagery because nobody asked is the default, a page with none
+because the user chose it is a decision.
+
 > The design is pretty plain. Add more personality using image generation. Consider shaders
 > or 3D effects in combination with images to create more interesting visuals.
 >
