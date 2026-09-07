@@ -52,6 +52,11 @@ Two rules sit above every step:
    one action the page exists for, the platform, and any brand constraints. If the user gave
    none of that, ask once (`AskUserQuestion`) — a brief you invent is the average brief. The
    subject's industry, materials, and vernacular are where distinctive choices come from.
+   In the same message, settle **imagery**: check for a generation route (a key in
+   `.env.agents` or fnox, a fal/replicate MCP server, the Codex CLI, built-in image tools;
+   see define.md). None found → ask for one, or for real assets (product screenshots,
+   photos). Record the answer in the brief; a type-only page is a decision the user makes,
+   not a default the agent falls into.
 
 2. **Discover — go broad before deep.** Get variety from *outside* the model. Either seed
    the direction from a random string (String Seed of Thought) or get specific and wild
@@ -78,10 +83,14 @@ Two rules sit above every step:
    → [references/define.md](references/define.md),
    prompt in [references/critic-prompt.md](references/critic-prompt.md)
 
-5. **Define — real assets.** If the page is still leaning on gradients, shapes, and CSS
-   patterns for personality, replace them with generated imagery, and where motion earns
-   it, video (chroma-keyed loops, keyframe-interpolated transitions). Keys live in a
-   gitignored env file or fnox, never in source. → [references/define.md](references/define.md)
+5. **Define — real assets.** Any page that carries a visual — a hero, feature art, a
+   texture, an illustration slot — gets **generated or real imagery by default**, not
+   gradients, shapes, or CSS patterns; agents skip this step unless told, and code-drawn
+   decoration is the giveaway. Where motion earns it, video (chroma-keyed loops,
+   keyframe-interpolated transitions). Keys live in a gitignored env file or fnox, never in
+   source. No route was found at the gate and the user chose type-only → say so in the
+   handoff as a known gap, and design so the hero holds on typography and composition
+   alone. → [references/define.md](references/define.md)
 
 6. **Deliver — subtract, then verify.** Walk every element asking what breaks if it goes;
    remove glows, gradients, redundant labels, filler copy, custom controls worse than native,
@@ -129,6 +138,7 @@ Not every design job earns the full loop. Pick the treatment, not whether to des
 | Critic never satisfied, tokens burning | Cap at 2 rounds first; stop on a stalled score; make the bar concrete (blind pick vs real references) |
 | Every non-default choice is the same non-default (Space Grotesk, cream + serif) | A second-order default is still a default; rotate — [anti-slop.md](references/anti-slop.md) |
 | Personality comes from CSS gradients and blobs | Generate real images; shaders/3D only in combination with imagery |
+| No image-generation key on hand | Ask at the gate, or get real assets from the user; ship type-only only as their stated choice |
 | Feels busy, "premium" is missing | Subtraction pass — [deliver.md](references/deliver.md) |
 | Looks fine in code review | It isn't done until you've seen the screenshot |
 
@@ -139,6 +149,8 @@ Not every design job earns the full loop. Pick the treatment, not whether to des
 - The critic scored 9+ (or won the blind comparison) in a fresh context, or the loop hit
   its bound and the user accepted where it stands.
 - Nothing on the "never by default" table survives without a reason written in the brief.
+- Every visual slot holds generated or real imagery, or the brief records the user's
+  type-only decision and the handoff names it as a gap.
 - Every remaining element has a job; the copy says only what the product does.
 - Screenshots at phone and desktop widths, light and dark, have been looked at, and the
   `accessibility` audit is clean.
