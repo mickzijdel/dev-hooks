@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.1.1
+version: 2.2.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -307,11 +307,21 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 **After:**
 > He said "the project is on track" but others disagreed.
 
+### 19. Glued-Phrase Headlines
+
+**Problem:** AI-generated marketing copy compresses a claim into a noun or short phrase followed by a comma and a past-participle verb, mimicking punchy ad taglines: "Meetings, simplified." "Questions, answered." "Onboarding, solved."
+
+**Before:**
+> Deployment, simplified. Our platform handles CI/CD so your team can focus on shipping features, not fighting infrastructure.
+
+**After:**
+> Our platform handles CI/CD, so your team can focus on shipping features instead of fighting infrastructure.
+
 ---
 
 ## COMMUNICATION PATTERNS
 
-### 19. Collaborative Communication Artifacts
+### 20. Collaborative Communication Artifacts
 
 **Words to watch:** I hope this helps, Of course!, Certainly!, You're absolutely right!, Would you like..., let me know, here is a...
 
@@ -325,7 +335,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ---
 
-### 20. Knowledge-Cutoff Disclaimers
+### 21. Knowledge-Cutoff Disclaimers
 
 **Words to watch:** as of [date], Up to my last training update, While specific details are limited/scarce..., based on available information...
 
@@ -339,7 +349,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ---
 
-### 21. Sycophantic/Servile Tone
+### 22. Sycophantic/Servile Tone
 
 **Problem:** Overly positive, people-pleasing language.
 
@@ -353,7 +363,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ## FILLER AND HEDGING
 
-### 22. Filler Phrases
+### 23. Filler Phrases
 
 **Before → After:**
 - "In order to achieve this goal" → "To achieve this"
@@ -365,7 +375,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ---
 
-### 23. Excessive Hedging
+### 24. Excessive Hedging
 
 **Problem:** Over-qualifying statements.
 
@@ -377,7 +387,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 
 ---
 
-### 24. Generic Positive Conclusions
+### 25. Generic Positive Conclusions
 
 **Problem:** Vague upbeat endings.
 
@@ -471,3 +481,4 @@ Key insight from Wikipedia: "LLMs use statistical algorithms to guess what shoul
 
 **Credit:** Adapted verbatim from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles/blob/main/files/home/.claude/skills/humanizer/SKILL.md).
 Based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) (WikiProject AI Cleanup).
+Pattern 19 (Glued-Phrase Headlines) is an original addition, not sourced from either.
