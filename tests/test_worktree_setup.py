@@ -222,3 +222,106 @@ def test_explicit_worktree_arg(tmp_path):
     out = parse_kv(r.stdout)
     assert os.path.realpath(out["worktree"]) == os.path.realpath(wt)
     assert (wt / ".env").exists()
+
+
+# ── WT_POST_SETUP ────────────────────────────────────────────────────────────────────
+# Allocating ports and a DB suffix leaves the worktree addressable but EMPTY. The
+# databases those names point at do not exist until someone runs `db:prepare`, and a
+# repo that documents that step in a comment gets a worktree whose suite fails in ways
+# that read as a broken branch (fake InnoDB deadlocks, "Table definition has changed",
+# every JS-dependent system test failing at once). This key runs the seeding commands
+# as part of provisioning, so the manual step stops being manual.
+
+
+def _post_setup_repo(tmp_path, conf_body):
+    src = tmp_path / "src"
+    src.mkdir()
+    run = _make_source_repo(src)
+    (src / ".worktree-isolate.conf").write_text(conf_body)
+    run("add", ".worktree-isolate.conf")
+    run("commit", "-q", "-m", "isolate conf")
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+    return wt
+
+
+def test_post_setup_runs_the_declared_command(tmp_path):
+    wt = _post_setup_repo(
+        tmp_path, 'WT_BASE_PORT=3000\nWT_POST_SETUP="touch seeded.txt"\n'
+    )
+    out, stdout = run_setup(wt)
+    assert (wt / "seeded.txt").exists(), stdout
+    assert out["post_setup"] == "ok"
+
+
+def test_post_setup_reports_failure_without_aborting(tmp_path):
+    """A failed seed must not fail provisioning — the worktree is still usable, and a
+    silent failure here is exactly what produces a 'broken branch' an hour later."""
+    wt = _post_setup_repo(tmp_path, 'WT_BASE_PORT=3000\nWT_POST_SETUP="exit 3"\n')
+    out, stdout = run_setup(wt)
+    assert out["post_setup"] == "failed"
+    assert "WT_POST_SETUP" in stdout
+
+
+def test_post_setup_absent_key_is_a_noop(tmp_path):
+    wt = _post_setup_repo(tmp_path, "WT_BASE_PORT=3000\n")
+    out, _ = run_setup(wt)
+    assert out["post_setup"] == "none"
+
+
+def test_post_setup_needs_the_isolate_conf(tmp_path):
+    """No .worktree-isolate.conf ⇒ no command source ⇒ nothing runs."""
+    src = tmp_path / "src"
+    src.mkdir()
+    _make_source_repo(src)
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+    out, _ = run_setup(wt)
+    assert out["post_setup"] == "none"
+
+
+def test_post_setup_runs_inside_the_worktree(tmp_path):
+    """cwd must be the worktree, not the main checkout — the whole point is seeding
+    THIS worktree's databases."""
+    wt = _post_setup_repo(
+        tmp_path, 'WT_BASE_PORT=3000\nWT_POST_SETUP="pwd > where.txt"\n'
+    )
+    run_setup(wt)
+    assert (wt / "where.txt").read_text().strip() == str(wt.resolve())
+
+
+def test_post_setup_sees_the_worktrees_isolated_env(tmp_path):
+    """The seed must see THIS worktree's PORT/DB suffix.
+
+    A worktree's mise env follows the shell rather than the command's cwd, so a seed
+    run without `mise x` from the worktree prepares the *main checkout's* database
+    under the worktree's name — the failure is invisible until the suite misbehaves.
+    Also covers the ordering question: `mise trust` runs before isolation writes
+    `mise.local.toml`, and trusting the directory has to be enough for the
+    later-written file.
+    """
+    if shutil.which("mise") is None:
+        import pytest
+
+        pytest.skip("mise not installed")
+    src = tmp_path / "src"
+    src.mkdir()
+    run = _make_source_repo(src)
+    (src / "mise.toml").write_text('[env]\nAPP = "demo"\n')
+    (src / ".worktree-isolate.conf").write_text(
+        "WT_BASE_PORT=3000\n"
+        "WT_DB_SUFFIX_VAR=WORKTREE_DB_SUFFIX\n"
+        'WT_POST_SETUP="echo $PORT/$WORKTREE_DB_SUFFIX/$APP > seed.log"\n'
+    )
+    run("add", "mise.toml", ".worktree-isolate.conf")
+    run("commit", "-q", "-m", "mise + isolate conf")
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+
+    out, stdout = run_setup(wt)
+
+    assert out["post_setup"] == "ok", stdout
+    port, suffix, app = (wt / "seed.log").read_text().strip().split("/")
+    assert port == str(3000 + int(out["isolated"]))  # the worktree's port, not 3000
+    assert suffix == "_wt"
+    assert app == "demo"  # the repo's own mise.toml still applies

@@ -28,6 +28,8 @@
 #   copied         number of gitignored entries copied in
 #   skipped_heavy  number of gitignored entries skipped as heavy/excluded
 #   exec_fixed     number of shebang scripts re-marked executable
+#   isolated       per-worktree offset allocated, or `no`
+#   post_setup     ok | failed | none — result of the config's WT_POST_SETUP command
 
 set -u
 
@@ -146,6 +148,42 @@ if [ -f "$WT/.worktree-isolate.conf" ] && [ -f "$SELF_DIR/isolate-worktree.sh" ]
   [ -n "$iso_offset" ] && isolated="$iso_offset"
 fi
 
+# ── 5. post-setup seeding (opt-in via WT_POST_SETUP in .worktree-isolate.conf) ────────
+# Isolation hands the worktree its own port and database *names*. The databases behind
+# those names do not exist yet, and neither does a per-worktree asset build. Skipping that
+# does not look like a missing setup step from the inside — it looks like a broken branch:
+# a test DB that was never prepared throws InnoDB deadlocks in unrelated tests, and a
+# missing `public/vite-test` fails every JS-dependent system test at once. Repos used to
+# carry the commands in a comment above the config; this runs them instead.
+#
+# Runs AFTER isolation so the commands see the generated mise.local.toml (PORT,
+# WORKTREE_DB_SUFFIX). Non-fatal on purpose — a worktree with unseeded databases is still
+# a usable worktree, and aborting here would strand it half-provisioned — but never silent,
+# because a seed that failed quietly is the very failure this section exists to prevent.
+post_setup=none
+if [ "$isolated" != no ] || [ -f "$WT/.worktree-isolate.conf" ]; then
+  POST_CMD="$(sed -n 's/^[[:space:]]*WT_POST_SETUP=//p' "$WT/.worktree-isolate.conf" 2>/dev/null |
+    sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | tail -1)"
+  if [ -n "$POST_CMD" ]; then
+    echo "# WT_POST_SETUP: $POST_CMD"
+    # `mise x` so the commands inherit the worktree's own PORT/DB suffix rather than the
+    # ambient shell's — a worktree's mise env follows the shell, not the command's cwd.
+    if command -v mise >/dev/null 2>&1; then
+      runner=(mise x -- bash -c "$POST_CMD")
+    else
+      runner=(bash -c "$POST_CMD")
+    fi
+    post_rc=0
+    (cd "$WT" && timeout "${WT_POST_SETUP_TIMEOUT:-600}" "${runner[@]}") || post_rc=$?
+    if [ "$post_rc" -eq 0 ]; then
+      post_setup=ok
+    else
+      post_setup=failed
+      echo "# WT_POST_SETUP failed (exit $post_rc) — the worktree is provisioned but not seeded." >&2
+    fi
+  fi
+fi
+
 # ── Output ────────────────────────────────────────────────────────────────────────────
 cat <<EOF
 source=$SRC
@@ -155,6 +193,7 @@ copied=$copied
 skipped_heavy=$skipped_heavy
 exec_fixed=$exec_fixed
 isolated=$isolated
+post_setup=$post_setup
 EOF
 
 echo "# Provisioned worktree $WT"

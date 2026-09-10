@@ -31,9 +31,32 @@ the project needs.
 | `WT_REDIS_URL_VAR=REDIS_URL` | `redis://localhost:6379/<offset>` (a distinct Redis logical DB per worktree) |
 | `WT_COMPOSE_NAME=myapp` | emit `COMPOSE_PROJECT_NAME=<name>_<slug>` |
 | `WT_COMPOSE_ENV=.devcontainer/.env` | also write `COMPOSE_PROJECT_NAME` + `PORT` into this compose-adjacent `.env` |
+| `WT_POST_SETUP="bin/rails db:prepare && …"` | shell command run inside the worktree after isolation, to create what the allocated names point at |
 
 Values land in a generated, marker-delimited block in `mise.local.toml` (`[env]`), rewritten in
 place on every run — never appended, never touching anything else in the file.
+
+## Seeding the worktree (`WT_POST_SETUP`)
+
+Isolation allocates *names* — a port, a database suffix. The databases behind those names do
+not exist yet, and neither does a per-worktree asset build. That gap does not announce itself:
+a test database that was never prepared throws `ActiveRecord::Deadlocked` in unrelated tests,
+and a missing `public/vite-test` fails every JS-dependent system test at once. Both read as a
+broken branch rather than a missing setup step, which is why documenting the commands in a
+comment does not work — the person who needed them is the one who did not read them.
+
+```sh
+WT_POST_SETUP="bin/rails db:prepare && bin/rails db:test:prepare && RAILS_ENV=test bin/vite build"
+```
+
+It runs after isolation, from the worktree, through `mise x` so the commands see the generated
+`mise.local.toml` (`PORT`, `WORKTREE_DB_SUFFIX`) rather than the ambient shell's values. A
+worktree's mise env follows the *shell*, not the command's cwd, so this distinction is
+load-bearing: seeding without it prepares the main checkout's database under the worktree's name.
+
+Failure is reported (`post_setup=failed`, plus a line on stderr) but never fatal — a worktree
+with unseeded databases is still a usable worktree, and aborting would strand it
+half-provisioned. Cap a slow seed with `WT_POST_SETUP_TIMEOUT` (seconds, default 600).
 
 ## Rails (host-native)
 

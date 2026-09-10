@@ -93,6 +93,7 @@ WT_BASE_PORT=3000                    # PORT = base + per-worktree offset (offset
 WT_DB_SUFFIX_VAR=WORKTREE_DB_SUFFIX  # export "_<slug>" for database.yml to read
 WT_REDIS_URL_VAR=REDIS_URL           # redis://localhost:6379/<offset>
 WT_COMPOSE_NAME=myapp                # emit COMPOSE_PROJECT_NAME=<name>_<slug> for compose/devcontainers
+WT_POST_SETUP="bin/rails db:prepare && bin/rails db:test:prepare"  # seed what those names point at
 ```
 
 The offset is stable across re-runs and self-heals: a shared registry in the git *common* dir
@@ -100,3 +101,6 @@ tracks slug→offset, and removing a worktree frees its offset for the next one.
 read `PORT` + the DB suffix; a per-worktree devcontainer reads `COMPOSE_PROJECT_NAME`. See
 [references/isolation.md](references/isolation.md) for the full Rails recipe (`database.yml`
 suffix + `bin/rails db:prepare`), the devcontainer notes, and the dotenv alternative.
+`WT_POST_SETUP` runs the seeding commands as part of provisioning — isolation allocates the
+port and database *names*, but nothing exists behind them until those commands run, and an
+unseeded worktree fails like a broken branch rather than like a missing setup step.
