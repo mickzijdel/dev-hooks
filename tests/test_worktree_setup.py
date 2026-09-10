@@ -225,12 +225,6 @@ def test_explicit_worktree_arg(tmp_path):
 
 
 # ── WT_POST_SETUP ────────────────────────────────────────────────────────────────────
-# Allocating ports and a DB suffix leaves the worktree addressable but EMPTY. The
-# databases those names point at do not exist until someone runs `db:prepare`, and a
-# repo that documents that step in a comment gets a worktree whose suite fails in ways
-# that read as a broken branch (fake InnoDB deadlocks, "Table definition has changed",
-# every JS-dependent system test failing at once). This key runs the seeding commands
-# as part of provisioning, so the manual step stops being manual.
 
 
 def _post_setup_repo(tmp_path, conf_body):
@@ -291,15 +285,10 @@ def test_post_setup_runs_inside_the_worktree(tmp_path):
 
 
 def test_post_setup_sees_the_worktrees_isolated_env(tmp_path):
-    """The seed must see THIS worktree's PORT/DB suffix.
-
-    A worktree's mise env follows the shell rather than the command's cwd, so a seed
-    run without `mise x` from the worktree prepares the *main checkout's* database
-    under the worktree's name — the failure is invisible until the suite misbehaves.
-    Also covers the ordering question: `mise trust` runs before isolation writes
-    `mise.local.toml`, and trusting the directory has to be enough for the
-    later-written file.
-    """
+    """A worktree's mise env follows the shell, not the command's cwd, so a seed run
+    without `mise x` silently prepares the MAIN checkout's database under the
+    worktree's name. Also pins that `mise trust` (which runs before isolation writes
+    mise.local.toml) covers the later-written file."""
     if shutil.which("mise") is None:
         import pytest
 

@@ -36,22 +36,13 @@
 # manager read that prints to stdout (`bws secret get`, `op read`, `gh auth token`),
 # or echoing a secret-named variable. Once a value is in the transcript it is logged,
 # summarised, and pasted onward, and the only real remedy is rotating the credential.
-#
-# This BLOCKS by default. It used to ask, on the reasoning that every one of these is a
-# command you legitimately need — but `ask` does not choose a human, it chooses whoever
-# is answering prompts, and under `"defaultMode": "auto"` that is the auto-mode
-# classifier. On 2026-09-10 the guard correctly emitted `ask` on
-# `echo "${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"`, the classifier read it as
-# the presence check it is dressed up as, approved it, and a live machine-account token
-# went into the transcript — the third leak of that same token in five weeks. The `:+SET`
-# half is what makes it convincing, and a classifier is fooled by it for exactly the
-# reason a person is, which is the illusion this check exists to correct. Deny is right
-# where the act is irreversible AND a safe form always exists: `${VAR:+SET}`, `${#VAR}`,
-# `fnox run`/`bws run`, or asking Mick to look himself.
+# So this BLOCKS rather than asking: `ask` selects whoever answers prompts, and under
+# `"defaultMode": "auto"` that is the auto-mode classifier, which reads a two-branch
+# `${VAR:+SET}${VAR:-UNSET}` as the presence check it is dressed up as. Deny is right
+# because the act is irreversible AND a non-printing form always exists.
 # Configurable with DEV_HOOKS_GUARD_SECRETS:
 #   unset / deny             — block outright (default)
-#   ask                      — confirm first (pre-2.40 behaviour; only meaningful when a
-#                              human actually answers the prompt)
+#   ask                      — confirm first; only a safeguard if a human answers
 #   allow / off / false / 0  — pass through silently
 # Deliberately narrow: template files (.env.example), public key halves (*.pub),
 # inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,

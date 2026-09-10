@@ -149,17 +149,14 @@ if [ -f "$WT/.worktree-isolate.conf" ] && [ -f "$SELF_DIR/isolate-worktree.sh" ]
 fi
 
 # ── 5. post-setup seeding (opt-in via WT_POST_SETUP in .worktree-isolate.conf) ────────
-# Isolation hands the worktree its own port and database *names*. The databases behind
-# those names do not exist yet, and neither does a per-worktree asset build. Skipping that
-# does not look like a missing setup step from the inside — it looks like a broken branch:
-# a test DB that was never prepared throws InnoDB deadlocks in unrelated tests, and a
-# missing `public/vite-test` fails every JS-dependent system test at once. Repos used to
-# carry the commands in a comment above the config; this runs them instead.
+# Isolation allocates the port and database *names*; nothing exists behind them until these
+# commands run, and an unseeded worktree fails like a broken branch rather than like a
+# missing setup step (unprepared test DB → InnoDB deadlocks in unrelated tests; no
+# `public/vite-test` → every JS-dependent system test at once).
 #
-# Runs AFTER isolation so the commands see the generated mise.local.toml (PORT,
-# WORKTREE_DB_SUFFIX). Non-fatal on purpose — a worktree with unseeded databases is still
-# a usable worktree, and aborting here would strand it half-provisioned — but never silent,
-# because a seed that failed quietly is the very failure this section exists to prevent.
+# Runs after isolation so the commands see the generated mise.local.toml. Reported but
+# non-fatal: a worktree with unseeded databases is still usable, and aborting would strand
+# it half-provisioned.
 post_setup=none
 if [ "$isolated" != no ] || [ -f "$WT/.worktree-isolate.conf" ]; then
   POST_CMD="$(sed -n 's/^[[:space:]]*WT_POST_SETUP=//p' "$WT/.worktree-isolate.conf" 2>/dev/null |

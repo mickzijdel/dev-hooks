@@ -2733,16 +2733,8 @@ def _guard_in(secret_tree, command, **env):
 
 @pytest.mark.parametrize("command", SECRET_ASK_COMMANDS)
 def test_guard_denies_before_a_secret_reaches_the_transcript(command, secret_tree):
-    """Deny, not ask.
-
-    `ask` hands the decision to whoever is answering prompts, and under
-    `"defaultMode": "auto"` that is the auto-mode classifier rather than a human.
-    A presence check written `${VAR:+SET}${VAR:-UNSET}` reads as safe to a
-    classifier for exactly the reason it reads as safe to a person — which is the
-    illusion this guard exists to correct — so it gets approved and the value
-    prints. Printing is irreversible (rotation is the only remedy) and a safe form
-    always exists, so this class blocks by default.
-    """
+    """Deny, not ask: under auto mode the classifier answers `ask`, and it reads a
+    two-branch `${VAR:+SET}${VAR:-UNSET}` as the presence check it imitates."""
     r = _guard_in(secret_tree, command)
     assert r.returncode == 0
     assert _decision(r) == "deny"
