@@ -2732,14 +2732,48 @@ def _guard_in(secret_tree, command, **env):
 
 
 @pytest.mark.parametrize("command", SECRET_ASK_COMMANDS)
-def test_guard_asks_before_a_secret_reaches_the_transcript(command, secret_tree):
+def test_guard_denies_before_a_secret_reaches_the_transcript(command, secret_tree):
+    """Deny, not ask.
+
+    `ask` hands the decision to whoever is answering prompts, and under
+    `"defaultMode": "auto"` that is the auto-mode classifier rather than a human.
+    A presence check written `${VAR:+SET}${VAR:-UNSET}` reads as safe to a
+    classifier for exactly the reason it reads as safe to a person — which is the
+    illusion this guard exists to correct — so it gets approved and the value
+    prints. Printing is irreversible (rotation is the only remedy) and a safe form
+    always exists, so this class blocks by default.
+    """
     r = _guard_in(secret_tree, command)
     assert r.returncode == 0
-    assert _decision(r) == "ask"
+    assert _decision(r) == "deny"
     assert (
         "transcript"
         in json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
     )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The 2026-09-10 leak, verbatim in shape: the `:+SET` half makes the whole
+        # thing look like a presence check, and the `:-UNSET` half prints the value.
+        'echo "BWS: ${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"',
+        'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+    ],
+)
+def test_guard_denies_the_two_branch_presence_check(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert _decision(r) == "deny"
+
+
+def test_guard_secrets_can_be_downgraded_to_ask(secret_tree):
+    """The escape hatch stays: a session that really needs the prompt can opt down."""
+    r = _guard_in(
+        secret_tree,
+        'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+        DEV_HOOKS_GUARD_SECRETS="ask",
+    )
+    assert _decision(r) == "ask"
 
 
 def test_guard_ignores_a_secret_looking_path_that_does_not_exist(secret_tree):
@@ -2778,7 +2812,7 @@ def test_guard_silent_on_replayed_false_positives(command, secret_tree):
     ],
 )
 def test_guard_catches_replayed_true_positives(command, secret_tree):
-    assert _decision(_guard_in(secret_tree, command)) == "ask"
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
 
 
 # Parameter expansions that print the value while *looking* like presence checks.
@@ -2813,7 +2847,7 @@ SECRET_EXPANSION_LEAKS = [
 
 @pytest.mark.parametrize("command", SECRET_EXPANSION_LEAKS)
 def test_guard_catches_secret_parameter_expansions(command, secret_tree):
-    assert _decision(_guard_in(secret_tree, command)) == "ask"
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
 
 
 # The false positives that would make this hook unusable. Every one of these is an

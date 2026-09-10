@@ -36,10 +36,22 @@
 # manager read that prints to stdout (`bws secret get`, `op read`, `gh auth token`),
 # or echoing a secret-named variable. Once a value is in the transcript it is logged,
 # summarised, and pasted onward, and the only real remedy is rotating the credential.
-# So this asks for a confirmation beat rather than blocking: every one of these is a
-# command you legitimately need. Configurable with DEV_HOOKS_GUARD_SECRETS:
-#   unset / ask              — confirm first (default)
-#   deny                     — block outright
+#
+# This BLOCKS by default. It used to ask, on the reasoning that every one of these is a
+# command you legitimately need — but `ask` does not choose a human, it chooses whoever
+# is answering prompts, and under `"defaultMode": "auto"` that is the auto-mode
+# classifier. On 2026-09-10 the guard correctly emitted `ask` on
+# `echo "${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"`, the classifier read it as
+# the presence check it is dressed up as, approved it, and a live machine-account token
+# went into the transcript — the third leak of that same token in five weeks. The `:+SET`
+# half is what makes it convincing, and a classifier is fooled by it for exactly the
+# reason a person is, which is the illusion this check exists to correct. Deny is right
+# where the act is irreversible AND a safe form always exists: `${VAR:+SET}`, `${#VAR}`,
+# `fnox run`/`bws run`, or asking Mick to look himself.
+# Configurable with DEV_HOOKS_GUARD_SECRETS:
+#   unset / deny             — block outright (default)
+#   ask                      — confirm first (pre-2.40 behaviour; only meaningful when a
+#                              human actually answers the prompt)
 #   allow / off / false / 0  — pass through silently
 # Deliberately narrow: template files (.env.example), public key halves (*.pub),
 # inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,
@@ -330,7 +342,7 @@ fi
 
 # ── secrets that would land in the transcript ────────────────────────────────────
 SECRET_ASK=""
-case "${DEV_HOOKS_GUARD_SECRETS:-ask}" in
+case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
     SEG_CWD="${CWD:-.}"
@@ -398,13 +410,13 @@ case "${DEV_HOOKS_GUARD_SECRETS:-ask}" in
 esac
 
 if [ -n "$SECRET_ASK" ]; then
-  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential. Prefer a form that doesn't print the value (\`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or asking the user to check it themselves). Confirm if you do need to see it."
-  case "${DEV_HOOKS_GUARD_SECRETS:-ask}" in
-    deny | DENY | 1 | true | TRUE | True)
-      reminder_emit_decision deny "BLOCKED: $REASON"
+  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential. Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+  case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
+    ask | ASK | Ask)
+      reminder_emit_decision ask "$REASON Confirm if you do need to see it."
       ;;
     *)
-      reminder_emit_decision ask "$REASON"
+      reminder_emit_decision deny "BLOCKED: $REASON If you genuinely need the value on screen, run it yourself outside the agent."
       ;;
   esac
 fi
