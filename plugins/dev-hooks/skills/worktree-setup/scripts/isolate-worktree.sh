@@ -17,6 +17,8 @@
 #   WT_REDIS_URL_VAR=REDIS_URL           # redis://localhost:6379/<offset>
 #   WT_COMPOSE_NAME=myapp                # emit COMPOSE_PROJECT_NAME=<name>_<slug>
 #   WT_COMPOSE_ENV=.devcontainer/.env    # also write name+PORT into this compose-adjacent .env
+# setup-worktree.sh reads one further key from the same file after isolation runs:
+#   WT_POST_SETUP="bin/rails db:prepare && …"  # seed what the allocated names point at
 #
 # Usage: isolate-worktree.sh [WORKTREE] [--config FILE]
 #   WORKTREE     the worktree to isolate (default: $PWD)
