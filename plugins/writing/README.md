@@ -14,12 +14,13 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `humanizer` | Removing tells of AI-generated writing — em-dash overuse, rule-of-three, promotional tone, etc. (based on Wikipedia's "Signs of AI writing"). |
 | `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
 | `voice-profile` | Matching a person's writing voice — apply a profile of their own rules (Do/Don't/banned words/before-after), build one from their samples, or fall back to baseline expository discipline. Bundles a `voice_audit.py` banned-word scanner. |
+| `first-reader` | Simulating a specific target reader passage by passage through a draft to find where they'd lean in or bail — an attention/engagement check that `readability` and `humanizer` can't catch on their own. Report only; never rewrites. |
 
 > `github-readme`, `humanizer`, and `readability` are adapted **verbatim** from
 > [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles) (credit to Nate; each
 > `SKILL.md` links back to its source). `humanizer` is additionally based on
 > [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
-> (WikiProject AI Cleanup). `voice-profile` is original to this plugin.
+> (WikiProject AI Cleanup). `voice-profile` and `first-reader` are original to this plugin.
 
 ## Hooks
 
@@ -46,6 +47,7 @@ $ claude
 > /writing:humanizer      strip AI tells from a draft
 > /writing:readability    make web copy scannable
 > /writing:voice-profile  match a saved writing voice
+> /writing:first-reader   simulate a reader to find where they'd bail
 ```
 
 ## Notes
