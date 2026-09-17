@@ -1,6 +1,6 @@
 #!/bin/bash
-# bet: model won't locate the project's docs/ before it needs them
-# sunset: model reliably finds and consults project docs on its own
+# bet: none (L2 — where this repo keeps its docs is a private fact, not a model weakness)
+# sunset: never (private fact)
 # SessionStart hook: if this project has a docs/ or doc/ directory containing
 # Markdown files, emit a brief index (titles + optional descriptions from YAML
 # frontmatter) so Claude knows where documentation lives and can consult the
