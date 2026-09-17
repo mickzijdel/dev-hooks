@@ -56,20 +56,6 @@ def assert_json_with(stdout, needle):
     return payload
 
 
-# ── detect-stack-skills.sh ──────────────────────────────────────────────────────────
-def test_detect_stack_fires_for_python(tmp_path):
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "Python")
-
-
-def test_detect_stack_silent_when_unrecognized(tmp_path):
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 # ── dev-env-reminder.sh ─────────────────────────────────────────────────────────────
 def test_dev_env_reminder_silent_outside_git(tmp_path):
     r = run_hook("dev-env-reminder.sh", stdin=json.dumps({"cwd": str(tmp_path)}))

@@ -140,13 +140,13 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     home = tmp_path / "home"
     (home / ".claude" / "automation-review").mkdir(parents=True)
     proj = tmp_path / "proj"
-    proj.mkdir()
-    (proj / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (proj / "docs").mkdir(parents=True)
+    (proj / "docs" / "guide.md").write_text("# Guide\n")
 
     e = os.environ.copy()
     e.update(HOME=str(home), DEV_HOOKS_FIRE_LOG="1")
     r = subprocess.run(
-        ["bash", str(HOOKS / "detect-stack-skills.sh")],
+        ["bash", str(HOOKS / "docs-context.sh")],
         input=f'{{"cwd":"{proj}","session_id":"sess-abc"}}',
         env=e,
         capture_output=True,
@@ -158,7 +158,7 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     log = home / ".claude" / "automation-review" / "hook-fires.jsonl"
     assert log.exists(), "SessionStart hook emitted but logged no fire"
     body = log.read_text()
-    assert '"hook":"detect-stack-skills.sh"' in body
+    assert '"hook":"docs-context.sh"' in body
     assert '"session":"sess-abc"' in body, "session_id not carried into the fire log"
 
 
