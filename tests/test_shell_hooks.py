@@ -56,20 +56,6 @@ def assert_json_with(stdout, needle):
     return payload
 
 
-# ── detect-stack-skills.sh ──────────────────────────────────────────────────────────
-def test_detect_stack_fires_for_python(tmp_path):
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "Python")
-
-
-def test_detect_stack_silent_when_unrecognized(tmp_path):
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 # ── dev-env-reminder.sh ─────────────────────────────────────────────────────────────
 def test_dev_env_reminder_silent_outside_git(tmp_path):
     r = run_hook("dev-env-reminder.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
@@ -2170,77 +2156,6 @@ def test_swallow_fires_for_empty_ruby_rescue(tmp_path):
 def test_swallow_silent_for_handled(tmp_path):
     content = "try:\n    f()\nexcept ValueError as e:\n    log(e)\n    raise\n"
     r = _swallow_run(tmp_path, "ok.py", content, "j5")
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-# ── todo-leftover-reminder.sh ────────────────────────────────────────────────────────
-TODO_SENTINEL = "[todo-leftover] new TODO/FIXME markers added this session"
-
-
-def test_todo_leftover_fires_on_new_marker(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    # TODO: handle errors\n    pass\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 2
-    payload = assert_json_with(r.stdout, "[todo-leftover]")
-    assert "foo.py" in json.dumps(payload)
-
-
-def test_todo_leftover_silent_for_preexisting_committed(tmp_path):
-    run = init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# FIXME: later\nx = 1\n")
-    run("add", "foo.py")
-    run("commit", "-q", "-m", "add foo")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_ignores_test_files(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "test_foo.py").write_text("# TODO: write more tests\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# TODO: x\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_TODO_LEFTOVER="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# TODO: x\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", extra_lines=[json.dumps({"text": TODO_SENTINEL})]
-    )
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 

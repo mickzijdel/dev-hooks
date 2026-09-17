@@ -27,6 +27,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SELF_DIR/lib/reminder-common.sh"
 
 reminder_opt_out DEV_HOOKS_SCRIPT_INDEX
+reminder_session_init
 
 SCRIPT_DIR="${DEV_HOOKS_SCRIPT_DIR:-$HOME/.local/bin}"
 

@@ -94,14 +94,19 @@ Do not include changelog or detective-work where it does not belong, such as in 
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
   so the normal permission flow proceeds). UserPromptSubmit: `reminder_prompt_init <OPT_VAR>`
   (opt-out + INPUT/PROMPT/CWD/SESSION; reads `.prompt` on its own so a multi-line prompt isn't
-  truncated — shares the `_reminder_cwd_session` tail with `reminder_pre_init`) and
+  truncated — shares the `reminder_cwd_session` tail with `reminder_pre_init`) and
   `reminder_emit_prompt <msg>` (advisory additionalContext + exit 0), used by both `prompt-log.sh`
   and `intent-check-reminder.sh`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
   into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must print only
-  the structured additionalContext JSON (via `reminder_emit_prompt`) or nothing at all. PostToolUse(Bash) (`ci-watch-reminder.sh`) is likewise the lone consumer of *that*
-  event's Bash payload — it reads `.tool_input.command`/`.cwd` inline and reuses
-  `reminder_opt_out`/`reminder_emit`; promote a `reminder_post_bash_init` when a second
-  PostToolUse(Bash) hook lands. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  the structured additionalContext JSON (via `reminder_emit_prompt`) or nothing at all. PostToolUse(Bash): `reminder_post_bash_init <OPT_VAR>` (opt-out + INPUT/COMMAND;
+  reads `.tool_input.command` on its own so a multi-line command isn't truncated), followed —
+  after the hook's own command-shape match — by `reminder_cwd_session` (CWD/SESSION in one jq
+  pass). The split is deliberate: these hooks run on *every* Bash tool call, so the second jq
+  spawn isn't paid by a command the hook is about to ignore. **`reminder_cwd_session` is not
+  optional** — SESSION is what makes a fire attributable to a repo (a session id resolves to
+  `~/.claude/projects/<dir>/<session>.jsonl`), and three hooks silently logged `"nosession"`
+  for five weekly reviews before `test_every_emitting_hook_establishes_a_session` in
+  `tests/test_hook_sunset_bets.py` started failing any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
   guard when the hook manages its own re-arm state), `reminder_session_since` (session start
   as a `git log --since` argument in `$REPLY`, from the transcript's first-line timestamp —

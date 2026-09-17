@@ -5,10 +5,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/detect-stack-skills.sh\""
-          },
-          {
-            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dev-env-reminder.sh\"",
             "statusMessage": "Checking repo against your dev-env standard..."
           },
@@ -155,11 +151,6 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/debug-leftover-reminder.sh\"",
             "statusMessage": "Checking for leftover debug statements..."
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/todo-leftover-reminder.sh\"",
-            "statusMessage": "Checking for leftover TODO/FIXME markers..."
           },
           {
             "type": "command",

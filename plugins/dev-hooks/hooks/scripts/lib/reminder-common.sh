@@ -107,12 +107,29 @@ reminder_pre_init() {
   INPUT=$(cat 2>/dev/null)
   COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
   [ -z "$COMMAND" ] && exit 0
-  _reminder_cwd_session
+  reminder_cwd_session
 }
 
-# Shared tail of the PreToolUse(Bash)/UserPromptSubmit preambles: from INPUT set
-# CWD (.cwd, → $PWD) and SESSION (.session_id). Keeps the two init helpers DRY.
-_reminder_cwd_session() {
+# PostToolUse(Bash) preamble: opt-out, then from stdin set INPUT and COMMAND
+# (.tool_input.command, read here rather than via reminder_init so a multi-line command
+# isn't truncated); exits 0 when there is no command. Deliberately does NOT set CWD/SESSION
+# — see reminder_cwd_session, which the caller runs after its command-shape match.
+reminder_post_bash_init() {
+  reminder_opt_out "$1"
+  INPUT=$(cat 2>/dev/null)
+  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
+  [ -z "$COMMAND" ] && exit 0
+}
+
+# From INPUT set CWD (.cwd, → $PWD) and SESSION (.session_id), in one jq pass.
+# The tail of the PreToolUse(Bash)/UserPromptSubmit/SessionStart preambles, and public
+# because the PostToolUse(Bash) hooks call it *themselves*, after their command-shape
+# match: those run on every Bash tool call, so the second jq spawn is deliberately not
+# paid by a `git status` that the hook is going to ignore anyway. Call it before any
+# reminder_emit_* — SESSION is what makes the fire log attributable to a repo (a session
+# id resolves to its transcript under ~/.claude/projects/<dir>/<session>.jsonl), and a
+# hook that emits without it logs "nosession" and cannot be evaluated by the Retire pass.
+reminder_cwd_session() {
   local _cs
   mapfile -t _cs < <(printf '%s' "$INPUT" |
     jq -r '(.cwd // ""), (.session_id // "nosession")' 2>/dev/null)
@@ -180,8 +197,8 @@ reminder_emit() {
 # var, a CLAUDE.md marker, an ownership heuristic), so each calls reminder_opt_out itself.
 reminder_session_init() {
   INPUT=$(cat 2>/dev/null)
-  _reminder_cwd_session
-  # SessionStart hooks name the project directory DIR; CWD is _reminder_cwd_session's.
+  reminder_cwd_session
+  # SessionStart hooks name the project directory DIR; CWD is reminder_cwd_session's.
   # shellcheck disable=SC2034
   DIR=$CWD
 }
@@ -207,7 +224,7 @@ reminder_prompt_init() {
   # shellcheck disable=SC2034
   PROMPT=$(printf '%s' "$INPUT" | jq -r '.prompt // ""' 2>/dev/null)
   [ -z "$PROMPT" ] && exit 0
-  _reminder_cwd_session
+  reminder_cwd_session
 }
 
 # Emit a UserPromptSubmit advisory (additionalContext is injected into Claude's context

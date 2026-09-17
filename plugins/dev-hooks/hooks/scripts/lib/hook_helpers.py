@@ -30,9 +30,9 @@ def git(args):
 def new_lines():
     """Yield (path, lineno, text) for every line Claude *newly introduced*: added lines in
     `git diff HEAD` plus every line of untracked files. Pre-existing committed lines are
-    skipped, so committing or reverting clears whatever a Stop hook flagged. Shared by the
-    debug-leftover and todo-leftover Stop hooks — keep their detection here in sync via this
-    one walker (jscpd runs at threshold 0, so this must not be copy-pasted)."""
+    skipped, so committing or reverting clears whatever a Stop hook flagged. Used by the
+    debug-leftover Stop hook; kept as a shared walker so a second such hook doesn't
+    copy-paste it (jscpd runs at threshold 0)."""
     # Tracked edits vs HEAD (only when HEAD exists).
     if git(["rev-parse", "--verify", "HEAD"]).strip():
         cur, new_ln = None, None
@@ -62,8 +62,8 @@ def new_lines():
 def collect_new_line_hits(keep, limit=15):
     """Walk new_lines(), keep those where keep(path, text) is truthy, dedup by (path, line),
     and return up to `limit` formatted "  path:line: text" strings — with a trailing
-    "  ... and N more" when truncated, or [] when nothing matched. Shared by the
-    debug-leftover and todo-leftover Stop hooks (jscpd runs at threshold 0)."""
+    "  ... and N more" when truncated, or [] when nothing matched. Used by the
+    debug-leftover Stop hook (jscpd runs at threshold 0)."""
     hits = []
     seen = set()
     for path, lineno, text in new_lines():
