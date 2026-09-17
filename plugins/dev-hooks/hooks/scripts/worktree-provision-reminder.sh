@@ -22,18 +22,13 @@
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
-reminder_opt_out DEV_HOOKS_WORKTREE_PROVISION
-
-INPUT=$(cat 2>/dev/null)
-COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
-[ -z "$COMMAND" ] && exit 0
+reminder_post_bash_init DEV_HOOKS_WORKTREE_PROVISION
 
 # Only a real `git worktree add`: tolerate env prefixes, `git -C dir`, and `… && git worktree add`.
 printf '%s' "$COMMAND" |
   grep -Eq '(^|[^[:alnum:]_])git([[:space:]]+[^[:space:]]+)*[[:space:]]+worktree[[:space:]]+add([^[:alnum:]_]|$)' || exit 0
 
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
-[ -z "$CWD" ] && CWD=$PWD
+reminder_cwd_session
 command -v git >/dev/null 2>&1 || exit 0
 
 # The main working tree is the first entry of `git worktree list`; linked worktrees follow.

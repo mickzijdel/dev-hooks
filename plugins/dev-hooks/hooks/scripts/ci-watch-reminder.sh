@@ -18,11 +18,7 @@
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
-reminder_opt_out DEV_HOOKS_CI_WATCH
-
-INPUT=$(cat 2>/dev/null)
-COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
-[ -z "$COMMAND" ] && exit 0
+reminder_post_bash_init DEV_HOOKS_CI_WATCH
 
 # Only a real `git push` invocation: `git` (optionally env-prefixed / flagged) walking tokens
 # to a `push` subcommand — matches `git push`, `git push origin main`, `git -C dir push`, and
@@ -30,8 +26,7 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
 printf '%s' "$COMMAND" |
   grep -Eq '(^|[^[:alnum:]_])git([[:space:]]+[^[:space:]]+)*[[:space:]]+push([^[:alnum:]_]|$)' || exit 0
 
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
-[ -z "$CWD" ] && CWD=$PWD
+reminder_cwd_session
 
 # Only nudge when there's actually a GitHub Actions run to watch.
 ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
