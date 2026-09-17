@@ -1,4 +1,4 @@
-# The standard (v25) — full specification
+# The standard (v26) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v25** when it has all of:
+A repo is **compliant at v26** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v25** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "25"`.
+  stamp `DEV_ENV_VERSION = "26"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -109,6 +109,23 @@ A repo is **compliant at v25** when it has all of:
   keeps the default and adds a per-line `# zizmor: ignore[artipacked]`. The checker enforces both
   tools + hk steps (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]**
   skill.
+- **CI concurrency cancellation** (all stacks, added in v26) — every workflow file under
+  `.github/workflows/` that triggers on `pull_request:` declares a top-level `concurrency:`
+  block:
+  ```yaml
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  ```
+  Without it, pushing twice to the same PR queues two full CI runs for the same code — the first
+  is obsolete the instant the second exists, but it keeps consuming runner minutes to a result
+  nobody reads. GitHub Actions cancels a run when a **newer run in the same `group`** starts, so
+  grouping by workflow name + PR number (falling back to `run_id` for non-PR triggers, which
+  keeps that fallback's group unique per run and so never collides) makes each PR's runs
+  supersede one another. `cancel-in-progress` is gated to `github.event_name == 'pull_request'`
+  specifically — a `push` to the default branch is **never** canceled mid-run, since two pushes
+  to `main` are usually sequential commits that both deserve a result, not superseding retries of
+  the same change. The checker enforces this per workflow file (`has_ci_concurrency`).
 - **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only

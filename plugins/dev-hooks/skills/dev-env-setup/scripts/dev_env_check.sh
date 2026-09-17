@@ -42,6 +42,10 @@
 #                    mirrors has_gitleaks's hk.pkl probe).
 #   has_actionlint   1 if hk.pkl references the actionlint step (required from standard v18 — the
 #                    GitHub Actions workflow correctness linter; mirrors has_zizmor's hk.pkl probe).
+#   has_ci_concurrency  1 if every workflow under .github/workflows that triggers on
+#                    `pull_request:` declares a top-level `concurrency:` block (required from
+#                    standard v26 — cancels a superseded PR run when a newer push lands on the
+#                    same PR). 1 when CI has no pull_request-triggered workflow.
 #   suggests_fnox    1 if the repo has plaintext secrets in use (a non-empty .env/.env.local
 #                    with KEY=value lines, a config/credentials/*.key, or source references to
 #                    Rails credentials / ENV[…] / Settings.) AND no fnox.toml yet. Advisory only —
@@ -186,6 +190,19 @@ has_zizmor=0
 has_actionlint=0
 [ "$has_hk" = 1 ] && grep -qi 'actionlint' "$DIR/hk.pkl" && has_actionlint=1
 
+# CI concurrency cancellation (v26): every workflow triggering on `pull_request:` declares a
+# top-level `concurrency:` block, so a stale push's CI run is canceled once a newer push on the
+# same PR starts. Defaults to 1 when CI has no pull_request-triggered workflow.
+has_ci_concurrency=1
+if [ "$has_ci" = 1 ]; then
+  for wf in "$DIR"/.github/workflows/*.y*ml; do
+    [ -f "$wf" ] || continue
+    if grep -q 'pull_request:' "$wf" && ! grep -q '^concurrency:' "$wf"; then
+      has_ci_concurrency=0
+    fi
+  done
+fi
+
 # Plaintext secrets in use, not yet migrated (advisory — nudges env-to-fnox, never gates status).
 # Triggers only when there's no fnox.toml and secrets are actually present: a non-empty
 # .env/.env.local with a KEY=value line, a Rails master key, or source references to credentials.
@@ -251,7 +268,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; } || { [ "$current_version" -ge 23 ] && [ "$has_version_sync" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; } || { [ "$current_version" -ge 23 ] && [ "$has_version_sync" = 0 ]; } || { [ "$current_version" -ge 26 ] && [ "$has_ci_concurrency" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -275,6 +292,7 @@ has_exec_bit=$has_exec_bit
 has_sha_pinned_ci=$has_sha_pinned_ci
 has_zizmor=$has_zizmor
 has_actionlint=$has_actionlint
+has_ci_concurrency=$has_ci_concurrency
 suggests_fnox=$suggests_fnox
 has_devcontainer=$has_devcontainer
 devcontainer_mise_driven=$devcontainer_mise_driven
@@ -287,7 +305,7 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or scripts/check_version_sync.sh missing (has_version_sync=$has_version_sync), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or scripts/check_version_sync.sh missing (has_version_sync=$has_version_sync), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint), or CI concurrency cancellation missing (has_ci_concurrency=$has_ci_concurrency). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
 

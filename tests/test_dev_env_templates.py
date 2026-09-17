@@ -179,6 +179,24 @@ def test_ci_template_declares_read_only_token(name):
     )
 
 
+@pytest.mark.parametrize("name", CI_TEMPLATES)
+def test_ci_template_cancels_superseded_pr_runs(name):
+    """v26: every CI template declares a top-level `concurrency:` block that cancels a
+    superseded PR run when a newer push lands on the same PR, but never cancels a push to
+    main mid-run (cancel-in-progress is gated to the pull_request event only)."""
+    text = (TEMPLATES_DIR / name).read_text()
+    assert re.search(r"^concurrency:\n", text, re.M), (
+        f"{name} is missing a top-level concurrency: block"
+    )
+    assert (
+        "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}"
+        in text
+    ), f"{name}'s concurrency group doesn't scope by workflow + PR number"
+    assert (
+        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in text
+    ), f"{name}'s cancel-in-progress isn't gated to the pull_request event"
+
+
 @pytest.mark.parametrize("name", HK_TEMPLATES)
 def test_zizmor_step_in_every_hk_template(name):
     """v18: every hk template wires the zizmor GitHub Actions security scan as the hk built-in,
