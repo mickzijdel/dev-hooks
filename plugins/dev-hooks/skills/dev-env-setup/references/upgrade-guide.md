@@ -1045,6 +1045,44 @@ Steps:
 
 ---
 
+## v25 → v26 (cancel superseded PR CI runs)
+
+**Every stack.** Every CI template runs `lint`/`test`/`versions`/`gitleaks`/`actions-lint`/`audit`
+as jobs in a single `ci.yml`, triggered on both `push` (to the default branch) and `pull_request`.
+Without a `concurrency:` block, pushing a fixup commit to an open PR doesn't cancel the run
+already in flight for the previous push — both run to completion, burning double the runner
+minutes for a result only the newer one matters for. On a repo with a slow `audit` job (jscpd,
+vulture) this is the difference between a few wasted minutes and a queue backing up behind a PR
+that gets amended repeatedly.
+
+Steps:
+
+1. **Add the block to `ci.yml`** — a single top-level `concurrency:` key, placed after `on:` and
+   before `permissions:` (or `jobs:` if the repo has no `permissions:` block yet):
+   ```yaml
+   concurrency:
+     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+   ```
+   A repo with more than one workflow file that triggers on `pull_request` (a separate
+   `deploy.yml`/`release.yml`, say) needs the same block in each — `group` already includes
+   `github.workflow`, so two workflows never collide on the same group by accident.
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "26"` in `mise.toml`.
+3. **Verify — including the negative.** Push two commits in quick succession to an open PR (or,
+   locally, `actionlint` the workflow file to confirm the YAML is valid) and confirm the run for
+   the first commit shows **Canceled** rather than completing. Then confirm a push straight to
+   the default branch is *not* affected: `cancel-in-progress` reads `false` for that event, so two
+   same-branch pushes each get their own completed run — the guard against canceling a push is
+   the point, not an oversight.
+
+> `cancel-in-progress: true` unconditionally (dropping the `github.event_name == 'pull_request'`
+> ternary) is the common shorthand seen in one-off examples, and it is wrong for any workflow that
+> also runs on push: it would cancel an in-progress `main` build the moment another push landed,
+> which can leave a deploy or a required check missing a result for a commit that's already on the
+> default branch. Keep the ternary even though it's longer.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

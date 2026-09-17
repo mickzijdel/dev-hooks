@@ -2,7 +2,7 @@
 name: domain-modeling
 description: Use when pinning down a project's domain terminology — building or sharpening a CONTEXT.md ubiquitous-language glossary, resolving vague or conflicting terms, or when another skill needs the domain model maintained. Triggers on "ubiquitous language", "domain glossary", "what should we call this", "add this to CONTEXT.md", or a term that conflicts with the existing glossary. Not for recording decisions (that's [[adr]] — this skill hands off to it).
 license: "MIT; copyright Matt Pocock; see ../matt-pocock-skills-LICENSE.txt"
-source: https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling
+source: https://github.com/mattpocock/skills/blob/74ca5fe077456a0b3b2f5310cf9430999fd0b5fd/skills/engineering/domain-modeling/SKILL.md
 ---
 
 # Domain Modeling

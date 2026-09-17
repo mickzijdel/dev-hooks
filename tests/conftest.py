@@ -100,13 +100,14 @@ def make_compliant_repo(
     sha_pinned=True,
     zizmor=True,
     actionlint=True,
+    ci_concurrency=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
     allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), SHA-pinned CI
-    actions (v16), the zizmor / actionlint hk steps (v18), or the shared version-sync gate
-    (v23). Stamped at the current version (read from VERSION) so it stays compliant as the
-    standard advances."""
+    actions (v16), the zizmor / actionlint hk steps (v18), the shared version-sync gate
+    (v23), or the CI concurrency-cancellation block (v26). Stamped at the current version
+    (read from VERSION) so it stays compliant as the standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
@@ -129,8 +130,16 @@ def make_compliant_repo(
     wf.mkdir(parents=True)
     # v16: CI actions must be SHA-pinned. A 40-hex pin is "pinned"; a tag pin (@v6) is not.
     pin = ("a" * 40 + " # v1") if sha_pinned else "v6"
+    # v26: a workflow triggering on pull_request must declare a top-level concurrency: block.
+    concurrency = (
+        "concurrency:\n"
+        "  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}\n"
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+        if ci_concurrency
+        else ""
+    )
     (wf / "ci.yml").write_text(
-        "name: ci\non: push\njobs:\n  x:\n    steps:\n"
+        f"name: ci\non:\n  push:\n  pull_request:\n{concurrency}jobs:\n  x:\n    steps:\n"
         f"      - uses: actions/checkout@{pin}\n"
     )
     if readme:

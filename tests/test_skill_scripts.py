@@ -267,6 +267,23 @@ def test_checker_needs_upgrade_without_actionlint(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_compliant_has_ci_concurrency(tmp_path):
+    # v26: the default compliant repo's ci.yml carries the concurrency: block.
+    make_compliant_repo(tmp_path)
+    out = run_checker(tmp_path)
+    assert out["has_ci_concurrency"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_needs_upgrade_without_ci_concurrency(tmp_path):
+    # v26: a current-version repo whose pull_request-triggered ci.yml lacks a top-level
+    # concurrency: block is flagged for upgrade.
+    make_compliant_repo(tmp_path, ci_concurrency=False)
+    out = run_checker(tmp_path)
+    assert out["has_ci_concurrency"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
     # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.

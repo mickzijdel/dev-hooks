@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v25)
+## The standard (v26)
 
-A repo is **compliant at v25** when it has all of:
+A repo is **compliant at v26** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "25"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "26"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -86,6 +86,13 @@ A repo is **compliant at v25** when it has all of:
   finding, every `actions/checkout` sets `persist-credentials: false` (keeps the repo token out
   of `.git/config` on the runner). Needs `zizmor` + `actionlint` in `mise.toml`; checker-enforced
   (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]** skill.
+- **CI concurrency cancellation** (added in v26) — every workflow file under
+  `.github/workflows/` that triggers on `pull_request:` declares a top-level `concurrency:`
+  block (`group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`,
+  `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`) so a stale push's CI run is
+  canceled the moment a newer push lands on the same PR, instead of both runs burning runner
+  minutes to completion. `cancel-in-progress` is gated to `pull_request` only — a push to `main`
+  is never canceled mid-run. Checker-enforced (`has_ci_concurrency`).
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
