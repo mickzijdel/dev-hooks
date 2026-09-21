@@ -4,8 +4,8 @@
 # The native EnterWorktree tool (or `git worktree add`) checks out a worktree but leaves it
 # unprovisioned. This script — run *inside* the new worktree, right after creation — closes
 # the gaps:
-#   1. mise:      trusts the worktree's mise config, at any supported path (it's the same repo you already trust, so
-#                 this does NOT contradict dev-env-setup's "never auto-trust unknown configs")
+#   1. mise:      trusts the worktree's mise config at any supported path (it's the same repo
+#                 you already trust, so this does NOT contradict dev-env-setup's "never auto-trust unknown configs")
 #                 and sets `worktree.baseref head` so future worktrees branch from local HEAD.
 #   2. secrets:   copies gitignored-but-needed files (Rails config/master.key, .env, …) from
 #                 the main checkout, since git never put them in the worktree. Everything

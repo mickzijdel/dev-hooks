@@ -2,9 +2,10 @@
 name: worktree-setup
 description: |
   Provision a freshly-created git worktree so it's actually ready to work in — trust its
-  the worktree's mise config, copy gitignored-but-needed files (Rails config/master.key, .env, …) from the main
-  checkout, and re-mark shebang scripts executable. Use right after creating a worktree (native
-  EnterWorktree or `git worktree add`), or when a new worktree errors with "config file is not
+  mise config at whatever path it lives, copy gitignored-but-needed files (Rails
+  config/master.key, .env, …) from the main checkout, and re-mark shebang scripts executable.
+  Use right after creating a worktree (native EnterWorktree or `git worktree add`), or when a
+  new worktree errors with "config file is not
   trusted", is missing secrets/.env, can't load the app, or has non-executable scripts. Also
   when parallel worktrees collide on the same dev-server port or database — opt into per-worktree
   ports + databases via a `.worktree-isolate.conf`. Pairs with using-git-worktrees (which creates
@@ -52,8 +53,9 @@ not instead of it.
    ```bash
    bash "$CLAUDE_PLUGIN_ROOT/skills/worktree-setup/scripts/setup-worktree.sh"
    ```
-   It trusts the worktree's mise config, wherever it lives — `mise.toml`, `mise/config.toml`,
-   `.config/mise.toml` and the other paths mise supports (safe — it's a worktree of a repo you already trust, so
+   It trusts the worktree's mise config wherever it lives — `mise.toml`, `mise/config.toml`,
+   `.config/mise.toml` and the other paths mise supports (safe — it's a worktree of a repo you
+   already trust, so
    this does **not** contradict [[dev-env-setup]]'s "never auto-trust unknown configs" rule),
    copies the gitignored files, and re-marks shebang scripts executable. It reports `copied`,
    `skipped_heavy`, `mise_trusted`, `exec_fixed`, and `isolated`. Pass `--source DIR` to override
