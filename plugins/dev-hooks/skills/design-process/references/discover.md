@@ -133,6 +133,40 @@ something else. But save the prompts that *don't* work, and test them again when
 models come out. That way, you'll know you're taking full advantage of what the latest
 models can do.
 
+## Technique 3: Mock it up as an image first
+
+Text briefs (Techniques 1 and 2) still route every layout and spacing decision through a
+model that predicts tokens one at a time — it can describe a composition accurately without
+ever "seeing" whether it holds together. An image model doesn't have that problem for the
+same reason a human designer handing off a comp doesn't: the whole layout exists at once, so
+proportions, whitespace, and visual hierarchy get judged as a picture, not assembled from a
+list of properties.
+
+Use this when the direction is more about *composition and hierarchy* than the seeded
+inspiration Techniques 1–2 produce, or when a stakeholder needs to react to something visual
+before code exists:
+
+1. Check the imagery route settled at the gate (step 1 of SKILL.md) actually produces
+   full-screen UI compositions, not just isolated hero/feature art — a photo-generation model
+   is the wrong tool here; an image model asked explicitly for "a UI mockup / wireframe /
+   screen design" is the right one.
+2. Prompt the image model with the same inputs a brief would carry: product, audience, the
+   one action the screen exists for, and the direction from Technique 1 or 2. Ask for the
+   specific screen (not a moodboard) at the target aspect ratio.
+3. Generate a small spread (3–5), not one — the first image is as much a default-attractor
+   as the first text completion. Pick the strongest, or let the user pick.
+4. Feed the chosen image to the coding agent as a **reference to build from**, not to trace
+   pixel-for-pixel: name what to keep exact (layout proportions, spacing rhythm, the
+   signature element) versus what to adapt (real copy, actual data, responsive behavior the
+   static image can't show). Still write the design brief (below) alongside it — the image
+   captures composition, the brief captures the decisions a screenshot can't (why this
+   direction, what it must differ from, the states the image doesn't show).
+5. Run the critic loop (Define) against the *built* result as usual, not against the mockup
+   image — the mockup seeded the direction, it isn't the bar.
+
+An image mockup replaces the *layout* half of a text brief; it doesn't replace the written
+brief's job of recording intent, or the critic loop's job of checking the built page.
+
 ## The design brief
 
 Every direction — seeded or hand-picked — gets written down before code. A brief is the
