@@ -61,7 +61,9 @@ Two rules sit above every step:
 2. **Discover — go broad before deep.** Get variety from *outside* the model. Either seed
    the direction from a random string (String Seed of Thought) or get specific and wild
    with a named inspiration the user brings; when they have none, generate a broad list of
-   design languages and let them react. Write the chosen direction as a **design brief**
+   design languages and let them react. When composition and hierarchy matter more than the
+   seeded inspiration itself, mock the screen up with an image model first and build from
+   that instead of a text-only brief. Write the chosen direction as a **design brief**
    before any code. Several directions wanted → several briefs, several throwaway variants,
    each isolated. → [references/discover.md](references/discover.md)
 
@@ -134,6 +136,7 @@ Not every design job earns the full loop. Pick the treatment, not whether to des
 | Every run looks the same (purple gradient, hero split) | Seed from a random string, or name a wild inspiration — [discover.md](references/discover.md) |
 | "Make it unique/random" didn't help | It can't be random by asking; variety must come from outside the model |
 | No idea what direction to take | Broad-list prompt → user reacts → sharpen → build prompt |
+| Layout/hierarchy feels off but the direction is right | Mock the screen up with an image model, build from that instead of a text brief — [discover.md](references/discover.md) |
 | The agent keeps saying "looks good" about its own work | Critic subagent, fresh context, screenshot only, same prompt every round |
 | Critic never satisfied, tokens burning | Cap at 2 rounds first; stop on a stalled score; make the bar concrete (blind pick vs real references) |
 | Every non-default choice is the same non-default (Space Grotesk, cream + serif) | A second-order default is still a default; rotate — [anti-slop.md](references/anti-slop.md) |
