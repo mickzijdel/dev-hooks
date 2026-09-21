@@ -81,8 +81,7 @@ mise_trusted=0
 mise_config_path=""
 for candidate in \
   mise.toml .mise.toml mise/config.toml .mise/config.toml \
-  .config/mise.toml .config/mise/config.toml
-do
+  .config/mise.toml .config/mise/config.toml; do
   if [ -f "$WT/$candidate" ]; then
     mise_config_path="$candidate"
     break

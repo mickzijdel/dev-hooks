@@ -11,7 +11,7 @@ Proxmox, EdgeOS, IPMI, NAS boxes) almost universally serves a self-signed cert; 
 the browser is happy and the bad cert stays on the private side. Tell Serve to ignore it:
 
 ```bash
-tailscale serve --bg --https=443 https+insecure://192.168.0.133:8443
+tailscale serve --bg --https=443 https+insecure://<origin-ip>:8443
 ```
 
 `https+insecure://` applies to the **origin** leg only. Requires tailnet HTTPS certs enabled for
