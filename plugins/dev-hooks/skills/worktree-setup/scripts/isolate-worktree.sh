@@ -6,7 +6,7 @@
 # worktrees all point at the same port and the same database. This script closes that gap: it
 # allocates a stable, collision-free per-worktree offset from a registry shared by all
 # worktrees, then writes the derived values into a gitignored `mise.local.toml` overlay (which
-# layers over the committed mise.toml) — never mutating the copied .env. Host-native runs read
+# layers over the committed mise config, wherever it lives) — never mutating the copied .env. Host-native runs read
 # PORT + the DB suffix; a per-worktree devcontainer reads COMPOSE_PROJECT_NAME.
 #
 # It is OPT-IN: with no `.worktree-isolate.conf` in the worktree it is a no-op. The config
