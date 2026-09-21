@@ -335,6 +335,13 @@ $ claude
   `DEV_HOOKS_BIG_CHANGE_LINES` default 800) and stays silent when `.claude/current_plan.md`
   exists — a plan already means the work is deliberate. Silence it with
   `DEV_HOOKS_BIG_CHANGE=false`.
+- `data-before-design-reminder.sh` is a **UserPromptSubmit** hook, so it fires on the prompt
+  rather than on a tool call: a request to build a display surface is nudged to profile the
+  real data first, before any markup exists to review. It fires once per session and only on a
+  prompt that both names a view-shaped surface (card/view/panel/dashboard/table/chart/…) and
+  carries no restyle-only marker (colour/padding/font/spacing/align/…), so a "make the padding
+  bigger" is left alone. A missed prompt costs nothing; a false nudge costs one sentence.
+  Silence it with `DEV_HOOKS_DATA_BEFORE_DESIGN=false`.
 - `change-summary-reminder.sh` counts changed files via the simpler `git status --porcelain`
   tally (an untracked directory collapses to one entry — unlike `big-change-reminder.sh`'s
   line-count-accurate expansion, that's fine here since it's only a file-count threshold), and
