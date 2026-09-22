@@ -1487,6 +1487,38 @@ def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
     assert_json_with(r.stdout, "stale")
 
 
+def test_review_reminder_ignores_command_name_lookalike(tmp_path):
+    """A transcript line that merely *contains* both "command-name" and a needle is not an
+    invocation. Real transcripts hit this every session: one line carries a whole API
+    request, in which the Skill tool's schema documents the "<command-name> block" while the
+    skill listing separately names code-review. Treating that as a review pinned the hook to
+    its already-reviewed branch in every session in this repo."""
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    lookalike = json.dumps(
+        {
+            "schema": "If a `<command-name>` block is already present this turn, "
+            "the skill is loaded.",
+            "listing": "code-review: Review the current diff for correctness bugs",
+        }
+    )
+    payload = _review_payload(tmp_path, extra_lines=[lookalike])
+    r = _run_review(tmp_path, payload)
+    assert r.returncode == 2
+    # The un-reviewed wording, not the stale-review wording.
+    assert "have not run a code review" in r.stdout
+    assert "stale" not in r.stdout
+
+
+def test_review_reminder_honors_a_real_slash_command(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    real = json.dumps({"text": "<command-name>code-review</command-name>"})
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[real]))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
 def _comment_heavy_file(path):
     path.write_text(

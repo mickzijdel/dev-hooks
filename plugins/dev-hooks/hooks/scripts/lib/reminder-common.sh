@@ -335,7 +335,6 @@ REMINDER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # (*.sh counted as code for one hook and not the other).
 REMINDER_CODE_EXTS=(rb erb rake py js ts jsx tsx vue mjs cjs sh)
 
-# Pathspec globs for `git diff -- …`, into CODE_GLOBS.
 reminder_code_globs() {
   CODE_GLOBS=()
   local ext

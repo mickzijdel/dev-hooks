@@ -152,7 +152,12 @@ Do not include changelog or detective-work where it does not belong, such as in 
   save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
   actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
   skill_listing attachment names every installed skill, so a plain grep for a skill name
-  matches in every session and permanently suppresses the hook) live in `lib/hook_helpers.py` — import them by
+  matches in every session and permanently suppresses the hook. Its `<command-name>` branch
+  must match INSIDE the tag (`[^<>\n]{1,100}`), not "both substrings on the same line": a
+  transcript line is often a whole API request, in which the Skill tool's schema documents
+  the "`<command-name>` block" while the skill listing separately names the needle — that
+  lookalike made `code-review` and `compress-comments` report invoked in every session in
+  this repo. An unbounded `.*?` is no better; it spans the docstring that documents the tag) live in `lib/hook_helpers.py` — import them by
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose

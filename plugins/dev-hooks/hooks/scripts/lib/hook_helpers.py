@@ -121,6 +121,12 @@ def _tool_use_blocks(line):
             yield block
 
 
+# A real slash-command marker holds a short bare name. Bounded and newline-free on
+# purpose: an unbounded `.*?` (even non-greedy) happily spans a whole API-request line and
+# matched the docstring below, which documents the tag it was looking for.
+_COMMAND_NAME_RE = re.compile(r"<command-name>([^<>\n]{1,100})</command-name>")
+
+
 def transcript_invoked(transcript_path, needles, sentinel=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
@@ -136,9 +142,14 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     for line in _transcript_lines(transcript_path):
         if sentinel and sentinel in line:
             return True
-        # Slash-command marker: <command-name>…</command-name> naming a needle.
-        if "command-name" in line and any(n in line for n in needles):
-            return True
+        # Slash-command marker: the needle must sit INSIDE <command-name>…</command-name>,
+        # not merely somewhere on the same line. A transcript line is often a whole API
+        # request: the Skill tool's own schema documents "<command-name> block" and the
+        # skill listing names every installed skill, so "both substrings present" matched
+        # in every session and silently pinned the caller to its already-ran branch.
+        for name in _COMMAND_NAME_RE.findall(line):
+            if any(n in name for n in needles):
+                return True
         for block in _tool_use_blocks(line):
             inp = block.get("input") or {}
             if hit(inp.get("skill")) or hit(inp.get("subagent_type")):
