@@ -36,3 +36,14 @@ Noticed 2026-09-03 while shipping the prompt-log redaction:
   `plans/automation-reviews/2026-09-03.md`). Candidate: have the weekly-automation-review skill
   require a mechanism probe — does the hook's advice point at anything that exists? — before any
   DELETE verdict, rather than a fire-count argument.
+- **`reminder_changed_files` parses porcelain with `awk '{print $NF}'`.** That drops the source
+  side of a rename (`R  old -> new` yields only `new`, which is usually what you want, but
+  `R  "a b.rb" -> "c d.rb"` mis-splits) and mangles any path containing a space. Every Stop hook's
+  file gate is built on it, including the new `reminder_session_files`. Fix: `git status
+  --porcelain -z` with a NUL-delimited read, or `git diff --name-only HEAD` +
+  `git ls-files --others --exclude-standard` instead of parsing status output at all.
+- **Nothing gates a hook registered on an event that cannot run it.** `"type": "prompt"` and
+  `"type": "agent"` hooks are only honoured on PreToolUse/PostToolUse/PermissionRequest; one
+  configured on `Stop` or `UserPromptSubmit` is accepted by the loader and silently never fires.
+  Candidate: a pytest over every plugin's `hooks.json` asserting non-command hook types appear
+  only under tool events.
