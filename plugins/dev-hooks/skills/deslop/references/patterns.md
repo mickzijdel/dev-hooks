@@ -47,6 +47,7 @@ Structural erosion. Restructuring during a cleanup pass is how a cleanup becomes
 | # | Pattern | Detect | Proposal shape |
 |---|---|---|---|
 | C1 | God file | File past ~600 lines, or the diff grew it by more than 20%; a new responsibility added to a class "because it fit" | Name the responsibilities; propose the split with file names |
+| C5 | Complex function | Cyclomatic complexity over ~10, from the project's own linter (see *Complexity* in [SKILL.md](../SKILL.md)) — not from `slop_scan.py`, which does not measure it | Propose the decomposition, or say why it is irreducible |
 | C2 | Missing system metaphor | One domain concept (an order, a session, a vault) handled by scattered inline checks; no type models it | Propose the model and name which checks it absorbs |
 | C3 | Second way | A new util or pattern duplicating one the codebase already has | Propose deleting the new one and using the existing one |
 | C4 | Special-case undercut | `if (user === X)` / `if (env === …)` changing how the core flow works | Propose moving it to config or strategy at the boundary |
@@ -58,6 +59,12 @@ and leftover chat artifacts. It deliberately does **not** try to detect A1 narra
 obvious rule ("comment opens with a verb naming what the next line does") fires on 222
 Django comments that are real why-comments beginning "Set the …". Narration is judged by
 whether a comment adds anything its line does not, which needs a reader.
+
+It also does not measure function complexity (C5). A regex approximation of a cyclomatic
+count was built and measured, and separated human from AI code only about 2× while
+doubling the scanner's false-positive budget; the project's own AST linter does the job
+properly. See *Complexity* in [SKILL.md](../SKILL.md) and the numbers in
+[measurements.md](measurements.md).
 
 Everything else in this table — A7, A8, A11, A12, all of Tier B beyond B3, all of Tier C
 beyond C1 — needs someone who understands what the code is *for*. The scanner narrows
