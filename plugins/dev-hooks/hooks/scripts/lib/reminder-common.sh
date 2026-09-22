@@ -90,7 +90,28 @@ reminder_stop_init() {
 reminder_session_since() {
   REPLY=""
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
-  REPLY=$(head -n1 "$TRANSCRIPT" | jq -r '.timestamp // empty' 2>/dev/null)
+  # hook_helpers.session_start is the single implementation, so this cannot drift from the
+  # python side that untracked_since uses.
+  REPLY=$(
+    python3 - "$REMINDER_LIB_DIR" "$TRANSCRIPT" <<'PYEOF' 2>/dev/null
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import session_start
+
+sys.stdout.write(session_start(sys.argv[2]))
+PYEOF
+  ) && [ -n "$REPLY" ] && return 0
+  # No python3: jq, but the value must LOOK like a date. A numeric `timestamp` passes jq
+  # -r untouched, and `git log --since=12345` silently returns zero commits — the session's
+  # committed work disappears and the re-arming Stop hooks go quiet, which is the opposite
+  # of the over-report invariant everything else here keeps.
+  REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
+  case "$REPLY" in
+    [0-9][0-9][0-9][0-9]-*) ;;
+    *) REPLY="" ;;
+  esac
 }
 
 # ── PreToolUse(Bash) helpers ─────────────────────────────────────────────────────

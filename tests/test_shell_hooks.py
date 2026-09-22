@@ -1758,6 +1758,35 @@ def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
     assert r.stderr.strip() == ""
 
 
+@pytest.mark.parametrize("use_python3", [True, False])
+@pytest.mark.parametrize(
+    ("first_line", "expected"),
+    [
+        ('{"timestamp": 12345}', ""),
+        ("[1, 2, 3]", ""),
+        ("not json", ""),
+        ('{"timestamp": "2026-09-22T00:00:00.000Z"}', "2026-09-22T00:00:00.000Z"),
+    ],
+)
+def test_session_since_rejects_non_date_timestamps(
+    tmp_path, first_line, expected, use_python3
+):
+    """`git log --since=12345` returns zero commits rather than erroring, so a numeric
+    timestamp made the session's committed work vanish and the re-arming Stop hooks go
+    quiet. Both paths are checked: the python helper, and the jq shape-check used when
+    python3 is unavailable — they must not drift."""
+    t = tmp_path / "t.jsonl"
+    t.write_text(first_line + "\n")
+    env = base_env()
+    if not use_python3:
+        shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+        env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    )
+    assert out == expected
+
+
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
 def _comment_heavy_file(path):
     path.write_text(
