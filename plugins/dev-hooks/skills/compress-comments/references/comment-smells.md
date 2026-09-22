@@ -67,6 +67,24 @@ code cannot show*). Each smell reads *what it is* → *disposition*, with a befo
   """Convert title into a URL-safe ASCII slug of at most max_len characters."""
   ```
 
+## Over budget
+
+Two smells that no single comment is guilty of. Both are judged per file, not per comment
+— see the SKILL's *The budget* and *The register*.
+
+- **Over-commented file** — past ~15 comment lines per 100 code lines with no reason a
+  reader would accept. → rank the comments by the constraint each carries and keep the
+  top few. The ones that go would each have survived the rule; that is the point.
+- **Essay register** — complete sentences, em dashes, parenthetical asides, balanced
+  clauses ("a missed X costs nothing, a false Y costs attention"), and comments that float
+  in the file rather than annotating a line. → rewrite as a fragment naming the
+  identifier.
+  ```python
+  # Every gate errs toward silence: a missed thin brief costs nothing,   ← rewrite
+  #   a false nudge costs attention.
+  # Gates err toward silence: false nudges are the expensive failure     ← survives
+  ```
+
 ## Survives untouched
 
 Positive anchors — comments the skill must leave alone:
