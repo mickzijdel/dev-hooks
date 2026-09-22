@@ -5,6 +5,7 @@ environment, asserting on exit code and that stdout is empty (silent) or valid J
 the silent-gate path and the firing path are exercised for every hook.
 """
 
+import datetime
 import json
 import os
 import re
@@ -1794,6 +1795,53 @@ def test_session_since_rejects_non_date_timestamps(
     if not use_python3:
         shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
         env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    )
+    assert out == expected
+
+
+# The jq fallback in reminder_session_since is a hand-written mirror of
+# datetime.fromisoformat. Hand-picked cases kept missing where the two diverged — a glob
+# that accepted day 32, then one that accepted 2026-02-30 while rejecting a valid `+02`
+# offset — so this asserts agreement over the whole set instead of spot-checking.
+_STAMP_CASES = [
+    "2026-09-22T00:00:00.000Z",
+    "2026-09-22",
+    "2026-02-28",
+    "2026-02-29",  # not a leap year
+    "2024-02-29",  # leap year
+    "2000-02-29",  # divisible by 400: leap
+    "1900-02-29",  # divisible by 100 but not 400: not leap
+    "2026-02-30",
+    "2026-04-31",
+    "2026-01-32",
+    "2026-01-00",
+    "2026-13-01",
+    "0000-01-01",
+    "2026-09-22T13:45",
+    "2026-09-22T13:45:59+02:00",
+    "2026-09-22T13:45:59+02",
+    "2026-09-22T13:45:59+0200",
+    "2026-09-22T24:00:00Z",
+    "2026-09-22T25:00:00Z",
+    "2026-09-22Tgarbage",
+    "hello world",
+    "2026-9-2",
+]
+
+
+@pytest.mark.parametrize("stamp", _STAMP_CASES)
+def test_jq_stamp_mirror_agrees_with_python(tmp_path, stamp):
+    t = tmp_path / "t.jsonl"
+    t.write_text(json.dumps({"timestamp": stamp}) + "\n")
+    try:
+        datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        expected = stamp
+    except ValueError:
+        expected = ""
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
     out = _lib_probe(
         tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
     )

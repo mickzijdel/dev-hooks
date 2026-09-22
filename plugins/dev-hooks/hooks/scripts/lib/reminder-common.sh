@@ -119,9 +119,32 @@ PYEOF
   # against 297 for "2026-01-32T00:00:00.000Z"), so anything this lets through becomes a
   # wrong answer, not an error. A glob was not enough — `[0-3][0-9]` admits day 00 and
   # 32-39, and a trailing `*` accepts "2026-01-01Tgarbage".
-  local _iso='^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
-  _iso="$_iso"'([T ]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?$'
-  [[ $REPLY =~ $_iso ]] || REPLY=""
+  local _iso _y _m _d _max
+  _iso='^([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
+  # Seconds optional, 24:00 allowed, and offsets in +HH, +HHMM and +HH:MM — all forms
+  # datetime.fromisoformat takes. Rejecting them would blank REPLY, which skips the
+  # `git log --since` branch and hides the session's commits just as quietly.
+  _iso="$_iso"'([T ]([01][0-9]|2[0-4]):[0-5][0-9](:[0-5][0-9](\.[0-9]+)?)?(Z|[+-][0-9]{2}(:?[0-9]{2})?)?)?$'
+  if [[ $REPLY =~ $_iso ]]; then
+    _y=${BASH_REMATCH[1]}
+    _m=${BASH_REMATCH[2]}
+    _d=${BASH_REMATCH[3]}
+    # Calendar length, which no regex can express: fromisoformat rejects 2026-02-30 and
+    # 2026-04-31, while git rolls them forward silently (--since=2026-09-31 returned 0
+    # commits here against 36 for the 21st).
+    case $((10#$_m)) in
+      2) _max=28 ;;
+      4 | 6 | 9 | 11) _max=30 ;;
+      *) _max=31 ;;
+    esac
+    if [ "$((10#$_m))" -eq 2 ] &&
+      { [ $((10#$_y % 4)) -eq 0 ] && { [ $((10#$_y % 100)) -ne 0 ] || [ $((10#$_y % 400)) -eq 0 ]; }; }; then
+      _max=29
+    fi
+    { [ "$((10#$_d))" -ge 1 ] && [ "$((10#$_d))" -le "$_max" ] && [ "$((10#$_y))" -ge 1 ]; } || REPLY=""
+  else
+    REPLY=""
+  fi
 }
 
 # ── PreToolUse(Bash) helpers ─────────────────────────────────────────────────────
