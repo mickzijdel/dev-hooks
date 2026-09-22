@@ -633,6 +633,45 @@ def test_voice_stop_nudges_are_bounded(tmp_path):
     assert codes[3:] == [0, 0]
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["plugins/x/skills/y/SKILL.md", "README.md", "CLAUDE.md", "plans/notes.md"],
+)
+def test_voice_stop_ignores_repo_scaffolding(tmp_path, name):
+    """This is the only blocking voice hook, and a global ~/.claude/voice_profile.md makes
+    it apply to every repo. Counting a SKILL.md or CHANGELOG as prose would refuse to end
+    three ordinary coding sessions out of three."""
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / name)])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path,
+        [
+            _voice_write_block(tmp_path / "plugins/x/skills/y/SKILL.md"),
+            _voice_write_block(tmp_path / "blog/launch-post.md"),
+        ],
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    # Only the blog post counted.
+    assert "wrote 1 prose file" in r.stdout
+
+
+def test_voice_prewrite_ignores_repo_scaffolding(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name="SKILL.md"), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_voice_stop_silent_without_profile(tmp_path):
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
     r = _run_voice_stop(

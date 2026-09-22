@@ -26,6 +26,9 @@ voice_payload
 FILE=$(voice_field '.tool_input.file_path')
 [ -z "$FILE" ] && exit 0
 BASE=${FILE##*/}
+# Before any emit: SESSION is what makes a fire attributable to a repo, and the audit path
+# below emits without reaching the once-per-session block that used to set it.
+SESSION=$(voice_field '.session_id')
 
 # Match READMEs by basename, case-insensitively: README, README.md, Readme.rst, readme.txt.
 case "${BASE,,}" in
@@ -46,7 +49,6 @@ if [ -f "$AUDIT" ] && command -v python3 >/dev/null 2>&1 && [ -f "$FILE" ]; then
 fi
 
 # --- audit unavailable: fall back to a once-per-session-per-file skill reminder ---------
-SESSION=$(voice_field '.session_id')
 voice_fire_once readme-reminder "$(printf '%s' "$FILE" | tr -c 'A-Za-z0-9._-' _)" || exit 0
 
 voice_emit PostToolUse "You just wrote $BASE. $NUDGE"

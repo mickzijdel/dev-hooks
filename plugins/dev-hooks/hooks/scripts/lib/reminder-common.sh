@@ -367,19 +367,29 @@ reminder_has_code_file() {
 # and a porcelain-only gate exits silently on exactly the sessions that did the most work.
 reminder_session_files() {
   reminder_changed_files
-  local committed=""
+  local committed="" untracked=""
   reminder_session_since
   [ -n "$REPLY" ] && committed=$(git log --name-only --format= --since="$REPLY" 2>/dev/null)
+  # Enumerated separately because porcelain collapses an untracked *directory* into one
+  # entry, hiding every file inside it.
+  untracked=$(git ls-files --others --exclude-standard 2>/dev/null)
   # shellcheck disable=SC2034
-  SESSION_FILES=$(printf '%s\n%s\n' "$CHANGED" "$committed" | grep -v '^$' | sort -u)
+  SESSION_FILES=$(printf '%s\n%s\n%s\n' "$CHANGED" "$committed" "$untracked" |
+    grep -v '^$' | sort -u)
 }
 
 # Lines of code this session added — added lines in `git diff HEAD`, in commits since the
 # session started, and every line of an untracked code file — into $REPLY. The growth
 # signal reminder_rearm compares against, and the shared half of compress-comments-
 # reminder's comment count (which filters these lines further).
+# Pass pathspecs to widen beyond code (big-change-reminder counts every file); with no
+# arguments it uses REMINDER_CODE_EXTS.
 reminder_session_added_lines() {
-  reminder_code_globs
+  if [ "$#" -gt 0 ]; then
+    CODE_GLOBS=("$@")
+  else
+    reminder_code_globs
+  fi
   local since
   reminder_session_since
   since=$REPLY

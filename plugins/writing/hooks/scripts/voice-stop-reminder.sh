@@ -11,6 +11,9 @@
 # "Wrote prose" and "ran the skill" both come from walking the transcript's tool_use blocks
 # (voice_transcript_scan), so it works for prose outside git and never mistakes the
 # skill_listing attachment — which names every installed skill — for a real invocation.
+# Repo scaffolding (SKILL.md, CHANGELOG, plans/, .github/) is excluded: this is the only
+# blocking voice hook, and with a global profile present every ordinary coding session
+# touches such a file — it would refuse to stop three times over a skill manifest.
 #
 # Re-arms rather than firing once, bounded so a Stop loop cannot happen: it asks again when
 # the session has written more prose files than at the last fire, and at most 3 times.

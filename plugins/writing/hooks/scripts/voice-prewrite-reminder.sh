@@ -25,6 +25,8 @@ voice_payload
 FILE=$(voice_field '.tool_input.file_path')
 [ -z "$FILE" ] && exit 0
 voice_is_prose_file "$FILE" || exit 0
+# A SKILL.md or CHANGELOG is repo scaffolding, not writing the profile governs.
+voice_is_scaffolding_file "$FILE" && exit 0
 
 voice_profile # sets PROFILE, exits when none
 

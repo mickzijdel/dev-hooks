@@ -64,17 +64,61 @@ voice_is_prose_file() {
   return 1
 }
 
+# Prose files that are repo scaffolding, not writing a voice profile applies to. Mick's
+# CLAUDE.md scopes the voice to "newsletters, blog posts, essays, emails, website copy,
+# reports, academic writing — not code". A SKILL.md, a CHANGELOG or a plans/ note sits with
+# the code, and with a global ~/.claude/voice_profile.md present every ordinary coding
+# session touches one — which would have the blocking Stop hook refuse to end three times
+# over a skill manifest. READMEs have their own hook (readme-reminder) and skill.
+VOICE_SKIP_BASENAMES=(
+  readme readme.* changelog* license* contributing* code_of_conduct*
+  agents.md claude.md skill.md
+)
+VOICE_SKIP_DIRS=(.claude .github node_modules vendor plans .worktrees)
+
+voice_is_scaffolding_file() {
+  local lower=${1,,} base=${1##*/} pat dir
+  base=${base,,}
+  for pat in "${VOICE_SKIP_BASENAMES[@]}"; do
+    # shellcheck disable=SC2053
+    [[ $base == $pat ]] && return 0
+  done
+  for dir in "${VOICE_SKIP_DIRS[@]}"; do
+    case "$lower" in */$dir/*) return 0 ;; esac
+  done
+  return 1
+}
+
 # Walk the session transcript and print "<prose files written>\t<voice skill invoked 0|1>".
 # Needs $1 = transcript path. The skill check walks tool_use blocks rather than grepping for
 # the name: a transcript carries a skill_listing attachment naming every installed skill, so
 # a bare grep matches in every session and would suppress the hook permanently.
 voice_transcript_scan() {
   command -v python3 >/dev/null 2>&1 || return 1
-  python3 - "$1" "${VOICE_PROSE_EXTS[@]}" <<'PYEOF'
+  python3 - "$1" "${#VOICE_PROSE_EXTS[@]}" "${VOICE_PROSE_EXTS[@]}" \
+    "${#VOICE_SKIP_BASENAMES[@]}" "${VOICE_SKIP_BASENAMES[@]}" "${VOICE_SKIP_DIRS[@]}" <<'PYEOF'
 import json
 import sys
 
-path, exts = sys.argv[1], tuple("." + e for e in sys.argv[2:])
+import fnmatch
+import posixpath
+
+path = sys.argv[1]
+n_ext = int(sys.argv[2])
+exts = tuple("." + e for e in sys.argv[3 : 3 + n_ext])
+rest = sys.argv[3 + n_ext :]
+n_base = int(rest[0])
+skip_bases = rest[1 : 1 + n_base]
+skip_dirs = rest[1 + n_base :]
+
+
+def scaffolding(fp):
+    low = fp.lower()
+    base = posixpath.basename(low)
+    if any(fnmatch.fnmatch(base, pat) for pat in skip_bases):
+        return True
+    return any(f"/{d}/" in low for d in skip_dirs)
+
 written, skill = set(), 0
 try:
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -93,7 +137,11 @@ try:
                     skill = 1
                 if block.get("name") in ("Write", "Edit", "MultiEdit"):
                     fp = inp.get("file_path")
-                    if isinstance(fp, str) and fp.lower().endswith(exts):
+                    if (
+                        isinstance(fp, str)
+                        and fp.lower().endswith(exts)
+                        and not scaffolding(fp)
+                    ):
                         written.add(fp)
 except OSError:
     pass
