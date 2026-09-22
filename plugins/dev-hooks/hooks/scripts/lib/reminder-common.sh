@@ -122,10 +122,11 @@ PYEOF
   # as exactly 24:00:00, and a UTC offset whose TOTAL must be under 24h (so +02:99 is
   # valid, normalising to +03:39, while +23:99 is not). test_jq_stamp_mirror_agrees_with_
   # python sweeps generated stamps through both this and fromisoformat.
-  local _iso _y _m _d _hh _mm _ss _frac _sign _oh _om _max
+  local _iso _y _m _d _hh _mm _ss _frac _sign _oh _om _os _max
   _iso='^([0-9]{4})-([0-9]{2})-([0-9]{2})'
   _iso="$_iso"'([T ]([0-9]{2}):([0-9]{2})(:([0-9]{2})(\.[0-9]+)?)?'
-  _iso="$_iso"'(Z|([+-])([0-9]{2}):?([0-9]{2})?)?)?$'
+  # Offsets may carry seconds (+02:00:30), which fromisoformat accepts.
+  _iso="$_iso"'(Z|([+-])([0-9]{2})(:?([0-9]{2})(:?([0-9]{2}))?)?)?)?$'
   if [[ ! $REPLY =~ $_iso ]]; then
     REPLY=""
     return 0
@@ -139,7 +140,8 @@ PYEOF
   _frac=${BASH_REMATCH[9]:-}
   _sign=${BASH_REMATCH[11]:-}
   _oh=${BASH_REMATCH[12]:-00}
-  _om=${BASH_REMATCH[13]:-00}
+  _om=${BASH_REMATCH[14]:-00}
+  _os=${BASH_REMATCH[16]:-00}
   _hh=$((10#$_hh))
   _mm=$((10#$_mm))
   _ss=$((10#$_ss))
@@ -154,6 +156,11 @@ PYEOF
     _max=29
   fi
 
+  # Known, deliberate divergence: session_start also needs .timestamp() to succeed, which
+  # underflows for instants within the local UTC offset of datetime.min — here that is
+  # 0001-01-01 alone, and which instants qualify depends on the machine's timezone, so no
+  # portable shell check expresses it. The mirror over-accepts that one stamp, which passes
+  # a value to git rather than blanking REPLY: the recoverable direction.
   if [ "$_y" -lt 1 ] || [ "$_m" -lt 1 ] || [ "$_m" -gt 12 ] ||
     [ "$_d" -lt 1 ] || [ "$_d" -gt "$_max" ] ||
     [ "$_hh" -gt 24 ] || [ "$_mm" -gt 59 ] || [ "$_ss" -gt 59 ]; then
@@ -166,7 +173,8 @@ PYEOF
     REPLY=""
     return 0
   fi
-  if [ -n "$_sign" ] && [ $((10#$_oh * 60 + 10#$_om)) -ge 1440 ]; then
+  if [ -n "$_sign" ] &&
+    [ $((10#$_oh * 3600 + 10#$_om * 60 + 10#$_os)) -ge 86400 ]; then
     REPLY=""
   fi
 }

@@ -5,13 +5,13 @@ environment, asserting on exit code and that stdout is empty (silent) or valid J
 the silent-gate path and the firing path are exercised for every hook.
 """
 
-import datetime
 import json
 import os
 import random
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -1802,6 +1802,14 @@ def test_session_since_rejects_non_date_timestamps(
     assert out == expected
 
 
+# session_start needs .timestamp() to succeed, which underflows for instants within the
+# local UTC offset of datetime.min. Which stamps those are depends on the machine's
+# timezone, so the shell mirror cannot match portably; it over-accepts them, passing a
+# value to git rather than blanking REPLY. Exactly one entry, named rather than skipped by
+# a pattern — a broad exclusion here would hide the drift this sweep exists to find.
+_TIMEZONE_DEPENDENT_STAMPS = {"0001-01-01"}
+
+
 def _generated_stamps():
     """Stamps spanning the grammar's edges, generated rather than chosen.
 
@@ -1812,7 +1820,9 @@ def _generated_stamps():
     out = []
     # Boundaries, not ranges: the suite runs on every Stop, so the sweep is kept to a
     # couple of seconds. A full cartesian product found nothing these edges miss.
-    for year in ("0000", "1900", "2000", "2024", "2026"):
+    # 0001 and 0002 straddle where .timestamp() starts working, which is part of
+    # session_start's contract and not of fromisoformat's.
+    for year in ("0000", "0001", "0002", "1900", "2000", "2024", "2026"):
         for month in ("00", "01", "02", "04", "09", "12", "13"):
             for day in ("00", "01", "28", "29", "30", "31", "32"):
                 out.append(f"{year}-{month}-{day}")
@@ -1866,15 +1876,23 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
         stamp, _, reply = line.partition("\t")
         got[stamp] = reply
 
+    # The oracle is hook_helpers.session_start itself, not a reimplementation of what it
+    # is thought to do. An earlier version of this test used datetime.fromisoformat, which
+    # is only half the contract — session_start also requires .timestamp() to succeed — so
+    # it asserted the mirror's answer for "0001-01-01" was right when python returns "".
+    # Reimplementing the oracle reintroduces exactly the drift the sweep exists to catch.
+    sys.path.insert(0, str(HOOKS / "lib"))
+    from hook_helpers import session_start
+
+    oracle = tmp_path / "oracle.jsonl"
     disagreements = []
     for stamp in stamps:
         if not stamp:
             continue
-        try:
-            datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            expected = stamp
-        except ValueError:
-            expected = ""
+        oracle.write_text(json.dumps({"timestamp": stamp}) + "\n")
+        expected = session_start(str(oracle))
+        if stamp in _TIMEZONE_DEPENDENT_STAMPS:
+            continue
         if got.get(stamp, "<missing>") != expected:
             disagreements.append((stamp, expected, got.get(stamp, "<missing>")))
     assert not disagreements, (
