@@ -438,6 +438,219 @@ def test_voice_reminder_scans_html_webcopy(tmp_path):
     assert_json_with(r.stdout, "voice-profile")
 
 
+# ── voice-prewrite-reminder.sh (writing plugin; PreToolUse) ─────────────────────────
+def _run_prewrite(payload, env):
+    return run_hook(
+        "voice-prewrite-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _prewrite_payload(tmp_path, name="post.md", session="s1"):
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "tool_input": {"file_path": str(tmp_path / name)},
+        }
+    )
+
+
+def test_voice_prewrite_fires_before_writing_prose(tmp_path):
+    # The point of this hook: it fires on the file about to be written, so the profile is
+    # in context for the FIRST draft rather than patched in afterwards.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(_prewrite_payload(tmp_path), base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    payload = assert_json_with(r.stdout, "voice_profile.md")
+    assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    # Advisory only — no permission decision, so the write proceeds normally.
+    assert "permissionDecision" not in payload["hookSpecificOutput"]
+
+
+def test_voice_prewrite_silent_without_profile(tmp_path):
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_for_code(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name="app.py"), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_fires_once_per_session(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() != ""
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "name", ["page.html", "show.html.erb", "hero.liquid", "doc.rst"]
+)
+def test_voice_prewrite_covers_markup_and_templates(tmp_path, name):
+    # Webcopy and Rails views carry the sentences a reader reads; they were the gap.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name=name), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.stdout.strip() != ""
+
+
+# ── voice-stop-reminder.sh (writing plugin; Stop) ───────────────────────────────────
+def _run_voice_stop(payload, env):
+    return run_hook(
+        "voice-stop-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _voice_write_block(path):
+    return json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": str(path)},
+                    }
+                ]
+            }
+        }
+    )
+
+
+_VOICE_SKILL_BLOCK = json.dumps(
+    {
+        "message": {
+            "content": [
+                {"type": "tool_use", "input": {"skill": "writing:voice-profile"}}
+            ]
+        }
+    }
+)
+
+
+def _voice_stop_payload(tmp_path, lines, session="s1"):
+    # First line mirrors a real transcript's skill_listing, which names every installed
+    # skill — a hook that greps for "voice-profile" instead of walking tool_use blocks
+    # would see a match here and go silent in every session.
+    listing = json.dumps(
+        {
+            "timestamp": "2000-01-01T00:00:00.000Z",
+            "attachment": {
+                "type": "skill_listing",
+                "content": "writing:voice-profile: Use when drafting prose in a voice",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *lines]) + "\n")
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "transcript_path": str(transcript),
+        }
+    )
+
+
+def test_voice_stop_blocks_when_prose_written_without_skill(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[voice-stop-reminder]")
+
+
+def test_voice_stop_silent_when_skill_ran(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path, [_voice_write_block(tmp_path / "post.md"), _VOICE_SKILL_BLOCK]
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_only_code_written(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "app.py")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_does_not_loop_on_unchanged_prose(tmp_path):
+    # Fires once, then stays silent while nothing more is written — otherwise Stop loops.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    assert _run_voice_stop(payload, env).returncode == 2
+    assert _run_voice_stop(payload, env).returncode == 0
+
+
+def test_voice_stop_reasks_when_more_prose_written(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    first = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "a.md")])
+    assert _run_voice_stop(first, env).returncode == 2
+    second = _voice_stop_payload(
+        tmp_path,
+        [_voice_write_block(tmp_path / "a.md"), _voice_write_block(tmp_path / "b.md")],
+    )
+    assert _run_voice_stop(second, env).returncode == 2
+
+
+def test_voice_stop_nudges_are_bounded(tmp_path):
+    # A Claude that cannot apply the profile must still be able to stop.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    codes = []
+    for i in range(5):
+        lines = [_voice_write_block(tmp_path / f"f{j}.md") for j in range(i + 1)]
+        codes.append(
+            _run_voice_stop(_voice_stop_payload(tmp_path, lines), env).returncode
+        )
+    assert codes[:3] == [2, 2, 2]
+    assert codes[3:] == [0, 0]
+
+
+def test_voice_stop_silent_without_profile(tmp_path):
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(
+        payload,
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── voice-intent-reminder.sh (writing plugin; UserPromptSubmit, self-contained) ─────
 def _run_voice_intent(payload, env):
     return run_hook(
@@ -1156,6 +1369,45 @@ def test_plan_reminder_state_is_per_session(tmp_path):
 
 
 # ── review-reminder.sh ──────────────────────────────────────────────────────────────
+def _review_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"):
+    # Mirrors a real transcript: a timestamped first line (the session start the
+    # committed-work gate measures from) plus the skill_listing attachment that names every
+    # installed skill — so a guard that greps for the bare name "code-review" instead of
+    # walking tool_use blocks fails here rather than silently in production.
+    listing = json.dumps(
+        {
+            "timestamp": started,
+            "attachment": {
+                "type": "skill_listing",
+                "content": "code-review: Review the current diff for correctness bugs",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *(extra_lines or [])]) + "\n")
+    return json.dumps({"transcript_path": str(transcript), "session_id": tmp_path.name})
+
+
+def _run_review(tmp_path, payload):
+    """TMPDIR pinned to the test dir so the per-session nudge counter and re-arm baseline
+    are hermetic — otherwise state from an earlier run leaks in through "nosession"."""
+    return run_hook(
+        "review-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+
+
+REVIEW_LINE = json.dumps(
+    {"message": {"content": [{"type": "tool_use", "input": {"skill": "code-review"}}]}}
+)
+
+
+def _code_lines(n, start=0):
+    return "".join(f"x{i} = {i}\n" for i in range(start, start + n))
+
+
 def test_review_reminder_silent_outside_git(tmp_path):
     r = run_hook("review-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
     assert r.returncode == 0
@@ -1165,12 +1417,7 @@ def test_review_reminder_silent_outside_git(tmp_path):
 def test_review_reminder_fires_on_unreviewed_code(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # untracked code change
-    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    r = _run_review(tmp_path, _review_payload(tmp_path))
     assert r.returncode == 2
     assert_json_with(r.stdout, "[review-reminder]")
 
@@ -1178,23 +1425,66 @@ def test_review_reminder_fires_on_unreviewed_code(tmp_path):
 def test_review_reminder_silent_after_review(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")
-    review_line = json.dumps(
-        {
-            "message": {
-                "content": [{"type": "tool_use", "input": {"skill": "code-review"}}]
-            }
-        }
-    )
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=2, extra_lines=[review_line]
-    )
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    r = _run_review(tmp_path, payload)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+def test_review_reminder_fires_on_committed_only_work(tmp_path):
+    # The headline fix: commit-as-you-go leaves a clean tree, and the old porcelain-only
+    # gate went silent on exactly those sessions. The commit is dated after the fixture
+    # session start, so reminder_session_files must still see it.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("seed\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "feature.py").write_text(_code_lines(30))
+    _commit_dated(tmp_path, run, "2024-01-01T12:00:00", msg="feature")
+    assert (
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == ""
+    )  # tree really is clean
+    r = _run_review(tmp_path, _review_payload(tmp_path))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[review-reminder]")
+
+
+def test_review_reminder_keeps_asking_while_unreviewed(tmp_path):
+    # A substantial change earns repeated nudges — a single fire is easy to acknowledge and
+    # then ignore — but the count is bounded so a Claude that cannot review still stops.
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    payload = _review_payload(tmp_path)
+    codes = [_run_review(tmp_path, payload).returncode for _ in range(4)]
+    assert codes == [2, 2, 2, 0]
+
+
+def test_review_reminder_nudges_small_change_only_once(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "tiny.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    assert _run_review(tmp_path, payload).returncode == 2
+    assert _run_review(tmp_path, payload).returncode == 0
+
+
+def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
+    # A review that ran seeds the baseline; code written afterwards makes it stale.
+    init_git_repo(tmp_path)
+    f = tmp_path / "mod.py"
+    f.write_text(_code_lines(5))
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    assert _run_review(tmp_path, payload).returncode == 0  # baseline seeded
+    assert _run_review(tmp_path, payload).returncode == 0  # nothing changed: no loop
+    f.write_text(_code_lines(40))
+    r = _run_review(tmp_path, payload)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "stale")
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────

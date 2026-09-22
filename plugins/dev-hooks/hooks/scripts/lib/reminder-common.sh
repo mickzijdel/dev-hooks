@@ -324,3 +324,161 @@ reminder_is_test_path() {
     *) return 1 ;;
   esac
 }
+
+# ── "This session's work" helpers (Stop hooks) ───────────────────────────────────
+# Absolute path to this lib dir, resolved at source time, so helpers can hand it to an
+# embedded-python heredoc without every caller recomputing $SELF_DIR/lib.
+REMINDER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# The code extensions every Stop hook agrees on. ONE list: review-reminder's regex and
+# compress-comments-reminder's glob array were separate copies and had already drifted
+# (*.sh counted as code for one hook and not the other).
+REMINDER_CODE_EXTS=(rb erb rake py js ts jsx tsx vue mjs cjs sh)
+
+# Pathspec globs for `git diff -- …`, into CODE_GLOBS.
+reminder_code_globs() {
+  CODE_GLOBS=()
+  local ext
+  for ext in "${REMINDER_CODE_EXTS[@]}"; do CODE_GLOBS+=("*.$ext"); done
+}
+
+reminder_is_code_file() {
+  local ext
+  for ext in "${REMINDER_CODE_EXTS[@]}"; do
+    [ "${1##*.}" = "$ext" ] && return 0
+  done
+  return 1
+}
+
+# True when any line of $1 (newline-separated paths) names a code file.
+reminder_has_code_file() {
+  local path
+  while IFS= read -r path; do
+    [ -n "$path" ] && reminder_is_code_file "$path" && return 0
+  done <<<"$1"
+  return 1
+}
+
+# Every file this session touched — uncommitted (porcelain) AND committed since the
+# session started — one per line, into SESSION_FILES. Needs $TRANSCRIPT, so
+# reminder_stop_init must have run.
+#
+# Prefer this over reminder_changed_files for any "did Claude do work this session?" gate.
+# CLAUDE.md mandates commit-as-you-go, so by the time Stop fires the tree is usually clean
+# and a porcelain-only gate exits silently on exactly the sessions that did the most work.
+reminder_session_files() {
+  reminder_changed_files
+  local committed=""
+  reminder_session_since
+  [ -n "$REPLY" ] && committed=$(git log --name-only --format= --since="$REPLY" 2>/dev/null)
+  # shellcheck disable=SC2034
+  SESSION_FILES=$(printf '%s\n%s\n' "$CHANGED" "$committed" | grep -v '^$' | sort -u)
+}
+
+# Lines of code this session added — added lines in `git diff HEAD`, in commits since the
+# session started, and every line of an untracked code file — into $REPLY. The growth
+# signal reminder_rearm compares against, and the shared half of compress-comments-
+# reminder's comment count (which filters these lines further).
+reminder_session_added_lines() {
+  reminder_code_globs
+  local since
+  reminder_session_since
+  since=$REPLY
+  REPLY=$(
+    {
+      {
+        git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
+        [ -n "$since" ] && git log -p --no-color --format= --since="$since" -- "${CODE_GLOBS[@]}" 2>/dev/null
+      } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
+      git ls-files -z --others --exclude-standard -- "${CODE_GLOBS[@]}" 2>/dev/null |
+        xargs -0 -r cat 2>/dev/null
+    } | cat
+  )
+}
+
+# Did this session actually *invoke* one of the named skills/agents/slash-commands?
+# $REPLY = 1|0. $1 is a sentinel string ("" for none — a hook's own prior reminder text);
+# the rest are needles. Wraps hook_helpers.transcript_invoked, which walks tool_use blocks
+# rather than grepping: the transcript carries a skill_listing attachment naming every
+# installed skill, so a bare-name grep matches in EVERY session and would suppress the
+# caller forever. Needs $TRANSCRIPT.
+reminder_transcript_invoked() {
+  local sentinel=$1
+  shift
+  REPLY=0
+  [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  REPLY=$(
+    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "$@" <<'PYEOF'
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from hook_helpers import transcript_invoked
+
+print(
+    1
+    if transcript_invoked(
+        sys.argv[1], tuple(sys.argv[4:]), sentinel=sys.argv[2] or None
+    )
+    else 0
+)
+PYEOF
+  )
+  [ "$REPLY" = "1" ] || REPLY=0
+}
+
+# ── Re-arming baselines ──────────────────────────────────────────────────────────
+# Why every "before you finish" Stop hook wants one: a once-per-session sentinel fires
+# once and then goes quiet for the rest of the session, however little of the work the
+# single nudge actually got done. The fire log bears this out — compress-comments-reminder
+# (re-arming) averages ~3.9 fires per session it speaks in; review-reminder (sentinel)
+# averages exactly 1.0.
+#
+# Current baseline for $1 into $REPLY ("" when the hook has not fired yet this session).
+reminder_rearm_baseline() {
+  reminder_state_file "$1"
+  REPLY=$(cat "$REPLY" 2>/dev/null)
+  case "$REPLY" in *[!0-9]* | "") REPLY="" ;; esac
+}
+
+# Record $2 as the baseline for $1 without firing — "this much is already handled".
+reminder_rearm_seed() {
+  reminder_state_file "$1"
+  printf '%s' "$2" >"$REPLY" 2>/dev/null
+}
+
+# Decide whether to fire, given state name $1, current count $2 and growth threshold $3.
+# Sets REPLY to one of:
+#   first   — no baseline yet and count >= threshold
+#   growth  — count grew by >= threshold since the last fire
+#   silent  — below threshold, or unchanged (which is what keeps Stop from looping)
+# A count that DROPPED means the work was done: rebase the baseline and stay silent rather
+# than nag. REMINDER_REARM_DELTA carries the growth the decision was made on.
+reminder_rearm() {
+  local stored
+  reminder_rearm_baseline "$1"
+  stored=$REPLY
+  REMINDER_REARM_DELTA=$2
+  if [ -z "$stored" ]; then
+    if [ "$2" -lt "$3" ]; then
+      REPLY=silent
+      return 0
+    fi
+    reminder_rearm_seed "$1" "$2"
+    REPLY=first
+    return 0
+  fi
+  if [ "$2" -lt "$stored" ]; then
+    reminder_rearm_seed "$1" "$2"
+    REPLY=silent
+    return 0
+  fi
+  REMINDER_REARM_DELTA=$(($2 - stored))
+  if [ "$REMINDER_REARM_DELTA" -lt "$3" ]; then
+    REPLY=silent
+    return 0
+  fi
+  reminder_rearm_seed "$1" "$2"
+  REPLY=growth
+}

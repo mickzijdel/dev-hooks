@@ -35,7 +35,11 @@ reminder_stop_init ""
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 # Collect changed code files (staged + unstaged vs HEAD)
-reminder_changed_files # sets CHANGED
+# Files this session touched, committed ones included: CLAUDE.md mandates commit-as-you-go,
+# so a porcelain-only gate would skip verification on exactly the sessions that finished
+# their work properly.
+reminder_session_files
+CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
 
 HAS_RUBY=$(echo "$CHANGED" | grep -qE '\.(rb|erb|rake)$' && echo 1 || echo 0)

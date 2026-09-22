@@ -65,17 +65,22 @@ Do not include changelog or detective-work where it does not belong, such as in 
 
 ## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 
-- **The standalone-plugin hooks are the exception to everything below.** The `writing` plugin
-  (`readme-reminder.sh`, `voice-reminder.sh`, `voice-intent-reminder.sh`) and the
-  `thinking-tools` plugin (`thinking-tools-reminder.sh`, `thinking-tools-nudge.sh`) live in
-  their own `plugins/*/hooks/` and are deliberately self-contained — they do NOT source
-  `reminder-common.sh` or `hook_helpers.py`, because those plugins install without `dev-hooks`
-  and a cross-plugin `source`/import would break that standalone install. Their small
-  reimplemented bits (opt-out case, jq payload read, `emit`) stay under jscpd's minTokens, or
-  are wrapped in `# jscpd:ignore-start`/`-end` when a block is shared verbatim between two of
-  them (e.g. the voice-profile lookup shared by `voice-reminder.sh` and
-  `voice-intent-reminder.sh`) — keep them terse if you extend them. Keep the scripts
-  dependency-free; don't "DRY" them into the lib.
+- **The standalone-plugin hooks never source dev-hooks' lib.** The `writing` plugin
+  (`readme-reminder.sh`, the four `voice-*.sh`) and the `thinking-tools` plugin
+  (`thinking-tools-reminder.sh`, `thinking-tools-nudge.sh`) live in their own
+  `plugins/*/hooks/` and must NOT source `reminder-common.sh` or import `hook_helpers.py`:
+  those plugins install without `dev-hooks`, and a cross-plugin `source` would break that
+  standalone install. Sharing *within* a plugin is fine and preferred — the writing hooks
+  ship together, so they share `plugins/writing/hooks/scripts/lib/voice-common.sh`
+  (`voice_opt_out [VAR]`, `voice_payload`/`voice_field`, `voice_profile`,
+  `VOICE_PROSE_EXTS` + `voice_is_prose_file`, `voice_transcript_scan`,
+  `voice_state_file`/`voice_fire_once`, `voice_emit <event> <msg>`, `voice_emit_stop`, and
+  the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). That lib replaced the
+  `# jscpd:ignore`-wrapped copies the hooks used to carry. `VOICE_PROSE_EXTS` is passed into
+  `voice_transcript_scan`'s python heredoc by argv rather than re-listed there — a drifted
+  copy of an extension list doesn't error, it just silently stops seeing files.
+  `thinking-tools`' two hooks have no sibling to share with, so their small reimplemented
+  bits stay terse and under jscpd's minTokens.
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
   knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`
   (opt-out + INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` /
@@ -108,15 +113,34 @@ Do not include changelog or detective-work where it does not belong, such as in 
   for five weekly reviews before `test_every_emitting_hook_establishes_a_session` in
   `tests/test_hook_sunset_bets.py` started failing any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
-  guard when the hook manages its own re-arm state), `reminder_session_since` (session start
-  as a `git log --since` argument in `$REPLY`, from the transcript's first-line timestamp —
-  any Stop hook measuring "this session's work" needs it, because the commit-as-you-go
-  workflow leaves a clean tree that `git status`/`git diff HEAD` see nothing in),
-  `reminder_changed_files`
+  guard when the hook manages its own re-arm state), **`reminder_session_files`** (SESSION_FILES
+  = porcelain + files committed since the session started — the gate any "did Claude work this
+  session?" Stop hook wants, and the default over `reminder_changed_files`; review-reminder,
+  verify-work, big-change and change-summary all used porcelain alone and so went silent on
+  exactly the commit-as-you-go sessions that did the most work), `reminder_session_added_lines`
+  (this session's added code lines in `$REPLY`, over `REMINDER_CODE_EXTS` — the growth signal,
+  and the shared half of compress-comments-reminder's comment count),
+  `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (ONE code-extension
+  list; the two hand-rolled copies had already drifted over `*.sh`),
+  `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
+  `transcript_invoked`, which two hooks used to embed as duplicate heredocs),
+  `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
+  the transcript's first-line timestamp), `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
   state path in $REPLY — existence for `reminder_fire_once`, a stored value for re-arming
-  hooks like compress-comments-reminder), and `reminder_emit_stop <msg>` (continue:false
-  + exit 2).
+  hooks), the re-arm trio
+  `reminder_rearm_baseline`/`reminder_rearm_seed`/`reminder_rearm <name> <count> <threshold>`
+  ($REPLY `first`/`growth`/`silent`, growth in `REMINDER_REARM_DELTA`), and
+  `reminder_emit_stop <msg>` (continue:false + exit 2).
+  **Prefer a re-arming baseline over a once-per-session sentinel** for any "do this before you
+  finish" hook. A sentinel fires once and then goes quiet however little that nudge got done;
+  the fire log shows re-arming compress-comments-reminder averaging ~3.9 fires per session it
+  speaks in against sentinel-era review-reminder's exactly 1.0. Cap the un-satisfied case
+  (a nudge counter, or requiring growth) so Stop can still terminate.
+  **Prompt/agent hooks (`"type": "prompt"`, `"type": "agent"`) are only available on tool
+  events** — PreToolUse, PostToolUse, PermissionRequest. Not Stop, not UserPromptSubmit: one
+  configured there is accepted and silently never runs, so a Stop-time "judge" has to be a
+  command hook.
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
