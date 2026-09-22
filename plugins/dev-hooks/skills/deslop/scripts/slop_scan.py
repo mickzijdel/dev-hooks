@@ -207,19 +207,26 @@ COMMENT_RULES = [
 # Extension sets for rules that only make sense in one language family.
 TS_JS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 
+# Rules matched against the line plus the one after it, for constructs that straddle two
+# lines (`except Exception:` / `pass`). Everything else sees one line at a time.
+LOOKAHEAD = {"swallowed-error"}
+
 # (rule, pattern, message, extensions the rule applies to — None means every language)
 LINE_RULES = [
+    # Matched against a two-line window (see LOOKAHEAD): the commonest swallowed error in
+    # Python puts `pass` on the line after the `except`, which a single-line rule misses.
     (
         "swallowed-error",
         re.compile(
             r"""(?x)
-            ^\s*except\s*:\s*$
-          | ^\s*except\s+(?:Exception|BaseException)\s*(?:\s+as\s+\w+)?\s*:\s*
-                (?:pass|\.\.\.)\s*$
+            ^[ \t]*except[ \t]*:[ \t]*$
+          | ^[ \t]*except[ \t]+(?:Exception|BaseException)(?:[ \t]+as[ \t]+\w+)?[ \t]*:
+                [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*$
           | \bcatch\s*\([^)]*\)\s*\{\s*\}
           | \bcatch\s*\{\s*\}
           | \bif\s+err\s*!=\s*nil\s*\{\s*\}
-          | \brescue\s+(?:StandardError\s*)?(?:=>\s*\w+\s*)?$\s*\n\s*(?:nil|end)
+          | ^[ \t]*rescue(?:[ \t]+StandardError)?(?:[ \t]*=>[ \t]*\w+)?[ \t]*\n[ \t]*
+                (?:nil|end)[ \t]*$
             """
         ),
         "swallowed error (the failure is discarded, not handled) — a bug",
@@ -400,10 +407,11 @@ def scan_file(path, budgets):
     for i, raw in enumerate(lines):
         if not is_code(raw, syntax):
             continue
+        window = raw if i + 1 >= len(lines) else f"{raw}\n{lines[i + 1]}"
         for rule, pattern, msg, langs in LINE_RULES:
             if langs is not None and ext not in langs:
                 continue
-            if pattern.search(raw):
+            if pattern.search(window if rule in LOOKAHEAD else raw):
                 findings.append((i + 1, rule, msg))
                 break
 
