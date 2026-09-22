@@ -95,6 +95,44 @@ Roughly a tenfold separation. Rules that could not reach that separation were cu
 than kept at a lower confidence — see the comments in `scripts/slop_scan.py` for which
 ones and why.
 
+## What was measured and rejected: complexity concentration
+
+SlopCodeBench separates two failure modes — code grows verbose without concentrating
+complexity, and complexity concentrates without the code growing. The comment metrics
+measure the first. A branch-counting pass for the second was built, measured against
+these same corpora, and **cut**. The numbers, so nobody re-litigates it:
+
+**Branch density per file** (control-flow keywords per 100 code lines) does not separate
+authorship at all:
+
+| Corpus | Median | p90 |
+|---|---|---|
+| Django 4.0 | 14.4 | 22.0 |
+| requests 2.27 | 14.7 | 19.4 |
+| dev-hooks hooks (AI-written) | 18.2 | 24.1 |
+
+**Concentration as a share** (% of a file's branches in its largest function) is worse:
+Django's own p90 is 73% and its p99 is 100%. Human code concentrates routinely.
+
+**Worst-function branch count** is the only version with a real signal, and its cost is
+still too high. Findings per file, swept over thresholds:
+
+| Corpus | Files | >10 | >12 | >15 | >20 |
+|---|---|---|---|---|---|
+| Human Python (Django + Flask + requests) | 900 | 0.26 | 0.16 | 0.11 | 0.05 |
+| Human shell (git 2.34) | 1133 | 0.01 | 0.00 | 0.00 | 0.00 |
+| AI Python (dev-hooks + writing skills) | 12 | 0.67 | 0.33 | 0.25 | 0.17 |
+
+At the best threshold the separation is about 2×, against 5× for comment density and 30×
+for em-dash rate — and adding it at `>12` would have doubled the scanner's entire
+false-positive budget on human Python, from 0.16 findings per file to 0.32. The AI
+sample is also only 12 files, too small to conclude from.
+
+The deeper reason it does not belong here: **function complexity is a code-quality
+signal, not an authorship signal.** A 15-branch function deserves a look whoever wrote
+it, and that job is already done better by real AST tools than by a regex approximation
+of one. So the skill runs those instead — see *Complexity* in [SKILL.md](../SKILL.md).
+
 ## Reproducing
 
 ```bash

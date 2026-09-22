@@ -33,8 +33,10 @@ the cleanup yourself — see [Why a subagent](#why-a-subagent).
 2. **Run the scanner** over the changed files:
    `scripts/slop_scan.py <file>...` (`--metrics-only` for the measurement table alone).
    It exits 1 when it has findings. Its output goes into the brief verbatim.
-3. **Dispatch one subagent** with the prompt below, filled in. Wait for it.
-4. **Report** what came back: lines before → after, Tier A count, each Tier B fix, each
+3. **Run the complexity check** for the changed files' language (see
+   [Complexity](#complexity)). Its output goes into the brief too.
+4. **Dispatch one subagent** with the prompt below, filled in. Wait for it.
+5. **Report** what came back: lines before → after, Tier A count, each Tier B fix, each
    Tier C proposal, and the verification command with its result.
 
 Done when every changed file has been through the pass, the diff is no longer than it
@@ -57,6 +59,10 @@ THE DIFF:
 SCANNER FINDINGS (mechanical, from slop_scan.py — a prompt to look, not a verdict;
 some are wrong, say so rather than "fixing" them):
 [slop_scan.py output]
+
+COMPLEXITY CHECK (a Tier C observation, not a Tier A edit — propose decompositions,
+change nothing; an irreducible dispatch table is a fair answer, say so):
+[complexity tool output, or "none configured for this language"]
 
 VERIFY WITH: [test command]
 
@@ -100,6 +106,32 @@ REPORT BACK
 - the verify command and its actual output
 - anything the scanner flagged that you judged a false positive, and why
 ```
+
+## Complexity
+
+`slop_scan.py` measures verbosity. It does not measure the other half — complexity
+concentrating in a few functions — because a regex approximation of a cyclomatic count
+was built, measured against the reference corpora, and cut: it separated human from AI
+code about 2×, against 5× for comment density, and would have doubled the scanner's whole
+false-positive budget. The numbers are in
+[references/measurements.md](references/measurements.md).
+
+Real AST tools do this properly, so run the one the project already has:
+
+| Language | Command |
+|---|---|
+| Python | `ruff check --select C901 --config "lint.mccabe.max-complexity = 10" <files>` |
+| JS/TS | `eslint --rule '{"complexity": ["warn", 10]}' <files>` |
+| Go | `gocyclo -over 10 <files>` |
+| Ruby | `rubocop --only Metrics/CyclomaticComplexity <files>` |
+
+A function over the threshold is a **Tier C** observation — propose the decomposition,
+don't perform it. Complexity is a code-quality signal rather than an authorship one: a
+15-branch function earns a look whoever wrote it, and some genuinely are irreducible
+dispatch tables. Say which when that is the case.
+
+If the project has no such tool configured, skip this step and say so — do not install
+one during a cleanup pass.
 
 ## Why a subagent
 
