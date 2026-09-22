@@ -5,26 +5,15 @@
 # ///
 """Flag mechanically-detectable AI-authored code slop.
 
-Two passes over each file:
+Two passes per file. Line rules print `file:line: [rule] message` for high-precision
+patterns: narration and apology comments, chat artifacts, swallowed errors, type
+escapes, dead branches, debug residue. File metrics carry what no single line is guilty
+of: comment density, comment register, file size.
 
-  line rules    high-precision patterns printed as `file:line: [rule] message` —
-                narration and apology comments, chat artifacts, swallowed errors,
-                type escapes, dead branches, debug residue.
-  file metrics  the measurements that no single line is guilty of: comment density,
-                comment register (em dashes, parentheticals, words per comment), and
-                file size. A file can pass every line rule and still read as machine
-                output because it carries five times the comments a human would write.
+Budgets come from four pre-2023 codebases (Django 4.0, Flask 2.0, requests 2.27, git
+2.34); see ../references/measurements.md. `--max-density` and friends move them.
 
-The metric budgets come from measuring four pre-2023 codebases (Django 4.0, Flask 2.0,
-requests 2.27, git 2.34) — see ../references/measurements.md. They are defaults, not
-laws: `--max-density` and friends move them, and a file with a real reason to be
-comment-heavy (a reference table, a vendored algorithm) should be argued for, not
-silently rewritten.
-
-This is a regex scanner, not a parser. It sees comments by line shape and gives up on
-anything exotic; it cannot judge whether a comment is *true*, only whether it is
-plausible for a human to have bothered writing it. Everything it prints is a prompt to
-look, not a verdict.
+A regex scanner, not a parser. Everything it prints is a prompt to look, not a verdict.
 
 Usage: slop_scan.py [options] <file> [<file> ...]
 Exit code: 0 = clean, 1 = findings, 2 = no readable files given.
@@ -79,7 +68,7 @@ COMMENT_SYNTAX = {
     ".hs": DASH,
 }
 
-# Comments that exist to serve a tool, not a reader. Never counted, never flagged.
+# Tool directives, not prose: never counted, never flagged.
 DIRECTIVE = re.compile(
     r"""(?ix)
     \b(?: noqa | type:\s*ignore | pragma | shellcheck | pylint | ruff | fmt:\s*(?:on|off)
@@ -91,17 +80,13 @@ DIRECTIVE = re.compile(
 
 # --- line rules ------------------------------------------------------------------
 #
-# Each entry is (rule name, compiled pattern, message). Patterns marked COMMENT_ONLY are
-# applied to comment bodies; the rest are applied to the whole line. Precision beats
-# recall everywhere: a rule that cries wolf gets ignored, which is worse than silence.
+# COMMENT_RULES match comment bodies, LINE_RULES whole lines. Precision over recall: a
+# rule that cries wolf gets ignored, which is worse than silence.
 
 COMMENT_RULES = [
-    # Deliberately narrow. The tempting rule — "comment opens with a verb naming what the
-    # next line does" — fires on 222 Django comments, nearly all of them real why-comments
-    # that happen to start "Set the ...". Narration is judged by whether the comment adds
-    # anything the line does not, which a regex cannot see. That judgement belongs to the
-    # reader; the scanner contributes density instead. Only the forms that are near-absent
-    # from human code survive here.
+    # Narrow on purpose: "comment opens with a verb naming the next line" fires on 222
+    # Django comments, nearly all real why-comments starting "Set the ...". Only forms
+    # near-absent from human code survive.
     (
         "narration",
         re.compile(
@@ -135,8 +120,8 @@ COMMENT_RULES = [
         ),
         "apologetic comment (the code apologizes for itself)",
     ),
-    # Bare "for now" is ordinary human shorthand — 8 hits in Django, all legitimate. Only
-    # the phrasings that sign off unfinished work stay.
+    # Bare "for now" is human shorthand: 8 Django hits, all legitimate. Only phrasings
+    # that sign off unfinished work stay.
     (
         "deferral",
         re.compile(
@@ -204,17 +189,14 @@ COMMENT_RULES = [
     ),
 ]
 
-# Extension sets for rules that only make sense in one language family.
 TS_JS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 
-# Rules matched against the line plus the one after it, for constructs that straddle two
-# lines (`except Exception:` / `pass`). Everything else sees one line at a time.
+# Matched against a two-line window, for constructs straddling two lines: Python's
+# commonest swallowed error puts `pass` after the `except`.
 LOOKAHEAD = {"swallowed-error"}
 
-# (rule, pattern, message, extensions the rule applies to — None means every language)
+# (rule, pattern, message, langs); langs None applies the rule to every language
 LINE_RULES = [
-    # Matched against a two-line window (see LOOKAHEAD): the commonest swallowed error in
-    # Python puts `pass` on the line after the `except`, which a single-line rule misses.
     (
         "swallowed-error",
         re.compile(
@@ -232,8 +214,8 @@ LINE_RULES = [
         "swallowed error (the failure is discarded, not handled) — a bug",
         None,
     ),
-    # Scoped to TS/JS: an unscoped `:\s*any\b` matches `any(` calls and ordinary prose in
-    # every other language (3 hits in Django, all spurious).
+    # TS/JS only: unscoped `:\s*any\b` matches `any(` calls elsewhere, 3 spurious
+    # Django hits.
     (
         "type-escape",
         re.compile(
@@ -294,13 +276,12 @@ LINE_RULES = [
 
 # --- metric budgets --------------------------------------------------------------
 #
-# See ../references/measurements.md. Pre-2023 reference codebases land at 9.9-12.1%
-# comment density with a 7-8 word median; the budgets sit a little above the top of
-# that range so that ordinary human-written code does not trip them.
+# Pre-2023 codebases land at 9.9-12.1% density, 7-8 word median; budgets sit just above
+# that range so human code does not trip them. See ../references/measurements.md.
 
 DEFAULTS = {
     "max_density": 15.0,  # comment lines per 100 code lines
-    "max_em_dash": 5.0,  # % of comments containing an em dash / " -- "
+    "max_em_dash": 5.0,  # % of comments with an em dash or " -- "
     "max_paren": 25.0,  # % of comments containing a parenthetical
     "max_words": 14.0,  # mean words per comment
     "max_lines": 600,  # file length before it counts as a god file
@@ -315,9 +296,7 @@ def syntax_for(path):
 def strip_quoted(line):
     """Blank out string literals so a `#` or `//` inside one is not read as a comment.
 
-    Crude on purpose: it walks the line tracking quote state and ignores escapes, which
-    is right often enough for comment detection and wrong only on lines that would
-    confuse a human reader too.
+    Crude on purpose: tracks quote state, ignores escapes.
     """
     out = []
     quote = None
@@ -336,7 +315,7 @@ def strip_quoted(line):
 
 
 def extract_comments(lines, syntax):
-    """Yield (index, body, kind) for each comment, kind being "own" or "trailing"."""
+    """Yield (index, body) for each comment, own-line or trailing."""
     marker, block = syntax
     in_block = False
     for i, raw in enumerate(lines):
@@ -347,7 +326,7 @@ def extract_comments(lines, syntax):
                 in_block = False
                 body = stripped.split(block[1])[0].lstrip("*").strip()
             if body:
-                yield i, body, "own"
+                yield i, body
             continue
         if block and stripped.startswith(block[0]):
             body = stripped[len(block[0]) :]
@@ -357,21 +336,21 @@ def extract_comments(lines, syntax):
                 in_block = True
             body = body.strip()
             if body:
-                yield i, body, "own"
+                yield i, body
             continue
         if stripped.startswith(marker):
             if i == 0 and stripped.startswith("#!"):
                 continue
             body = stripped[len(marker) :].strip()
             if body:
-                yield i, body, "own"
+                yield i, body
             continue
         masked = strip_quoted(raw)
         pos = masked.find(marker)
         if pos > 0:
             body = raw[pos + len(marker) :].strip()
             if body:
-                yield i, body, "trailing"
+                yield i, body
 
 
 def is_code(line, syntax):
@@ -393,11 +372,11 @@ def scan_file(path, budgets):
     lines = text.split("\n")
 
     findings = []
-    comments = []
-    for i, body, kind in extract_comments(lines, syntax):
+    bodies = []
+    for i, body in extract_comments(lines, syntax):
         if DIRECTIVE.search(body):
             continue
-        comments.append((i, body, kind))
+        bodies.append(body)
         for rule, pattern, msg in COMMENT_RULES:
             if pattern.search(body):
                 findings.append((i + 1, rule, msg))
@@ -416,12 +395,11 @@ def scan_file(path, budgets):
                 break
 
     code_lines = sum(1 for line in lines if is_code(line, syntax))
-    bodies = [b for _, b, _ in comments]
     metrics = {
         "code": code_lines,
-        "comments": len(comments),
+        "comments": len(bodies),
         "lines": len(lines),
-        "density": 100 * len(comments) / code_lines if code_lines else 0.0,
+        "density": 100 * len(bodies) / code_lines if code_lines else 0.0,
         "em_dash": pct(bodies, lambda b: "—" in b or " -- " in b),
         "paren": pct(bodies, lambda b: "(" in b),
         "words": statistics.mean([len(b.split()) for b in bodies]) if bodies else 0.0,

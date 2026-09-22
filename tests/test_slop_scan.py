@@ -1,10 +1,8 @@
 """Tests for the deslop skill's slop_scan.py.
 
-Two halves. The positive tests assert each rule fires on the shape it names. The
-regression tests pin the false positives that tuning removed — every one of them was a
-real hit on Django 4.0 or git 2.34, and each would silently return if someone widened a
-pattern. A scanner that cries wolf on human code is worse than no scanner, so those
-tests are the load-bearing ones.
+Positive tests assert each rule fires on the shape it names. The regression tests pin
+false positives that tuning removed: every one was a real hit on Django 4.0 or git 2.34
+and would return silently if someone widened a pattern. Those are the load-bearing ones.
 """
 
 import subprocess
