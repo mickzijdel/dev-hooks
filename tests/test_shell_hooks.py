@@ -1826,8 +1826,13 @@ def _generated_stamps():
     # starts working; a speed trim dropped both, leaving those branches live but
     # unexercised. Mutation-checked: without 2000, breaking the %400 test still passes.
     for year in ("0000", "0001", "0002", "1900", "2000", "2024"):
-        for month in ("00", "02", "04", "13"):
-            for day in ("00", "01", "29", "30", "31", "32"):
+        # 12 is the only month that exercises the upper bound on the ACCEPT side, and 28
+        # the only day that distinguishes February's 28 from a wrong 27 — both dropped by
+        # the same speed trim as the years above.
+        # Every 30-day month, not just one: the mirror lists them as `4 | 6 | 9 | 11`, and
+        # with only 04 present, dropping any of the others from that alternation survives.
+        for month in ("00", "02", "04", "06", "09", "11", "12", "13"):
+            for day in ("00", "01", "28", "29", "30", "31", "32"):
                 out.append(f"{year}-{month}-{day}")
     base = "2026-09-22"
     for hour in ("00", "23", "24", "25"):
