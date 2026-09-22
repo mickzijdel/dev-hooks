@@ -41,10 +41,14 @@ def session_start(transcript_path):
             first = fh.readline()
     except OSError:
         return ""
+    # Broad on purpose: the first line is not always a message object — it can be a
+    # `queue-operation` record, or a list — and a `timestamp` is not always a string.
+    # Anything unreadable means "session start unknown", never a traceback.
     try:
-        return json.loads(first).get("timestamp") or ""
-    except ValueError:
+        stamp = json.loads(first).get("timestamp")
+    except Exception:
         return ""
+    return stamp if isinstance(stamp, str) else ""
 
 
 def session_start_epoch(since):
@@ -53,13 +57,13 @@ def session_start_epoch(since):
     In python rather than `date`, because the shell tools disagree across platforms in ways
     that fail silently: GNU `date -d` parses this, while on BSD `-d` is the set-kernel-DST
     flag and exits 0 printing the CURRENT time — a wrong answer, not an error."""
-    if not since:
+    if not isinstance(since, str) or not since:
         return None
     try:
         return int(
             datetime.datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
         )
-    except ValueError:
+    except Exception:
         return None
 
 

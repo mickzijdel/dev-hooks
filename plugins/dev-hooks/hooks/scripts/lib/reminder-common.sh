@@ -405,8 +405,9 @@ PYEOF
 # Contents of this session's untracked files, size-capped, on stdout. Same reasoning as
 # reminder_untracked_since: one python implementation rather than a per-platform pipeline.
 reminder_untracked_text() {
-  command -v python3 >/dev/null 2>&1 || return 0
-  python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF'
+  local _out _f _size
+  if _out=$(
+    python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF' 2>/dev/null
 import sys
 
 sys.dont_write_bytecode = True
@@ -415,6 +416,19 @@ from hook_helpers import session_start, untracked_text
 
 sys.stdout.write(untracked_text(session_start(sys.argv[2]), tuple(sys.argv[3:])))
 PYEOF
+  ); then
+    printf '%s' "$_out"
+    return 0
+  fi
+  # Same invariant as reminder_untracked_since: without python3 the session filter is
+  # skipped rather than the result going empty, since an empty count silences the
+  # re-arming Stop hooks exactly as if no work had been done. `wc -c` keeps the size cap
+  # portable — no `find -size`, whose unit rounding matched only empty files.
+  while IFS= read -r _f; do
+    [ -f "$_f" ] || continue
+    _size=$(wc -c <"$_f" 2>/dev/null) || continue
+    [ "$_size" -le 1048576 ] && cat "$_f" 2>/dev/null
+  done < <(git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n')
 }
 
 reminder_session_files() {

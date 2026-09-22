@@ -1709,6 +1709,55 @@ def test_untracked_since_over_reports_without_python3(tmp_path):
     assert "new.py" in out and "old.py" in out
 
 
+def test_added_lines_over_reports_without_python3(tmp_path):
+    """The sibling of test_untracked_since_over_reports_without_python3. This helper had no
+    such guard, so a missing python3 dropped every untracked line — an empty count, which
+    silences the re-arming Stop hooks exactly as if the session had done no work."""
+    init_git_repo(tmp_path)
+    (tmp_path / "n.py").write_text("# a\n# b\n# c\n")
+    (tmp_path / "huge.py").write_text("# z\n" * 400_000)
+    t = _dated_transcript(tmp_path, "2000-01-01T00:00:00.000Z")
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path,
+        t,
+        'reminder_session_added_lines; printf "%s\\n" "$REPLY" | grep -c .',
+        env=env,
+    )
+    # n.py's three lines; huge.py still excluded, so the size cap survives the fallback.
+    assert out == "3", f"expected 3 lines without python3, got {out}"
+
+
+@pytest.mark.parametrize(
+    "first_line",
+    ["[1, 2, 3]", '{"timestamp": 12345}', "not json at all", '{"timestamp": null}'],
+)
+def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
+    """A transcript's first line is not always a message object — it can be a
+    queue-operation record — and a timestamp is not always a string. Narrow exception
+    handling raised AttributeError here, which surfaced as a traceback on hook stderr and
+    an empty count."""
+    t = tmp_path / "odd.jsonl"
+    t.write_text(first_line + "\n")
+    r = subprocess.run(
+        [
+            "python3",
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]);"
+            "from hook_helpers import session_start, session_start_epoch;"
+            "print(repr(session_start_epoch(session_start(sys.argv[2]))))",
+            str(HOOKS / "lib"),
+            str(t),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "None"
+    assert r.stderr.strip() == ""
+
+
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
 def _comment_heavy_file(path):
     path.write_text(
