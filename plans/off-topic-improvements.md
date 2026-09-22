@@ -36,3 +36,21 @@ Noticed 2026-09-03 while shipping the prompt-log redaction:
   `plans/automation-reviews/2026-09-03.md`). Candidate: have the weekly-automation-review skill
   require a mechanism probe — does the hook's advice point at anything that exists? — before any
   DELETE verdict, rather than a fire-count argument.
+
+Noticed 2026-09-22 while shipping the `deslop` skill:
+
+- **`slop_scan.py`'s `is_code()` miscounts C-family block comments.** A line inside a
+  `/* … */` block counts as *code* unless it starts with `*`, so a C/Java/Go file using
+  bare-indented block comments inflates the code denominator and deflates its measured
+  comment density. The budgets in `deslop/references/measurements.md` were calibrated with
+  this behaviour in place and on `#`-comment languages, so fixing it moves every published
+  number: it is a re-measurement task (re-run the four reference corpora, update the tables)
+  rather than a one-line fix. Until then the density metric is trustworthy for `#`-comment
+  languages and approximate for the C family.
+- **The scanner has no way to mark a file as legitimately slop-shaped.** Its own test
+  fixtures and its own rule definitions hit `debug-residue`, `generic-name` and
+  `type-suppression` by construction, because the strings *are* the patterns. Every run
+  against this repo carries those four known-false hits. Options: a `# slop-scan: ignore-file`
+  escape hatch, or per-rule `skip_in_tests` following `reminder_is_test_path` /
+  `is_test_path`. Deliberately not done now — suppressing a rule inside test paths also hides
+  real debug residue in tests, and that trade needs a decision rather than a default.
