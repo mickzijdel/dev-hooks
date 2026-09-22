@@ -1767,6 +1767,15 @@ def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
         # Date-SHAPED but not a real date: passes the jq mirror's `YYYY-` check, so it
         # catches a python branch that falls through to jq on an empty (= rejected) answer.
         ('{"timestamp": "2026-13-45T99:99:99.000Z"}', ""),
+        # Each of these slipped through a glob-based mirror: day 32 and day 00 both match
+        # `[0-3][0-9]`, and a trailing `*` accepts anything after a valid date. git does not
+        # reject them either — it silently reinterprets them under --since=.
+        ('{"timestamp": "2026-01-32T00:00:00.000Z"}', ""),
+        ('{"timestamp": "2026-01-00T00:00:00.000Z"}', ""),
+        ('{"timestamp": "2026-01-01Tgarbage"}', ""),
+        # Valid shapes the mirror must still accept.
+        ('{"timestamp": "2026-09-22"}', "2026-09-22"),
+        ('{"timestamp": "2026-09-22T13:45:59+02:00"}', "2026-09-22T13:45:59+02:00"),
         ("[1, 2, 3]", ""),
         ("not json", ""),
         ('{"timestamp": "2026-09-22T00:00:00.000Z"}', "2026-09-22T00:00:00.000Z"),

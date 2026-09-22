@@ -114,12 +114,14 @@ PYEOF
   # session's committed work disappears and the re-arming Stop hooks go quiet, the
   # opposite of the over-report invariant everything else here keeps.
   REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
-  # Month and day ranges, not just a leading YYYY-: "2026-13-45T…" is date-SHAPED but not a
-  # date, and `git log --since=` on it exits 0 with zero commits instead of complaining.
-  case "$REPLY" in
-    [0-9][0-9][0-9][0-9]-0[1-9]-[0-3][0-9]* | [0-9][0-9][0-9][0-9]-1[0-2]-[0-3][0-9]*) ;;
-    *) REPLY="" ;;
-  esac
+  # Anchored, and validating every field rather than a prefix. `git log --since=` never
+  # complains about a malformed stamp: it silently reinterprets it (measured: 63 commits
+  # against 297 for "2026-01-32T00:00:00.000Z"), so anything this lets through becomes a
+  # wrong answer, not an error. A glob was not enough — `[0-3][0-9]` admits day 00 and
+  # 32-39, and a trailing `*` accepts "2026-01-01Tgarbage".
+  local _iso='^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
+  _iso="$_iso"'([T ]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?$'
+  [[ $REPLY =~ $_iso ]] || REPLY=""
 }
 
 # ── PreToolUse(Bash) helpers ─────────────────────────────────────────────────────
