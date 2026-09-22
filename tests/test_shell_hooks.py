@@ -438,6 +438,219 @@ def test_voice_reminder_scans_html_webcopy(tmp_path):
     assert_json_with(r.stdout, "voice-profile")
 
 
+# ── voice-prewrite-reminder.sh (writing plugin; PreToolUse) ─────────────────────────
+def _run_prewrite(payload, env):
+    return run_hook(
+        "voice-prewrite-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _prewrite_payload(tmp_path, name="post.md", session="s1"):
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "tool_input": {"file_path": str(tmp_path / name)},
+        }
+    )
+
+
+def test_voice_prewrite_fires_before_writing_prose(tmp_path):
+    # The point of this hook: it fires on the file about to be written, so the profile is
+    # in context for the FIRST draft rather than patched in afterwards.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(_prewrite_payload(tmp_path), base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    payload = assert_json_with(r.stdout, "voice_profile.md")
+    assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    # Advisory only — no permission decision, so the write proceeds normally.
+    assert "permissionDecision" not in payload["hookSpecificOutput"]
+
+
+def test_voice_prewrite_silent_without_profile(tmp_path):
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_for_code(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name="app.py"), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_fires_once_per_session(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() != ""
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "name", ["page.html", "show.html.erb", "hero.liquid", "doc.rst"]
+)
+def test_voice_prewrite_covers_markup_and_templates(tmp_path, name):
+    # Webcopy and Rails views carry the sentences a reader reads; they were the gap.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name=name), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.stdout.strip() != ""
+
+
+# ── voice-stop-reminder.sh (writing plugin; Stop) ───────────────────────────────────
+def _run_voice_stop(payload, env):
+    return run_hook(
+        "voice-stop-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _voice_write_block(path):
+    return json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": str(path)},
+                    }
+                ]
+            }
+        }
+    )
+
+
+_VOICE_SKILL_BLOCK = json.dumps(
+    {
+        "message": {
+            "content": [
+                {"type": "tool_use", "input": {"skill": "writing:voice-profile"}}
+            ]
+        }
+    }
+)
+
+
+def _voice_stop_payload(tmp_path, lines, session="s1"):
+    # First line mirrors a real transcript's skill_listing, which names every installed
+    # skill — a hook that greps for "voice-profile" instead of walking tool_use blocks
+    # would see a match here and go silent in every session.
+    listing = json.dumps(
+        {
+            "timestamp": "2000-01-01T00:00:00.000Z",
+            "attachment": {
+                "type": "skill_listing",
+                "content": "writing:voice-profile: Use when drafting prose in a voice",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *lines]) + "\n")
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "transcript_path": str(transcript),
+        }
+    )
+
+
+def test_voice_stop_blocks_when_prose_written_without_skill(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[voice-stop-reminder]")
+
+
+def test_voice_stop_silent_when_skill_ran(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path, [_voice_write_block(tmp_path / "post.md"), _VOICE_SKILL_BLOCK]
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_only_code_written(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "app.py")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_does_not_loop_on_unchanged_prose(tmp_path):
+    # Fires once, then stays silent while nothing more is written — otherwise Stop loops.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    assert _run_voice_stop(payload, env).returncode == 2
+    assert _run_voice_stop(payload, env).returncode == 0
+
+
+def test_voice_stop_reasks_when_more_prose_written(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    first = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "a.md")])
+    assert _run_voice_stop(first, env).returncode == 2
+    second = _voice_stop_payload(
+        tmp_path,
+        [_voice_write_block(tmp_path / "a.md"), _voice_write_block(tmp_path / "b.md")],
+    )
+    assert _run_voice_stop(second, env).returncode == 2
+
+
+def test_voice_stop_nudges_are_bounded(tmp_path):
+    # A Claude that cannot apply the profile must still be able to stop.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    codes = []
+    for i in range(5):
+        lines = [_voice_write_block(tmp_path / f"f{j}.md") for j in range(i + 1)]
+        codes.append(
+            _run_voice_stop(_voice_stop_payload(tmp_path, lines), env).returncode
+        )
+    assert codes[:3] == [2, 2, 2]
+    assert codes[3:] == [0, 0]
+
+
+def test_voice_stop_silent_without_profile(tmp_path):
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(
+        payload,
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 # ── voice-intent-reminder.sh (writing plugin; UserPromptSubmit, self-contained) ─────
 def _run_voice_intent(payload, env):
     return run_hook(

@@ -27,7 +27,9 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 |------|----------|---------|
 | `readme-reminder` | A `Write`/`Edit`/`MultiEdit` of a `README*` (any case/extension) — runs the `github-readme` audit script on the file and feeds the results back, with a nudge to use the `github-readme` skill. Advisory only; never blocks the write. | `WRITING_README=false` |
 | `voice-intent-reminder` | A `UserPromptSubmit` whose prompt reads as a writing/copy task **when a voice profile is discoverable** — nudges Claude to apply the `voice-profile` skill *before* drafting, so your voice is baked into the first draft. Fires once per session; silent without a profile. | `WRITING_VOICE=false` |
-| `voice-reminder` | A `Write`/`Edit`/`MultiEdit` of a prose file (`.md`/`.mdx`/`.markdown`/`.tex`/`.txt`/`.html`/`.htm`/`.xhtml`) **when a voice profile is discoverable** — scans it with `voice_audit.py` and nudges toward the `voice-profile` skill if banned words appear. Silent without a profile or on clean prose; never blocks. | `WRITING_VOICE=false` |
+| `voice-prewrite-reminder` | A `PreToolUse` on `Write`/`Edit`/`MultiEdit` of a prose file **when a voice profile is discoverable** — injects the profile's location *before the write lands*, so the voice is in the first draft instead of being patched in afterwards. This is the hook that catches prose work the prompt never announced. Advisory: no permission decision, so the write proceeds normally. Fires once per session. | `WRITING_VOICE=false` |
+| `voice-reminder` | A `Write`/`Edit`/`MultiEdit` of a prose file **when a voice profile is discoverable** — scans it with `voice_audit.py` and nudges toward the `voice-profile` skill if banned words appear. A narrow signal (prose can be badly off-voice without tripping one), hence the other three. Silent without a profile or on clean prose; never blocks. | `WRITING_VOICE=false` |
+| `voice-stop-reminder` | A `Stop` after the session wrote prose files but never invoked the `voice-profile` skill — blocks the turn (exit 2) and sends Claude back to apply the profile. The only voice hook that *checks* rather than suggests, and the last point before you read the draft. Both signals come from walking the transcript's tool-use blocks, so it works outside git. Re-asks when more prose is written, capped at 3 nudges so it cannot loop. | `WRITING_VOICE=false` |
 
 ## Install
 
@@ -54,14 +56,23 @@ $ claude
   scripts (`scripts/*.py`, self-contained via [uv](https://docs.astral.sh/uv/) + PEP 723 inline
   metadata — run with `uv run scripts/<name>.py`); they only run when you invoke the skill
   and ask for the audit.
-- The `voice-reminder` hook discovers a profile from `$WRITING_VOICE_PROFILE`, then
-  `<repo>/.claude/voice_profile.md`, then `~/.claude/voice_profile.md` (first hit wins). With a
-  profile in place it runs `skills/voice-profile/scripts/voice_audit.py` on every prose write and
-  nudges only when banned words appear. Point `WRITING_VOICE_AUDIT_SCRIPT` at another scanner to
-  override the path; set `WRITING_VOICE=false` to silence the hook entirely. The
-  `voice-intent-reminder` hook uses the same discovery order and the same `WRITING_VOICE`
-  switch; it fires once per session on a writing-flavoured prompt to nudge Claude to apply the
-  profile *before* drafting.
+- **The four voice hooks are one system, layered by when they can act.**
+  `voice-intent-reminder` fires on a writing-flavoured *prompt*; `voice-prewrite-reminder`
+  fires on the prose *file about to be written* (covering the work whose prompt said nothing
+  about writing); `voice-reminder` scans what landed for banned words; and
+  `voice-stop-reminder` refuses to end the turn if the session wrote prose and never invoked
+  the skill. The first three are advisory — they inject context and nothing checks afterwards
+  — which is why the last one exists.
+- All four share one profile discovery order (`$WRITING_VOICE_PROFILE`, then
+  `<repo>/.claude/voice_profile.md`, then `~/.claude/voice_profile.md`; first hit wins), one
+  prose-file list, and one `WRITING_VOICE=false` switch, out of
+  `hooks/scripts/lib/voice-common.sh`. Point `WRITING_VOICE_AUDIT_SCRIPT` at another scanner
+  to override `voice_audit.py`'s path.
+- **Prose files** are documents (`.md`, `.mdx`, `.markdown`, `.rmd`, `.qmd`, `.tex`, `.txt`,
+  `.rst`, `.org`, `.adoc`, `.asciidoc`, `.textile`) *and* markup/templating
+  (`.html`, `.htm`, `.xhtml`, `.erb`, `.haml`, `.slim`, `.liquid`, `.njk`, `.hbs`,
+  `.mustache`, `.ejs`, `.jinja`, `.jinja2`, `.j2`) — webcopy, marketing pages and Rails views
+  carry the sentences a reader actually reads.
 - The `readme-reminder` hook also runs `github-readme`'s audit automatically: on every
   README write it shells out to `skills/github-readme/scripts/github_readme_audit.py` with
   `python3` (the script is stdlib-only, so no `uv` needed). If that script can't be found or
