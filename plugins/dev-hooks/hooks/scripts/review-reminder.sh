@@ -41,6 +41,7 @@ reminder_session_files
 [ -z "$SESSION_FILES" ] && exit 0
 reminder_has_code_file "$SESSION_FILES" || exit 0
 
+# shellcheck disable=SC2119  # no args = the default code globs, not the script's $@.
 reminder_session_added_lines
 COUNT=$(printf '%s\n' "$REPLY" | grep -c .)
 COUNT=${COUNT:-0}

@@ -26,15 +26,17 @@ voice_payload
 FILE=$(voice_field '.tool_input.file_path')
 [ -z "$FILE" ] && exit 0
 BASE=${FILE##*/}
-# Before any emit: SESSION is what makes a fire attributable to a repo, and the audit path
-# below emits without reaching the once-per-session block that used to set it.
-SESSION=$(voice_field '.session_id')
 
 # Match READMEs by basename, case-insensitively: README, README.md, Readme.rst, readme.txt.
 case "${BASE,,}" in
   readme | readme.*) ;;
   *) exit 0 ;;
 esac
+
+# After the basename gate (this hook runs on every write, so a non-README shouldn't pay a
+# jq spawn) but before any emit: SESSION is what makes a fire attributable to a repo, and
+# the audit path below emits without reaching the once-per-session block that used to set it.
+SESSION=$(voice_field '.session_id')
 
 NUDGE="Use the \`writing:github-readme\` skill (Skill tool) before finalizing this README — it covers section structure, onboarding flow, examples, and contribution guidance — and re-run its audit script (skills/github-readme/scripts/github_readme_audit.py) until it passes."
 

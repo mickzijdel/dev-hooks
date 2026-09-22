@@ -49,6 +49,6 @@ if [ "$files" -lt "$FILES_THRESHOLD" ] && [ "$lines" -lt "$LINES_THRESHOLD" ]; t
   exit 0
 fi
 
-MSG="$SENTINEL: the working tree holds $files changed file(s) / ~$lines added lines and none of it is committed yet. A change this big is hard to review and easy to lose. Before finishing: commit the working pieces in small, focused commits (each with a clear message), make sure tests pass, and get a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
+MSG="$SENTINEL: this session touched $files file(s) / ~$lines added lines, committed and uncommitted together. A change this big is hard to review and easy to lose. Before finishing: make sure anything still uncommitted is committed in small, focused commits (each with a clear message), that tests pass, and that the work has had a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
 
 reminder_emit_stop "$MSG"

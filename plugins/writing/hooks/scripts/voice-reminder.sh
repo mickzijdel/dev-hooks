@@ -22,6 +22,9 @@ voice_payload
 FILE=$(voice_field '.tool_input.file_path')
 [ -z "$FILE" ] && exit 0
 voice_is_prose_file "$FILE" || exit 0
+# Same exclusion as the prewrite and stop hooks: nudging to rewrite a SKILL.md in the
+# person's essay voice is the outcome this chain is meant to avoid.
+voice_is_scaffolding_file "$FILE" && exit 0
 SESSION=$(voice_field '.session_id')
 
 voice_profile # sets PROFILE, exits when none

@@ -70,11 +70,16 @@ voice_is_prose_file() {
 # the code, and with a global ~/.claude/voice_profile.md present every ordinary coding
 # session touches one — which would have the blocking Stop hook refuse to end three times
 # over a skill manifest. READMEs have their own hook (readme-reminder) and skill.
+# Anchored, not open-ended: `changelog*` also swallowed content/changelog-for-humans.md,
+# which is exactly the prose this is meant to protect.
 VOICE_SKIP_BASENAMES=(
-  readme readme.* changelog* license* contributing* code_of_conduct*
+  readme readme.* changelog changelog.* license license.*
+  contributing contributing.* code_of_conduct code_of_conduct.*
   agents.md claude.md skill.md
 )
-VOICE_SKIP_DIRS=(.claude .github node_modules vendor plans .worktrees)
+# No .worktrees here: CLAUDE.md makes an isolated worktree the default workspace, so
+# skipping it would turn the whole voice chain off for most real work.
+VOICE_SKIP_DIRS=(.claude .github node_modules vendor plans)
 
 voice_is_scaffolding_file() {
   local lower=${1,,} base=${1##*/} pat dir
@@ -83,8 +88,9 @@ voice_is_scaffolding_file() {
     # shellcheck disable=SC2053
     [[ $base == $pat ]] && return 0
   done
+  # Both forms: hook payloads carry absolute paths, transcripts sometimes relative ones.
   for dir in "${VOICE_SKIP_DIRS[@]}"; do
-    case "$lower" in */$dir/*) return 0 ;; esac
+    case "$lower" in */$dir/* | "$dir"/*) return 0 ;; esac
   done
   return 1
 }
@@ -117,7 +123,7 @@ def scaffolding(fp):
     base = posixpath.basename(low)
     if any(fnmatch.fnmatch(base, pat) for pat in skip_bases):
         return True
-    return any(f"/{d}/" in low for d in skip_dirs)
+    return any(f"/{d}/" in low or low.startswith(f"{d}/") for d in skip_dirs)
 
 written, skill = set(), 0
 try:

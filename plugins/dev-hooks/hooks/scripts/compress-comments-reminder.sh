@@ -42,6 +42,7 @@ reminder_stop_init ""
 COMMENT_RE='^[[:space:]]*(#|//|/\*|\*([[:space:]]|$))'
 NOISE_RE='^[[:space:]]*#!|shellcheck|eslint|noqa|biome-ignore|jscpd:|rubocop:|type:[[:space:]]*ignore|frozen_string_literal'
 
+# shellcheck disable=SC2119  # no args = the default code globs, not the script's $@.
 reminder_session_added_lines
 COUNT=$(printf '%s\n' "$REPLY" | grep -E "$COMMENT_RE" | grep -cvE "$NOISE_RE")
 COUNT=${COUNT:-0}

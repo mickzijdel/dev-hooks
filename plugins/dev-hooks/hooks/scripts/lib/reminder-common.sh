@@ -365,14 +365,40 @@ reminder_has_code_file() {
 # Prefer this over reminder_changed_files for any "did Claude do work this session?" gate.
 # CLAUDE.md mandates commit-as-you-go, so by the time Stop fires the tree is usually clean
 # and a porcelain-only gate exits silently on exactly the sessions that did the most work.
+# Untracked files modified since the session started, one per line. Falls back to all
+# untracked files when the session start is unknown.
+# Optional pathspecs narrow the listing, exactly as `git ls-files -- <spec>` would.
+reminder_untracked_since() {
+  local since epoch
+  reminder_session_since
+  since=$REPLY
+  # find cannot parse git's fractional-Z form (it errors out and silently yields nothing,
+  # which reads exactly like "no untracked work"), so convert to @epoch first. If that
+  # fails — non-GNU date — fall back to every untracked file rather than to silence.
+  epoch=""
+  [ -n "$since" ] && epoch=$(date -d "$since" +%s 2>/dev/null)
+  case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
+  if [ -z "$epoch" ]; then
+    git ls-files --others --exclude-standard -- "$@" 2>/dev/null
+    return 0
+  fi
+  # `sh -c` so the paths land BEFORE find's predicates: xargs appends its arguments at the
+  # end, where find reads them as more predicates and matches nothing.
+  # shellcheck disable=SC2016  # $0/$@ are the inner sh's, deliberately not expanded here.
+  git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null |
+    xargs -0 -r sh -c 'find "$@" -type f -newermt "$0" -print 2>/dev/null' "@$epoch"
+}
+
 reminder_session_files() {
   reminder_changed_files
   local committed="" untracked=""
   reminder_session_since
   [ -n "$REPLY" ] && committed=$(git log --name-only --format= --since="$REPLY" 2>/dev/null)
   # Enumerated separately because porcelain collapses an untracked *directory* into one
-  # entry, hiding every file inside it.
-  untracked=$(git ls-files --others --exclude-standard 2>/dev/null)
+  # entry, hiding every file inside it — and restricted to files touched since the session
+  # started, or a long-standing untracked tree (a scratch dir, a vendored dump) would count
+  # as this session's work in every session and trip the size gates on its own.
+  untracked=$(reminder_untracked_since)
   # shellcheck disable=SC2034
   SESSION_FILES=$(printf '%s\n%s\n%s\n' "$CHANGED" "$committed" "$untracked" |
     grep -v '^$' | sort -u)
@@ -399,7 +425,12 @@ reminder_session_added_lines() {
         git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
         [ -n "$since" ] && git log -p --no-color --format= --since="$since" -- "${CODE_GLOBS[@]}" 2>/dev/null
       } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
-      git ls-files -z --others --exclude-standard -- "${CODE_GLOBS[@]}" 2>/dev/null |
+      # Size-capped: a widened pathspec (big-change-reminder passes ".") would otherwise
+      # cat an untracked multi-hundred-MB artifact into a shell variable at every Stop.
+      # The cap is in BYTES: `-size -1M` rounds every file up to one 1M unit, so it matches
+      # only empty files — it silently counted nothing at all.
+      reminder_untracked_since "${CODE_GLOBS[@]}" | tr '\n' '\0' |
+        xargs -0 -r sh -c 'find "$@" -type f -size -1048576c -print0 2>/dev/null' _ |
         xargs -0 -r cat 2>/dev/null
     } | cat
   )
