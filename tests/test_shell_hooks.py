@@ -1763,6 +1763,7 @@ def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
     ("first_line", "expected"),
     [
         ('{"timestamp": 12345}', ""),
+        ('{"timestamp": "hello world"}', ""),
         ("[1, 2, 3]", ""),
         ("not json", ""),
         ('{"timestamp": "2026-09-22T00:00:00.000Z"}', "2026-09-22T00:00:00.000Z"),

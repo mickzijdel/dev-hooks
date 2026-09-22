@@ -103,10 +103,11 @@ from hook_helpers import session_start
 sys.stdout.write(session_start(sys.argv[2]))
 PYEOF
   ) && [ -n "$REPLY" ] && return 0
-  # No python3: jq, but the value must LOOK like a date. A numeric `timestamp` passes jq
-  # -r untouched, and `git log --since=12345` silently returns zero commits — the session's
-  # committed work disappears and the re-arming Stop hooks go quiet, which is the opposite
-  # of the over-report invariant everything else here keeps.
+  # No python3: jq, plus a shape check MIRRORING hook_helpers.session_start, which only
+  # returns a stamp a date parser accepted. Without it an unparseable value reaches
+  # `git log --since=`, which exits 0 with zero commits rather than erroring — the
+  # session's committed work disappears and the re-arming Stop hooks go quiet, the
+  # opposite of the over-report invariant everything else here keeps.
   REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
   case "$REPLY" in
     [0-9][0-9][0-9][0-9]-*) ;;

@@ -48,7 +48,12 @@ def session_start(transcript_path):
         stamp = json.loads(first).get("timestamp")
     except Exception:
         return ""
-    return stamp if isinstance(stamp, str) else ""
+    if not isinstance(stamp, str):
+        return ""
+    # A string is not enough: `git log --since="hello world"` exits 0 with zero commits, so
+    # an unparseable stamp reads as "the session did nothing". Only return what a date
+    # parser accepts, and this stays the one answer both the python and shell callers use.
+    return stamp if session_start_epoch(stamp) is not None else ""
 
 
 def session_start_epoch(since):
