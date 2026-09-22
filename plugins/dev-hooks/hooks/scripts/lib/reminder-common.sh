@@ -373,13 +373,20 @@ reminder_untracked_since() {
   reminder_session_since
   since=$REPLY
   # find cannot parse git's fractional-Z form (it errors out and silently yields nothing,
-  # which reads exactly like "no untracked work"), so convert to @epoch first. If that
-  # fails — non-GNU date — fall back to every untracked file rather than to silence.
+  # which reads exactly like "no untracked work"), so convert to @epoch first. `date -d` is
+  # GNU-only — on BSD/macOS it fails, which would make this whole filter a silent no-op —
+  # so python3 is the portable second try.
   epoch=""
-  [ -n "$since" ] && epoch=$(date -d "$since" +%s 2>/dev/null)
+  if [ -n "$since" ]; then
+    epoch=$(date -d "$since" +%s 2>/dev/null) ||
+      epoch=$(python3 -c 'import datetime,sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z","+00:00")).timestamp()))' "$since" 2>/dev/null)
+  fi
   case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
   if [ -z "$epoch" ]; then
-    git ls-files --others --exclude-standard -- "$@" 2>/dev/null
+    # -z even here: without it git C-quotes non-ASCII paths ("\303\274n.rb"), which the
+    # callers then hand to find/cat as a literal name that cannot be opened — the file
+    # vanishes from the count instead of erroring.
+    git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n'
     return 0
   fi
   # `sh -c` so the paths land BEFORE find's predicates: xargs appends its arguments at the

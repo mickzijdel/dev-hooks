@@ -665,17 +665,15 @@ def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
 
 @pytest.mark.parametrize(
     "path",
-    [
-        "/tmp/claude-1000/sess/scratchpad/msg.txt",
-        "/home/u/repo/.git/COMMIT_EDITMSG",
-    ],
+    ["/tmp/claude-1000/sess/scratchpad/msg.txt", "work/scratchpad/draft.md"],
 )
 def test_voice_prewrite_ignores_scratch_and_git_paths(tmp_path, path):
-    """Commit messages are written to a scratchpad or .git, and Mick's CLAUDE.md puts "code
-    or commit messages" outside the voice profile's scope. The hook fired on one of its own
-    commit messages before this gate existed. The gate keys on those two directories, not on
-    a /tmp prefix: a checkout can live under /tmp — every fixture here does — and excluding
-    it would silence the hook on real prose."""
+    """Commit messages are written to a scratchpad file, and Mick's CLAUDE.md puts "code or
+    commit messages" outside the voice profile's scope. The hook fired on one of its own
+    commit messages before this gate existed. The gate keys on that directory, not on a /tmp
+    prefix: a checkout can live under /tmp — every fixture here does — and excluding it
+    would silence the hook on real prose. (Git's own COMMIT_EDITMSG needs no entry; it has
+    no prose extension, so voice_is_prose_file rejects it first.)"""
     _voice_repo(tmp_path)
     payload = json.dumps(
         {
@@ -1592,6 +1590,87 @@ def test_review_reminder_honors_a_real_slash_command(tmp_path):
     r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[real]))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── reminder_session_files / _added_lines (lib behaviour the hooks all sit on) ───────
+def _lib_probe(tmp_path, transcript, script, env=None):
+    """Source the lib in a scratch repo and print what a helper actually returns. The Stop
+    fixtures all pin the session start to 2000-01-01, so the mtime filter and the size cap
+    below are never exercised through a hook — they need a probe of their own."""
+    # .txt, not .sh: the probe lives inside the scratch repo, and a *.sh there would be
+    # counted as untracked code by the very helper under test.
+    probe = tmp_path / "probe.txt"
+    probe.write_text(
+        f'source "$1/reminder-common.sh"\nTRANSCRIPT="$2"\nSESSION=p\n{script}\n'
+    )
+    return subprocess.run(
+        ["bash", str(probe), str(HOOKS / "lib"), str(transcript)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+
+def _dated_transcript(tmp_path, started):
+    t = tmp_path / "t.jsonl"
+    t.write_text(json.dumps({"timestamp": started}) + "\n")
+    return t
+
+
+def test_session_files_excludes_long_standing_untracked(tmp_path):
+    # An old untracked scratch dir is not this session's work; counting it tripped
+    # big-change-reminder's size gate in every session.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("s\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "old.py").write_text("x = 1\n")
+    (tmp_path / "new.py").write_text("y = 2\n")
+    os.utime(tmp_path / "old.py", (0, 946684800))  # 2000-01-01
+    t = _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "'
+    )
+    assert "new.py" in out
+    assert "old.py" not in out
+
+
+def test_session_added_lines_skips_huge_untracked_file(tmp_path):
+    # `-size -1M` rounds up and so matched only EMPTY files; the cap is in bytes. A widened
+    # pathspec would otherwise read a multi-hundred-MB artifact into a shell variable.
+    init_git_repo(tmp_path)
+    (tmp_path / "small.py").write_text("a = 1\n")
+    (tmp_path / "big.py").write_text("b = 2\n" * 200_000)  # ~1.2 MB
+    assert (tmp_path / "big.py").stat().st_size > 1_048_576
+    t = _dated_transcript(tmp_path, "2000-01-01T00:00:00.000Z")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_added_lines; printf "%s\\n" "$REPLY" | grep -c .'
+    )
+    assert out == "1", f"expected only small.py's line, got {out}"
+
+
+def test_untracked_since_survives_without_gnu_date(tmp_path):
+    # `date -d` is GNU-only; on BSD/macOS the filter would silently become a no-op without
+    # the python3 fallback.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("s\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "old.py").write_text("x = 1\n")
+    (tmp_path / "new.py").write_text("y = 2\n")
+    os.utime(tmp_path / "old.py", (0, 946684800))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "date").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "date").chmod(0o755)
+    t = _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
+    )
+    assert "new.py" in out
+    assert "old.py" not in out
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────

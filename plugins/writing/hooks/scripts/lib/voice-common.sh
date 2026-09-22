@@ -79,12 +79,11 @@ VOICE_SKIP_BASENAMES=(
 )
 # No .worktrees here: CLAUDE.md makes an isolated worktree the default workspace, so
 # skipping it would turn the whole voice chain off for most real work.
-# `scratchpad` and `.git` cover throwaway text: a commit message is written to one or the
-# other, and Mick's CLAUDE.md puts "code or commit messages" outside the voice profile's
+# `scratchpad` covers throwaway text: a commit message is written there, and Mick's CLAUDE.md puts "code or commit messages" outside the voice profile's
 # scope outright — the prewrite hook fired on one of its own commit messages before this
 # existed. Deliberately NOT a blanket /tmp/ prefix: a checkout can live under /tmp (every
 # test fixture here does), and excluding it would silence the hook on real prose.
-VOICE_SKIP_DIRS=(.claude .github node_modules vendor plans scratchpad .git)
+VOICE_SKIP_DIRS=(.claude .github node_modules vendor plans scratchpad)
 
 voice_is_scaffolding_file() {
   local lower=${1,,} base=${1##*/} pat dir
