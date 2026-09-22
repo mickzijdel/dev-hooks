@@ -128,7 +128,11 @@ PYEOF
   # The offset body is captured whole and parsed separately: making each colon
   # independently optional in one pattern accepts mixed separators like "+0000:30", which
   # fromisoformat rejects and git then silently reinterprets.
-  _iso="$_iso"'(Z|([+-])([0-9:.]{2,13}))?)?$'
+  # No length cap on the body: datetime.isoformat() itself emits +00:00:00.123456, which
+  # is 15 characters. The two alternatives below do the real validation, so an open-ended
+  # capture here cannot let a malformed offset through — it only stops a valid one being
+  # truncated into a rejection, which blanks REPLY and loses the session's commits.
+  _iso="$_iso"'(Z|([+-])([0-9:.]{2,}))?)?$'
   if [[ ! $REPLY =~ $_iso ]]; then
     REPLY=""
     return 0

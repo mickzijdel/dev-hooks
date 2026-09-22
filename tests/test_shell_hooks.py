@@ -1822,7 +1822,10 @@ def _generated_stamps():
     # couple of seconds. A full cartesian product found nothing these edges miss.
     # 0001 and 0002 straddle where .timestamp() starts working, which is part of
     # session_start's contract and not of fromisoformat's.
-    for year in ("0000", "0001", "1900", "2024"):
+    # 2000 is the only %400 leap case and 0002 the only year just past where .timestamp()
+    # starts working; a speed trim dropped both, leaving those branches live but
+    # unexercised. Mutation-checked: without 2000, breaking the %400 test still passes.
+    for year in ("0000", "0001", "0002", "1900", "2000", "2024"):
         for month in ("00", "02", "04", "13"):
             for day in ("00", "01", "29", "30", "31", "32"):
                 out.append(f"{year}-{month}-{day}")
@@ -1840,7 +1843,9 @@ def _generated_stamps():
                 # Both separator styles, WITH and WITHOUT a seconds field, plus the mixed
                 # forms. The offset-seconds branch previously had zero cases here, which is
                 # how a grammar accepting "+0000:30" passed a green sweep.
-                for off_s in ("", "99", "30.500"):
+                # 123456/1234567 push the body past 13 characters — the length the
+                # grammar used to cap at, which silently rejected what isoformat() emits.
+                for off_s in ("", "99", "30.500", "00.123456", "30.1234567"):
                     colon = f"{sign}{off_h}:{off_m}" + (f":{off_s}" if off_s else "")
                     plain = f"{sign}{off_h}{off_m}" + (off_s if off_s else "")
                     mixed_a = f"{sign}{off_h}{off_m}" + (f":{off_s}" if off_s else "")
