@@ -663,6 +663,42 @@ def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
     assert "wrote 1 prose file" in r.stdout
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/tmp/claude-1000/sess/scratchpad/msg.txt",
+        "/home/u/repo/.git/COMMIT_EDITMSG",
+    ],
+)
+def test_voice_prewrite_ignores_scratch_and_git_paths(tmp_path, path):
+    """Commit messages are written to a scratchpad or .git, and Mick's CLAUDE.md puts "code
+    or commit messages" outside the voice profile's scope. The hook fired on one of its own
+    commit messages before this gate existed. The gate keys on those two directories, not on
+    a /tmp prefix: a checkout can live under /tmp — every fixture here does — and excluding
+    it would silence the hook on real prose."""
+    _voice_repo(tmp_path)
+    payload = json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": f"s-{abs(hash(path))}",
+            "tool_input": {"file_path": path},
+        }
+    )
+    r = _run_prewrite(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_ignores_scratch_paths(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path, [_voice_write_block("/tmp/claude-1000/sess/scratchpad/msg.txt")]
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_voice_prewrite_ignores_repo_scaffolding(tmp_path):
     _voice_repo(tmp_path)
     r = _run_prewrite(
