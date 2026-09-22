@@ -367,22 +367,41 @@ reminder_has_code_file() {
 # and a porcelain-only gate exits silently on exactly the sessions that did the most work.
 # Untracked files modified since the session started, one per line. Falls back to all
 # untracked files when the session start is unknown.
-# Optional pathspecs narrow the listing, exactly as `git ls-files -- <spec>` would.
+# ISO-8601 (git's fractional-Z form) to epoch seconds on stdout; empty when it can't be
+# parsed. python3 is tried FIRST, not as a fallback: on BSD/macOS `date -d` is the
+# "set kernel DST value" flag, so `date -d "<ts>" +%s` exits 0 and prints the CURRENT
+# time — a `date || python3` chain never reaches python3 and silently yields "now", which
+# makes every mtime comparison below exclude everything. `date` is used only when python3
+# is missing, and only once it has identified itself as GNU.
+reminder_epoch() {
+  python3 -c 'import datetime, sys
+print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' \
+    "$1" 2>/dev/null && return 0
+  date --version 2>/dev/null | grep -q GNU || return 0
+  date -d "$1" +%s 2>/dev/null
+}
+
+# Untracked files modified since the session started, one per line. Falls back to all
+# untracked files when the session start is unknown. Optional pathspecs narrow the listing,
+# exactly as `git ls-files -- <spec>` would.
 reminder_untracked_since() {
-  local since epoch
+  local since epoch ref
   reminder_session_since
   since=$REPLY
-  # find cannot parse git's fractional-Z form (it errors out and silently yields nothing,
-  # which reads exactly like "no untracked work"), so convert to @epoch first. `date -d` is
-  # GNU-only — on BSD/macOS it fails, which would make this whole filter a silent no-op —
-  # so python3 is the portable second try.
   epoch=""
-  if [ -n "$since" ]; then
-    epoch=$(date -d "$since" +%s 2>/dev/null) ||
-      epoch=$(python3 -c 'import datetime,sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z","+00:00")).timestamp()))' "$since" 2>/dev/null)
-  fi
+  [ -n "$since" ] && epoch=$(reminder_epoch "$since")
   case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
-  if [ -z "$epoch" ]; then
+  # A reference file + `-newer` rather than `-newermt "@<epoch>"`: the @seconds form is
+  # GNU-only, and BSD find rejects it — with stderr swallowed that returns nothing, which
+  # reads as "no untracked work". `-newer` is POSIX.
+  ref=""
+  if [ -n "$epoch" ]; then
+    reminder_mktemp
+    ref=$REPLY
+    python3 -c 'import os, sys
+os.utime(sys.argv[1], (int(sys.argv[2]), int(sys.argv[2])))' "$ref" "$epoch" 2>/dev/null || ref=""
+  fi
+  if [ -z "$ref" ]; then
     # -z even here: without it git C-quotes non-ASCII paths ("\303\274n.rb"), which the
     # callers then hand to find/cat as a literal name that cannot be opened — the file
     # vanishes from the count instead of erroring.
@@ -393,7 +412,7 @@ reminder_untracked_since() {
   # end, where find reads them as more predicates and matches nothing.
   # shellcheck disable=SC2016  # $0/$@ are the inner sh's, deliberately not expanded here.
   git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null |
-    xargs -0 -r sh -c 'find "$@" -type f -newermt "$0" -print 2>/dev/null' "@$epoch"
+    xargs -0 -r sh -c 'find "$@" -type f -newer "$0" -print 2>/dev/null' "$ref"
 }
 
 reminder_session_files() {

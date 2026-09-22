@@ -1650,27 +1650,64 @@ def test_session_added_lines_skips_huge_untracked_file(tmp_path):
     assert out == "1", f"expected only small.py's line, got {out}"
 
 
-def test_untracked_since_survives_without_gnu_date(tmp_path):
-    # `date -d` is GNU-only; on BSD/macOS the filter would silently become a no-op without
-    # the python3 fallback.
+def _untracked_probe_repo(tmp_path):
     run = init_git_repo(tmp_path)
     (tmp_path / "seed.txt").write_text("s\n")
     run("add", "-A")
     run("commit", "-q", "-m", "init")
     (tmp_path / "old.py").write_text("x = 1\n")
     (tmp_path / "new.py").write_text("y = 2\n")
-    os.utime(tmp_path / "old.py", (0, 946684800))
-    shim = tmp_path / "shim"
-    shim.mkdir()
-    (shim / "date").write_text("#!/bin/sh\nexit 1\n")
-    (shim / "date").chmod(0o755)
-    t = _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+    os.utime(tmp_path / "old.py", (0, 946684800))  # 2000-01-01, before the session
+    # Explicitly in the past, not "just now": a whole-second epoch of *now* would still be
+    # older than a file written microseconds ago, so a same-instant mtime lets a broken
+    # "session start = now" pass by accident.
+    os.utime(tmp_path / "new.py", (0, int(time.time()) - 600))
+    return _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+
+
+def _shim_dir(tmp_path, name, body):
+    d = tmp_path / f"shim-{name}"
+    d.mkdir(exist_ok=True)
+    (d / name).write_text(body)
+    (d / name).chmod(0o755)
+    return d
+
+
+def test_untracked_since_ignores_bsd_date(tmp_path):
+    """On BSD/macOS `date -d` is the *set kernel DST value* flag: it exits 0 and prints the
+    CURRENT time. A `date -d … || python3` chain therefore never reaches python3 and gets
+    "now" as the session start, which excludes every file — the silent no-op this guards.
+    An earlier version of this test shimmed date to `exit 1`, a failure mode BSD does not
+    have, so it passed against code that was broken on BSD."""
+    t = _untracked_probe_repo(tmp_path)
+    now = int(time.time())
+    shim = _shim_dir(
+        tmp_path,
+        "date",
+        f'#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho {now}\n',
+    )
     env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
     out = _lib_probe(
         tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
     )
-    assert "new.py" in out
+    assert "new.py" in out, f"BSD-shaped date broke the filter: {out!r}"
     assert "old.py" not in out
+
+
+def test_untracked_since_degrades_safely_without_python3(tmp_path):
+    # No python3 and a non-GNU date: fall back to listing every untracked file rather than
+    # to an empty result, which would read as "this session did nothing".
+    t = _untracked_probe_repo(tmp_path)
+    shim = _shim_dir(
+        tmp_path, "date", '#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho 0\n'
+    )
+    (shim / "python3").write_text("#!/bin/sh\nexit 127\n")
+    (shim / "python3").chmod(0o755)
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
+    )
+    assert "new.py" in out and "old.py" in out
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
