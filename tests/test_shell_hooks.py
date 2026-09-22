@@ -8,6 +8,7 @@ the silent-gate path and the firing path are exercised for every hook.
 import datetime
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -1801,51 +1802,85 @@ def test_session_since_rejects_non_date_timestamps(
     assert out == expected
 
 
-# The jq fallback in reminder_session_since is a hand-written mirror of
-# datetime.fromisoformat. Hand-picked cases kept missing where the two diverged — a glob
-# that accepted day 32, then one that accepted 2026-02-30 while rejecting a valid `+02`
-# offset — so this asserts agreement over the whole set instead of spot-checking.
-_STAMP_CASES = [
-    "2026-09-22T00:00:00.000Z",
-    "2026-09-22",
-    "2026-02-28",
-    "2026-02-29",  # not a leap year
-    "2024-02-29",  # leap year
-    "2000-02-29",  # divisible by 400: leap
-    "1900-02-29",  # divisible by 100 but not 400: not leap
-    "2026-02-30",
-    "2026-04-31",
-    "2026-01-32",
-    "2026-01-00",
-    "2026-13-01",
-    "0000-01-01",
-    "2026-09-22T13:45",
-    "2026-09-22T13:45:59+02:00",
-    "2026-09-22T13:45:59+02",
-    "2026-09-22T13:45:59+0200",
-    "2026-09-22T24:00:00Z",
-    "2026-09-22T25:00:00Z",
-    "2026-09-22Tgarbage",
-    "hello world",
-    "2026-9-2",
-]
+def _generated_stamps():
+    """Stamps spanning the grammar's edges, generated rather than chosen.
+
+    Hand-picked cases are why this mirror drifted through four review rounds: each round
+    fixed the example the review named while the two implementations stayed different. An
+    independent fuzz of one such "fixed" regex found 192 disagreements a 22-case list had
+    missed. Here the oracle picks the cases."""
+    out = []
+    # Boundaries, not ranges: the suite runs on every Stop, so the sweep is kept to a
+    # couple of seconds. A full cartesian product found nothing these edges miss.
+    for year in ("0000", "1900", "2000", "2024", "2026"):
+        for month in ("00", "01", "02", "04", "09", "12", "13"):
+            for day in ("00", "01", "28", "29", "30", "31", "32"):
+                out.append(f"{year}-{month}-{day}")
+    base = "2026-09-22"
+    for hour in ("00", "13", "23", "24", "25"):
+        for minute in ("00", "30", "59", "60"):
+            for second in ("", "00", "59", "60"):
+                stamp = f"{base}T{hour}:{minute}" + (f":{second}" if second else "")
+                out += [stamp, stamp + "Z"]
+    # Offsets are the case a character class cannot get right: fromisoformat takes any
+    # offset whose TOTAL is under 24h, so +02:99 is valid (it normalises to +03:39).
+    for sign in "+-":
+        for off_h in ("00", "02", "14", "15", "23", "24", "25"):
+            for off_m in ("00", "59", "82", "99"):
+                out.append(f"{base}T13:45:59{sign}{off_h}:{off_m}")
+                out.append(f"{base}T13:45:59{sign}{off_h}{off_m}")
+    rng = random.Random(7)
+    for _ in range(120):
+        out.append(
+            "".join(rng.choice("0123456789-:TZ+. ") for _ in range(rng.randint(1, 26)))
+        )
+    out += ["hello world", "2026-9-2", "2026", "2026-09", f"{base}Tgarbage"]
+    return out
 
 
-@pytest.mark.parametrize("stamp", _STAMP_CASES)
-def test_jq_stamp_mirror_agrees_with_python(tmp_path, stamp):
-    t = tmp_path / "t.jsonl"
-    t.write_text(json.dumps({"timestamp": stamp}) + "\n")
-    try:
-        datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-        expected = stamp
-    except ValueError:
-        expected = ""
+def test_jq_stamp_mirror_agrees_with_python(tmp_path):
+    """Every generated stamp must get the same verdict from the shell mirror and from
+    datetime.fromisoformat. One bash process walks the whole sweep, so this stays fast."""
+    stamps = _generated_stamps()
+    (tmp_path / "stamps.txt").write_text("\n".join(stamps) + "\n")
     shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
-    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
-    out = _lib_probe(
-        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    probe = tmp_path / "sweep.txt"
+    probe.write_text(
+        'source "$1/reminder-common.sh"\n'
+        "while IFS= read -r stamp; do\n"
+        '  printf \'{"timestamp": "%s"}\\n\' "$stamp" > "$2/t.jsonl"\n'
+        '  TRANSCRIPT="$2/t.jsonl"\n'
+        "  reminder_session_since\n"
+        '  printf \'%s\\t%s\\n\' "$stamp" "$REPLY"\n'
+        'done < "$2/stamps.txt"\n'
     )
-    assert out == expected
+    r = subprocess.run(
+        ["bash", str(probe), str(HOOKS / "lib"), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=base_env(PATH=f"{shim}:{os.environ['PATH']}"),
+    )
+    assert r.returncode == 0, r.stderr
+    got = {}
+    for line in r.stdout.splitlines():
+        stamp, _, reply = line.partition("\t")
+        got[stamp] = reply
+
+    disagreements = []
+    for stamp in stamps:
+        if not stamp:
+            continue
+        try:
+            datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            expected = stamp
+        except ValueError:
+            expected = ""
+        if got.get(stamp, "<missing>") != expected:
+            disagreements.append((stamp, expected, got.get(stamp, "<missing>")))
+    assert not disagreements, (
+        f"{len(disagreements)} of {len(stamps)} stamps disagree "
+        f"(python, mirror): {disagreements[:10]}"
+    )
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
