@@ -367,52 +367,54 @@ reminder_has_code_file() {
 # and a porcelain-only gate exits silently on exactly the sessions that did the most work.
 # Untracked files modified since the session started, one per line. Falls back to all
 # untracked files when the session start is unknown.
-# ISO-8601 (git's fractional-Z form) to epoch seconds on stdout; empty when it can't be
-# parsed. python3 is tried FIRST, not as a fallback: on BSD/macOS `date -d` is the
-# "set kernel DST value" flag, so `date -d "<ts>" +%s` exits 0 and prints the CURRENT
-# time — a `date || python3` chain never reaches python3 and silently yields "now", which
-# makes every mtime comparison below exclude everything. `date` is used only when python3
-# is missing, and only once it has identified itself as GNU.
-reminder_epoch() {
-  python3 -c 'import datetime, sys
-print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' \
-    "$1" 2>/dev/null && return 0
-  date --version 2>/dev/null | grep -q GNU || return 0
-  date -d "$1" +%s 2>/dev/null
-}
-
-# Untracked files modified since the session started, one per line. Falls back to all
-# untracked files when the session start is unknown. Optional pathspecs narrow the listing,
-# exactly as `git ls-files -- <spec>` would.
+# Untracked files modified since the session started, one per line. Optional pathspecs
+# narrow the listing, exactly as `git ls-files -- <spec>` would.
+#
+# The work happens in hook_helpers.untracked_since, not in shell. Doing it with `date` and
+# `find` needed a different incantation per platform — GNU `date -d` vs BSD's set-DST `-d`
+# that returns the wrong answer with exit 0, `find -newermt "@epoch"` that BSD rejects,
+# `-size -1M` that matches only empty files, and xargs appending paths after find's
+# predicates — and every one of those failed by returning nothing, which reads exactly like
+# "this session did no work". python3 has one implementation of all of it.
+# shellcheck disable=SC2120  # pathspecs are optional; reminder_session_files passes none.
 reminder_untracked_since() {
-  local since epoch ref
-  reminder_session_since
-  since=$REPLY
-  epoch=""
-  [ -n "$since" ] && epoch=$(reminder_epoch "$since")
-  case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
-  # A reference file + `-newer` rather than `-newermt "@<epoch>"`: the @seconds form is
-  # GNU-only, and BSD find rejects it — with stderr swallowed that returns nothing, which
-  # reads as "no untracked work". `-newer` is POSIX.
-  ref=""
-  if [ -n "$epoch" ]; then
-    reminder_mktemp
-    ref=$REPLY
-    python3 -c 'import os, sys
-os.utime(sys.argv[1], (int(sys.argv[2]), int(sys.argv[2])))' "$ref" "$epoch" 2>/dev/null || ref=""
-  fi
-  if [ -z "$ref" ]; then
-    # -z even here: without it git C-quotes non-ASCII paths ("\303\274n.rb"), which the
-    # callers then hand to find/cat as a literal name that cannot be opened — the file
-    # vanishes from the count instead of erroring.
-    git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n'
+  local _out
+  if _out=$(
+    python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF' 2>/dev/null
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import session_start, untracked_since
+
+for path in untracked_since(session_start(sys.argv[2]), tuple(sys.argv[3:])):
+    print(path)
+PYEOF
+  ); then
+    printf '%s' "$_out"
+    [ -n "$_out" ] && printf '\n'
     return 0
   fi
-  # `sh -c` so the paths land BEFORE find's predicates: xargs appends its arguments at the
-  # end, where find reads them as more predicates and matches nothing.
-  # shellcheck disable=SC2016  # $0/$@ are the inner sh's, deliberately not expanded here.
-  git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null |
-    xargs -0 -r sh -c 'find "$@" -type f -newer "$0" -print 2>/dev/null' "$ref"
+  # python3 missing or broken: list every untracked file rather than none. Not a second
+  # implementation of the filter — the filter is simply skipped — and it keeps the
+  # invariant that this over-reports rather than going quiet, because an empty result is
+  # indistinguishable from "the session did no work".
+  git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n'
+}
+
+# Contents of this session's untracked files, size-capped, on stdout. Same reasoning as
+# reminder_untracked_since: one python implementation rather than a per-platform pipeline.
+reminder_untracked_text() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF'
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import session_start, untracked_text
+
+sys.stdout.write(untracked_text(session_start(sys.argv[2]), tuple(sys.argv[3:])))
+PYEOF
 }
 
 reminder_session_files() {
@@ -424,6 +426,7 @@ reminder_session_files() {
   # entry, hiding every file inside it — and restricted to files touched since the session
   # started, or a long-standing untracked tree (a scratch dir, a vendored dump) would count
   # as this session's work in every session and trip the size gates on its own.
+  # shellcheck disable=SC2119  # no pathspecs = every untracked file, by design.
   untracked=$(reminder_untracked_since)
   # shellcheck disable=SC2034
   SESSION_FILES=$(printf '%s\n%s\n%s\n' "$CHANGED" "$committed" "$untracked" |
@@ -451,13 +454,7 @@ reminder_session_added_lines() {
         git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
         [ -n "$since" ] && git log -p --no-color --format= --since="$since" -- "${CODE_GLOBS[@]}" 2>/dev/null
       } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
-      # Size-capped: a widened pathspec (big-change-reminder passes ".") would otherwise
-      # cat an untracked multi-hundred-MB artifact into a shell variable at every Stop.
-      # The cap is in BYTES: `-size -1M` rounds every file up to one 1M unit, so it matches
-      # only empty files — it silently counted nothing at all.
-      reminder_untracked_since "${CODE_GLOBS[@]}" | tr '\n' '\0' |
-        xargs -0 -r sh -c 'find "$@" -type f -size -1048576c -print0 2>/dev/null' _ |
-        xargs -0 -r cat 2>/dev/null
+      reminder_untracked_text "${CODE_GLOBS[@]}"
     } | cat
   )
 }

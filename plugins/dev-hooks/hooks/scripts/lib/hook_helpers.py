@@ -11,6 +11,7 @@ Import from a heredoc by passing this directory as an argv:
 (Heredocs can't read piped stdin, so argv is already the convention — see CLAUDE.md.)
 """
 
+import datetime
 import fnmatch
 import json
 import os
@@ -25,6 +26,94 @@ def git(args):
         return r.stdout if r.returncode == 0 else ""
     except OSError:
         return ""
+
+
+def session_start(transcript_path):
+    """The session's start timestamp (ISO) from the transcript's first line; "" if unknown.
+
+    Why any of this exists: CLAUDE.md mandates commit-as-you-go, so by the time a Stop hook
+    runs the working tree is usually clean and `git status` sees nothing. The session start
+    is what lets a hook ask "what happened since" instead."""
+    if not transcript_path:
+        return ""
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+    except OSError:
+        return ""
+    try:
+        return json.loads(first).get("timestamp") or ""
+    except ValueError:
+        return ""
+
+
+def session_start_epoch(since):
+    """ISO-8601 (git's fractional-Z form) to epoch seconds; None when unparseable.
+
+    In python rather than `date`, because the shell tools disagree across platforms in ways
+    that fail silently: GNU `date -d` parses this, while on BSD `-d` is the set-kernel-DST
+    flag and exits 0 printing the CURRENT time — a wrong answer, not an error."""
+    if not since:
+        return None
+    try:
+        return int(
+            datetime.datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
+        )
+    except ValueError:
+        return None
+
+
+def untracked_files(pathspecs=()):
+    """Untracked, non-ignored files. `-z` because git C-quotes non-ASCII paths otherwise."""
+    out = git(["ls-files", "-z", "--others", "--exclude-standard", "--", *pathspecs])
+    return [p for p in out.split("\0") if p]
+
+
+def untracked_since(since, pathspecs=()):
+    """Untracked files modified at or after the session start.
+
+    One stat() per file replaces `find -newermt`/`-newer` plus an `xargs` hand-off, each of
+    which had its own platform trap: `-newermt "@epoch"` is GNU-only, and xargs appends its
+    arguments AFTER find's predicates, where find reads them as more predicates and matches
+    nothing. Both failed by returning an empty list, which reads as "this session did
+    nothing" — so they were invisible until measured.
+
+    With no parseable session start, every untracked file is returned: over-reporting is
+    recoverable, silence is not."""
+    epoch = session_start_epoch(since)
+    files = untracked_files(pathspecs)
+    if epoch is None:
+        return files
+    keep = []
+    for path in files:
+        try:
+            if os.stat(path).st_mtime >= epoch:
+                keep.append(path)
+        except OSError:
+            continue
+    return keep
+
+
+# Skip an untracked file bigger than this when reading contents. A widened pathspec would
+# otherwise pull a multi-hundred-MB build artifact into memory at every Stop.
+MAX_READ_BYTES = 1_048_576
+
+
+def untracked_text(since, pathspecs=()):
+    """Contents of this session's untracked files, size-capped, as one string.
+
+    The cap is in bytes on purpose: `find -size -1M` rounds every file up to one 1M unit,
+    so it matches only EMPTY files — it excluded everything rather than only the huge."""
+    chunks = []
+    for path in untracked_since(since, pathspecs):
+        try:
+            if os.path.getsize(path) > MAX_READ_BYTES:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                chunks.append(fh.read())
+        except OSError:
+            continue
+    return "".join(chunks)
 
 
 def new_lines():

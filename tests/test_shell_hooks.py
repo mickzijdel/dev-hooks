@@ -1673,36 +1673,35 @@ def _shim_dir(tmp_path, name, body):
     return d
 
 
-def test_untracked_since_ignores_bsd_date(tmp_path):
-    """On BSD/macOS `date -d` is the *set kernel DST value* flag: it exits 0 and prints the
-    CURRENT time. A `date -d … || python3` chain therefore never reaches python3 and gets
-    "now" as the session start, which excludes every file — the silent no-op this guards.
-    An earlier version of this test shimmed date to `exit 1`, a failure mode BSD does not
-    have, so it passed against code that was broken on BSD."""
+def test_untracked_since_needs_neither_date_nor_find(tmp_path):
+    """The session filter runs in python, so no shell date/find dialect can change it.
+
+    Both tools are shimmed to misbehave the way BSD does — `date -d` exiting 0 with the
+    CURRENT time (there `-d` sets the kernel DST value), and `find` failing outright. Each
+    of those silently returned an empty list in earlier shell implementations, which reads
+    exactly like "this session did no work"."""
     t = _untracked_probe_repo(tmp_path)
-    now = int(time.time())
     shim = _shim_dir(
         tmp_path,
         "date",
-        f'#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho {now}\n',
+        f'#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho {int(time.time())}\n',
     )
+    (shim / "find").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "find").chmod(0o755)
     env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
     out = _lib_probe(
         tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
     )
-    assert "new.py" in out, f"BSD-shaped date broke the filter: {out!r}"
+    assert "new.py" in out, f"broken date/find changed the result: {out!r}"
     assert "old.py" not in out
 
 
-def test_untracked_since_degrades_safely_without_python3(tmp_path):
-    # No python3 and a non-GNU date: fall back to listing every untracked file rather than
-    # to an empty result, which would read as "this session did nothing".
+def test_untracked_since_over_reports_without_python3(tmp_path):
+    # python3 absent: list every untracked file rather than none. An empty result would be
+    # indistinguishable from "the session did no work" — the failure this whole helper
+    # exists to avoid.
     t = _untracked_probe_repo(tmp_path)
-    shim = _shim_dir(
-        tmp_path, "date", '#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho 0\n'
-    )
-    (shim / "python3").write_text("#!/bin/sh\nexit 127\n")
-    (shim / "python3").chmod(0o755)
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
     env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
     out = _lib_probe(
         tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
