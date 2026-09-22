@@ -25,7 +25,9 @@ reminder_stop_init "$SENTINEL"
 # Only meaningful inside a git repo.
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
-reminder_changed_files # sets CHANGED (staged + unstaged + untracked filenames)
+# Committed work counts too — see reminder_session_files.
+reminder_session_files
+CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
 
 files=$(echo "$CHANGED" | grep -c .)

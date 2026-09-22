@@ -1156,6 +1156,45 @@ def test_plan_reminder_state_is_per_session(tmp_path):
 
 
 # ── review-reminder.sh ──────────────────────────────────────────────────────────────
+def _review_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"):
+    # Mirrors a real transcript: a timestamped first line (the session start the
+    # committed-work gate measures from) plus the skill_listing attachment that names every
+    # installed skill — so a guard that greps for the bare name "code-review" instead of
+    # walking tool_use blocks fails here rather than silently in production.
+    listing = json.dumps(
+        {
+            "timestamp": started,
+            "attachment": {
+                "type": "skill_listing",
+                "content": "code-review: Review the current diff for correctness bugs",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *(extra_lines or [])]) + "\n")
+    return json.dumps({"transcript_path": str(transcript), "session_id": tmp_path.name})
+
+
+def _run_review(tmp_path, payload):
+    """TMPDIR pinned to the test dir so the per-session nudge counter and re-arm baseline
+    are hermetic — otherwise state from an earlier run leaks in through "nosession"."""
+    return run_hook(
+        "review-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+
+
+REVIEW_LINE = json.dumps(
+    {"message": {"content": [{"type": "tool_use", "input": {"skill": "code-review"}}]}}
+)
+
+
+def _code_lines(n, start=0):
+    return "".join(f"x{i} = {i}\n" for i in range(start, start + n))
+
+
 def test_review_reminder_silent_outside_git(tmp_path):
     r = run_hook("review-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
     assert r.returncode == 0
@@ -1165,12 +1204,7 @@ def test_review_reminder_silent_outside_git(tmp_path):
 def test_review_reminder_fires_on_unreviewed_code(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # untracked code change
-    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    r = _run_review(tmp_path, _review_payload(tmp_path))
     assert r.returncode == 2
     assert_json_with(r.stdout, "[review-reminder]")
 
@@ -1178,23 +1212,66 @@ def test_review_reminder_fires_on_unreviewed_code(tmp_path):
 def test_review_reminder_silent_after_review(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")
-    review_line = json.dumps(
-        {
-            "message": {
-                "content": [{"type": "tool_use", "input": {"skill": "code-review"}}]
-            }
-        }
-    )
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=2, extra_lines=[review_line]
-    )
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    r = _run_review(tmp_path, payload)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+def test_review_reminder_fires_on_committed_only_work(tmp_path):
+    # The headline fix: commit-as-you-go leaves a clean tree, and the old porcelain-only
+    # gate went silent on exactly those sessions. The commit is dated after the fixture
+    # session start, so reminder_session_files must still see it.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("seed\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "feature.py").write_text(_code_lines(30))
+    _commit_dated(tmp_path, run, "2024-01-01T12:00:00", msg="feature")
+    assert (
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == ""
+    )  # tree really is clean
+    r = _run_review(tmp_path, _review_payload(tmp_path))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[review-reminder]")
+
+
+def test_review_reminder_keeps_asking_while_unreviewed(tmp_path):
+    # A substantial change earns repeated nudges — a single fire is easy to acknowledge and
+    # then ignore — but the count is bounded so a Claude that cannot review still stops.
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    payload = _review_payload(tmp_path)
+    codes = [_run_review(tmp_path, payload).returncode for _ in range(4)]
+    assert codes == [2, 2, 2, 0]
+
+
+def test_review_reminder_nudges_small_change_only_once(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "tiny.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    assert _run_review(tmp_path, payload).returncode == 2
+    assert _run_review(tmp_path, payload).returncode == 0
+
+
+def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
+    # A review that ran seeds the baseline; code written afterwards makes it stale.
+    init_git_repo(tmp_path)
+    f = tmp_path / "mod.py"
+    f.write_text(_code_lines(5))
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    assert _run_review(tmp_path, payload).returncode == 0  # baseline seeded
+    assert _run_review(tmp_path, payload).returncode == 0  # nothing changed: no loop
+    f.write_text(_code_lines(40))
+    r = _run_review(tmp_path, payload)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "stale")
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────

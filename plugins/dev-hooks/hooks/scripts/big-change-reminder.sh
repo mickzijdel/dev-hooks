@@ -30,7 +30,9 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 # Already working a deliberate, multi-session plan → don't second-guess the size.
 [ -f .claude/current_plan.md ] && exit 0
 
-reminder_changed_files # sets CHANGED (staged + unstaged + untracked filenames)
+# Committed work counts too — see reminder_session_files.
+reminder_session_files
+CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
 
 # Files: tracked changes from porcelain status + untracked files enumerated one by one
