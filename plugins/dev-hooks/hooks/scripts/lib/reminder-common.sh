@@ -122,11 +122,13 @@ PYEOF
   # as exactly 24:00:00, and a UTC offset whose TOTAL must be under 24h (so +02:99 is
   # valid, normalising to +03:39, while +23:99 is not). test_jq_stamp_mirror_agrees_with_
   # python sweeps generated stamps through both this and fromisoformat.
-  local _iso _y _m _d _hh _mm _ss _frac _sign _oh _om _os _max
+  local _iso _y _m _d _hh _mm _ss _frac _sign _offbody _oh _om _os _max
   _iso='^([0-9]{4})-([0-9]{2})-([0-9]{2})'
   _iso="$_iso"'([T ]([0-9]{2}):([0-9]{2})(:([0-9]{2})(\.[0-9]+)?)?'
-  # Offsets may carry seconds (+02:00:30), which fromisoformat accepts.
-  _iso="$_iso"'(Z|([+-])([0-9]{2})(:?([0-9]{2})(:?([0-9]{2}))?)?)?)?$'
+  # The offset body is captured whole and parsed separately: making each colon
+  # independently optional in one pattern accepts mixed separators like "+0000:30", which
+  # fromisoformat rejects and git then silently reinterprets.
+  _iso="$_iso"'(Z|([+-])([0-9:.]{2,13}))?)?$'
   if [[ ! $REPLY =~ $_iso ]]; then
     REPLY=""
     return 0
@@ -139,9 +141,25 @@ PYEOF
   _ss=${BASH_REMATCH[8]:-00}
   _frac=${BASH_REMATCH[9]:-}
   _sign=${BASH_REMATCH[11]:-}
-  _oh=${BASH_REMATCH[12]:-00}
-  _om=${BASH_REMATCH[14]:-00}
-  _os=${BASH_REMATCH[16]:-00}
+  _offbody=${BASH_REMATCH[12]:-}
+  _oh=00
+  _om=00
+  _os=00
+  if [ -n "$_sign" ]; then
+    # One separator style throughout, or none — never a mix.
+    if [[ $_offbody =~ ^([0-9]{2})(:([0-9]{2})(:([0-9]{2})(\.[0-9]+)?)?)?$ ]]; then
+      _oh=${BASH_REMATCH[1]}
+      _om=${BASH_REMATCH[3]:-00}
+      _os=${BASH_REMATCH[5]:-00}
+    elif [[ $_offbody =~ ^([0-9]{2})([0-9]{2})(([0-9]{2})(\.[0-9]+)?)?$ ]]; then
+      _oh=${BASH_REMATCH[1]}
+      _om=${BASH_REMATCH[2]}
+      _os=${BASH_REMATCH[4]:-00}
+    else
+      REPLY=""
+      return 0
+    fi
+  fi
   _hh=$((10#$_hh))
   _mm=$((10#$_mm))
   _ss=$((10#$_ss))

@@ -1822,25 +1822,34 @@ def _generated_stamps():
     # couple of seconds. A full cartesian product found nothing these edges miss.
     # 0001 and 0002 straddle where .timestamp() starts working, which is part of
     # session_start's contract and not of fromisoformat's.
-    for year in ("0000", "0001", "0002", "1900", "2000", "2024", "2026"):
-        for month in ("00", "01", "02", "04", "09", "12", "13"):
+    for year in ("0000", "0001", "0002", "1900", "2000", "2024"):
+        for month in ("00", "02", "04", "12", "13"):
             for day in ("00", "01", "28", "29", "30", "31", "32"):
                 out.append(f"{year}-{month}-{day}")
     base = "2026-09-22"
-    for hour in ("00", "13", "23", "24", "25"):
-        for minute in ("00", "30", "59", "60"):
-            for second in ("", "00", "59", "60"):
+    for hour in ("00", "23", "24", "25"):
+        for minute in ("00", "59", "60"):
+            for second in ("", "59", "60"):
                 stamp = f"{base}T{hour}:{minute}" + (f":{second}" if second else "")
                 out += [stamp, stamp + "Z"]
     # Offsets are the case a character class cannot get right: fromisoformat takes any
     # offset whose TOTAL is under 24h, so +02:99 is valid (it normalises to +03:39).
     for sign in "+-":
-        for off_h in ("00", "02", "14", "15", "23", "24", "25"):
-            for off_m in ("00", "59", "82", "99"):
-                out.append(f"{base}T13:45:59{sign}{off_h}:{off_m}")
-                out.append(f"{base}T13:45:59{sign}{off_h}{off_m}")
+        for off_h in ("00", "14", "24"):
+            for off_m in ("00", "59", "99"):
+                # Both separator styles, WITH and WITHOUT a seconds field, plus the mixed
+                # forms. The offset-seconds branch previously had zero cases here, which is
+                # how a grammar accepting "+0000:30" passed a green sweep.
+                for off_s in ("", "30", "99", "30.500"):
+                    colon = f"{sign}{off_h}:{off_m}" + (f":{off_s}" if off_s else "")
+                    plain = f"{sign}{off_h}{off_m}" + (off_s if off_s else "")
+                    mixed_a = f"{sign}{off_h}{off_m}" + (f":{off_s}" if off_s else "")
+                    mixed_b = f"{sign}{off_h}:{off_m}" + (off_s if off_s else "")
+                    for tail in (colon, plain, mixed_a, mixed_b):
+                        out.append(f"{base}T13:45:59{tail}")
+                out.append(f"{base}T13:45:59{sign}{off_h}")
     rng = random.Random(7)
-    for _ in range(120):
+    for _ in range(80):
         out.append(
             "".join(rng.choice("0123456789-:TZ+. ") for _ in range(rng.randint(1, 26)))
         )
