@@ -1764,6 +1764,9 @@ def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
     [
         ('{"timestamp": 12345}', ""),
         ('{"timestamp": "hello world"}', ""),
+        # Date-SHAPED but not a real date: passes the jq mirror's `YYYY-` check, so it
+        # catches a python branch that falls through to jq on an empty (= rejected) answer.
+        ('{"timestamp": "2026-13-45T99:99:99.000Z"}', ""),
         ("[1, 2, 3]", ""),
         ("not json", ""),
         ('{"timestamp": "2026-09-22T00:00:00.000Z"}', "2026-09-22T00:00:00.000Z"),

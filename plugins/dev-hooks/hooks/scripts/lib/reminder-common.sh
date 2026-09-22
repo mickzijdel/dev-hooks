@@ -92,7 +92,10 @@ reminder_session_since() {
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
   # hook_helpers.session_start is the single implementation, so this cannot drift from the
   # python side that untracked_since uses.
-  REPLY=$(
+  # Gate on the call SUCCEEDING, not on a non-empty answer: an empty answer is python
+  # rejecting the stamp, and falling through on it would let jq re-supply the very value
+  # session_start threw out.
+  if REPLY=$(
     python3 - "$REMINDER_LIB_DIR" "$TRANSCRIPT" <<'PYEOF' 2>/dev/null
 import sys
 
@@ -102,15 +105,19 @@ from hook_helpers import session_start
 
 sys.stdout.write(session_start(sys.argv[2]))
 PYEOF
-  ) && [ -n "$REPLY" ] && return 0
+  ); then
+    return 0
+  fi
   # No python3: jq, plus a shape check MIRRORING hook_helpers.session_start, which only
   # returns a stamp a date parser accepted. Without it an unparseable value reaches
   # `git log --since=`, which exits 0 with zero commits rather than erroring — the
   # session's committed work disappears and the re-arming Stop hooks go quiet, the
   # opposite of the over-report invariant everything else here keeps.
   REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
+  # Month and day ranges, not just a leading YYYY-: "2026-13-45T…" is date-SHAPED but not a
+  # date, and `git log --since=` on it exits 0 with zero commits instead of complaining.
   case "$REPLY" in
-    [0-9][0-9][0-9][0-9]-*) ;;
+    [0-9][0-9][0-9][0-9]-0[1-9]-[0-3][0-9]* | [0-9][0-9][0-9][0-9]-1[0-2]-[0-3][0-9]*) ;;
     *) REPLY="" ;;
   esac
 }
