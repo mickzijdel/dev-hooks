@@ -108,30 +108,26 @@ PYEOF
   ); then
     return 0
   fi
-  # No python3: jq, plus a shape check MIRRORING hook_helpers.session_start, which only
-  # returns a stamp a date parser accepted. Without it an unparseable value reaches
-  # `git log --since=`, which exits 0 with zero commits rather than erroring — the
-  # session's committed work disappears and the re-arming Stop hooks go quiet, the
-  # opposite of the over-report invariant everything else here keeps.
+  # No python3: jq, plus a shape check mirroring hook_helpers.session_start.
+  #
+  # Why the check is this thorough: `git log --since=` never rejects a malformed stamp, it
+  # reinterprets it (measured: 63 commits against 297 for "2026-01-32T00:00:00.000Z"), so
+  # anything let through is a wrong answer rather than an error — and anything wrongly
+  # REJECTED blanks REPLY, which hides the session's commits just as quietly. The rules
+  # below each cost a round of that.
   REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
-  # Anchored, and every field checked numerically rather than by character class. git
-  # never complains about a malformed stamp — it reinterprets it (measured: 63 commits
-  # against 297 for "2026-01-32T00:00:00.000Z") — so anything let through is a wrong
-  # answer, not an error. Ranges that regexes cannot express, and that character classes
-  # got wrong three times running: month lengths and leap years, hour 24 being legal only
-  # as exactly 24:00:00, and a UTC offset whose TOTAL must be under 24h (so +02:99 is
-  # valid, normalising to +03:39, while +23:99 is not). test_jq_stamp_mirror_agrees_with_
-  # python sweeps generated stamps through both this and fromisoformat.
+  # Anchored, with every field checked numerically: character classes cannot express month
+  # lengths and leap years, hour 24 being legal only as exactly 24:00:00, or a UTC offset
+  # whose TOTAL must be under 24h (+02:99 is valid, normalising to +03:39; +23:99 is not).
+  # test_jq_stamp_mirror_agrees_with_python sweeps generated stamps through this and
+  # hook_helpers.session_start, and mutation-tests every branch below.
   local _iso _y _m _d _hh _mm _ss _frac _sign _offbody _oh _om _os _max
   _iso='^([0-9]{4})-([0-9]{2})-([0-9]{2})'
   _iso="$_iso"'([T ]([0-9]{2}):([0-9]{2})(:([0-9]{2})(\.[0-9]+)?)?'
-  # The offset body is captured whole and parsed separately: making each colon
-  # independently optional in one pattern accepts mixed separators like "+0000:30", which
-  # fromisoformat rejects and git then silently reinterprets.
-  # No length cap on the body: datetime.isoformat() itself emits +00:00:00.123456, which
-  # is 15 characters. The two alternatives below do the real validation, so an open-ended
-  # capture here cannot let a malformed offset through — it only stops a valid one being
-  # truncated into a rejection, which blanks REPLY and loses the session's commits.
+  # The offset body is captured whole and parsed separately: one pattern with each colon
+  # independently optional accepts mixed separators like "+0000:30", which python rejects.
+  # No length cap: datetime.isoformat() emits +00:00:00.123456, fifteen characters. The
+  # two alternatives below do the real validation, so an open capture admits nothing.
   _iso="$_iso"'(Z|([+-])([0-9:.]{2,}))?)?$'
   if [[ ! $REPLY =~ $_iso ]]; then
     REPLY=""
@@ -178,11 +174,10 @@ PYEOF
     _max=29
   fi
 
-  # Known, deliberate divergence: session_start also needs .timestamp() to succeed, which
-  # underflows for instants within the local UTC offset of datetime.min — here that is
-  # 0001-01-01 alone, and which instants qualify depends on the machine's timezone, so no
-  # portable shell check expresses it. The mirror over-accepts that one stamp, which passes
-  # a value to git rather than blanking REPLY: the recoverable direction.
+  # Deliberate divergence: session_start also needs .timestamp() to succeed, which
+  # underflows within the local UTC offset of datetime.min — here 0001-01-01 alone, and
+  # which instants qualify is timezone-dependent, so no portable shell check expresses it.
+  # The mirror over-accepts it, the recoverable direction.
   if [ "$_y" -lt 1 ] || [ "$_m" -lt 1 ] || [ "$_m" -gt 12 ] ||
     [ "$_d" -lt 1 ] || [ "$_d" -gt "$_max" ] ||
     [ "$_hh" -gt 24 ] || [ "$_mm" -gt 59 ] || [ "$_ss" -gt 59 ]; then
@@ -473,17 +468,12 @@ reminder_has_code_file() {
 # Prefer this over reminder_changed_files for any "did Claude do work this session?" gate.
 # CLAUDE.md mandates commit-as-you-go, so by the time Stop fires the tree is usually clean
 # and a porcelain-only gate exits silently on exactly the sessions that did the most work.
-# Untracked files modified since the session started, one per line. Falls back to all
-# untracked files when the session start is unknown.
-# Untracked files modified since the session started, one per line. Optional pathspecs
-# narrow the listing, exactly as `git ls-files -- <spec>` would.
+# Untracked files modified since the session started, one per line; optional pathspecs
+# narrow it as `git ls-files -- <spec>` would.
 #
-# The work happens in hook_helpers.untracked_since, not in shell. Doing it with `date` and
-# `find` needed a different incantation per platform — GNU `date -d` vs BSD's set-DST `-d`
-# that returns the wrong answer with exit 0, `find -newermt "@epoch"` that BSD rejects,
-# `-size -1M` that matches only empty files, and xargs appending paths after find's
-# predicates — and every one of those failed by returning nothing, which reads exactly like
-# "this session did no work". python3 has one implementation of all of it.
+# hook_helpers.untracked_since does the work, not shell. `date -d`, `find -newermt`,
+# `find -size` and xargs each behave differently across platforms, and each failure mode
+# returns nothing — indistinguishable from "this session did no work".
 # shellcheck disable=SC2120  # pathspecs are optional; reminder_session_files passes none.
 reminder_untracked_since() {
   local _out
@@ -503,10 +493,8 @@ PYEOF
     [ -n "$_out" ] && printf '\n'
     return 0
   fi
-  # python3 missing or broken: list every untracked file rather than none. Not a second
-  # implementation of the filter — the filter is simply skipped — and it keeps the
-  # invariant that this over-reports rather than going quiet, because an empty result is
-  # indistinguishable from "the session did no work".
+  # python3 missing or broken: skip the filter and list everything. Over-reporting is
+  # recoverable; an empty result reads as "the session did no work".
   git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n'
 }
 
@@ -528,10 +516,8 @@ PYEOF
     printf '%s' "$_out"
     return 0
   fi
-  # Same invariant as reminder_untracked_since: without python3 the session filter is
-  # skipped rather than the result going empty, since an empty count silences the
-  # re-arming Stop hooks exactly as if no work had been done. `wc -c` keeps the size cap
-  # portable — no `find -size`, whose unit rounding matched only empty files.
+  # Same invariant as reminder_untracked_since. `wc -c` keeps the size cap portable:
+  # `find -size -1M` rounds up, so it matches only empty files.
   while IFS= read -r _f; do
     [ -f "$_f" ] || continue
     _size=$(wc -c <"$_f" 2>/dev/null) || continue
