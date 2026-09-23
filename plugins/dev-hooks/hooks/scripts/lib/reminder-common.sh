@@ -117,11 +117,11 @@ PYEOF
   # below each cost a round of that.
   REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
   # Anchored, with every field checked numerically: character classes cannot express month
-  # lengths and leap years, hour 24 being legal only as exactly 24:00:00, or a UTC offset
-  # whose TOTAL must be under 24h (+02:99 is valid, normalising to +03:39; +23:99 is not).
+  # lengths and leap years, or a UTC offset whose TOTAL must be under 24h (+02:99 is valid,
+  # normalising to +03:39; +23:99 is not). Hour 24 is rejected, as session_start_epoch does.
   # test_jq_stamp_mirror_agrees_with_python sweeps generated stamps through this and
   # hook_helpers.session_start, and mutation-tests every branch below.
-  local _iso _y _m _d _hh _mm _ss _frac _sign _offbody _oh _om _os _max
+  local _iso _y _m _d _hh _mm _ss _sign _offbody _oh _om _os _max
   _iso='^([0-9]{4})-([0-9]{2})-([0-9]{2})'
   _iso="$_iso"'([T ]([0-9]{2}):([0-9]{2})(:([0-9]{2})(\.[0-9]+)?)?'
   # The offset body is captured whole and parsed separately: one pattern with each colon
@@ -139,7 +139,6 @@ PYEOF
   _hh=${BASH_REMATCH[5]:-00}
   _mm=${BASH_REMATCH[6]:-00}
   _ss=${BASH_REMATCH[8]:-00}
-  _frac=${BASH_REMATCH[9]:-}
   _sign=${BASH_REMATCH[11]:-}
   _offbody=${BASH_REMATCH[12]:-}
   _oh=00
@@ -180,13 +179,7 @@ PYEOF
   # The mirror over-accepts it, the recoverable direction.
   if [ "$_y" -lt 1 ] || [ "$_m" -lt 1 ] || [ "$_m" -gt 12 ] ||
     [ "$_d" -lt 1 ] || [ "$_d" -gt "$_max" ] ||
-    [ "$_hh" -gt 24 ] || [ "$_mm" -gt 59 ] || [ "$_ss" -gt 59 ]; then
-    REPLY=""
-    return 0
-  fi
-  # Hour 24 means "midnight ending this day": everything after it must be zero.
-  if [ "$_hh" -eq 24 ] &&
-    { [ "$_mm" -ne 0 ] || [ "$_ss" -ne 0 ] || [ -n "${_frac//[.0]/}" ]; }; then
+    [ "$_hh" -gt 23 ] || [ "$_mm" -gt 59 ] || [ "$_ss" -gt 59 ]; then
     REPLY=""
     return 0
   fi

@@ -64,6 +64,10 @@ def session_start_epoch(since):
     flag and exits 0 printing the CURRENT time — a wrong answer, not an error."""
     if not isinstance(since, str) or not since:
         return None
+    # Hour 24 is rejected outright: fromisoformat accepts "T24:00" from 3.14 and not before,
+    # so leaving it to the parser makes the answer depend on the interpreter.
+    if re.match(r"[^T ]+[T ]24", since):
+        return None
     try:
         return int(
             datetime.datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
