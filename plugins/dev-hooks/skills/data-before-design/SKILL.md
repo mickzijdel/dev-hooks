@@ -4,8 +4,9 @@ description: |
   Use when about to build, restyle or lay out anything that displays stored data — a card,
   panel, detail view, dashboard, table, report, profile page or summary strip — and the design
   depends on what the data actually contains. Also when a field looks obviously useful, when a
-  stakeholder describes what they want to see, or when choosing between layouts for the same
-  records. Not for pure aesthetics (design-process), chart colour and form (dataviz), or
+  stakeholder describes what they want to see, when choosing between layouts for the same
+  records, or when a page puts several cards or charts over the same categories side by side.
+  Not for pure aesthetics (design-process), a single chart's colour and form (dataviz), or
   floating UI mechanics (popovers-tooltips).
 ---
 
@@ -92,6 +93,28 @@ that is present, well-formed, and painful: the name the field mangles, the recor
 makes a cheerful badge wrong, the person whose deleted account the summary still counts. Pick
 the one record that would most embarrass this view and render it.
 
+## Several cards on one page: one key for all of them
+
+A reader learns a colour's meaning on the first card and applies it to every card after it. So
+before drawing any card on a page with several, write down **one category table for the whole
+page**: the canonical name, a fixed order and one colour for each category. Every card, legend
+and tooltip uses it.
+
+- **One category, one colour; one colour, one category.** A colour belongs to its category even
+  on cards where that category is absent. Using it again for something else, even on a card
+  that never shows the original, tells the reader the two are the same thing.
+- **One name per category.** "Global Health & Development" on one card and "Global Dev & Health"
+  on the next makes the reader wonder whether they are two categories.
+- **One taxonomy where the cards cut the same records.** Before a card adds its own bucket, check
+  whether it merges into a category the page already has. If a card really needs a finer split,
+  give the sub-categories shades of the parent's colour, not new colours.
+- **Categories that really are different get unused colours**, plus a subtitle saying the
+  breakdown is different. Never reuse a colour the page has already given to another category.
+- **Same order in every legend**, with "Other" always last and always the same neutral grey.
+
+**Done when** listing every (label, colour) pair across the page gives a one-to-one mapping.
+Grep the markup or stylesheet for the colour values, not the rendered screenshot.
+
 ## Rendering rules that fall out of the data
 
 - **The empty state does work.** "No notes yet" is a dead end. Say why it is empty and what
@@ -114,6 +137,7 @@ the one record that would most embarrass this view and render it.
 | Mocking only the ideal state | The design collapses on the record that has nothing, or half of something |
 | Testing only volume extremes | The view survives the biggest record and humiliates someone on an ordinary one |
 | Building one option because it was described first | The person cannot choose what they were never shown |
+| Picking colours and labels card by card | The same blue means two things on one page, and the reader draws a link that isn't there |
 
 ## Real-world impact
 
