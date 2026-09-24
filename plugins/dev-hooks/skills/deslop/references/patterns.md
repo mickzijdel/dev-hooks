@@ -36,7 +36,7 @@ These pass tests today. They are bugs with a delayed fuse.
 |---|---|---|---|
 | B1 | Works-today encoding | Enum serialised by ordinal, magic numbers, assumptions about current cardinality, positional tuples crossing a boundary | Encode by name; make the assumption a type |
 | B2 | Inconsistent result shape | One function returns `null`, `false`, `undefined`, `{ok}` for different failures | One result type, used consistently |
-| B3 | Swallowed error | `catch { log; return undefined }`, bare `except:`, empty `if err != nil` | Rethrow or propagate a typed error |
+| B3 | Swallowed error | `catch { log; return undefined }`, a bare `except:` that does not re-raise, empty `if err != nil` | Rethrow or propagate a typed error |
 | B4 | Honor-system gate | Security or behaviour gated on a name, a comment, or an env var with nothing enforcing it | Enforce at the boundary or remove the gate. Always flag to the user |
 | B5 | Symptom patch | The fix adds a flag or special case at the symptom site rather than the cause | Root-cause it before patching |
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14"
 # dependencies = []
 # ///
 """Flag mechanically-detectable AI-authored code slop.
@@ -20,9 +20,11 @@ Exit code: 0 = clean, 1 = findings, 2 = no readable files given.
 """
 
 import argparse
+import ast
 import re
 import statistics
 import sys
+import warnings
 from pathlib import Path
 
 # --- comment syntax by extension -------------------------------------------------
@@ -190,21 +192,38 @@ COMMENT_RULES = [
 ]
 
 TS_JS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+PY = {".py"}
 
 # Matched against a two-line window, for constructs straddling two lines: Python's
-# commonest swallowed error puts `pass` after the `except`.
+# commonest swallowed error puts `pass` after the `except`. No re.MULTILINE: `^` must
+# anchor to the window's first line, or the second line could match on its own and the
+# finding would land one line early as well as on its real line. So no alternative may
+# end in a bare `$`, which without MULTILINE matches only at the window's end: use
+# `(?:\n|$)`. A bare `except:` needs no end anchor at all.
 LOOKAHEAD = {"swallowed-error"}
 
 # (rule, pattern, message, langs); langs None applies the rule to every language
 LINE_RULES = [
+    # Python only: `except:` is also a Rails keyword argument (`before_action :auth,
+    # except: [:index]`), a GitLab CI key and a JS object key. The unanchored bare-except
+    # form flags every one of those as "a bug" if left to run on every language.
     (
         "swallowed-error",
         re.compile(
             r"""(?x)
-            ^[ \t]*except[ \t]*:[ \t]*$
+            ^[ \t]*except[ \t]*:
           | ^[ \t]*except[ \t]+(?:Exception|BaseException)(?:[ \t]+as[ \t]+\w+)?[ \t]*:
-                [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*$
-          | \bcatch\s*\([^)]*\)\s*\{\s*\}
+                [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*(?:\n|$)
+            """
+        ),
+        "swallowed error (the failure is discarded, not handled) — a bug",
+        PY,
+    ),
+    (
+        "swallowed-error",
+        re.compile(
+            r"""(?x)
+            \bcatch\s*\([^)]*\)\s*\{\s*\}
           | \bcatch\s*\{\s*\}
           | \bif\s+err\s*!=\s*nil\s*\{\s*\}
           | ^[ \t]*rescue(?:[ \t]+StandardError)?(?:[ \t]*=>[ \t]*\w+)?[ \t]*\n[ \t]*
@@ -363,6 +382,86 @@ def is_code(line, syntax):
     return not stripped.startswith("*")
 
 
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+_LOOPS = (ast.For, ast.AsyncFor, ast.While)
+
+
+def _can_leave(node, in_loop=False):
+    """True when `node` can leave the enclosing handler without raising: a `return`, or a
+    `break`/`continue` not caught by a loop that is itself inside the handler. A nested
+    def or class is its own scope, so what it contains never leaves the handler."""
+    if isinstance(node, _SCOPES):
+        return False
+    if isinstance(node, ast.Return):
+        return True
+    if isinstance(node, (ast.Break, ast.Continue)):
+        return not in_loop
+    if isinstance(node, _LOOPS):
+        # A loop's `else` runs after it, so a break there belongs to the loop outside.
+        return any(_can_leave(c, True) for c in node.body) or any(
+            _can_leave(c, in_loop) for c in node.orelse
+        )
+    return any(_can_leave(c, in_loop) for c in _statements_in(node))
+
+
+def _statements_in(node):
+    """The statements directly under `node`. Expressions are skipped: a statement cannot
+    sit inside one (bar a lambda, its own scope), and descending through them only spends
+    stack — deeply nested arithmetic would overflow it."""
+    return (
+        c
+        for c in ast.iter_child_nodes(node)
+        if isinstance(c, (ast.stmt, ast.excepthandler, ast.match_case))
+    )
+
+
+def python_handlers(text):
+    """(lines holding an `except` handler, bare handlers that always re-raise), or None
+    when the file does not parse.
+
+    The first set keeps the line regexes honest: `except:` also opens lines inside strings
+    and docstrings, which only the tree can tell apart from a handler.
+
+    `except: cleanup(); raise` acts on an error without handling it, so the failure still
+    propagates and it is not a swallowed error — 75 of the 137 bare excepts in the CPython
+    3.12 stdlib are this idiom. "Always" is the point: a raise under an `if`, or one that
+    an earlier `return` or `break` can skip, leaves paths where the handler swallows
+    everything, KeyboardInterrupt and SystemExit included.
+
+    Read with ast, not by indentation: a triple-quoted string's lines can sit at column 0
+    and look like the end of the handler. A raise inside a `with` does not count, since the
+    context manager may suppress it (`contextlib.suppress`). A file that does not parse
+    returns None, leaving the line regexes to judge it alone."""
+    # A leading UTF-8 BOM is valid for python3 but a SyntaxError for ast.parse on text.
+    # RecursionError: a file nested past the parser's depth limit must not take the rest of
+    # the batch down with it — it is treated as unparseable, like any other.
+    try:
+        # The scanned file's own warnings (an invalid escape like "\d") are not ours to
+        # print: they surface as `<unknown>:N` with no file name, and under -W error they
+        # would make a valid file look unparseable.
+        with warnings.catch_warnings(action="ignore"):
+            tree = ast.parse(text.removeprefix("\ufeff"))
+        handlers = {
+            n.lineno for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)
+        }
+        return handlers, _always_reraising(tree)
+    except SyntaxError, ValueError, RecursionError:
+        return None
+
+
+def _always_reraising(tree):
+    found = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ExceptHandler) and node.type is None):
+            continue
+        for k, stmt in enumerate(node.body):
+            if isinstance(stmt, ast.Raise):
+                if not any(_can_leave(s) for s in node.body[:k]):
+                    found.add(node.lineno)
+                break
+    return found
+
+
 def scan_file(path, budgets):
     """Return (findings, metrics) for one file. findings is a list of (line, rule, msg)."""
     syntax = syntax_for(path)
@@ -383,6 +482,7 @@ def scan_file(path, budgets):
                 break
 
     ext = path.suffix.lower()
+    handlers = python_handlers(text) if ext in PY else None
     for i, raw in enumerate(lines):
         if not is_code(raw, syntax):
             continue
@@ -391,6 +491,10 @@ def scan_file(path, budgets):
             if langs is not None and ext not in langs:
                 continue
             if pattern.search(window if rule in LOOKAHEAD else raw):
+                if rule == "swallowed-error" and handlers is not None:
+                    handler_lines, reraising = handlers
+                    if i + 1 not in handler_lines or i + 1 in reraising:
+                        continue
                 findings.append((i + 1, rule, msg))
                 break
 

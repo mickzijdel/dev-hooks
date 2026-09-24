@@ -68,6 +68,306 @@ def test_line_rule_fires(tmp_path, rule, body):
     assert rule in rules(out), f"expected [{rule}] in:\n{out}"
 
 
+def findings(stdout):
+    """(line, rule) pairs from a scan's output."""
+    out = []
+    for line in stdout.splitlines():
+        if ": [" not in line:
+            continue
+        loc, rest = line.split(": [", 1)
+        out.append((int(loc.rsplit(":", 1)[1]), rest.split("]", 1)[0]))
+    return out
+
+
+# A bare `except:` catches everything, including KeyboardInterrupt and SystemExit, so it is
+# flagged whenever the failure stops there — whatever the body does, unless it re-raises. The rule is matched against a two-line window without
+# re.MULTILINE, which once made `$` reachable only at the window's end: a bare except was
+# caught solely when the line after it was empty — never in real code, where a body follows.
+# (The case in test_line_rule_fires passed only because its file ends in a newline.)
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept:\n    pass\n\nx = 1\n",
+        # Logs and carries on: the error stops here, so it is swallowed — and a bare
+        # except also swallows KeyboardInterrupt and SystemExit.
+        "try:\n    f()\nexcept:\n    log()\nx = 1\n",
+        "try:\n    f()\nexcept :\n    pass\ny = 2\n",
+        "try:\n    f()\nexcept:",  # last line, no trailing newline
+        # One-liners hit the same trap: `$` could only match at the window's end.
+        "try:\n    f()\nexcept: pass\nx = 1\n",
+        "try:\n    f()\nexcept Exception: pass\nx = 1\n",
+        "try:\n    f()\nexcept Exception as e: ...\nx = 1\n",
+    ],
+)
+def test_bare_except_fires_with_a_body_after_it(tmp_path, body):
+    code, out, _ = run(tmp_path, "sample.py", body)
+    assert code == 1, f"bare except not flagged:\n{out}"
+    assert (3, "swallowed-error") in findings(out), out
+
+
+def test_bare_except_is_reported_once_on_its_own_line(tmp_path):
+    # Adding re.MULTILINE would have "fixed" the case above, but let the window's second
+    # line match on its own: line 2's window ends in `except:`, so the finding would land
+    # on line 2 as well as 3.
+    _, out, _ = run(tmp_path, "sample.py", "try:\n    f()\nexcept:\n    pass\n")
+    assert [f for f in findings(out) if f[1] == "swallowed-error"] == [
+        (3, "swallowed-error")
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept:\n    cleanup()\n    raise\nx = 1\n",
+        "try:\n    f()\nexcept:\n    # undo the partial write\n\n    rollback()\n    raise\n",
+        "try:\n    f()\nexcept: raise\nx = 1\n",
+        "try:\n    f()\nexcept:\n    if retry:\n        g()\n    raise\n",
+    ],
+)
+def test_reraising_bare_except_is_not_a_swallowed_error(tmp_path, body):
+    """The failure still propagates, so "discarded, not handled" would be false. 75 of the
+    137 bare excepts in the CPython 3.12 stdlib are this cleanup-then-raise idiom."""
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        # Rails keyword argument continued onto its own line.
+        (
+            "c.rb",
+            "class C < ApplicationController\n  before_action :auth,\n    except: [:index, :show]\nend\n",
+        ),
+        # GitLab CI
+        ("ci.yml", "build:\n  script: make\n  except:\n    - main\n"),
+        # A JS object key
+        ("o.js", "const opts = {\n  except: true,\n  only: false,\n};\n"),
+    ],
+)
+def test_except_key_outside_python_is_not_a_swallowed_error(tmp_path, name, body):
+    """The swallowed-error rule once ran on every language; with the bare-except form no
+    longer anchored at end of line, `except:` as a key or keyword argument became "a bug"."""
+    code, out, _ = run(tmp_path, name, body)
+    assert "swallowed-error" not in rules(out), out
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        ("a.js", "try { f() } catch (e) {}\nconst x = 1\n"),
+        ("a.go", "if err != nil {}\nx := 1\n"),
+        ("a.rb", "begin\n  f\nrescue\n  nil\nend\n"),
+    ],
+)
+def test_non_python_swallowed_errors_still_fire(tmp_path, name, body):
+    # Splitting the rule by language must not drop the forms that were never Python's.
+    _, out, _ = run(tmp_path, name, body)
+    assert "swallowed-error" in rules(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Re-raises only sometimes: whenever `strict` is false it swallows everything.
+        "try:\n    f()\nexcept:\n    if strict: raise\n    log()\n",
+        "try:\n    f()\nexcept:\n    if strict:\n        raise\n    log()\n",
+        "try:\n    f()\nexcept:\n    for h in hooks:\n        raise\n",
+        # The raise belongs to a function the handler defines, not to the handler.
+        "try:\n    f()\nexcept:\n    def later():\n        raise\n    defer(later)\n",
+        # `raise` inside a string is not a statement.
+        'try:\n    f()\nexcept: log("x; raise")\n',
+        'try:\n    f()\nexcept:\n    log("#1"); note("; raise")\n',
+    ],
+)
+def test_conditional_or_nested_raise_still_swallows(tmp_path, body):
+    """Only a raise at the handler's own statement level guarantees propagation."""
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (3, "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'try:\n    f()\nexcept:\n    log("#1"); raise\n',
+        "try:\n    f()\nexcept:\n    log()  # then propagate\n    raise  # always\n",
+    ],
+)
+def test_body_level_raise_after_a_string_or_comment_counts(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
+def _except_line(body):
+    return next(n for n, line in enumerate(body.split("\n"), 1) if "except:" in line)
+
+
+def _parses(body):
+    import ast
+
+    ast.parse(body)  # a SyntaxError would make the case pass for the wrong reason
+    return body
+
+
+# Every case sits inside a real function or loop: a module-level `return` or `break` is a
+# SyntaxError, and an unparseable file is flagged regardless — the test would pass without
+# exercising the early-exit check at all.
+@pytest.mark.parametrize(
+    "body",
+    [
+        # An earlier return can leave the handler, so sometimes nothing is re-raised.
+        "def g():\n    try:\n        f()\n    except:\n        if fallback:\n"
+        "            return default\n        raise\n",
+        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+        "            break\n        raise\n",
+        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+        "            continue\n        raise\n",
+        # A loop's else runs after the loop: a break there leaves the OUTER loop.
+        "for x in xs:\n    try:\n        f()\n    except:\n        for y in ys:\n"
+        "            pass\n        else:\n            break\n        raise\n",
+        # Looks like a raise at the handler's level, but it is text in a string.
+        'def g():\n    try:\n        f()\n    except:\n        doc = """\n'
+        '        raise\n        """\n',
+    ],
+)
+def test_handler_that_can_skip_its_raise_is_flagged(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", _parses(body))
+    assert (_except_line(body), "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # These exits stay inside the handler, so the raise still always runs.
+        "try:\n    f()\nexcept:\n    for h in hooks:\n        if h.done:\n"
+        "            break\n    raise\n",
+        "try:\n    f()\nexcept:\n    def cb():\n        return 1\n    defer(cb)\n    raise\n",
+        "try:\n    f()\nexcept:\n    fn = lambda: 1\n    raise\n",
+        # Code after the raise is unreachable, so it cannot skip it.
+        "def g():\n    try:\n        f()\n    except:\n        raise\n        return 1\n",
+    ],
+)
+def test_exits_that_cannot_skip_the_raise_do_not_count(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", _parses(body))
+    assert "swallowed-error" not in rules(out), out
+
+
+def test_raise_inside_a_with_is_not_trusted(tmp_path):
+    # A context manager can swallow what is raised inside it, so this handler may not
+    # propagate anything. Flagging it is deliberate, not a missed case.
+    body = _parses(
+        "import contextlib\ntry:\n    f()\nexcept:\n"
+        "    with contextlib.suppress(Exception):\n        raise\n"
+    )
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
+def test_file_too_deep_to_parse_does_not_sink_the_batch(tmp_path):
+    """ast.parse raises RecursionError past the parser's depth limit. Uncaught, it killed the
+    whole run, so the other files' findings were never reported."""
+    deep = tmp_path / "deep.py"
+    deep.write_text(
+        "x = "
+        + "1+" * 200_000
+        + "1\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n"
+    )
+    other = tmp_path / "other.py"
+    other.write_text("try:\n    f()\nexcept:\n    pass\n")
+    r = subprocess.run(
+        [sys.executable, str(SCAN), str(deep), str(other)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "Traceback" not in r.stderr, r.stderr
+    assert r.returncode == 1
+    assert "other.py:3: [swallowed-error]" in r.stdout, r.stdout
+    # Unparseable, so its bare except cannot be shown to re-raise: flagged.
+    assert "deep.py:4: [swallowed-error]" in r.stdout, r.stdout
+
+
+def test_utf8_bom_does_not_change_the_verdict(tmp_path):
+    # python3 runs a BOM-prefixed file fine; ast.parse on the text rejects it, which made
+    # every handler in such a file look unprovable and got a correct re-raise flagged.
+    path = tmp_path / "bom.py"
+    path.write_bytes(b"\xef\xbb\xbftry:\n    f()\nexcept:\n    cleanup()\n    raise\n")
+    r = subprocess.run(
+        [sys.executable, str(SCAN), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "swallowed-error" not in rules(r.stdout), r.stdout
+
+
+def test_except_inside_a_string_is_not_a_handler(tmp_path):
+    """`except:` opens lines in strings and docstrings too; only the parse tree can tell
+    those from a handler, so in a file that parses the tree has the final say."""
+    body = _parses(
+        'CI = """\nbuild:\n  script: make\n  except:\n    - main\n"""\n\n\n'
+        'def warm():\n    """Fill the cache.\n\n'
+        '    except: when the cache is cold, skip.\n    """\n'
+        "    try:\n        f()\n    except:\n        pass\n"
+    )
+    _, out, _ = run(tmp_path, "sample.py", body)
+    swallowed = [f for f in findings(out) if f[1] == "swallowed-error"]
+    # Only the real handler (indented four, inside warm()), not the two string lines.
+    real = next(
+        n for n, line in enumerate(body.split("\n"), 1) if line == "    except:"
+    )
+    assert swallowed == [(real, "swallowed-error")], out
+
+
+@pytest.mark.parametrize("warn_flags", [[], ["-W", "error"]])
+def test_scanned_files_own_warnings_stay_out_of_the_output(tmp_path, warn_flags):
+    """ast.parse warns about the scanned file's invalid escapes. Unsilenced, that printed
+    `<unknown>:N: SyntaxWarning` with no file name, and -W error turned the warning into
+    a parse failure, so this correct re-raise got flagged."""
+    path = tmp_path / "warn.py"
+    path.write_text(
+        'import re\nP = re.compile("\\d+")\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
+    )
+    r = subprocess.run(
+        [sys.executable, *warn_flags, str(SCAN), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "SyntaxWarning" not in r.stderr, r.stderr
+    assert "swallowed-error" not in rules(r.stdout), r.stdout
+
+
+def test_unparseable_file_flags_its_bare_excepts(tmp_path):
+    # Without an AST there is no way to know the handler re-raises, so it is flagged.
+    body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
+def test_a_raise_after_the_except_block_does_not_count(tmp_path):
+    # The raise belongs to the enclosing code, not the handler: this one does swallow.
+    body = "def g():\n    try:\n        f()\n    except:\n        pass\n    raise X\n"
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept ValueError:\n    pass\nx = 1\n",
+        "try:\n    f()\nexcept (KeyError, ValueError):\n    log()\nx = 1\n",
+        "handled_except = 1\nx = 2\n",
+        # `pass` must be the whole statement, not a prefix of a name.
+        "try:\n    f()\nexcept Exception:\n    passthrough = 1\nx = 1\n",
+        "try:\n    f()\nexcept Exception: pass_on()\nx = 1\n",
+    ],
+)
+def test_narrow_except_is_not_a_bare_except(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
 def test_type_escape_is_scoped_to_ts(tmp_path):
     """`: any` is a TS escape but ordinary syntax elsewhere — 3 spurious Django hits."""
     ts = "const x = y as any;\n"

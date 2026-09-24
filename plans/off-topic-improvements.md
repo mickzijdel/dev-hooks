@@ -65,3 +65,10 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   escape hatch, or per-rule `skip_in_tests` following `reminder_is_test_path` /
   `is_test_path`. Deliberately not done now — suppressing a rule inside test paths also hides
   real debug residue in tests, and that trade needs a decision rather than a default.
+- **deslop's swallowed-error rule has no pattern for Ruby's modifier `rescue`.** `x = f rescue nil`
+  swallows every StandardError on one line and is the idiomatic Ruby form of the bug, but the
+  rule only matches block `rescue` followed by `nil`/`end` on the next line. Found while fixing
+  the Python bare-except anchor; left out because it is a missing pattern, not that bug. Needs a
+  precision check against a real Ruby corpus first — `rescue nil` in a guard clause is sometimes
+  deliberate.
+
