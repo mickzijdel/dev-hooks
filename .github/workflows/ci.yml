@@ -13,11 +13,6 @@ on:
 permissions:
   contents: read
 
-# Python comes from mise.toml + mise.lock via mise-action, so CI runs the release local does;
-# uv must use that interpreter, never download a different one.
-env:
-  UV_PYTHON_DOWNLOADS: never
-
 jobs:
   lint:
     runs-on: ubuntu-latest
