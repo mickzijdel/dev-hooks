@@ -386,27 +386,47 @@ BARE_EXCEPT = re.compile(r"^([ \t]*)except[ \t]*:(.*)$")
 RAISE_STMT = re.compile(r"^raise\b")
 
 
+def _raises(statement_text):
+    """True when one of the `;`-separated statements in a line is itself a `raise`."""
+    return any(
+        RAISE_STMT.match(part.strip())
+        for part in strip_quoted(statement_text).split(";")
+    )
+
+
 def reraises(lines, i):
-    """True when the bare `except:` on line i re-raises, so the failure still propagates.
+    """True when the bare `except:` on line i always re-raises, so the failure propagates.
 
     `except: cleanup(); raise` is the idiomatic way to act on an error without handling
     it, and is not a swallowed error. Measured on the CPython 3.12 stdlib: 75 of the 137
     bare excepts re-raise, so flagging them all would call a correct pattern "a bug" more
-    often than not. Walks the indented body, not just the two-line window."""
+    often than not.
+
+    Only a `raise` at the handler's own statement level counts. One nested under an `if`,
+    a loop or an inner `def` runs only sometimes, and the rest of the time the handler
+    swallows everything — KeyboardInterrupt and SystemExit included. Strings are blanked
+    first so `log("x; raise")` is not read as a raise."""
     m = BARE_EXCEPT.match(lines[i])
     if not m:
         return False
-    indent, rest = len(m.group(1)), m.group(2).strip()
-    if rest and not rest.startswith("#"):
-        # One-liner body: `except: raise` / `except: log(); raise`.
-        return any(RAISE_STMT.match(part.strip()) for part in rest.split(";"))
+    indent = len(m.group(1))
+    rest = strip_quoted(m.group(2)).split("#", 1)[0].strip()
+    if rest:
+        return _raises(rest)
+    body_indent = None
     for line in lines[i + 1 :]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if len(line) - len(line.lstrip()) <= indent:
+        line_indent = len(line) - len(line.lstrip())
+        if line_indent <= indent:
             return False
-        if RAISE_STMT.match(stripped):
+        if body_indent is None:
+            body_indent = line_indent
+        # Blank strings before dropping a comment, or a `#` inside one cuts the line short.
+        if line_indent == body_indent and _raises(
+            strip_quoted(stripped).split("#", 1)[0]
+        ):
             return True
     return False
 

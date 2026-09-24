@@ -166,6 +166,38 @@ def test_non_python_swallowed_errors_still_fire(tmp_path, name, body):
     assert "swallowed-error" in rules(out), out
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Re-raises only sometimes: whenever `strict` is false it swallows everything.
+        "try:\n    f()\nexcept:\n    if strict: raise\n    log()\n",
+        "try:\n    f()\nexcept:\n    if strict:\n        raise\n    log()\n",
+        "try:\n    f()\nexcept:\n    for h in hooks:\n        raise\n",
+        # The raise belongs to a function the handler defines, not to the handler.
+        "try:\n    f()\nexcept:\n    def later():\n        raise\n    defer(later)\n",
+        # `raise` inside a string is not a statement.
+        'try:\n    f()\nexcept: log("x; raise")\n',
+        'try:\n    f()\nexcept:\n    log("#1"); note("; raise")\n',
+    ],
+)
+def test_conditional_or_nested_raise_still_swallows(tmp_path, body):
+    """Only a raise at the handler's own statement level guarantees propagation."""
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (3, "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'try:\n    f()\nexcept:\n    log("#1"); raise\n',
+        "try:\n    f()\nexcept:\n    log()  # then propagate\n    raise  # always\n",
+    ],
+)
+def test_body_level_raise_after_a_string_or_comment_counts(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
 def test_a_raise_after_the_except_block_does_not_count(tmp_path):
     # The raise belongs to the enclosing code, not the handler: this one does swallow.
     body = "def g():\n    try:\n        f()\n    except:\n        pass\n    raise X\n"
