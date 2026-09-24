@@ -68,6 +68,92 @@ def test_line_rule_fires(tmp_path, rule, body):
     assert rule in rules(out), f"expected [{rule}] in:\n{out}"
 
 
+def findings(stdout):
+    """(line, rule) pairs from a scan's output."""
+    out = []
+    for line in stdout.splitlines():
+        if ": [" not in line:
+            continue
+        loc, rest = line.split(": [", 1)
+        out.append((int(loc.rsplit(":", 1)[1]), rest.split("]", 1)[0]))
+    return out
+
+
+# A bare `except:` catches everything, including KeyboardInterrupt and SystemExit, so it is
+# flagged whenever the failure stops there — whatever the body does, unless it re-raises. The rule is matched against a two-line window without
+# re.MULTILINE, which once made `$` reachable only at the window's end: a bare except was
+# caught solely when the line after it was empty — never in real code, where a body follows.
+# (The case in test_line_rule_fires passed only because its file ends in a newline.)
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept:\n    pass\n\nx = 1\n",
+        # Logs and carries on: the error stops here, so it is swallowed — and a bare
+        # except also swallows KeyboardInterrupt and SystemExit.
+        "try:\n    f()\nexcept:\n    log()\nx = 1\n",
+        "try:\n    f()\nexcept :\n    pass\ny = 2\n",
+        "try:\n    f()\nexcept:",  # last line, no trailing newline
+        # One-liners hit the same trap: `$` could only match at the window's end.
+        "try:\n    f()\nexcept: pass\nx = 1\n",
+        "try:\n    f()\nexcept Exception: pass\nx = 1\n",
+        "try:\n    f()\nexcept Exception as e: ...\nx = 1\n",
+    ],
+)
+def test_bare_except_fires_with_a_body_after_it(tmp_path, body):
+    code, out, _ = run(tmp_path, "sample.py", body)
+    assert code == 1, f"bare except not flagged:\n{out}"
+    assert (3, "swallowed-error") in findings(out), out
+
+
+def test_bare_except_is_reported_once_on_its_own_line(tmp_path):
+    # Adding re.MULTILINE would have "fixed" the case above, but let the window's second
+    # line match on its own: line 2's window ends in `except:`, so the finding would land
+    # on line 2 as well as 3.
+    _, out, _ = run(tmp_path, "sample.py", "try:\n    f()\nexcept:\n    pass\n")
+    assert [f for f in findings(out) if f[1] == "swallowed-error"] == [
+        (3, "swallowed-error")
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept:\n    cleanup()\n    raise\nx = 1\n",
+        "try:\n    f()\nexcept:\n    # undo the partial write\n\n    rollback()\n    raise\n",
+        "try:\n    f()\nexcept: raise\nx = 1\n",
+        "try:\n    f()\nexcept:\n    if retry:\n        g()\n    raise\n",
+    ],
+)
+def test_reraising_bare_except_is_not_a_swallowed_error(tmp_path, body):
+    """The failure still propagates, so "discarded, not handled" would be false. 75 of the
+    137 bare excepts in the CPython 3.12 stdlib are this cleanup-then-raise idiom."""
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
+def test_a_raise_after_the_except_block_does_not_count(tmp_path):
+    # The raise belongs to the enclosing code, not the handler: this one does swallow.
+    body = "def g():\n    try:\n        f()\n    except:\n        pass\n    raise X\n"
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    f()\nexcept ValueError:\n    pass\nx = 1\n",
+        "try:\n    f()\nexcept (KeyError, ValueError):\n    log()\nx = 1\n",
+        "handled_except = 1\nx = 2\n",
+        # `pass` must be the whole statement, not a prefix of a name.
+        "try:\n    f()\nexcept Exception:\n    passthrough = 1\nx = 1\n",
+        "try:\n    f()\nexcept Exception: pass_on()\nx = 1\n",
+    ],
+)
+def test_narrow_except_is_not_a_bare_except(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert "swallowed-error" not in rules(out), out
+
+
 def test_type_escape_is_scoped_to_ts(tmp_path):
     """`: any` is a TS escape but ordinary syntax elsewhere — 3 spurious Django hits."""
     ts = "const x = y as any;\n"

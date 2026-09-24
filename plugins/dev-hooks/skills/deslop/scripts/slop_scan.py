@@ -192,7 +192,13 @@ COMMENT_RULES = [
 TS_JS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 
 # Matched against a two-line window, for constructs straddling two lines: Python's
-# commonest swallowed error puts `pass` after the `except`.
+# commonest swallowed error puts `pass` after the `except`. No re.MULTILINE: `^` must
+# anchor to the window's first line, or the second line could match on its own and the
+# finding would land one line early as well as on its real line. So no alternative may
+# end in a bare `$`: without MULTILINE it reaches only the window's end, which hid every
+# swallowed error followed by more code — `except:` with a body, and the one-liners
+# `except: pass` and `except Exception: pass`. A bare `except:` needs no end anchor at all,
+# since it swallows everything whatever its body.
 LOOKAHEAD = {"swallowed-error"}
 
 # (rule, pattern, message, langs); langs None applies the rule to every language
@@ -201,9 +207,9 @@ LINE_RULES = [
         "swallowed-error",
         re.compile(
             r"""(?x)
-            ^[ \t]*except[ \t]*:[ \t]*$
+            ^[ \t]*except[ \t]*:
           | ^[ \t]*except[ \t]+(?:Exception|BaseException)(?:[ \t]+as[ \t]+\w+)?[ \t]*:
-                [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*$
+                [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*(?:\n|$)
           | \bcatch\s*\([^)]*\)\s*\{\s*\}
           | \bcatch\s*\{\s*\}
           | \bif\s+err\s*!=\s*nil\s*\{\s*\}
@@ -363,6 +369,35 @@ def is_code(line, syntax):
     return not stripped.startswith("*")
 
 
+BARE_EXCEPT = re.compile(r"^([ \t]*)except[ \t]*:(.*)$")
+RAISE_STMT = re.compile(r"^raise\b")
+
+
+def reraises(lines, i):
+    """True when the bare `except:` on line i re-raises, so the failure still propagates.
+
+    `except: cleanup(); raise` is the idiomatic way to act on an error without handling
+    it, and is not a swallowed error. Measured on the CPython 3.12 stdlib: 75 of the 137
+    bare excepts re-raise, so flagging them all would call a correct pattern "a bug" more
+    often than not. Walks the indented body, not just the two-line window."""
+    m = BARE_EXCEPT.match(lines[i])
+    if not m:
+        return False
+    indent, rest = len(m.group(1)), m.group(2).strip()
+    if rest and not rest.startswith("#"):
+        # One-liner body: `except: raise` / `except: log(); raise`.
+        return any(RAISE_STMT.match(part.strip()) for part in rest.split(";"))
+    for line in lines[i + 1 :]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            return False
+        if RAISE_STMT.match(stripped):
+            return True
+    return False
+
+
 def scan_file(path, budgets):
     """Return (findings, metrics) for one file. findings is a list of (line, rule, msg)."""
     syntax = syntax_for(path)
@@ -391,6 +426,8 @@ def scan_file(path, budgets):
             if langs is not None and ext not in langs:
                 continue
             if pattern.search(window if rule in LOOKAHEAD else raw):
+                if rule == "swallowed-error" and reraises(lines, i):
+                    continue
                 findings.append((i + 1, rule, msg))
                 break
 
