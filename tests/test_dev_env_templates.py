@@ -538,3 +538,13 @@ def test_devcontainer_setup_sh_order():
     )
     # No global pnpm in a real command (the comment mentioning it is stripped above).
     assert "npm install -g pnpm" not in body and "npm i -g pnpm" not in body
+
+
+@pytest.mark.parametrize("stack", ["python", "shell"])
+def test_uv_uses_the_python_mise_installs(stack):
+    """uv prefers its own managed interpreters over mise's, so without these two [env] lines a
+    local `uv run` picked a uv-managed 3.13 while CI (which has none) ran mise's 3.14."""
+    text = (TEMPLATES_DIR / f"mise.{stack}.toml").read_text()
+    env = text.split("[env]", 1)[1]
+    assert 'UV_PYTHON_PREFERENCE = "only-system"' in env
+    assert 'UV_PYTHON_DOWNLOADS = "never"' in env

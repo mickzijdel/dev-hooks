@@ -1070,10 +1070,14 @@ Steps:
    `scripts/check_version_sync.sh`, then `shfmt -w` it (as in v24).
 2. **Run it and fix what the CI section reports.** For a repo on mise (the template shape):
    - Python / shell: add `python = "latest"` to `mise.toml`'s `[tools]`, run `mise install`
-     (and `mise lock python` if the lock entry lacks per-platform checksums). In every job that
-     used `astral-sh/setup-uv`, replace it — and any `uv python install X` step — with
-     `jdx/mise-action` and `install_args: python uv`, and set workflow-level
-     `env: UV_PYTHON_DOWNLOADS: never`. Raise `requires-python` to the new floor.
+     (and `mise lock python` if the lock entry lacks per-platform checksums), and copy the
+     template's two `[env]` lines, `UV_PYTHON_PREFERENCE = "only-system"` and
+     `UV_PYTHON_DOWNLOADS = "never"`. Without them uv prefers its own managed interpreters: on
+     the canary, CI ran mise's 3.14.6 while local `uv run` picked a uv-managed 3.13. With them
+     uv rebuilds a stale `.venv` on its next run. In every job that used `astral-sh/setup-uv`,
+     replace it — and any `uv python install X` step — with `jdx/mise-action` and
+     `install_args: python uv`. Leave `requires-python` alone; it is the floor you support, not
+     the version you test.
    - JS: replace `actions/setup-node` with `jdx/mise-action` and `install_args: node`; add the
      `actions/cache` step on `~/.npm` from `ci.js.yml` to each job that runs `npm ci`.
    - A repo that already pins with a version file and reads it
@@ -1086,7 +1090,9 @@ Steps:
    *CI setup steps* section lists a ✓ per setup step. Then set one job's step to
    `node-version: lts/*` (or delete its mise-action step, leaving `setup-uv` alone) and confirm it
    exits 1 naming that workflow and job. Restore. Once pushed, check the CI log shows the locked
-   release — for Python, uv's `Using CPython 3.14.6 interpreter at: …/mise/installs/python/…`.
+   release — for Python, uv's `Using CPython 3.14.6 interpreter at: …/mise/installs/python/…`
+   — and that local agrees: `uv run python -c 'import sys; print(sys.base_prefix)'` names the
+   same mise install.
 
 > Deliberately not checked: which version a `run:` step installs by hand (`uv python install
 > 3.12`, `nvm use`). The template shape has none; remove any you find in step 2.

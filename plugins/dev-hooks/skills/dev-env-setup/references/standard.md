@@ -339,8 +339,11 @@ only reads files, making it the cheapest job in the workflow).
   | None, and nothing above supplies it | ✗ |
 
   The templates take every language version from `mise.toml` via mise-action (Ruby from
-  `.ruby-version` via setup-ruby), with `UV_PYTHON_DOWNLOADS: never` so uv can't substitute
-  an interpreter of its own.
+  `.ruby-version` via setup-ruby). The Python and shell `mise.toml` also set
+  `UV_PYTHON_PREFERENCE = "only-system"` and `UV_PYTHON_DOWNLOADS = "never"` in `[env]`: uv
+  otherwise prefers its own managed interpreters over mise's — locally, where they exist, so
+  local ran 3.13 while CI ran mise's 3.14 — and mise's shims and mise-action apply `[env]` in
+  both places.
 - **Prints what it verified on success**, not just silence:
   `✓ ruby 3.4.10 — .ruby-version, mise.toml ruby, Dockerfile ARG RUBY_VERSION`. A gate that says
   nothing when it passes teaches nobody what it covers.
