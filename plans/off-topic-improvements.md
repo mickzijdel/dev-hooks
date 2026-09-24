@@ -72,15 +72,14 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   precision check against a real Ruby corpus first — `rescue nil` in a guard clause is sometimes
   deliberate.
 
-- **Stop hooks spawn python3 ~5 times per run, and `reminder_session_since` twice.**
-  review-reminder takes ~205ms per Stop, ~145ms of it interpreter startup (~19ms direct,
-  ~35ms through the mise shim). `reminder_session_files` and `reminder_session_added_lines`
-  each call `reminder_session_since`, and `reminder_untracked_since`/`_text` re-derive
-  `session_start` in their own python. Memoising the since value per hook run, or folding
-  the python steps into one call, would roughly halve Stop-hook latency and the slowest
-  shell-hook tests. Not done in the test-speed work because it changes the shared lib: a
-  memo keyed on `$TRANSCRIPT` alone breaks `test_jq_stamp_mirror_agrees_with_python`, which
-  rewrites the same transcript path per stamp, so the cache key needs thought.
+- **Stop hooks still start python 9-11 times per Stop.** The session-start cache (dev-hooks
+  2.49.1) removed the 7 spawns that only re-derived it; what remains is distinct work —
+  untracked_since, untracked_text, transcript_invoked, missing-test's is_test_path — at
+  ~19ms (~35ms via the mise shim) each. A lazily-started python coprocess in
+  reminder-common.sh (bash 4 `coproc`; the lib already needs bash 4 for mapfile) would take
+  every hook to one spawn, at the cost of a request/response protocol that must carry
+  arbitrary file text, and a fallback when the coprocess dies. Worth it only if Stop
+  latency becomes noticeable again.
 - **A general "speed up a slow test suite" skill.** Only rails-toolkit covers suite profiling.
   The pytest pass here (durations → parallel-safety check → xdist → shared expensive
   fixtures → chunk the one long sweep) generalises to parallel_tests / vitest threads and
