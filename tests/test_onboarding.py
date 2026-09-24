@@ -8,6 +8,8 @@ on machine-specific results. The config templates are validated as parseable / n
 import json
 import subprocess
 
+import pytest
+
 from conftest import ONBOARDING
 
 SKILL = ONBOARDING / "skills" / "getting-started"
@@ -51,7 +53,10 @@ TOOLS_DOC = SKILL / "references" / "tools.md"
 PLAIN_WORDS = SKILL / "references" / "plain-words.md"
 
 
-def run_onboard():
+@pytest.fixture(scope="module")
+def onboard():
+    """One run shared by the shape tests: the checker probes the real machine
+    (`gh auth status`, `claude --version`, `code --version`), ~1.7s a run."""
     r = subprocess.run(["bash", str(CHECK)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     out = {}
@@ -62,8 +67,8 @@ def run_onboard():
     return out
 
 
-def test_onboard_check_reports_context_keys():
-    out = run_onboard()
+def test_onboard_check_reports_context_keys(onboard):
+    out = onboard
     assert out["os"] in {"macos", "linux", "wsl", "unknown"}
     assert out["pkg_mgr"] in {"brew", "apt", "dnf", "pacman", "zypper", "none"}
     assert out["arch"]  # non-empty
@@ -72,15 +77,15 @@ def test_onboard_check_reports_context_keys():
     assert out["playwright_browsers"] in {"installed", "missing"}
 
 
-def test_onboard_check_reports_installed_or_missing_per_tool():
-    out = run_onboard()
+def test_onboard_check_reports_installed_or_missing_per_tool(onboard):
+    out = onboard
     for tool in TOOLS:
         assert out[tool] in {"installed", "missing"}, f"{tool}={out.get(tool)!r}"
 
 
-def test_onboard_check_reports_version_when_installed():
+def test_onboard_check_reports_version_when_installed(onboard):
     # Whatever is present must carry a version line; whatever is missing must not.
-    out = run_onboard()
+    out = onboard
     for tool in TOOLS:
         if out[tool] == "installed":
             assert f"{tool}_version" in out, f"missing version for installed {tool}"
