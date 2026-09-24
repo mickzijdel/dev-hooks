@@ -198,6 +198,67 @@ def test_body_level_raise_after_a_string_or_comment_counts(tmp_path, body):
     assert "swallowed-error" not in rules(out), out
 
 
+def _except_line(body):
+    return next(n for n, line in enumerate(body.split("\n"), 1) if "except:" in line)
+
+
+def _parses(body):
+    import ast
+
+    ast.parse(body)  # a SyntaxError would make the case pass for the wrong reason
+    return body
+
+
+# Every case sits inside a real function or loop: a module-level `return` or `break` is a
+# SyntaxError, and an unparseable file is flagged regardless — the test would pass without
+# exercising the early-exit check at all.
+@pytest.mark.parametrize(
+    "body",
+    [
+        # An earlier return can leave the handler, so sometimes nothing is re-raised.
+        "def g():\n    try:\n        f()\n    except:\n        if fallback:\n"
+        "            return default\n        raise\n",
+        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+        "            break\n        raise\n",
+        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+        "            continue\n        raise\n",
+        # A loop's else runs after the loop: a break there leaves the OUTER loop.
+        "for x in xs:\n    try:\n        f()\n    except:\n        for y in ys:\n"
+        "            pass\n        else:\n            break\n        raise\n",
+        # Looks like a raise at the handler's level, but it is text in a string.
+        'def g():\n    try:\n        f()\n    except:\n        doc = """\n'
+        '        raise\n        """\n',
+    ],
+)
+def test_handler_that_can_skip_its_raise_is_flagged(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", _parses(body))
+    assert (_except_line(body), "swallowed-error") in findings(out), out
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # These exits stay inside the handler, so the raise still always runs.
+        "try:\n    f()\nexcept:\n    for h in hooks:\n        if h.done:\n"
+        "            break\n    raise\n",
+        "try:\n    f()\nexcept:\n    def cb():\n        return 1\n    defer(cb)\n    raise\n",
+        "try:\n    f()\nexcept:\n    fn = lambda: 1\n    raise\n",
+        # Code after the raise is unreachable, so it cannot skip it.
+        "def g():\n    try:\n        f()\n    except:\n        raise\n        return 1\n",
+    ],
+)
+def test_exits_that_cannot_skip_the_raise_do_not_count(tmp_path, body):
+    _, out, _ = run(tmp_path, "sample.py", _parses(body))
+    assert "swallowed-error" not in rules(out), out
+
+
+def test_unparseable_file_flags_its_bare_excepts(tmp_path):
+    # Without an AST there is no way to know the handler re-raises, so it is flagged.
+    body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
 def test_a_raise_after_the_except_block_does_not_count(tmp_path):
     # The raise belongs to the enclosing code, not the handler: this one does swallow.
     body = "def g():\n    try:\n        f()\n    except:\n        pass\n    raise X\n"

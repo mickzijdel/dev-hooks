@@ -20,6 +20,7 @@ Exit code: 0 = clean, 1 = findings, 2 = no readable files given.
 """
 
 import argparse
+import ast
 import re
 import statistics
 import sys
@@ -196,10 +197,8 @@ PY = {".py"}
 # commonest swallowed error puts `pass` after the `except`. No re.MULTILINE: `^` must
 # anchor to the window's first line, or the second line could match on its own and the
 # finding would land one line early as well as on its real line. So no alternative may
-# end in a bare `$`: without MULTILINE it reaches only the window's end, which hid every
-# swallowed error followed by more code — `except:` with a body, and the one-liners
-# `except: pass` and `except Exception: pass`. A bare `except:` needs no end anchor at all,
-# since it swallows everything whatever its body.
+# end in a bare `$`, which without MULTILINE matches only at the window's end: use
+# `(?:\n|$)`. A bare `except:` needs no end anchor at all.
 LOOKAHEAD = {"swallowed-error"}
 
 # (rule, pattern, message, langs); langs None applies the rule to every language
@@ -382,53 +381,54 @@ def is_code(line, syntax):
     return not stripped.startswith("*")
 
 
-BARE_EXCEPT = re.compile(r"^([ \t]*)except[ \t]*:(.*)$")
-RAISE_STMT = re.compile(r"^raise\b")
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+_LOOPS = (ast.For, ast.AsyncFor, ast.While)
 
 
-def _raises(statement_text):
-    """True when one of the `;`-separated statements in a line is itself a `raise`."""
-    return any(
-        RAISE_STMT.match(part.strip())
-        for part in strip_quoted(statement_text).split(";")
-    )
-
-
-def reraises(lines, i):
-    """True when the bare `except:` on line i always re-raises, so the failure propagates.
-
-    `except: cleanup(); raise` is the idiomatic way to act on an error without handling
-    it, and is not a swallowed error. Measured on the CPython 3.12 stdlib: 75 of the 137
-    bare excepts re-raise, so flagging them all would call a correct pattern "a bug" more
-    often than not.
-
-    Only a `raise` at the handler's own statement level counts. One nested under an `if`,
-    a loop or an inner `def` runs only sometimes, and the rest of the time the handler
-    swallows everything — KeyboardInterrupt and SystemExit included. Strings are blanked
-    first so `log("x; raise")` is not read as a raise."""
-    m = BARE_EXCEPT.match(lines[i])
-    if not m:
+def _can_leave(node, in_loop=False):
+    """True when `node` can leave the enclosing handler without raising: a `return`, or a
+    `break`/`continue` not caught by a loop that is itself inside the handler. A nested
+    def or class is its own scope, so what it contains never leaves the handler."""
+    if isinstance(node, _SCOPES):
         return False
-    indent = len(m.group(1))
-    rest = strip_quoted(m.group(2)).split("#", 1)[0].strip()
-    if rest:
-        return _raises(rest)
-    body_indent = None
-    for line in lines[i + 1 :]:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+    if isinstance(node, ast.Return):
+        return True
+    if isinstance(node, (ast.Break, ast.Continue)):
+        return not in_loop
+    if isinstance(node, _LOOPS):
+        # A loop's `else` runs after it, so a break there belongs to the loop outside.
+        return any(_can_leave(c, True) for c in node.body) or any(
+            _can_leave(c, in_loop) for c in node.orelse
+        )
+    return any(_can_leave(c, in_loop) for c in ast.iter_child_nodes(node))
+
+
+def reraising_bare_excepts(text):
+    """Line numbers of the bare `except:` handlers that always re-raise.
+
+    `except: cleanup(); raise` acts on an error without handling it, so the failure still
+    propagates and it is not a swallowed error — 75 of the 137 bare excepts in the CPython
+    3.12 stdlib are this idiom. "Always" is the point: a raise under an `if`, or one that
+    an earlier `return` or `break` can skip, leaves paths where the handler swallows
+    everything, KeyboardInterrupt and SystemExit included.
+
+    Read with ast, not by indentation: a triple-quoted string's lines can sit at column 0
+    and look like the end of the handler. A file that does not parse yields nothing, so
+    its bare excepts are all flagged."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError, ValueError:
+        return set()
+    found = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ExceptHandler) and node.type is None):
             continue
-        line_indent = len(line) - len(line.lstrip())
-        if line_indent <= indent:
-            return False
-        if body_indent is None:
-            body_indent = line_indent
-        # Blank strings before dropping a comment, or a `#` inside one cuts the line short.
-        if line_indent == body_indent and _raises(
-            strip_quoted(stripped).split("#", 1)[0]
-        ):
-            return True
-    return False
+        for k, stmt in enumerate(node.body):
+            if isinstance(stmt, ast.Raise):
+                if not any(_can_leave(s) for s in node.body[:k]):
+                    found.add(node.lineno)
+                break
+    return found
 
 
 def scan_file(path, budgets):
@@ -451,6 +451,7 @@ def scan_file(path, budgets):
                 break
 
     ext = path.suffix.lower()
+    reraising = reraising_bare_excepts(text) if ext in PY else set()
     for i, raw in enumerate(lines):
         if not is_code(raw, syntax):
             continue
@@ -459,7 +460,7 @@ def scan_file(path, budgets):
             if langs is not None and ext not in langs:
                 continue
             if pattern.search(window if rule in LOOKAHEAD else raw):
-                if rule == "swallowed-error" and reraises(lines, i):
+                if rule == "swallowed-error" and i + 1 in reraising:
                     continue
                 findings.append((i + 1, rule, msg))
                 break
