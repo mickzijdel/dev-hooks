@@ -400,7 +400,18 @@ def _can_leave(node, in_loop=False):
         return any(_can_leave(c, True) for c in node.body) or any(
             _can_leave(c, in_loop) for c in node.orelse
         )
-    return any(_can_leave(c, in_loop) for c in ast.iter_child_nodes(node))
+    return any(_can_leave(c, in_loop) for c in _statements_in(node))
+
+
+def _statements_in(node):
+    """The statements directly under `node`. Expressions are skipped: a statement cannot
+    sit inside one (bar a lambda, its own scope), and descending through them only spends
+    stack — deeply nested arithmetic would overflow it."""
+    return (
+        c
+        for c in ast.iter_child_nodes(node)
+        if isinstance(c, (ast.stmt, ast.excepthandler, ast.match_case))
+    )
 
 
 def reraising_bare_excepts(text):
@@ -416,10 +427,17 @@ def reraising_bare_excepts(text):
     and look like the end of the handler. A file that does not parse yields nothing, so
     its bare excepts are all flagged. A raise inside a `with` is not counted either: the
     context manager may suppress it (`contextlib.suppress`)."""
+    # A leading UTF-8 BOM is valid for python3 but a SyntaxError for ast.parse on text.
+    # RecursionError: a file nested past the parser's depth limit must not take the rest of
+    # the batch down with it — it is treated as unparseable, like any other.
     try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+        tree = ast.parse(text.removeprefix("\ufeff"))
+        return _always_reraising(tree)
+    except SyntaxError, ValueError, RecursionError:
         return set()
+
+
+def _always_reraising(tree):
     found = set()
     for node in ast.walk(tree):
         if not (isinstance(node, ast.ExceptHandler) and node.type is None):

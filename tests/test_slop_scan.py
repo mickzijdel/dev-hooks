@@ -263,6 +263,44 @@ def test_raise_inside_a_with_is_not_trusted(tmp_path):
     assert (4, "swallowed-error") in findings(out), out
 
 
+def test_file_too_deep_to_parse_does_not_sink_the_batch(tmp_path):
+    """ast.parse raises RecursionError past the parser's depth limit. Uncaught, it killed the
+    whole run, so the other files' findings were never reported."""
+    deep = tmp_path / "deep.py"
+    deep.write_text(
+        "x = "
+        + "1+" * 200_000
+        + "1\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n"
+    )
+    other = tmp_path / "other.py"
+    other.write_text("try:\n    f()\nexcept:\n    pass\n")
+    r = subprocess.run(
+        [sys.executable, str(SCAN), str(deep), str(other)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "Traceback" not in r.stderr, r.stderr
+    assert r.returncode == 1
+    assert "other.py:3: [swallowed-error]" in r.stdout, r.stdout
+    # Unparseable, so its bare except cannot be shown to re-raise: flagged.
+    assert "deep.py:4: [swallowed-error]" in r.stdout, r.stdout
+
+
+def test_utf8_bom_does_not_change_the_verdict(tmp_path):
+    # python3 runs a BOM-prefixed file fine; ast.parse on the text rejects it, which made
+    # every handler in such a file look unprovable and got a correct re-raise flagged.
+    path = tmp_path / "bom.py"
+    path.write_bytes(b"\xef\xbb\xbftry:\n    f()\nexcept:\n    cleanup()\n    raise\n")
+    r = subprocess.run(
+        [sys.executable, str(SCAN), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "swallowed-error" not in rules(r.stdout), r.stdout
+
+
 def test_unparseable_file_flags_its_bare_excepts(tmp_path):
     # Without an AST there is no way to know the handler re-raises, so it is flagged.
     body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
