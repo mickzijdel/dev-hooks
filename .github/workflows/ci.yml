@@ -43,6 +43,12 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # The hooks run under whatever python3 the user has, so test the floor that
+    # requires-python promises and the newest release: stdlib parsing differs between them.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -51,6 +57,7 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
+          python-version: ${{ matrix.python }}
       # Plugin/script repo: run the test suite that exercises every bundled script
       # (the Python skill CLIs and the shell hooks) as subprocesses.
       - name: Run tests
