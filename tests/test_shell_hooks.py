@@ -1932,6 +1932,93 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
     )
 
 
+# ── session-start cache ─────────────────────────────────────────────────────────────
+STOP_HOOKS_USING_SINCE = [
+    "review-reminder.sh",
+    "change-summary-reminder.sh",
+    "compress-comments-reminder.sh",
+    "big-change-reminder.sh",
+    "missing-test-reminder.sh",
+    "verify-work.sh",
+]
+
+
+def _python_import_log_shim(tmp_path):
+    """A python3 that records the hook_helpers import of each spawn, then runs the real
+    interpreter on the same source — a count of what each spawn was for."""
+    log = tmp_path / "py.log"
+    body = (
+        "#!/bin/bash\n"
+        'src=$(mktemp); cat >"$src"\n'
+        f"grep -oE 'from hook_helpers import .*' \"$src\" | head -n1 >>'{log}'\n"
+        f'"{shutil.which("python3")}" "$@" <"$src"; rc=$?; rm -f "$src"; exit $rc\n'
+    )
+    return _shim_dir(tmp_path, "python3", body), log
+
+
+@requires_python3
+def test_stop_hooks_compute_session_start_once_per_session(tmp_path):
+    """The session start is the transcript's first line, fixed for the whole session, so
+    every Stop hook shares one computation: the first caches it, and every later hook and
+    later Stop reads the cache instead of starting python to re-parse the transcript."""
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("seed\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "mod.py").write_text(_code_lines(30))
+    shim, log = _python_import_log_shim(tmp_path)
+    env = base_env(
+        PATH=f"{shim}:{os.environ['PATH']}",
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TESTS="off",
+    )
+    payload = _stop_payload(tmp_path)
+    for _ in range(2):
+        for hook in STOP_HOOKS_USING_SINCE:
+            run_hook(hook, cwd=tmp_path, stdin=payload, env=env)
+    imports = log.read_text().splitlines()
+    assert any("untracked_since" in i for i in imports), (
+        imports
+    )  # the shim saw the hooks
+    assert imports.count("from hook_helpers import session_start") == 1, imports
+    # The untracked-file helpers take the cached value rather than re-deriving it.
+    assert not [i for i in imports if "session_start," in i], imports
+
+
+def test_session_since_cache_is_per_session_and_transcript(tmp_path):
+    """Cached per session, checked against the transcript it came from: a reused session
+    id with another transcript is recomputed, and without a real session id nothing is
+    cached — so a transcript rewritten in place (the stamp sweep does this) is re-read."""
+    a = tmp_path / "a.jsonl"
+    b = tmp_path / "b.jsonl"
+    a.write_text(json.dumps({"timestamp": "2024-01-01T00:00:00Z"}) + "\n")
+    b.write_text(json.dumps({"timestamp": "2025-02-02T00:00:00Z"}) + "\n")
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        'source "$1/reminder-common.sh"\n'
+        'SESSION=s1 TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=s1 TRANSCRIPT="$2/b.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=s1 TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=nosession TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        """printf '{"timestamp": "2026-03-03T00:00:00Z"}\\n' >"$2/a.jsonl"\n"""
+        'SESSION=nosession TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+    )
+    r = subprocess.run(
+        ["bash", str(probe), str(HOOKS / "lib"), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "2024-01-01T00:00:00Z",
+        "2025-02-02T00:00:00Z",
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:00Z",
+        "2026-03-03T00:00:00Z",
+    ]
+
+
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
 def _comment_heavy_file(path):
     path.write_text(
