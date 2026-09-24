@@ -301,6 +301,24 @@ def test_utf8_bom_does_not_change_the_verdict(tmp_path):
     assert "swallowed-error" not in rules(r.stdout), r.stdout
 
 
+def test_except_inside_a_string_is_not_a_handler(tmp_path):
+    """`except:` opens lines in strings and docstrings too; only the parse tree can tell
+    those from a handler, so in a file that parses the tree has the final say."""
+    body = _parses(
+        'CI = """\nbuild:\n  script: make\n  except:\n    - main\n"""\n\n\n'
+        'def warm():\n    """Fill the cache.\n\n'
+        '    except: when the cache is cold, skip.\n    """\n'
+        "    try:\n        f()\n    except:\n        pass\n"
+    )
+    _, out, _ = run(tmp_path, "sample.py", body)
+    swallowed = [f for f in findings(out) if f[1] == "swallowed-error"]
+    # Only the real handler (indented four, inside warm()), not the two string lines.
+    real = next(
+        n for n, line in enumerate(body.split("\n"), 1) if line == "    except:"
+    )
+    assert swallowed == [(real, "swallowed-error")], out
+
+
 def test_unparseable_file_flags_its_bare_excepts(tmp_path):
     # Without an AST there is no way to know the handler re-raises, so it is flagged.
     body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'

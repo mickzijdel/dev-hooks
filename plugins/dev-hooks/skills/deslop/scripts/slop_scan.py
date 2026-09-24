@@ -414,8 +414,12 @@ def _statements_in(node):
     )
 
 
-def reraising_bare_excepts(text):
-    """Line numbers of the bare `except:` handlers that always re-raise.
+def python_handlers(text):
+    """(lines holding an `except` handler, bare handlers that always re-raise), or None
+    when the file does not parse.
+
+    The first set keeps the line regexes honest: `except:` also opens lines inside strings
+    and docstrings, which only the tree can tell apart from a handler.
 
     `except: cleanup(); raise` acts on an error without handling it, so the failure still
     propagates and it is not a swallowed error — 75 of the 137 bare excepts in the CPython
@@ -424,17 +428,20 @@ def reraising_bare_excepts(text):
     everything, KeyboardInterrupt and SystemExit included.
 
     Read with ast, not by indentation: a triple-quoted string's lines can sit at column 0
-    and look like the end of the handler. A file that does not parse yields nothing, so
-    its bare excepts are all flagged. A raise inside a `with` is not counted either: the
-    context manager may suppress it (`contextlib.suppress`)."""
+    and look like the end of the handler. A raise inside a `with` does not count, since the
+    context manager may suppress it (`contextlib.suppress`). A file that does not parse
+    returns None, leaving the line regexes to judge it alone."""
     # A leading UTF-8 BOM is valid for python3 but a SyntaxError for ast.parse on text.
     # RecursionError: a file nested past the parser's depth limit must not take the rest of
     # the batch down with it — it is treated as unparseable, like any other.
     try:
         tree = ast.parse(text.removeprefix("\ufeff"))
-        return _always_reraising(tree)
+        handlers = {
+            n.lineno for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)
+        }
+        return handlers, _always_reraising(tree)
     except SyntaxError, ValueError, RecursionError:
-        return set()
+        return None
 
 
 def _always_reraising(tree):
@@ -470,7 +477,7 @@ def scan_file(path, budgets):
                 break
 
     ext = path.suffix.lower()
-    reraising = reraising_bare_excepts(text) if ext in PY else set()
+    handlers = python_handlers(text) if ext in PY else None
     for i, raw in enumerate(lines):
         if not is_code(raw, syntax):
             continue
@@ -479,8 +486,10 @@ def scan_file(path, budgets):
             if langs is not None and ext not in langs:
                 continue
             if pattern.search(window if rule in LOOKAHEAD else raw):
-                if rule == "swallowed-error" and i + 1 in reraising:
-                    continue
+                if rule == "swallowed-error" and handlers is not None:
+                    handler_lines, reraising = handlers
+                    if i + 1 not in handler_lines or i + 1 in reraising:
+                        continue
                 findings.append((i + 1, rule, msg))
                 break
 
