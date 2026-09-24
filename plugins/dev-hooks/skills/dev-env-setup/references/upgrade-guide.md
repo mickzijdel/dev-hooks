@@ -1087,9 +1087,12 @@ Steps:
    finding: decide which is right, then make CI read the pin rather than retyping it.
 3. **Bump the stamp.** Set `DEV_ENV_VERSION = "26"` in `mise.toml`.
 4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0 and its
-   *CI setup steps* section lists a ✓ per setup step. Then set one job's step to
-   `node-version: lts/*` (or delete its mise-action step, leaving `setup-uv` alone) and confirm it
-   exits 1 naming that workflow and job. Restore. Once pushed, check the CI log shows the locked
+   *CI setup steps* section lists a ✓ per setup step, or says the workflows install their
+   toolchain with mise-action. Then put back what this upgrade removed — swap one job's
+   mise-action step for a bare `astral-sh/setup-uv`, or set a setup step to
+   `node-version: lts/*` — and confirm it exits 1 naming that workflow and job. (Narrowing
+   `install_args` instead proves nothing: a job with no setup step leaves the gate nothing to
+   judge.) Restore. Once pushed, check the CI log shows the locked
    release — for Python, uv's `Using CPython 3.14.6 interpreter at: …/mise/installs/python/…`
    — and that local agrees: `uv run python -c 'import sys; print(sys.base_prefix)'` names the
    same mise install.
