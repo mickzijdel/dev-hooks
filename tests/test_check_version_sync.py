@@ -1062,3 +1062,137 @@ def test_ruby_template_node_drift_against_a_dockerfile_is_reported(tmp_path):
     )
     assert r.returncode == 1, r.stdout
     assert "Dockerfile ARG NODE_VERSION (22.12.0)" in r.stdout
+
+
+# ── Second review ────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    "files",
+    [
+        {  # a loose file first hid mise vs Docker
+            ".node-version": "24\n",
+            "mise.toml": '[tools]\nnode = "24.10.0"\n',
+            "Dockerfile": "ARG NODE_VERSION=24.11.0\n",
+        },
+        {  # a lock that does not satisfy the mise spec
+            ".python-version": "3\n",
+            "mise.toml": '[tools]\npython = "3.12"\n',
+            "mise.lock": lock(python="3.13.1"),
+        },
+    ],
+)
+def test_every_pair_of_pins_is_compared(tmp_path, files):
+    r = run(tmp_path, files)
+    assert r.returncode == 1, r.stdout
+
+
+def test_ci_literal_against_a_different_mise_release_fails(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.12\n",
+            "mise.toml": '[tools]\npython = "3.12.5"\n',
+            ".github/workflows/ci.yml": workflow(
+                [SETUP_PY + '\n  with:\n    python-version: "3.12.4"']
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "(3.12.4) != " in r.stdout
+
+
+@pytest.mark.parametrize("pin", ["3.13.0rc1", "pypy3.10-7.3.12"])
+def test_exact_prerelease_and_pypy_pins_are_full(tmp_path, pin):
+    r = run(
+        tmp_path,
+        {
+            ".python-version": pin + "\n",
+            ".github/workflows/ci.yml": workflow([SETUP_PY]),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_setup_bun_reading_package_manager_passes(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "package.json": '{"packageManager": "bun@1.2.3"}\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
+                    "  with:\n    bun-version-file: package.json"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "reads package.json" in r.stdout
+
+
+def test_composite_action_covered_by_the_callers_mise_action(tmp_path):
+    action = """
+        runs:
+          using: composite
+          steps:
+            - uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8
+        """
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "3.12.4"\n',
+            ".github/actions/setup/action.yml": action,
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4",
+                    "- uses: ./.github/actions/setup",
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_version_input_wins_over_version_file(tmp_path):
+    """setup-python/-node/-go use the version input when both are given."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.12.4\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    SETUP_PY + '\n  with:\n    python-version: "3.11.9"\n'
+                    "    python-version-file: .python-version"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "(3.11.9) != .python-version (3.12.4)" in r.stdout
+
+
+def test_dockerfile_arg_may_name_a_line(tmp_path):
+    """Dockerfile style is the repo's choice: `ARG PYTHON_VERSION=3.12` building on a 3.12
+    image agrees with mise.lock's 3.12.12."""
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "3.12"\n',
+            "mise.lock": lock(python="3.12.12"),
+            "Dockerfile": "ARG PYTHON_VERSION=3.12\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_non_numeric_version_file_says_what_it_names(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".nvmrc": "lts/*\n",
+            ".github/workflows/ci.yml": workflow(
+                [node_step("with:\n  node-version-file: .nvmrc")]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert 'names "lts/*", not a release' in r.stdout

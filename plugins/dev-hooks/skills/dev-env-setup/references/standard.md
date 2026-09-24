@@ -324,9 +324,9 @@ only reads files, making it the cheapest job in the workflow).
 - **`mise.lock` is the release everything is measured against.** It records what mise installs
   locally and mise-action installs in CI, so whenever it has the tool it joins the comparison —
   for a floating spec (`latest`) and a line (`3.12`) alike (v26, v27). A `mise.toml` spec or a
-  `.<lang>-version` file may name a line (`3.12`) that an exact release (`3.12.12`) satisfies;
-  every other source names a release, and releases must be equal. A Dockerfile building on an
-  older Node than `mise.lock`'s is drift, not a skip.
+  `.<lang>-version` file or a Dockerfile `ARG` may name a line (`3.12`) that an exact release
+  (`3.12.12`) satisfies; every other source names a release. Every pair must agree. A Dockerfile
+  building on an older Node than `mise.lock`'s is drift, not a skip.
 - **CI setup steps must read the pin** (v26). Files that agree prove nothing if the job running
   the tests installs something else, and a setup step with no version runs the runner's own —
   `setup-uv` installs uv, not Python, so on its own uv takes the runner's `python3`. Per job:

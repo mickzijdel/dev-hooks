@@ -158,7 +158,10 @@ read_lock() {
 
 # A full release (3.12.12, 24.11.0) rather than a line of them (3.12, 24): setup-* actions and uv
 # resolve a partial version to the newest matching release on the day, so it floats in CI.
-is_full() { [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-].*)?$ ]]; }
+is_full() {
+  local re='^[0-9]+\.[0-9]+\.[0-9]+([.+-]?[A-Za-z0-9].*)?$'
+  [[ $1 =~ $re || ${1##*-} =~ $re ]]
+}
 
 # The version a file hands a setup action. `.tool-versions` carries one line per tool; go.mod's
 # `toolchain` (else `go`) line is what setup-go reads. package.json and pyproject.toml name a
@@ -170,7 +173,8 @@ read_file_version() { # $1 tool, $2 file
     return
   fi
   case $2 in
-    *package.json | *pyproject.toml) v="<range>" ;;
+    *package.json) if [ "$1" = bun ]; then v=$(read_pkgmgr bun); else v="<range>"; fi ;;
+    *pyproject.toml) v="<range>" ;;
     *.tool-versions)
       v=$(awk -v t="$1" '$1 == t || (t == "node" && $1 == "nodejs") || (t == "go" && $1 == "golang") { print $2; exit }' "$2")
       ;;
@@ -226,7 +230,7 @@ ci_steps() {
       else if (act == "ruby/setup-ruby") vk = "ruby-version"
       else if (act == "actions/setup-go") { vk = "go-version"; fk = "go-version-file" }
       else if (act == "oven-sh/setup-bun") { vk = "bun-version"; fk = "bun-version-file" }
-      if (vk != "" || act == "jdx/mise-action")
+      if (vk != "" || act == "jdx/mise-action" || act ~ /^\.\//)
         printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\n", f, job, act, get(vk), get(fk), get("install"), get("install_args")
       act = ""; instep = 0; withind = -1; bkey = ""
       split("", w)
@@ -315,6 +319,15 @@ job_uses() { # $1 file, $2 job, $3 action
   return 1
 }
 
+# The file+job pairs that call a composite action (`uses: ./.github/actions/<name>`), one
+# "file\037job" per line — a composite runs inside its caller's job, after its earlier steps.
+callers_of() { # $1 composite action file
+  local f j a dir=${1%/action.y*ml}
+  while IFS=$'\037' read -r f j a _; do
+    [ "$a" = "./$dir" ] && printf '%s\037%s\n' "$f" "$j"
+  done <<<"$ci_rows"
+}
+
 # Does a mise-action step in this file+job install the tool? With no install_args it installs
 # every mise.toml tool; with them, only the named ones (`python@3.14` counts as python).
 mise_installs() { # $1 file, $2 job, $3 tool
@@ -330,6 +343,17 @@ mise_installs() { # $1 file, $2 job, $3 tool
     done
   done <<<"$ci_rows"
   return 1
+}
+
+# A composite action is covered when every job that calls it installs the tool with mise-action.
+caller_installs() { # $1 composite action file, $2 tool
+  local f j any=0
+  while IFS=$'\037' read -r f j; do
+    [ -n "$f" ] || continue
+    any=1
+    mise_installs "$f" "$j" "$2" || return 1
+  done <<<"$(callers_of "$1")"
+  [ "$any" = 1 ]
 }
 
 ci_ok() { echo "  ✓ $1" >>"$CI_OUT"; }
@@ -357,21 +381,22 @@ floats_msg() { # $1 tool, $2 partial version
 # tool's own pin file, which is compared already — join the comparison.
 ci_pinned=""
 judge_file() { # $1 where, $2 action, $3 tool, $4 file
-  local v
+  local v own
   if [ ! -f "$4" ]; then
     ci_bad "$1: $2 reads $4, which does not exist"
     return
   fi
   v=$(read_file_version "$3" "$4")
   if [ "$v" = "<range>" ]; then
-    ci_bad "$1: $2 reads $4, which names a range, not a release — read $(own_vfile "$3") instead"
-  elif [ -z "$v" ]; then
-    ci_bad "$1: $2 reads $4, which names no $3 version"
+    own=$(own_vfile "$3")
+    ci_bad "$1: $2 reads $4, which names a range, not a release — ${own:+read $own instead}${own:-pin an exact release}"
+  elif [ -z "$v" ] || [[ $v != [0-9]* && $v != pypy* ]]; then
+    ci_bad "$1: $2 reads $4, which names \"$(grep -v '^[[:space:]]*#' "$4" | grep -m1 . || true)\", not a release"
   elif ! is_full "$v"; then
     ci_bad "$1: $2 reads $4 ($v) — $(floats_msg "$3" "$v")"
   else
     ci_ok "$1: $2 reads $4"
-    if [ "$4" != "$(own_vfile "$3")" ] && [ "$4" != "$MISE" ] && [[ $ci_pinned != *"|$3:$4|"* ]]; then
+    if [ "$4" != "$(own_vfile "$3")" ] && [ "$4" != "$MISE" ] && [ "$4" != package.json ] && [[ $ci_pinned != *"|$3:$4|"* ]]; then
       ci_pinned="$ci_pinned|$3:$4|"
       printf '%s\t%s\t%s\n' "$3" "$4" "$v" >>"$CI_PINS"
     fi
@@ -380,7 +405,7 @@ judge_file() { # $1 where, $2 action, $3 tool, $4 file
 
 nsetup=0
 while IFS=$'\037' read -r f job act ver vfile inst args; do
-  [ -n "$f" ] && [ "$act" != jdx/mise-action ] || continue
+  [ -n "$f" ] && [ "$act" != jdx/mise-action ] && [[ $act != ./* ]] || continue
   nsetup=$((nsetup + 1))
   case $act in
     actions/setup-python | astral-sh/setup-uv) tool=python ;;
@@ -400,7 +425,7 @@ while IFS=$'\037' read -r f job act ver vfile inst args; do
     esac
   fi
   key=${tool}-version
-  if [ "$vfile" != "<none>" ]; then
+  if [ "$ver" = "<none>" ] && [ "$vfile" != "<none>" ]; then
     judge_file "$where" "$act" "$tool" "$vfile"
   elif [ "$ver" != "<none>" ]; then
     norm=$(normalize "$tool" "$ver")
@@ -426,6 +451,8 @@ while IFS=$'\037' read -r f job act ver vfile inst args; do
     judge_file "$where" "$act" "$tool" .tool-versions
   elif mise_installs "$f" "$job" "$tool"; then
     ci_ok "$where: $tool from $MISE via mise-action"
+  elif [ "$job" = composite ] && caller_installs "$f" "$tool"; then
+    ci_ok "$where: $tool from $MISE via mise-action in every calling job"
   elif [ "$tool" = ruby ] && [ -n "$(read_mise ruby)" ]; then
     judge_file "$where" "$act" "$tool" "$MISE"
   elif [ "$tool" = python ]; then
@@ -437,9 +464,9 @@ while IFS=$'\037' read -r f job act ver vfile inst args; do
   fi
 done <<<"$ci_rows"
 
-# Sources for one tool, compared as a set. A mise.toml spec and a .<lang>-version file may name
-# a line (`3.12`) that an exact release (`3.12.12`) satisfies; every other source — mise.lock,
-# Dockerfile ARGs, packageManager, what CI reads — names a release, and releases must be equal.
+# Sources for one tool, compared as a set. A mise.toml spec, a .<lang>-version file and a
+# Dockerfile ARG may name a line (`3.12`) that an exact release (`3.12.12`) satisfies; mise.lock,
+# packageManager and what CI reads name a release, and releases must be equal.
 n=0
 src_label=()
 src_ver=()
@@ -456,25 +483,22 @@ compatible() { # $1 ver a, $2 a is spec, $3 ver b, $4 b is spec
   [ -n "$4" ] && [[ $1 == "$3".* ]] && return 0
   return 1
 }
-# Compares every source against the first, and every exact release against the first exact one
-# (two releases can each satisfy a spec and still differ). Sets `shown` to the version the ✓ line
-# names — the exact release when there is one.
+# Every pair must agree — against the first source alone, two releases can each satisfy a loose
+# spec and still differ. Sets `shown` to the version the ✓ line names: the most specific one.
 compare_sources() {
-  local k ex=-1
+  local k j ex=0
   mismatch=0
-  [ -z "${src_spec[0]}" ] && ex=0
   for ((k = 1; k < n; k++)); do
-    if ! compatible "${src_ver[k]}" "${src_spec[k]}" "${src_ver[0]}" "${src_spec[0]}"; then
-      note "${src_label[k]} (${src_ver[k]}) != ${src_label[0]} (${src_ver[0]})"
-      mismatch=1
-    elif [ -z "${src_spec[k]}" ] && [ "$ex" -ge 0 ] && [ "${src_ver[k]}" != "${src_ver[ex]}" ]; then
-      note "${src_label[k]} (${src_ver[k]}) != ${src_label[ex]} (${src_ver[ex]})"
-      mismatch=1
-    fi
-    [ -z "${src_spec[k]}" ] && [ "$ex" -lt 0 ] && ex=$k
+    for ((j = 0; j < k; j++)); do
+      if ! compatible "${src_ver[k]}" "${src_spec[k]}" "${src_ver[j]}" "${src_spec[j]}"; then
+        note "${src_label[k]} (${src_ver[k]}) != ${src_label[j]} (${src_ver[j]})"
+        mismatch=1
+        break
+      fi
+    done
+    [ "${#src_ver[k]}" -gt "${#src_ver[ex]}" ] && ex=$k
   done
-  shown=${src_ver[0]}
-  [ "$ex" -ge 0 ] && shown=${src_ver[ex]}
+  shown=${src_ver[ex]}
   return 0
 }
 
@@ -522,7 +546,7 @@ while IFS='|' read -r tool vfile arg; do
     raw=$(read_arg "$dockerfile" "$arg")
     case "$(lines "$raw")" in
       0) ;;
-      1) add_source "$dockerfile ARG $arg" "$(normalize "$tool" "$raw")" ;;
+      1) add_source "$dockerfile ARG $arg" "$(normalize "$tool" "$raw")" spec ;;
       *) note "$dockerfile declares ARG $arg with conflicting defaults: $(printf '%s' "$raw" | tr '\n' ' ')" ;;
     esac
   done <<<"$DOCKERFILES"
