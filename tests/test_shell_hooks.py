@@ -1871,7 +1871,6 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
     """Every generated stamp must get the same verdict from the shell mirror and from
     datetime.fromisoformat. One bash process walks the whole sweep, so this stays fast."""
     stamps = _generated_stamps()
-    (tmp_path / "stamps.txt").write_text("\n".join(stamps) + "\n")
     shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
     probe = tmp_path / "sweep.txt"
     probe.write_text(
@@ -1883,17 +1882,30 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
         '  printf \'%s\\t%s\\n\' "$stamp" "$REPLY"\n'
         'done < "$2/stamps.txt"\n'
     )
-    r = subprocess.run(
-        ["bash", str(probe), str(HOOKS / "lib"), str(tmp_path)],
-        capture_output=True,
-        text=True,
-        env=base_env(PATH=f"{shim}:{os.environ['PATH']}"),
-    )
-    assert r.returncode == 0, r.stderr
+    # Each stamp costs a jq spawn, so the sweep is split across concurrent bash processes,
+    # each in its own directory. Every stamp is still checked; only wall-clock shrinks.
+    chunks = 8
+    procs = []
+    for i in range(chunks):
+        work = tmp_path / f"chunk{i}"
+        work.mkdir()
+        (work / "stamps.txt").write_text("\n".join(stamps[i::chunks]) + "\n")
+        procs.append(
+            subprocess.Popen(
+                ["bash", str(probe), str(HOOKS / "lib"), str(work)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=base_env(PATH=f"{shim}:{os.environ['PATH']}"),
+            )
+        )
     got = {}
-    for line in r.stdout.splitlines():
-        stamp, _, reply = line.partition("\t")
-        got[stamp] = reply
+    for proc in procs:
+        out, err = proc.communicate()
+        assert proc.returncode == 0, err
+        for line in out.splitlines():
+            stamp, _, reply = line.partition("\t")
+            got[stamp] = reply
 
     # The oracle is hook_helpers.session_start itself, not a reimplementation of what it
     # is thought to do. An earlier version of this test used datetime.fromisoformat, which
