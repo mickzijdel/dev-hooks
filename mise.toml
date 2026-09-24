@@ -7,6 +7,7 @@ actionlint = "latest"   # GitHub Actions workflow linter — syntax/expressions 
 shellcheck = "latest"
 shfmt = "latest"
 uv = "latest"     # runs PEP 723 scripts (`uv run --script`) and the pytest suite
+python = "latest" # the one Python for tests, local and CI alike (mise.lock holds the exact release)
 ruff = "latest"   # for the *.py skill scripts and tests
 node = "latest"            # provides npx, used to run jscpd 5.x (`npx --yes jscpd@latest`)
 # jscpd (duplication) runs via npx — see hk.pkl / .jscpd.json (not a mise tool; jscpd 5.x ships

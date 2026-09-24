@@ -43,21 +43,17 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # The hooks run under whatever python3 the user has, so test the floor that
-    # requires-python promises and the newest release: stdlib parsing differs between them.
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.14"]
+    # Python and uv come from mise.toml + mise.lock, so CI tests the exact release local does.
+    # Without this uv takes the runner's system python3, whatever version that happens to be.
+    env:
+      UV_PYTHON_DOWNLOADS: never
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          enable-cache: true
-          python-version: ${{ matrix.python }}
+          install_args: python uv
       # Plugin/script repo: run the test suite that exercises every bundled script
       # (the Python skill CLIs and the shell hooks) as subprocesses.
       - name: Run tests
