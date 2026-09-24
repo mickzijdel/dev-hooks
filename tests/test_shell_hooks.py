@@ -2010,6 +2010,8 @@ def test_session_since_cache_is_per_session_and_transcript(tmp_path):
         env=base_env(TMPDIR=str(tmp_path)),
     )
     assert r.returncode == 0, r.stderr
+    # cache miss must be silent: hook stderr shows up as Stop hook feedback
+    assert r.stderr == ""
     assert r.stdout.splitlines() == [
         "2024-01-01T00:00:00Z",
         "2025-02-02T00:00:00Z",

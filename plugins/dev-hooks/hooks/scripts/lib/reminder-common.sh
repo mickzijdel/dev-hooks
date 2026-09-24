@@ -103,7 +103,7 @@ reminder_session_since() {
   local _cache _path _stamp
   reminder_state_file session-since
   _cache=$REPLY
-  if { IFS= read -r _path && IFS= read -r _stamp; } <"$_cache" 2>/dev/null &&
+  if { IFS= read -r _path && IFS= read -r _stamp; } 2>/dev/null <"$_cache" &&
     [ "$_path" = "$TRANSCRIPT" ] && [ -n "$_stamp" ]; then
     REPLY=$_stamp
     return 0
@@ -543,7 +543,7 @@ PYEOF
   # `find -size -1M` rounds up, so it matches only empty files.
   while IFS= read -r _f; do
     [ -f "$_f" ] || continue
-    _size=$(wc -c <"$_f" 2>/dev/null) || continue
+    _size=$(wc -c 2>/dev/null <"$_f") || continue
     [ "$_size" -le 1048576 ] && cat "$_f" 2>/dev/null
   done < <(git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n')
 }

@@ -48,7 +48,7 @@ chmod 600 "$LOG" 2>/dev/null
 
 # Size-guard rotation: one generation kept, total bounded at ~2× the cap.
 MAX=${DEV_HOOKS_PROMPT_LOG_MAX_BYTES:-10485760}
-if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt "$MAX" ]; then
+if [ -f "$LOG" ] && [ "$(wc -c 2>/dev/null <"$LOG" || echo 0)" -gt "$MAX" ]; then
   mv -f "$LOG" "$LOG.1" 2>/dev/null
   chmod 600 "$LOG.1" 2>/dev/null
   : >>"$LOG" 2>/dev/null
