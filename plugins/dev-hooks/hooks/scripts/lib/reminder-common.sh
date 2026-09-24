@@ -88,11 +88,9 @@ reminder_stop_init() {
 # `git status --porcelain` / `git diff HEAD` see nothing. Without this, such a hook
 # measures only the sessions that forgot to commit.
 #
-# Cached per session: the first line never changes, and without the cache the Stop hooks
-# started python 7 times per Stop to re-derive it. The cache stores the transcript path
-# beside the stamp and is used only for a real session id, so a reused id or a transcript
-# rewritten in place (test_jq_stamp_mirror_agrees_with_python) is recomputed. Only a
-# non-empty answer is cached; "unknown" is cheap to ask again and may be a partial write.
+# Cached per session in $TMPDIR since the first line never changes. Keyed on a real session
+# id and checked against the transcript path, so a reused id or a rewritten transcript is
+# recomputed. Empty answers are not cached.
 reminder_session_since() {
   REPLY=""
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
@@ -103,14 +101,14 @@ reminder_session_since() {
   local _cache _path _stamp
   reminder_state_file session-since
   _cache=$REPLY
-  if { IFS= read -r _path && IFS= read -r _stamp; } <"$_cache" 2>/dev/null &&
+  if { IFS= read -r _path && IFS= read -r _stamp; } 2>/dev/null <"$_cache" &&
     [ "$_path" = "$TRANSCRIPT" ] && [ -n "$_stamp" ]; then
     REPLY=$_stamp
     return 0
   fi
   _reminder_session_since_compute
   [ -n "$REPLY" ] || return 0
-  # Written whole then renamed: the Stop hooks run concurrently and may race to fill it.
+  # temp + mv: concurrent Stop hooks race to fill it
   printf '%s\n%s\n' "$TRANSCRIPT" "$REPLY" >"$_cache.$$" 2>/dev/null &&
     mv -f "$_cache.$$" "$_cache" 2>/dev/null
   return 0
@@ -543,7 +541,7 @@ PYEOF
   # `find -size -1M` rounds up, so it matches only empty files.
   while IFS= read -r _f; do
     [ -f "$_f" ] || continue
-    _size=$(wc -c <"$_f" 2>/dev/null) || continue
+    _size=$(wc -c 2>/dev/null <"$_f") || continue
     [ "$_size" -le 1048576 ] && cat "$_f" 2>/dev/null
   done < <(git ls-files -z --others --exclude-standard -- "$@" 2>/dev/null | tr '\0' '\n')
 }

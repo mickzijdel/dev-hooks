@@ -55,8 +55,7 @@ PLAIN_WORDS = SKILL / "references" / "plain-words.md"
 
 @pytest.fixture(scope="module")
 def onboard():
-    """One run shared by the shape tests: the checker probes the real machine
-    (`gh auth status`, `claude --version`, `code --version`), ~1.7s a run."""
+    """One real-machine probe shared by the shape tests; gh auth status alone is ~0.7s."""
     r = subprocess.run(["bash", str(CHECK)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     out = {}

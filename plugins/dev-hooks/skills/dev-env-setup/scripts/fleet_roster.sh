@@ -22,7 +22,7 @@
 set -u
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-current_version="$(tr -dc '0-9' <"$SELF_DIR/../VERSION" 2>/dev/null)"
+current_version="$(tr -dc '0-9' 2>/dev/null <"$SELF_DIR/../VERSION")"
 [ -z "$current_version" ] && current_version=0
 echo "current_version=$current_version"
 
