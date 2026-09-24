@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v26)
+## The standard (v27)
 
-A repo is **compliant at v26** when it has all of:
+A repo is **compliant at v27** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "26"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "27"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -51,7 +51,8 @@ A repo is **compliant at v26** when it has all of:
   the exact release in `mise.lock`, and **every CI setup step must read the pin** (v26): a
   version file, or `jdx/mise-action` installing the tool from `mise.toml` in the same job — a
   floating (`lts/*`), hardcoded-and-different, matrix, or missing version fails. See "Version
-  pins must agree across files" in `references/standard.md`.
+  pins must agree across files" in `references/standard.md`. From v27 a pin CI reads must
+  name a full release (`3.12.12`, not `3.12`), and `mise.lock` always joins the comparison.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
   `exec-bit-scripts` gate, the `versions` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`

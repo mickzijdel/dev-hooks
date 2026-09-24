@@ -1102,6 +1102,43 @@ Steps:
 
 ---
 
+## v26 → v27 (the version-sync gate checks full releases)
+
+**Every stack.** An adversarial review of the v26 gate, plus the fleet rollout, found it passing
+drift it was built to catch:
+
+- **A major.minor pin passed.** `.python-version` = `3.12` read by `setup-uv`: CI resolved the
+  newest 3.12 (3.12.14) while `mise.lock` pinned 3.12.12 locally, with the gate green, because a
+  `mise.toml` spec with digits never consulted `mise.lock`. Now `mise.lock` always joins the
+  comparison, and a file or literal CI reads must name a full release.
+- **Version files were only checked for existence.** `.nvmrc`, `.tool-versions` and go.mod
+  contents now join the comparison; `package.json` and `pyproject.toml` fail as ranges.
+- **A compact job-level list (`needs:` with its dash at the key's indent) hid a job's steps**, so
+  a floating `setup-node` disappeared. Only the `steps:` list starts steps now.
+- **Healthy repos failed:** `setup-uv` after `setup-python`, and setup-ruby's own defaults
+  (`ruby-version: default`, `.tool-versions`, `mise.toml`). Both pass now.
+- Smaller: an empty input shifted the columns, flow-style `with: {…}` and block-scalar
+  `install_args: >-` were unread, an unquoted `3.10` passed as 3.1, and composite actions
+  weren't scanned. A literal pin is now listed under *CI setup steps* too.
+
+Steps:
+
+1. **Re-copy the script** (`references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w` in repos without an `.editorconfig`).
+2. **Fix what it newly reports.** The expected finding is a `.<lang>-version` that names a line
+   (`3.12`) where CI reads it: write the full release `mise.lock` pins — or better, install the
+   tool with mise-action as the templates do. A floating `mise.toml` spec now also compares a
+   Dockerfile's `ARG NODE_VERSION` / `ARG PYTHON_VERSION` against `mise.lock`; a Dockerfile a
+   major behind is drift, so align it (or pin mise to the image's version) rather than
+   silencing it.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "27"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0. Then
+   shorten one pin CI reads to major.minor (`3.14.6` → `3.14` in `.python-version`, or a
+   `node-version-file`'s file) and confirm it exits 1 with `… reads <file> (3.14) — CI resolves
+   the newest 3.14.x …`. That case exits **0** on the v26 script. Restore.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

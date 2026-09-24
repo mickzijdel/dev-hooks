@@ -1,4 +1,4 @@
-# The standard (v26) — full specification
+# The standard (v27) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v26** when it has all of:
+A repo is **compliant at v27** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v26** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "26"`.
+  stamp `DEV_ENV_VERSION = "27"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -321,22 +321,29 @@ only reads files, making it the cheapest job in the workflow).
   images are skipped.
 - **Compares only services present in ≥2 files.** An image named in one file alone is not drift
   (CI may legitimately not need Redis) — it is reported, not failed.
-- **Floating mise specs compare through `mise.lock`.** `node = "latest"` names no version, but
-  `mise.lock` records the exact release mise installs locally and mise-action installs in CI, so
-  that release is the one compared (`✓ python 3.14.6 — .python-version, mise.lock python`).
-  Without a lockfile entry the spec is reported as skipped (v26).
+- **`mise.lock` is the release everything is measured against.** It records what mise installs
+  locally and mise-action installs in CI, so whenever it has the tool it joins the comparison —
+  for a floating spec (`latest`) and a line (`3.12`) alike (v26, v27). A `mise.toml` spec or a
+  `.<lang>-version` file may name a line (`3.12`) that an exact release (`3.12.12`) satisfies;
+  every other source names a release, and releases must be equal. A Dockerfile building on an
+  older Node than `mise.lock`'s is drift, not a skip.
 - **CI setup steps must read the pin** (v26). Files that agree prove nothing if the job running
   the tests installs something else, and a setup step with no version runs the runner's own —
   `setup-uv` installs uv, not Python, so on its own uv takes the runner's `python3`. Per job:
 
   | The step's version | Verdict |
   |---|---|
-  | Reads a version file (`node-version-file: .node-version`, `ruby-version: .ruby-version`) | ✓ (✗ if the file is missing) |
+  | Reads a version file naming a full release (`node-version-file: .node-version`, `ruby-version: .ruby-version`, `.nvmrc`, a `.tool-versions` line) | ✓, and a file other than the tool's own pin joins the comparison |
+  | Reads a file naming a line (`3.12`, `24`) | ✗ — CI resolves the newest patch while `mise.lock` pins one (v27) |
+  | Reads `package.json` or `pyproject.toml` | ✗ — `engines` / `requires-python` name a range, not a release (v27) |
   | None, but `jdx/mise-action` in the same job installs the tool from `mise.toml` | ✓ |
-  | None, and `.python-version` / `.ruby-version` exists (`setup-python`, `setup-uv`, `setup-ruby` read it themselves) | ✓ |
-  | A literal (`python-version: "3.12"`) | joins the comparison above, so it must match |
-  | Floating (`lts/*`, `latest`, `22.x`) or an expression (`${{ matrix.python }}`) | ✗ — the standard tests one version, the pinned one |
+  | None, and the action's own default finds a pin — `.python-version` for setup-python/setup-uv; `.ruby-version`, `.tool-versions`, then `mise.toml` for setup-ruby (`ruby-version: default` too) | ✓ if that pin is a full release |
+  | `setup-uv` with no Python after `setup-python` in the same job | ✓ — uv uses that interpreter (v27) |
+  | A full literal (`python-version: "3.12.4"`) | joins the comparison above, so it must match |
+  | A partial or floating literal (`20`, `lts/*`, `22.x`), an expression (`${{ matrix.python }}`), or an unquoted `3.10` (YAML's 3.1) | ✗ — the standard tests one version, the pinned one |
   | None, and nothing above supplies it | ✗ |
+
+  Composite actions under `.github/actions/*/action.yml` are walked the same way (v27).
 
   The templates take every language version from `mise.toml` via mise-action (Ruby from
   `.ruby-version` via setup-ruby). The Python and shell `mise.toml` also set

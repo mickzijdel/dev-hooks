@@ -512,7 +512,7 @@ def test_literal_setup_version_joins_the_comparison(tmp_path):
                     """
                     - uses: actions/setup-python@0000000000000000000000000000000000000000 # v6
                       with:
-                        python-version: "3.12"
+                        python-version: "3.12.4"
                     """
                 ]
             ),
@@ -520,7 +520,7 @@ def test_literal_setup_version_joins_the_comparison(tmp_path):
     )
     assert r.returncode == 1, r.stdout
     assert (
-        "✗ .github/workflows/ci.yml test actions/setup-python (3.12) != .python-version (3.14.6)"
+        "✗ .github/workflows/ci.yml test actions/setup-python (3.12.4) != .python-version (3.14.6)"
         in r.stdout
     )
 
@@ -763,3 +763,302 @@ def test_mise_only_workflow_says_where_the_toolchain_comes_from(tmp_path):
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert "install their toolchain with mise-action" in r.stdout
+
+
+# ── Review findings on the v26 gate ─────────────────────────────────────────────────
+SETUP_UV = "- uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8"
+SETUP_PY = "- uses: actions/setup-python@0000000000000000000000000000000000000000 # v6"
+
+
+def node_step(with_block):
+    return (
+        "- uses: actions/setup-node@0000000000000000000000000000000000000000 # v6\n"
+        + textwrap.indent(textwrap.dedent(with_block).strip("\n"), "  ")
+    )
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {
+            ".python-version": "3.12\n",
+            "mise.toml": '[tools]\npython = "3.12"\n',
+            "mise.lock": lock(python="3.12.12"),
+        },
+        {
+            ".python-version": "3.12\n",
+            "mise.toml": '[tools]\npython = "latest"\n',
+            "mise.lock": lock(python="3.12.12"),
+        },
+    ],
+)
+def test_major_minor_pin_read_by_ci_floats(tmp_path, files):
+    """`3.12` in the file CI reads resolves to the newest 3.12.x there, while mise.lock pins
+    3.12.12 locally: the gate passed with local and CI on different patch releases."""
+    r = run(
+        tmp_path,
+        {**files, ".github/workflows/ci.yml": workflow([SETUP_UV])},
+    )
+    assert r.returncode == 1, r.stdout
+    assert "astral-sh/setup-uv reads .python-version (3.12)" in r.stdout
+    assert "newest 3.12" in r.stdout
+
+
+def test_major_minor_mise_spec_agrees_with_its_lock(tmp_path):
+    """`python = "3.12"` is a spec that 3.12.12 satisfies — not a disagreement — and the lock
+    joins the comparison as the exact release."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.12.12\n",
+            "mise.toml": '[tools]\npython = "3.12"\n',
+            "mise.lock": lock(python="3.12.12"),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (
+        "✓ python 3.12.12 — .python-version, mise.toml python, mise.lock python"
+        in r.stdout
+    )
+
+
+def test_exact_mise_spec_disagreeing_with_lock_fails(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\nnode = "24.10.0"\n',
+            "mise.lock": lock(node="24.11.0"),
+            ".node-version": "24.10.0\n",
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "mise.lock node (24.11.0)" in r.stdout
+
+
+def test_other_version_file_contents_are_compared(tmp_path):
+    """`.nvmrc` is not the tool's usual pin file, but CI reads it: its contents must agree."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.11.0\n",
+            ".nvmrc": "20.1.0\n",
+            ".github/workflows/ci.yml": workflow(
+                [node_step("with:\n  node-version-file: .nvmrc")]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "(20.1.0) != .node-version (24.11.0)" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "extra, step",
+    [
+        (
+            {"package.json": '{"engines": {"node": ">=18"}}\n'},
+            node_step("with:\n  node-version-file: package.json"),
+        ),
+        (
+            {"pyproject.toml": '[project]\nrequires-python = ">=3.10"\n'},
+            "- uses: actions/setup-python@0000000000000000000000000000000000000000 # v6\n"
+            "  with:\n    python-version-file: pyproject.toml",
+        ),
+    ],
+)
+def test_range_files_cannot_pin_ci(tmp_path, extra, step):
+    r = run(tmp_path, {**extra, ".github/workflows/ci.yml": workflow([step])})
+    assert r.returncode == 1, r.stdout
+    assert "a range" in r.stdout
+
+
+def test_tool_versions_line_is_compared(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".ruby-version": "3.4.1\n",
+            ".tool-versions": "nodejs 24.11.0\nruby 3.3.0\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: ruby/setup-ruby@0000000000000000000000000000000000000000 # v1\n"
+                    "  with:\n    ruby-version: .tool-versions"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "(3.3.0) != .ruby-version (3.4.1)" in r.stdout
+
+
+def test_compact_job_level_list_does_not_swallow_steps(tmp_path):
+    """`needs:` written with its dash at the key's own indent used to be taken as the step
+    list, after which every real step merged into one and a floating setup step vanished."""
+    wf = """
+        jobs:
+          test:
+            needs:
+            - build
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@0000000000000000000000000000000000000000 # v7
+              - uses: actions/setup-node@0000000000000000000000000000000000000000 # v6
+                with:
+                  node-version: lts/*
+              - uses: actions/cache@0000000000000000000000000000000000000000 # v6
+        """
+    r = run(tmp_path, {".node-version": "24.11.0\n", ".github/workflows/ci.yml": wf})
+    assert r.returncode == 1, r.stdout
+    assert "floats" in r.stdout
+
+
+def test_setup_uv_after_setup_python_uses_its_interpreter(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "3.12.4"\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    SETUP_PY + '\n  with:\n    python-version: "3.12.4"',
+                    SETUP_UV,
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "setup-uv uses setup-python's interpreter" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "files, with_block",
+    [
+        ({".ruby-version": "3.4.1\n"}, "\n  with:\n    ruby-version: default"),
+        ({"mise.toml": '[tools]\nruby = "3.4.1"\n'}, ""),
+        ({".tool-versions": "ruby 3.4.1\n"}, ""),
+    ],
+)
+def test_setup_ruby_defaults_are_pins(tmp_path, files, with_block):
+    """setup-ruby with no input (or `default`) reads .ruby-version, then .tool-versions, then
+    mise.toml — each is a real pin."""
+    step = (
+        "- uses: ruby/setup-ruby@0000000000000000000000000000000000000000 # v1"
+        + with_block
+    )
+    r = run(tmp_path, {**files, ".github/workflows/ci.yml": workflow([step])})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✗" not in r.stdout
+
+
+def test_empty_input_does_not_shift_columns(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    SETUP_PY
+                    + "\n  with:\n    python-version: ''\n    python-version-file: .python-version"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "reads .python-version" in r.stdout
+
+
+def test_flow_style_with_is_parsed(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "22.4.1\n",
+            ".github/workflows/ci.yml": workflow(
+                [node_step("with: {node-version: 20.1.0}")]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "(20.1.0) != .node-version (22.4.1)" in r.stdout
+
+
+def test_block_scalar_install_args_are_read(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "latest"\nuv = "latest"\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4\n"
+                    "  with:\n    install_args: >-\n      python\n      uv",
+                    SETUP_UV,
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "python from mise.toml via mise-action" in r.stdout
+
+
+def test_unquoted_float_version_is_flagged(tmp_path):
+    """YAML reads an unquoted 3.10 as the float 3.1."""
+    r = run(
+        tmp_path,
+        {
+            ".github/workflows/ci.yml": workflow(
+                [SETUP_PY + "\n  with:\n    python-version: 3.10"]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "quote it" in r.stdout
+
+
+def test_literal_pin_is_listed_under_ci_setup_steps(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            ".github/workflows/ci.yml": workflow(
+                [SETUP_PY + '\n  with:\n    python-version: "3.14.6"']
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    ci = r.stdout.split("CI setup steps:", 1)[1]
+    assert "actions/setup-python pins 3.14.6" in ci
+
+
+def test_composite_actions_are_scanned(tmp_path):
+    action = """
+        name: setup
+        runs:
+          using: composite
+          steps:
+            - uses: actions/setup-node@0000000000000000000000000000000000000000 # v6
+              with:
+                node-version: lts/*
+        """
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.11.0\n",
+            ".github/actions/setup/action.yml": action,
+            ".github/workflows/ci.yml": workflow(["- uses: ./.github/actions/setup"]),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert ".github/actions/setup/action.yml" in r.stdout
+    assert "floats" in r.stdout
+
+
+def test_ruby_template_node_drift_against_a_dockerfile_is_reported(tmp_path):
+    """Documented v26 behaviour: a floating mise spec now compares through mise.lock, so a
+    Dockerfile building on an older Node than local/CI use is drift, not a skip."""
+    r = run(
+        tmp_path,
+        {
+            ".ruby-version": "3.4.7\n",
+            "mise.toml": '[tools]\nnode = "latest"\n',
+            "mise.lock": lock(node="24.11.0"),
+            "Dockerfile": "ARG RUBY_VERSION=3.4.7\nARG NODE_VERSION=22.12.0\n",
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "Dockerfile ARG NODE_VERSION (22.12.0)" in r.stdout
