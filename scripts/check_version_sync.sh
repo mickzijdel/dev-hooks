@@ -112,9 +112,10 @@ read_arg() {
 }
 
 # package.json's `"packageManager": "pnpm@9.1.0+sha512…"` — corepack's pin, for the JS stack.
-read_pkgmgr() {
-  [ -f package.json ] || return 0
-  sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json |
+read_pkgmgr() { # $1 tool, [$2 package.json path]
+  local pj=${2:-package.json}
+  [ -f "$pj" ] || return 0
+  sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" |
     head -n1 | awk -F'@' -v t="$1" 'NF > 1 && $1 == t { sub(/\+.*/, "", $2); print $2 }'
 }
 
@@ -173,7 +174,7 @@ read_file_version() { # $1 tool, $2 file
     return
   fi
   case $2 in
-    *package.json) if [ "$1" = bun ]; then v=$(read_pkgmgr bun); else v="<range>"; fi ;;
+    *package.json) if [ "$1" = bun ]; then v=$(read_pkgmgr bun "$2"); else v="<range>"; fi ;;
     *pyproject.toml) v="<range>" ;;
     *.tool-versions)
       v=$(awk -v t="$1" '$1 == t || (t == "node" && $1 == "nodejs") || (t == "go" && $1 == "golang") { print $2; exit }' "$2")
@@ -320,11 +321,12 @@ job_uses() { # $1 file, $2 job, $3 action
 }
 
 # The file+job pairs that call a composite action (`uses: ./.github/actions/<name>`), one
-# "file\037job" per line — a composite runs inside its caller's job, after its earlier steps.
+# "file\037job" per line — a composite runs inside its caller's job. Step order is not checked,
+# here or for mise-action within a job.
 callers_of() { # $1 composite action file
   local f j a dir=${1%/action.y*ml}
   while IFS=$'\037' read -r f j a _; do
-    [ "$a" = "./$dir" ] && printf '%s\037%s\n' "$f" "$j"
+    [ "${a%/}" = "./$dir" ] && printf '%s\037%s\n' "$f" "$j"
   done <<<"$ci_rows"
 }
 
@@ -390,13 +392,15 @@ judge_file() { # $1 where, $2 action, $3 tool, $4 file
   if [ "$v" = "<range>" ]; then
     own=$(own_vfile "$3")
     ci_bad "$1: $2 reads $4, which names a range, not a release — ${own:+read $own instead}${own:-pin an exact release}"
-  elif [ -z "$v" ] || [[ $v != [0-9]* && $v != pypy* ]]; then
-    ci_bad "$1: $2 reads $4, which names \"$(grep -v '^[[:space:]]*#' "$4" | grep -m1 . || true)\", not a release"
+  elif [ -z "$v" ]; then
+    ci_bad "$1: $2 reads $4, which names no $3 version"
+  elif [[ $v != [0-9]* && $v != pypy* ]]; then
+    ci_bad "$1: $2 reads $4, which names \"$v\", not a release"
   elif ! is_full "$v"; then
     ci_bad "$1: $2 reads $4 ($v) — $(floats_msg "$3" "$v")"
   else
     ci_ok "$1: $2 reads $4"
-    if [ "$4" != "$(own_vfile "$3")" ] && [ "$4" != "$MISE" ] && [ "$4" != package.json ] && [[ $ci_pinned != *"|$3:$4|"* ]]; then
+    if [ "$4" != "$(own_vfile "$3")" ] && [ "$4" != "$MISE" ] && [[ $4 != *package.json ]] && [[ $ci_pinned != *"|$3:$4|"* ]]; then
       ci_pinned="$ci_pinned|$3:$4|"
       printf '%s\t%s\t%s\n' "$3" "$4" "$v" >>"$CI_PINS"
     fi

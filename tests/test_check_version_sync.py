@@ -1196,3 +1196,57 @@ def test_non_numeric_version_file_says_what_it_names(tmp_path):
     )
     assert r.returncode == 1, r.stdout
     assert 'names "lts/*", not a release' in r.stdout
+
+
+# ── Third review ─────────────────────────────────────────────────────────────────────
+def test_setup_bun_reads_the_package_json_it_names(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "web/package.json": '{"packageManager": "bun@1.1.38"}\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
+                    "  with:\n    bun-version-file: web/package.json"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_missing_tool_in_a_multi_tool_file_names_the_tool(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".tool-versions": "ruby 3.4.1\n",
+            ".github/workflows/ci.yml": workflow(
+                [node_step("with:\n  node-version-file: .tool-versions")]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "names no node version" in r.stdout
+
+
+def test_composite_call_with_trailing_slash_finds_its_caller(tmp_path):
+    action = """
+        runs:
+          using: composite
+          steps:
+            - uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8
+        """
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "3.12.4"\n',
+            ".github/actions/py/action.yml": action,
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4",
+                    "- uses: ./.github/actions/py/",
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
