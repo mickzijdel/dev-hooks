@@ -87,9 +87,37 @@ reminder_stop_init() {
 # incremental commits, so by the time Stop fires the tree is usually clean and
 # `git status --porcelain` / `git diff HEAD` see nothing. Without this, such a hook
 # measures only the sessions that forgot to commit.
+#
+# Cached per session: the first line never changes, and without the cache the Stop hooks
+# started python 7 times per Stop to re-derive it. The cache stores the transcript path
+# beside the stamp and is used only for a real session id, so a reused id or a transcript
+# rewritten in place (test_jq_stamp_mirror_agrees_with_python) is recomputed. Only a
+# non-empty answer is cached; "unknown" is cheap to ask again and may be a partial write.
 reminder_session_since() {
   REPLY=""
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
+  if [ -z "${SESSION:-}" ] || [ "$SESSION" = nosession ]; then
+    _reminder_session_since_compute
+    return 0
+  fi
+  local _cache _path _stamp
+  reminder_state_file session-since
+  _cache=$REPLY
+  if { IFS= read -r _path && IFS= read -r _stamp; } <"$_cache" 2>/dev/null &&
+    [ "$_path" = "$TRANSCRIPT" ] && [ -n "$_stamp" ]; then
+    REPLY=$_stamp
+    return 0
+  fi
+  _reminder_session_since_compute
+  [ -n "$REPLY" ] || return 0
+  # Written whole then renamed: the Stop hooks run concurrently and may race to fill it.
+  printf '%s\n%s\n' "$TRANSCRIPT" "$REPLY" >"$_cache.$$" 2>/dev/null &&
+    mv -f "$_cache.$$" "$_cache" 2>/dev/null
+  return 0
+}
+
+_reminder_session_since_compute() {
+  REPLY=""
   # hook_helpers.session_start is the single implementation, so this cannot drift from the
   # python side that untracked_since uses.
   # Gate on the call SUCCEEDING, not on a non-empty answer: an empty answer is python
@@ -470,15 +498,16 @@ reminder_has_code_file() {
 # shellcheck disable=SC2120  # pathspecs are optional; reminder_session_files passes none.
 reminder_untracked_since() {
   local _out
+  reminder_session_since
   if _out=$(
-    python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF' 2>/dev/null
+    python3 - "$REMINDER_LIB_DIR" "$REPLY" "$@" <<'PYEOF' 2>/dev/null
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
-from hook_helpers import session_start, untracked_since
+from hook_helpers import untracked_since
 
-for path in untracked_since(session_start(sys.argv[2]), tuple(sys.argv[3:])):
+for path in untracked_since(sys.argv[2], tuple(sys.argv[3:])):
     print(path)
 PYEOF
   ); then
@@ -495,15 +524,16 @@ PYEOF
 # reminder_untracked_since: one python implementation rather than a per-platform pipeline.
 reminder_untracked_text() {
   local _out _f _size
+  reminder_session_since
   if _out=$(
-    python3 - "$REMINDER_LIB_DIR" "${TRANSCRIPT:-}" "$@" <<'PYEOF' 2>/dev/null
+    python3 - "$REMINDER_LIB_DIR" "$REPLY" "$@" <<'PYEOF' 2>/dev/null
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
-from hook_helpers import session_start, untracked_text
+from hook_helpers import untracked_text
 
-sys.stdout.write(untracked_text(session_start(sys.argv[2]), tuple(sys.argv[3:])))
+sys.stdout.write(untracked_text(sys.argv[2], tuple(sys.argv[3:])))
 PYEOF
   ); then
     printf '%s' "$_out"

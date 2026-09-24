@@ -125,7 +125,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
   `transcript_invoked`, which two hooks used to embed as duplicate heredocs),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
-  the transcript's first-line timestamp), `reminder_changed_files`
+  the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
+  rather than threading the value through — and pass that value to python rather than
+  having a heredoc re-derive it with `session_start`), `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
   state path in $REPLY — existence for `reminder_fire_once`, a stored value for re-arming
   hooks), the re-arm trio
