@@ -24,6 +24,7 @@ import ast
 import re
 import statistics
 import sys
+import warnings
 from pathlib import Path
 
 # --- comment syntax by extension -------------------------------------------------
@@ -435,7 +436,11 @@ def python_handlers(text):
     # RecursionError: a file nested past the parser's depth limit must not take the rest of
     # the batch down with it — it is treated as unparseable, like any other.
     try:
-        tree = ast.parse(text.removeprefix("\ufeff"))
+        # The scanned file's own warnings (an invalid escape like "\d") are not ours to
+        # print: they surface as `<unknown>:N` with no file name, and under -W error they
+        # would make a valid file look unparseable.
+        with warnings.catch_warnings(action="ignore"):
+            tree = ast.parse(text.removeprefix("\ufeff"))
         handlers = {
             n.lineno for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)
         }

@@ -319,6 +319,25 @@ def test_except_inside_a_string_is_not_a_handler(tmp_path):
     assert swallowed == [(real, "swallowed-error")], out
 
 
+@pytest.mark.parametrize("warn_flags", [[], ["-W", "error"]])
+def test_scanned_files_own_warnings_stay_out_of_the_output(tmp_path, warn_flags):
+    """ast.parse warns about the scanned file's invalid escapes. Unsilenced, that printed
+    `<unknown>:N: SyntaxWarning` with no file name, and -W error turned the warning into
+    a parse failure, so this correct re-raise got flagged."""
+    path = tmp_path / "warn.py"
+    path.write_text(
+        'import re\nP = re.compile("\\d+")\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
+    )
+    r = subprocess.run(
+        [sys.executable, *warn_flags, str(SCAN), str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "SyntaxWarning" not in r.stderr, r.stderr
+    assert "swallowed-error" not in rules(r.stdout), r.stdout
+
+
 def test_unparseable_file_flags_its_bare_excepts(tmp_path):
     # Without an AST there is no way to know the handler re-raises, so it is flagged.
     body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
