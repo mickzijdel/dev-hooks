@@ -131,6 +131,41 @@ def test_reraising_bare_except_is_not_a_swallowed_error(tmp_path, body):
     assert "swallowed-error" not in rules(out), out
 
 
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        # Rails keyword argument continued onto its own line.
+        (
+            "c.rb",
+            "class C < ApplicationController\n  before_action :auth,\n    except: [:index, :show]\nend\n",
+        ),
+        # GitLab CI
+        ("ci.yml", "build:\n  script: make\n  except:\n    - main\n"),
+        # A JS object key
+        ("o.js", "const opts = {\n  except: true,\n  only: false,\n};\n"),
+    ],
+)
+def test_except_key_outside_python_is_not_a_swallowed_error(tmp_path, name, body):
+    """The swallowed-error rule once ran on every language; with the bare-except form no
+    longer anchored at end of line, `except:` as a key or keyword argument became "a bug"."""
+    code, out, _ = run(tmp_path, name, body)
+    assert "swallowed-error" not in rules(out), out
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        ("a.js", "try { f() } catch (e) {}\nconst x = 1\n"),
+        ("a.go", "if err != nil {}\nx := 1\n"),
+        ("a.rb", "begin\n  f\nrescue\n  nil\nend\n"),
+    ],
+)
+def test_non_python_swallowed_errors_still_fire(tmp_path, name, body):
+    # Splitting the rule by language must not drop the forms that were never Python's.
+    _, out, _ = run(tmp_path, name, body)
+    assert "swallowed-error" in rules(out), out
+
+
 def test_a_raise_after_the_except_block_does_not_count(tmp_path):
     # The raise belongs to the enclosing code, not the handler: this one does swallow.
     body = "def g():\n    try:\n        f()\n    except:\n        pass\n    raise X\n"

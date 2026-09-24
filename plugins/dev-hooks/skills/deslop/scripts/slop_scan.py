@@ -190,6 +190,7 @@ COMMENT_RULES = [
 ]
 
 TS_JS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+PY = {".py"}
 
 # Matched against a two-line window, for constructs straddling two lines: Python's
 # commonest swallowed error puts `pass` after the `except`. No re.MULTILINE: `^` must
@@ -203,6 +204,9 @@ LOOKAHEAD = {"swallowed-error"}
 
 # (rule, pattern, message, langs); langs None applies the rule to every language
 LINE_RULES = [
+    # Python only: `except:` is also a Rails keyword argument (`before_action :auth,
+    # except: [:index]`), a GitLab CI key and a JS object key. The unanchored bare-except
+    # form flags every one of those as "a bug" if left to run on every language.
     (
         "swallowed-error",
         re.compile(
@@ -210,7 +214,16 @@ LINE_RULES = [
             ^[ \t]*except[ \t]*:
           | ^[ \t]*except[ \t]+(?:Exception|BaseException)(?:[ \t]+as[ \t]+\w+)?[ \t]*:
                 [ \t]*\n?[ \t]*(?:pass|\.\.\.)[ \t]*(?:\n|$)
-          | \bcatch\s*\([^)]*\)\s*\{\s*\}
+            """
+        ),
+        "swallowed error (the failure is discarded, not handled) — a bug",
+        PY,
+    ),
+    (
+        "swallowed-error",
+        re.compile(
+            r"""(?x)
+            \bcatch\s*\([^)]*\)\s*\{\s*\}
           | \bcatch\s*\{\s*\}
           | \bif\s+err\s*!=\s*nil\s*\{\s*\}
           | ^[ \t]*rescue(?:[ \t]+StandardError)?(?:[ \t]*=>[ \t]*\w+)?[ \t]*\n[ \t]*
