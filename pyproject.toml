@@ -13,6 +13,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-xdist",  # parallel runs (-n auto in addopts); `-n 0` to debug serially
     "ruff",
     "vulture",   # dead-code audit; run via `uvx vulture`
     # The bundled Python scripts are stdlib-only (PEP 723 deps = []), so there is
@@ -28,3 +29,6 @@ exclude-newer = "4 days"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Every test builds its own tmp_path repo and shells out, so the suite is subprocess-bound and
+# parallelises cleanly: ~44s serial, ~10s on 8+ cores. `-n 0` restores a serial run (pdb, -s).
+addopts = "-n auto"

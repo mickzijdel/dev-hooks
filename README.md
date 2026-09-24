@@ -91,7 +91,8 @@ pre-commit checks (shellcheck, shfmt, ruff, vulture, jscpd, gitleaks, zizmor, ac
 `claude plugin validate --strict` over the marketplace and every plugin when plugin files
 are staged), and CI mirrors the same checks (except plugin-validate, which needs the Claude
 CLI and runs locally only). The pytest suite at `tests/` exercises every hook and skill
-script across all plugins.
+script across all plugins; it runs in parallel via pytest-xdist (`-n auto` in
+`pyproject.toml`), and `uv run pytest -n 0` runs it serially for `pdb` or `-s`.
 
 ```bash
 mise install
