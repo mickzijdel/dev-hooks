@@ -1882,8 +1882,7 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
         '  printf \'%s\\t%s\\n\' "$stamp" "$REPLY"\n'
         'done < "$2/stamps.txt"\n'
     )
-    # Each stamp costs a jq spawn, so the sweep is split across concurrent bash processes,
-    # each in its own directory. Every stamp is still checked; only wall-clock shrinks.
+    # one jq spawn per stamp: split across concurrent bash processes, every stamp still checked
     chunks = 8
     procs = []
     for i in range(chunks):
@@ -1944,8 +1943,7 @@ STOP_HOOKS_USING_SINCE = [
 
 
 def _python_import_log_shim(tmp_path):
-    """A python3 that records the hook_helpers import of each spawn, then runs the real
-    interpreter on the same source — a count of what each spawn was for."""
+    """python3 that logs each spawn's hook_helpers import, then runs the real interpreter."""
     log = tmp_path / "py.log"
     body = (
         "#!/bin/bash\n"
@@ -1958,9 +1956,7 @@ def _python_import_log_shim(tmp_path):
 
 @requires_python3
 def test_stop_hooks_compute_session_start_once_per_session(tmp_path):
-    """The session start is the transcript's first line, fixed for the whole session, so
-    every Stop hook shares one computation: the first caches it, and every later hook and
-    later Stop reads the cache instead of starting python to re-parse the transcript."""
+    """Session start is fixed per session: one python computation across all Stop hooks."""
     run = init_git_repo(tmp_path)
     (tmp_path / "seed.txt").write_text("seed\n")
     run("add", "-A")
@@ -1981,14 +1977,12 @@ def test_stop_hooks_compute_session_start_once_per_session(tmp_path):
         imports
     )  # the shim saw the hooks
     assert imports.count("from hook_helpers import session_start") == 1, imports
-    # The untracked-file helpers take the cached value rather than re-deriving it.
+    # untracked helpers receive the cached value
     assert not [i for i in imports if "session_start," in i], imports
 
 
 def test_session_since_cache_is_per_session_and_transcript(tmp_path):
-    """Cached per session, checked against the transcript it came from: a reused session
-    id with another transcript is recomputed, and without a real session id nothing is
-    cached — so a transcript rewritten in place (the stamp sweep does this) is re-read."""
+    """A reused session id with another transcript, or no real session id, recomputes."""
     a = tmp_path / "a.jsonl"
     b = tmp_path / "b.jsonl"
     a.write_text(json.dumps({"timestamp": "2024-01-01T00:00:00Z"}) + "\n")
