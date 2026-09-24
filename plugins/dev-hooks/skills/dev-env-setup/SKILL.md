@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v25)
+## The standard (v26)
 
-A repo is **compliant at v25** when it has all of:
+A repo is **compliant at v26** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "25"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "26"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -47,8 +47,11 @@ A repo is **compliant at v25** when it has all of:
   only the files that exist and prints what it skipped, reports rather than auto-fixes, and
   mandates no Dockerfile style. **Every** Dockerfile in the repo root is compared, not just the
   first one found (v24) — `Dockerfile.dev` beside a production `Dockerfile` is the common shape,
-  and it went unchecked under v23. See "Version pins must agree across files" in
-  `references/standard.md`.
+  and it went unchecked under v23. A floating `mise.toml` spec (`latest`) is compared through
+  the exact release in `mise.lock`, and **every CI setup step must read the pin** (v26): a
+  version file, or `jdx/mise-action` installing the tool from `mise.toml` in the same job — a
+  floating (`lts/*`), hardcoded-and-different, matrix, or missing version fails. See "Version
+  pins must agree across files" in `references/standard.md`.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
   `exec-bit-scripts` gate, the `versions` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
@@ -352,16 +355,14 @@ bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .gi
 
 ## Caching npm in CI
 
-`actions/setup-node` ships a built-in npm cache (`with: { cache: npm }`) and the JS template
-(`ci.js.yml`) uses it. But in a **polyglot repo where node is provisioned by mise**
-(`jdx/mise-action`, so the workflow has *no* `setup-node` step), that cache isn't available —
-every `npm ci` does a cold, network-bound install. Add an explicit cache, keyed on the
-lockfile, to **each job that runs `npm ci`** (`setup-node`'s cache is per-job too, so the
-fan-out is expected):
+Node comes from `mise.toml` via `jdx/mise-action` (v26), so there is no `setup-node` step and
+none of its built-in npm cache — every `npm ci` would do a cold, network-bound install. Add an
+explicit cache, keyed on the lockfile, to **each job that runs `npm ci`**; `ci.js.yml` carries
+one in its lint job:
 
 ```yaml
 - name: Cache npm downloads
-  uses: actions/cache@v4
+  uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
   with:
     path: ~/.npm  # npm's download cache — the same dir setup-node caches
     key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}

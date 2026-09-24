@@ -400,3 +400,366 @@ def test_crlf_dockerfile_still_compares(tmp_path):
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert "✓ node 24.19.0" in r.stdout
+
+
+# ── v26: mise.lock resolves a floating spec, and CI setup steps must read the pin ──────
+
+
+def lock(**tools):
+    return "".join(
+        f'[[tools.{name}]]\nversion = "{ver}"\nbackend = "core:{name}"\n\n'
+        for name, ver in tools.items()
+    )
+
+
+def workflow(steps, job="test"):
+    """A one-job workflow whose steps are the given YAML snippets."""
+    body = "".join(
+        textwrap.indent(textwrap.dedent(s).strip("\n"), "      ") + "\n" for s in steps
+    )
+    return f"jobs:\n  {job}:\n    runs-on: ubuntu-latest\n    steps:\n{body}"
+
+
+CHECKOUT = "- uses: actions/checkout@0000000000000000000000000000000000000000 # v7.0.0"
+
+
+def test_floating_mise_spec_resolves_through_mise_lock(tmp_path):
+    """`python = "latest"` names no version, but mise.lock records the exact release local and
+    mise-action install, so that release is what the other pins must agree with."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            "mise.toml": '[tools]\npython = "latest"\n',
+            "mise.lock": lock(python="3.14.6"),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ python 3.14.6 — .python-version, mise.lock python" in r.stdout
+
+
+def test_mise_lock_drift_from_a_version_file_fails(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "22.4.1\n",
+            "mise.toml": '[tools]\nnode = "lts"\n',
+            "mise.lock": lock(node="24.11.0"),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "✗ mise.lock node (24.11.0) != .node-version (22.4.1)" in r.stdout
+
+
+def test_setup_step_reading_the_pin_file_passes(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.11.0\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    CHECKOUT,
+                    """
+                    - uses: actions/setup-node@0000000000000000000000000000000000000000 # v6
+                      with:
+                        node-version-file: .node-version
+                    """,
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (
+        "✓ .github/workflows/ci.yml test: actions/setup-node reads .node-version"
+        in r.stdout
+    )
+
+
+@pytest.mark.parametrize("spec", ["lts/*", "latest", "22.x", "'*'"])
+def test_floating_setup_version_fails(tmp_path, spec):
+    """`node-version: lts/*` means CI runs whatever is newest on the day, not what local pins."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.11.0\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    f"""
+                    - uses: actions/setup-node@0000000000000000000000000000000000000000 # v6
+                      with:
+                        node-version: {spec}
+                    """
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert (
+        "✗ .github/workflows/ci.yml test: actions/setup-node node-version" in r.stdout
+    )
+    assert "floats" in r.stdout
+
+
+def test_literal_setup_version_joins_the_comparison(tmp_path):
+    """A hardcoded version is one more pin: it must match the others, and the failure names the
+    workflow line that carries it."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - uses: actions/setup-python@0000000000000000000000000000000000000000 # v6
+                      with:
+                        python-version: "3.12"
+                    """
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert (
+        "✗ .github/workflows/ci.yml test actions/setup-python (3.12) != .python-version (3.14.6)"
+        in r.stdout
+    )
+
+
+def test_matrix_expression_fails(tmp_path):
+    """The standard tests one version, the pinned one; an expression can't be checked against it."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8
+                      with:
+                        enable-cache: true
+                        python-version: ${{ matrix.python }}
+                    """
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "astral-sh/setup-uv python-version is an expression" in r.stdout
+
+
+def test_setup_step_naming_no_version_fails(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: actions/setup-node@0000000000000000000000000000000000000000 # v6"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert (
+        "✗ .github/workflows/ci.yml test: actions/setup-node names no version"
+        in r.stdout
+    )
+
+
+def test_setup_uv_alone_runs_the_runners_python(tmp_path):
+    """setup-uv installs uv, not Python: with nothing else in the job, uv takes the runner's
+    system python3 — the drift that let one repo's CI test 3.12 while local ran 3.14."""
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "latest"\nuv = "latest"\n',
+            "mise.lock": lock(python="3.14.6", uv="0.9.0"),
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8
+                      with:
+                        enable-cache: true
+                    """
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert (
+        "✗ .github/workflows/ci.yml test: astral-sh/setup-uv names no Python"
+        in r.stdout
+    )
+
+
+@pytest.mark.parametrize(
+    "mise_step",
+    [
+        "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4",
+        """
+        - uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4
+          with:
+            install_args: python uv
+        """,
+    ],
+)
+def test_mise_action_installing_python_satisfies_uv(tmp_path, mise_step):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "latest"\nuv = "latest"\n',
+            "mise.lock": lock(python="3.14.6", uv="0.9.0"),
+            ".github/workflows/ci.yml": workflow(
+                [
+                    mise_step,
+                    "- uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8",
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (
+        "✓ .github/workflows/ci.yml test: python from mise.toml via mise-action"
+        in r.stdout
+    )
+
+
+def test_mise_action_limited_to_other_tools_does_not_count(tmp_path):
+    """`install_args: shellcheck` installs only shellcheck; Python still comes from the runner."""
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "latest"\nshellcheck = "latest"\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4
+                      with:
+                        install_args: shellcheck
+                    """,
+                    "- uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8",
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "astral-sh/setup-uv names no Python" in r.stdout
+
+
+def test_mise_action_in_another_job_does_not_count(tmp_path):
+    wf = workflow(
+        ["- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4"],
+        job="lint",
+    ) + workflow(
+        ["- uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8"]
+    ).removeprefix("jobs:\n")
+    r = run(
+        tmp_path,
+        {"mise.toml": '[tools]\npython = "latest"\n', ".github/workflows/ci.yml": wf},
+    )
+    assert r.returncode == 1, r.stdout
+    assert "ci.yml test: astral-sh/setup-uv names no Python" in r.stdout
+
+
+def test_python_version_file_satisfies_setup_python_and_uv(tmp_path):
+    """Both actions read .python-version on their own when given no version input."""
+    r = run(
+        tmp_path,
+        {
+            ".python-version": "3.14.6\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: actions/setup-python@0000000000000000000000000000000000000000 # v6",
+                    "- uses: astral-sh/setup-uv@0000000000000000000000000000000000000000 # v8",
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "actions/setup-python reads .python-version" in r.stdout
+    assert "astral-sh/setup-uv reads .python-version" in r.stdout
+
+
+def test_setup_ruby_reading_a_missing_file_fails(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - uses: ruby/setup-ruby@0000000000000000000000000000000000000000 # v1
+                      with:
+                        ruby-version: .ruby-version
+                    """
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert "ruby/setup-ruby reads .ruby-version, which does not exist" in r.stdout
+
+
+def test_run_block_lines_do_not_start_steps(tmp_path):
+    """A `- ` inside a run: block is script text, not a new step, and must not end the one the
+    parser is in — nor may a `uses:` quoted in a script count as a step."""
+    r = run(
+        tmp_path,
+        {
+            ".node-version": "24.11.0\n",
+            ".github/workflows/ci.yml": workflow(
+                [
+                    """
+                    - name: notes
+                      run: |
+                        echo "- uses: actions/setup-node@v6"
+                        echo "- item"
+                    """,
+                    """
+                    - name: Node
+                      uses: actions/setup-node@0000000000000000000000000000000000000000 # v6
+                      with:
+                        node-version-file: .node-version
+                    """,
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "actions/setup-node reads .node-version" in r.stdout
+
+
+def test_workflow_without_setup_steps_is_quiet(tmp_path):
+    r = run(tmp_path, RUBY_REPO)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "no language setup steps" in r.stdout
+
+
+@pytest.mark.parametrize("stack", ["ruby", "js", "python", "go", "shell"])
+def test_each_stacks_templates_pass_their_own_gate(tmp_path, stack):
+    """A repo freshly set up from the templates must pass the gate the templates ship: every CI
+    setup step reads the pin (mise.toml via mise-action, or .ruby-version for Ruby)."""
+    templates = SCRIPT.parent
+    files = {
+        "mise.toml": (templates / f"mise.{stack}.toml").read_text(),
+        ".github/workflows/ci.yml": (templates / f"ci.{stack}.yml").read_text(),
+    }
+    if stack == "ruby":
+        files[".ruby-version"] = "3.4.10\n"
+    r = run(tmp_path, files)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✗" not in r.stdout
+
+
+def test_mise_only_workflow_says_where_the_toolchain_comes_from(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\npython = "latest"\n',
+            ".github/workflows/ci.yml": workflow(
+                [
+                    "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4"
+                ]
+            ),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "install their toolchain with mise-action" in r.stdout

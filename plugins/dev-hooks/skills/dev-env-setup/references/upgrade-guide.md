@@ -1045,6 +1045,54 @@ Steps:
 
 ---
 
+## v25 → v26 (CI runs the version local pins)
+
+**Every stack.** Through v25 the version-sync gate compared the pin *files* and never looked at
+what CI installs. A workflow could float (`node-version: lts/*`), hardcode something else
+(`node-version: 22` beside a `mise.lock` on 24), or name nothing at all — `setup-uv` installs
+uv, not Python, so uv quietly took the runner's `python3`. dev-hooks ran its suite on 3.12 in CI
+against 3.14 locally that way, and only found out when a stdlib difference turned CI red. The v26
+gate's first fleet run flagged the Python case in seven repos and a hardcoded Node 22 in two.
+
+v26 changes two things in `scripts/check_version_sync.sh`, and the templates to match:
+
+- A floating `mise.toml` spec (`latest`, `lts`) is compared through the exact release in
+  `mise.lock` instead of being skipped.
+- A new **CI setup steps** section: every `setup-python` / `setup-node` / `setup-ruby` /
+  `setup-go` / `setup-bun` / `setup-uv` step must read the pin — a version file, or
+  `jdx/mise-action` installing the tool from `mise.toml` in the same job. Floating, matrix and
+  missing versions fail; a hardcoded one must match the other pins. The full table is in
+  `standard.md` › "Version pins must agree across files".
+
+Steps:
+
+1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w` it (as in v24).
+2. **Run it and fix what the CI section reports.** For a repo on mise (the template shape):
+   - Python / shell: add `python = "latest"` to `mise.toml`'s `[tools]`, run `mise install`
+     (and `mise lock python` if the lock entry lacks per-platform checksums). In every job that
+     used `astral-sh/setup-uv`, replace it — and any `uv python install X` step — with
+     `jdx/mise-action` and `install_args: python uv`, and set workflow-level
+     `env: UV_PYTHON_DOWNLOADS: never`. Raise `requires-python` to the new floor.
+   - JS: replace `actions/setup-node` with `jdx/mise-action` and `install_args: node`; add the
+     `actions/cache` step on `~/.npm` from `ci.js.yml` to each job that runs `npm ci`.
+   - A repo that already pins with a version file and reads it
+     (`ruby-version: .ruby-version`, `node-version-file: .node-version`) passes as-is — keep it.
+
+   A hardcoded version that differs (`node-version: 22` against `mise.lock` 24) is a real
+   finding: decide which is right, then make CI read the pin rather than retyping it.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "26"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0 and its
+   *CI setup steps* section lists a ✓ per setup step. Then set one job's step to
+   `node-version: lts/*` (or delete its mise-action step, leaving `setup-uv` alone) and confirm it
+   exits 1 naming that workflow and job. Restore. Once pushed, check the CI log shows the locked
+   release — for Python, uv's `Using CPython 3.14.6 interpreter at: …/mise/installs/python/…`.
+
+> Deliberately not checked: which version a `run:` step installs by hand (`uv python install
+> 3.12`, `nvm use`). The template shape has none; remove any you find in step 2.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
