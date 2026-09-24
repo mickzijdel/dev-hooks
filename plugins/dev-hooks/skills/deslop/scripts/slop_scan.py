@@ -414,10 +414,11 @@ def reraising_bare_excepts(text):
 
     Read with ast, not by indentation: a triple-quoted string's lines can sit at column 0
     and look like the end of the handler. A file that does not parse yields nothing, so
-    its bare excepts are all flagged."""
+    its bare excepts are all flagged. A raise inside a `with` is not counted either: the
+    context manager may suppress it (`contextlib.suppress`)."""
     try:
         tree = ast.parse(text)
-    except SyntaxError, ValueError:
+    except (SyntaxError, ValueError):
         return set()
     found = set()
     for node in ast.walk(tree):

@@ -28,3 +28,10 @@ exclude-newer = "4 days"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+# requires-python above is the floor for THIS repo's tooling; the scripts the plugins ship
+# run on the user's python3 and declare their own floor, 3.12, in PEP 723 headers. Left to
+# infer 3.14, ruff format emits 3.14-only syntax (unparenthesized `except A, B:`) that
+# those scripts cannot parse. tests/test_python_floor.py holds each file to its floor.
+target-version = "py312"

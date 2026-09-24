@@ -252,6 +252,17 @@ def test_exits_that_cannot_skip_the_raise_do_not_count(tmp_path, body):
     assert "swallowed-error" not in rules(out), out
 
 
+def test_raise_inside_a_with_is_not_trusted(tmp_path):
+    # A context manager can swallow what is raised inside it, so this handler may not
+    # propagate anything. Flagging it is deliberate, not a missed case.
+    body = _parses(
+        "import contextlib\ntry:\n    f()\nexcept:\n"
+        "    with contextlib.suppress(Exception):\n        raise\n"
+    )
+    _, out, _ = run(tmp_path, "sample.py", body)
+    assert (4, "swallowed-error") in findings(out), out
+
+
 def test_unparseable_file_flags_its_bare_excepts(tmp_path):
     # Without an AST there is no way to know the handler re-raises, so it is flagged.
     body = 'print "py2"\ntry:\n    f()\nexcept:\n    cleanup()\n    raise\n'
