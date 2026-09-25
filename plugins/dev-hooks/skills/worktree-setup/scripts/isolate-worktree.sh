@@ -6,17 +6,20 @@
 # worktrees all point at the same port and the same database. This script closes that gap: it
 # allocates a stable, collision-free per-worktree offset from a registry shared by all
 # worktrees, then writes the derived values into a gitignored `mise.local.toml` overlay (which
-# layers over the committed mise.toml) — never mutating the copied .env. Host-native runs read
-# PORT + the DB suffix; a per-worktree devcontainer reads COMPOSE_PROJECT_NAME.
+# layers over the committed mise config, at whatever path it lives) — never mutating the copied
+# .env. Host-native runs read PORT + the DB suffix; a per-worktree devcontainer reads COMPOSE_PROJECT_NAME.
 #
 # It is OPT-IN: with no `.worktree-isolate.conf` in the worktree it is a no-op. The config
 # (committed — it describes the project, not secrets) declares what to isolate:
 #   WT_BASE_PORT=3000                    # PORT = base + per-worktree offset
 #   WT_EXTRA_PORTS="VITE_PORT=3036 …"    # space-separated NAME=base pairs, each += offset
 #   WT_DB_SUFFIX_VAR=WORKTREE_DB_SUFFIX  # export "_<slug>" for database.yml to read
+#   WT_DB_SUFFIX_MAX=20                  # cap that suffix (default 20; MySQL ids cap at 64)
 #   WT_REDIS_URL_VAR=REDIS_URL           # redis://localhost:6379/<offset>
 #   WT_COMPOSE_NAME=myapp                # emit COMPOSE_PROJECT_NAME=<name>_<slug>
 #   WT_COMPOSE_ENV=.devcontainer/.env    # also write name+PORT into this compose-adjacent .env
+# setup-worktree.sh reads one further key from the same file after isolation runs:
+#   WT_POST_SETUP="bin/rails db:prepare && …"  # seed what the allocated names point at
 #
 # Usage: isolate-worktree.sh [WORKTREE] [--config FILE]
 #   WORKTREE     the worktree to isolate (default: $PWD)
@@ -160,6 +163,27 @@ done
 db_suffix=""
 if [ -n "$DB_SUFFIX_VAR" ]; then
   db_suffix="_$slug"
+  # MySQL caps an identifier at 64 characters, and the suffix is only the TAIL of
+  # one: the app appends it to each database's base name and then to siblings like
+  # "_queue" and "_cache". Overflow does not read as a naming problem — db:prepare
+  # aborts with "Identifier name ... is too long", or, when only the longer sibling
+  # overflows, the app boots and then exits 0 with "Detected Solid Queue has gone
+  # away". Worse, WT_POST_SETUP fails and leaves the worktree unseeded.
+  #
+  # A branch name is usually short enough, but an agent worktree is not named by a
+  # human: Claude Code's `isolation: "worktree"` generates "agent-<17 hex chars>",
+  # which alone is a 24-character suffix before the base name is even counted. So
+  # cap it, keeping the readable head and appending a short digest of the FULL slug
+  # so two long names cannot collide on the truncated head.
+  max_len="$(conf_get WT_DB_SUFFIX_MAX)"
+  [ -n "$max_len" ] || max_len=20
+  if [ "${#db_suffix}" -gt "$max_len" ]; then
+    digest="$(printf '%s' "$slug" | cksum | cut -d' ' -f1)"
+    digest="$(printf '%04x' "$((digest % 65536))")"
+    head_len="$((max_len - 5))"
+    [ "$head_len" -ge 1 ] || head_len=1
+    db_suffix="_$(printf '%s' "$slug" | cut -c1-"$head_len")$digest"
+  fi
   add_env "$DB_SUFFIX_VAR" "$db_suffix"
 fi
 if [ -n "$REDIS_URL_VAR" ]; then

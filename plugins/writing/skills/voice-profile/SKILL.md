@@ -64,9 +64,11 @@ introspection:
    script can scan it; add the plainer rewrite after a `->`.
 5. Capture at least one before/after pair (your draft -> their rewrite). One real pair beats a
    dozen abstract rules.
-6. Save the filled profile to one of the lookup paths above. To enforce it automatically, the
-   `writing` plugin's `voice-reminder` hook scans `.md`/`.mdx`/`.markdown`/`.tex`/`.txt` edits
-   against the discovered profile (opt out with `WRITING_VOICE=false`).
+6. Save the filled profile to one of the lookup paths above. The `writing` plugin's voice
+   hooks then enforce it: the profile is injected before a prose file is written, what lands
+   is scanned for banned words, and a session that wrote prose without applying the profile
+   is blocked from ending. Prose means documents *and* markup/templating (`.md`, `.tex`,
+   `.html`, `.erb`, `.liquid`, …). Opt out with `WRITING_VOICE=false`.
 
 A profile is never finished. When the person rewrites your draft, add the new tic to their Don't
 list or banned words.

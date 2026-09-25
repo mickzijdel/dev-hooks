@@ -140,13 +140,13 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     home = tmp_path / "home"
     (home / ".claude" / "automation-review").mkdir(parents=True)
     proj = tmp_path / "proj"
-    proj.mkdir()
-    (proj / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (proj / "docs").mkdir(parents=True)
+    (proj / "docs" / "guide.md").write_text("# Guide\n")
 
     e = os.environ.copy()
     e.update(HOME=str(home), DEV_HOOKS_FIRE_LOG="1")
     r = subprocess.run(
-        ["bash", str(HOOKS / "detect-stack-skills.sh")],
+        ["bash", str(HOOKS / "docs-context.sh")],
         input=f'{{"cwd":"{proj}","session_id":"sess-abc"}}',
         env=e,
         capture_output=True,
@@ -158,8 +158,39 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     log = home / ".claude" / "automation-review" / "hook-fires.jsonl"
     assert log.exists(), "SessionStart hook emitted but logged no fire"
     body = log.read_text()
-    assert '"hook":"detect-stack-skills.sh"' in body
+    assert '"hook":"docs-context.sh"' in body
     assert '"session":"sess-abc"' in body, "session_id not carried into the fire log"
+
+
+# Helpers that leave SESSION set in the caller's scope. reminder_post_bash_init is
+# deliberately absent: it reads only the command, and its callers reach SESSION via
+# reminder_cwd_session after their command-shape match.
+SESSION_SETTING_HELPERS = (
+    "reminder_init",
+    "reminder_pre_init",
+    "reminder_prompt_init",
+    "reminder_session_init",
+    "reminder_stop_init",
+    "reminder_cwd_session",
+)
+
+
+def test_every_emitting_hook_establishes_a_session():
+    """A fire logged without SESSION records "nosession", and _reminder_log_fire has no way
+    to recover it — so that fire can never be attributed to a repo and the Retire pass
+    cannot evaluate the hook. Three hooks drifted into this state and stayed there for five
+    weekly reviews, because nothing failed when they did; this is what fails now."""
+    unattributable = [
+        s.name
+        for s in sorted(HOOKS.glob("*.sh"))
+        if "reminder_emit" in (body := s.read_text())
+        and not any(h in body for h in SESSION_SETTING_HELPERS)
+    ]
+    assert not unattributable, (
+        "hooks that emit without establishing SESSION — their fires log as "
+        '"nosession" and cannot be attributed to a repo. Call the init helper for the '
+        f"hook's event, or reminder_cwd_session directly: {unattributable}"
+    )
 
 
 def test_every_hook_declares_a_bet_and_sunset():

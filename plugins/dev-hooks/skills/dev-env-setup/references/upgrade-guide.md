@@ -944,6 +944,201 @@ Steps:
 
 ---
 
+## v23 → v24 (the version-sync gate reads every Dockerfile)
+
+**Every stack.** v23's `scripts/check_version_sync.sh` discovered its Dockerfile with a loop that
+`break`s on the first of `Dockerfile Containerfile`, so a repo carrying more than one had all but
+one **silently unchecked**. The shape that costs you: a production `Dockerfile` on the right Node
+beside a `Dockerfile.dev` that is a major behind. In one repo exactly that ran for months —
+`Dockerfile.dev` on `node:22-alpine` while `.node-version`, `mise.toml` and the production
+`Dockerfile` all said `24.19.0` — with the v23 gate green throughout and that repo's own CLAUDE.md
+claiming Node 24 "everywhere". It took writing a *second*, repo-local script to find, so assume
+your repo has the same hole rather than that it doesn't.
+
+v24 iterates `Dockerfile Containerfile Dockerfile.* Containerfile.*` instead and compares each
+file as its own source labelled by name. Output style, skip semantics and the exit-code contract
+are unchanged, so no hk step or CI job needs editing. The same commit also makes the
+"conflicting ARG defaults" branch reachable — it had been dead since v23, reporting a Dockerfile
+that pins two versions as the concatenation of both (`24.19.020.0.0`).
+
+Steps:
+
+1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w scripts/check_version_sync.sh` (the template is
+   2-space indented for this marketplace's `.editorconfig`; a repo without one gets shfmt's
+   default tabs). This is the whole migration — the logic is never hand-edited, and nothing else
+   in the repo changes.
+2. **Fix whatever the wider check now reports.** A second Dockerfile that has been drifting is the
+   expected first finding; that is the point of the bump. As in v23, the gate names the file and
+   both values and never rewrites a pin — which one holds the correct value is a judgement call.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "24"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0. Then,
+   in a repo with two Dockerfiles, **break only the second one** — set `ARG NODE_VERSION` in
+   `Dockerfile.dev` to a different value, leaving the production `Dockerfile` agreeing with every
+   other pin — and confirm the script exits 1 with
+   `✗ Dockerfile.dev ARG NODE_VERSION (22.11.0) != .node-version (24.19.0)`. That exact case
+   exits **0** on the v23 script, so it is the one that proves you re-copied it. Restore the file.
+
+> A repo that carries a workaround for this gap — impamp-3 grew a
+> `scripts/check_extra_dockerfiles.sh` purely to cover the second Dockerfile, wired into its own
+> hk step and CI job — should drop it as part of this upgrade: the shared gate now covers it, and
+> two gates for one rule is how they drift.
+
+> Not checked, and unchanged from v23: `Dockerfile.bak` / `.orig` / `.rej` / editor swap files and
+> templates (`.j2`, `.tpl`, `.erb`) are excluded by suffix. Neither is a build input, and a
+> template's `ARG NODE_VERSION={{ node_version }}` would fail forever with no correct value
+> available to fix it. The two known blind spots in `standard.md` — repo root only, and `ARG
+> NAME=value` rather than `FROM` — are also unchanged.
+
+---
+
+## v24 → v25 (the gitleaks allowlist covers Python caches)
+
+**Every stack** — but it only bites where Python tests run, so a Ruby or JS repo can apply this
+in seconds and never notice the difference.
+
+`gitleaks dir` has no respect-gitignore flag and walks the whole working tree, which is the
+entire reason the v10 `.gitleaks.toml` allowlist exists. That allowlist grew from a Rails/JS
+starting point and never gained the two directories `pytest` writes: `__pycache__/` and
+`.pytest_cache/`.
+
+The failure is nastier than "a noisy finding". Compiled bytecode is a dense, high-entropy blob,
+and a test file carrying credential-**shaped** fixtures — the synthetic `ghp_…` and `sk-ant-…`
+strings a redaction test needs — puts a `ghp_` prefix into the .pyc near enough to arbitrary
+bytes for gitleaks' `github-pat` rule to match on entropy alone. So:
+
+- `pytest` (or an editor's test runner) regenerates `tests/__pycache__/*.pyc`
+- `git commit` runs hk → gitleaks → `leaks found: 1`
+- the finding names a **gitignored file you never staged**, at a path with no connection to your
+  change, and the byte count in the log is the whole repo rather than your two files
+
+It reads exactly like you committed a credential. It cost two blocked commits in one session
+before the `File:` line was read closely enough to notice it said `.pyc`, and the workaround —
+clear the caches, and do **not** re-run pytest before committing, because a verification run puts
+them straight back — is not something anyone should have to know.
+
+Steps:
+
+1. **Re-copy the allowlist.** `references/templates/.gitleaks.toml` → the repo root's
+   `.gitleaks.toml`. If your copy has repo-specific additions, merge instead — the new entries are
+   the two `(^|/)__pycache__/` and `(^|/)\.pytest_cache/` lines beside the existing `^\.venv/`.
+   They are deliberately **not** `^`-anchored: `tests/__pycache__/` is the common case, a
+   top-level one is the rare one.
+2. **Bump the stamp.** Set `DEV_ENV_VERSION = "25"` in `mise.toml`.
+3. **Verify, and verify the negative.** `gitleaks dir --redact --no-banner .` exits 0 with the
+   caches **present** — run `pytest` first so they exist, or the check proves nothing. Then
+   confirm you have not blinded the scanner to real code: write the *same* literal into an
+   ordinary source file and into a `__pycache__/` one, and check that the pair gives exit 1 and
+   exit 0 respectively.
+
+   Generate that literal with `python3 -c 'import secrets,string;
+   print("ghp_"+"".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(36)))'`
+   and delete both files after. It has to be **high-entropy**: the credential-shaped fixtures
+   already in a redaction test suite are built from sequential filler precisely so gitleaks stays
+   quiet about them, so reusing one as a positive control gives a green result that means nothing
+   — which is a mistake worth making once at the terminal rather than trusting in a repo.
+
+> Nothing else is allowlisted here on purpose. `.mypy_cache/` and `.ruff_cache/` are the obvious
+> neighbours and are left scanned: neither has been observed producing a finding, and every path
+> added to this list is a path a `git add -f` could smuggle a real secret through. Add them if and
+> when one actually fires.
+
+---
+
+## v25 → v26 (CI runs the version local pins)
+
+**Every stack.** Through v25 the version-sync gate compared the pin *files* and never looked at
+what CI installs. A workflow could float (`node-version: lts/*`), hardcode something else
+(`node-version: 22` beside a `mise.lock` on 24), or name nothing at all — `setup-uv` installs
+uv, not Python, so uv quietly took the runner's `python3`. dev-hooks ran its suite on 3.12 in CI
+against 3.14 locally that way, and only found out when a stdlib difference turned CI red. The v26
+gate's first fleet run flagged the Python case in seven repos and a hardcoded Node 22 in two.
+
+v26 changes two things in `scripts/check_version_sync.sh`, and the templates to match:
+
+- A floating `mise.toml` spec (`latest`, `lts`) is compared through the exact release in
+  `mise.lock` instead of being skipped.
+- A new **CI setup steps** section: every `setup-python` / `setup-node` / `setup-ruby` /
+  `setup-go` / `setup-bun` / `setup-uv` step must read the pin — a version file, or
+  `jdx/mise-action` installing the tool from `mise.toml` in the same job. Floating, matrix and
+  missing versions fail; a hardcoded one must match the other pins. The full table is in
+  `standard.md` › "Version pins must agree across files".
+
+Steps:
+
+1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w` it (as in v24).
+2. **Run it and fix what the CI section reports.** For a repo on mise (the template shape):
+   - Python / shell: add `python = "latest"` to `mise.toml`'s `[tools]`, run `mise install`
+     (and `mise lock python` if the lock entry lacks per-platform checksums), and copy the
+     template's two `[env]` lines, `UV_PYTHON_PREFERENCE = "only-system"` and
+     `UV_PYTHON_DOWNLOADS = "never"`. Without them uv prefers its own managed interpreters: on
+     the canary, CI ran mise's 3.14.6 while local `uv run` picked a uv-managed 3.13. With them
+     uv rebuilds a stale `.venv` on its next run. In every job that used `astral-sh/setup-uv`,
+     replace it — and any `uv python install X` step — with `jdx/mise-action` and
+     `install_args: python uv`. Leave `requires-python` alone; it is the floor you support, not
+     the version you test.
+   - JS: replace `actions/setup-node` with `jdx/mise-action` and `install_args: node`; add the
+     `actions/cache` step on `~/.npm` from `ci.js.yml` to each job that runs `npm ci`.
+   - A repo that already pins with a version file and reads it
+     (`ruby-version: .ruby-version`, `node-version-file: .node-version`) passes as-is — keep it.
+
+   A hardcoded version that differs (`node-version: 22` against `mise.lock` 24) is a real
+   finding: decide which is right, then make CI read the pin rather than retyping it.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "26"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0 and its
+   *CI setup steps* section lists a ✓ per setup step, or says the workflows install their
+   toolchain with mise-action. Then put back what this upgrade removed — swap one job's
+   mise-action step for a bare `astral-sh/setup-uv`, or set a setup step to
+   `node-version: lts/*` — and confirm it exits 1 naming that workflow and job. (Narrowing
+   `install_args` instead proves nothing: a job with no setup step leaves the gate nothing to
+   judge.) Restore. Once pushed, check the CI log shows the locked
+   release — for Python, uv's `Using CPython 3.14.6 interpreter at: …/mise/installs/python/…`
+   — and that local agrees: `uv run python -c 'import sys; print(sys.base_prefix)'` names the
+   same mise install.
+
+> Deliberately not checked: which version a `run:` step installs by hand (`uv python install
+> 3.12`, `nvm use`). The template shape has none; remove any you find in step 2.
+
+---
+
+## v26 → v27 (the version-sync gate checks full releases)
+
+**Every stack.** An adversarial review of the v26 gate, plus the fleet rollout, found it passing
+drift it was built to catch:
+
+- **A major.minor pin passed.** `.python-version` = `3.12` read by `setup-uv`: CI resolved the
+  newest 3.12 (3.12.14) while `mise.lock` pinned 3.12.12 locally, with the gate green, because a
+  `mise.toml` spec with digits never consulted `mise.lock`. Now `mise.lock` always joins the
+  comparison, and a file or literal CI reads must name a full release.
+- **Version files were only checked for existence.** `.nvmrc`, `.tool-versions` and go.mod
+  contents now join the comparison; `package.json` and `pyproject.toml` fail as ranges.
+- **A compact job-level list (`needs:` with its dash at the key's indent) hid a job's steps**, so
+  a floating `setup-node` disappeared. Only the `steps:` list starts steps now.
+- **Healthy repos failed:** `setup-uv` after `setup-python`, and setup-ruby's own defaults
+  (`ruby-version: default`, `.tool-versions`, `mise.toml`). Both pass now.
+- Smaller: an empty input shifted the columns, flow-style `with: {…}` and block-scalar
+  `install_args: >-` were unread, an unquoted `3.10` passed as 3.1, and composite actions
+  weren't scanned. A literal pin is now listed under *CI setup steps* too.
+
+Steps:
+
+1. **Re-copy the script** (`references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w` in repos without an `.editorconfig`).
+2. **Fix what it newly reports.** The expected finding is a `.<lang>-version` that names a line
+   (`3.12`) where CI reads it: write the full release `mise.lock` pins — or better, install the
+   tool with mise-action as the templates do. A floating `mise.toml` spec now also compares a
+   Dockerfile's `ARG NODE_VERSION` / `ARG PYTHON_VERSION` against `mise.lock`; a Dockerfile a
+   major behind is drift, so align it (or pin mise to the image's version) rather than
+   silencing it.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "27"` in `mise.toml`.
+4. **Verify — including the negative test.** `bash scripts/check_version_sync.sh` exits 0. Then
+   shorten one pin CI reads to major.minor (`3.14.6` → `3.14` in `.python-version`, or a
+   `node-version-file`'s file) and confirm it exits 1 with `… reads <file> (3.14) — CI resolves
+   the newest 3.14.x …`. That case exits **0** on the v26 script. Restore.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

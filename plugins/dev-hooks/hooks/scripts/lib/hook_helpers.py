@@ -11,6 +11,7 @@ Import from a heredoc by passing this directory as an argv:
 (Heredocs can't read piped stdin, so argv is already the convention — see CLAUDE.md.)
 """
 
+import datetime
 import fnmatch
 import json
 import os
@@ -27,12 +28,113 @@ def git(args):
         return ""
 
 
+def session_start(transcript_path):
+    """The session's start timestamp (ISO) from the transcript's first line; "" if unknown.
+
+    Why any of this exists: CLAUDE.md mandates commit-as-you-go, so by the time a Stop hook
+    runs the working tree is usually clean and `git status` sees nothing. The session start
+    is what lets a hook ask "what happened since" instead."""
+    if not transcript_path:
+        return ""
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
+            first = fh.readline()
+    except OSError:
+        return ""
+    # Broad on purpose: the first line is not always a message object — it can be a
+    # `queue-operation` record, or a list — and a `timestamp` is not always a string.
+    # Anything unreadable means "session start unknown", never a traceback.
+    try:
+        stamp = json.loads(first).get("timestamp")
+    except Exception:
+        return ""
+    if not isinstance(stamp, str):
+        return ""
+    # A string is not enough: `git log --since="hello world"` exits 0 with zero commits, so
+    # an unparseable stamp reads as "the session did nothing". Only return what a date
+    # parser accepts, and this stays the one answer both the python and shell callers use.
+    return stamp if session_start_epoch(stamp) is not None else ""
+
+
+def session_start_epoch(since):
+    """ISO-8601 (git's fractional-Z form) to epoch seconds; None when unparseable.
+
+    In python rather than `date`, because the shell tools disagree across platforms in ways
+    that fail silently: GNU `date -d` parses this, while on BSD `-d` is the set-kernel-DST
+    flag and exits 0 printing the CURRENT time — a wrong answer, not an error."""
+    if not isinstance(since, str) or not since:
+        return None
+    # Hour 24 is rejected outright: fromisoformat accepts "T24:00" from 3.14 and not before,
+    # so leaving it to the parser makes the answer depend on the interpreter.
+    if re.match(r"[^T ]+[T ]24", since):
+        return None
+    try:
+        return int(
+            datetime.datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
+        )
+    except Exception:
+        return None
+
+
+def untracked_files(pathspecs=()):
+    """Untracked, non-ignored files. `-z` because git C-quotes non-ASCII paths otherwise."""
+    out = git(["ls-files", "-z", "--others", "--exclude-standard", "--", *pathspecs])
+    return [p for p in out.split("\0") if p]
+
+
+def untracked_since(since, pathspecs=()):
+    """Untracked files modified at or after the session start.
+
+    One stat() per file replaces `find -newermt`/`-newer` plus an `xargs` hand-off, each of
+    which had its own platform trap: `-newermt "@epoch"` is GNU-only, and xargs appends its
+    arguments AFTER find's predicates, where find reads them as more predicates and matches
+    nothing. Both failed by returning an empty list, which reads as "this session did
+    nothing" — so they were invisible until measured.
+
+    With no parseable session start, every untracked file is returned: over-reporting is
+    recoverable, silence is not."""
+    epoch = session_start_epoch(since)
+    files = untracked_files(pathspecs)
+    if epoch is None:
+        return files
+    keep = []
+    for path in files:
+        try:
+            if os.stat(path).st_mtime >= epoch:
+                keep.append(path)
+        except OSError:
+            continue
+    return keep
+
+
+# Skip an untracked file bigger than this when reading contents. A widened pathspec would
+# otherwise pull a multi-hundred-MB build artifact into memory at every Stop.
+MAX_READ_BYTES = 1_048_576
+
+
+def untracked_text(since, pathspecs=()):
+    """Contents of this session's untracked files, size-capped, as one string.
+
+    The cap is in bytes on purpose: `find -size -1M` rounds every file up to one 1M unit,
+    so it matches only EMPTY files — it excluded everything rather than only the huge."""
+    chunks = []
+    for path in untracked_since(since, pathspecs):
+        try:
+            if os.path.getsize(path) > MAX_READ_BYTES:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                chunks.append(fh.read())
+        except OSError:
+            continue
+    return "".join(chunks)
+
+
 def new_lines():
     """Yield (path, lineno, text) for every line Claude *newly introduced*: added lines in
     `git diff HEAD` plus every line of untracked files. Pre-existing committed lines are
-    skipped, so committing or reverting clears whatever a Stop hook flagged. Shared by the
-    debug-leftover and todo-leftover Stop hooks — keep their detection here in sync via this
-    one walker (jscpd runs at threshold 0, so this must not be copy-pasted)."""
+    skipped, so committing or reverting clears whatever a Stop hook flagged. Used by the
+    debug-leftover Stop hook; kept as a shared walker so a second such hook doesn't
+    copy-paste it (jscpd runs at threshold 0)."""
     # Tracked edits vs HEAD (only when HEAD exists).
     if git(["rev-parse", "--verify", "HEAD"]).strip():
         cur, new_ln = None, None
@@ -62,8 +164,8 @@ def new_lines():
 def collect_new_line_hits(keep, limit=15):
     """Walk new_lines(), keep those where keep(path, text) is truthy, dedup by (path, line),
     and return up to `limit` formatted "  path:line: text" strings — with a trailing
-    "  ... and N more" when truncated, or [] when nothing matched. Shared by the
-    debug-leftover and todo-leftover Stop hooks (jscpd runs at threshold 0)."""
+    "  ... and N more" when truncated, or [] when nothing matched. Used by the
+    debug-leftover Stop hook (jscpd runs at threshold 0)."""
     hits = []
     seen = set()
     for path, lineno, text in new_lines():
@@ -121,6 +223,12 @@ def _tool_use_blocks(line):
             yield block
 
 
+# A real slash-command marker holds a short bare name. Bounded and newline-free on
+# purpose: an unbounded `.*?` (even non-greedy) happily spans a whole API-request line and
+# matched the docstring below, which documents the tag it was looking for.
+_COMMAND_NAME_RE = re.compile(r"<command-name>([^<>\n]{1,100})</command-name>")
+
+
 def transcript_invoked(transcript_path, needles, sentinel=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
@@ -136,9 +244,14 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     for line in _transcript_lines(transcript_path):
         if sentinel and sentinel in line:
             return True
-        # Slash-command marker: <command-name>…</command-name> naming a needle.
-        if "command-name" in line and any(n in line for n in needles):
-            return True
+        # Slash-command marker: the needle must sit INSIDE <command-name>…</command-name>,
+        # not merely somewhere on the same line. A transcript line is often a whole API
+        # request: the Skill tool's own schema documents "<command-name> block" and the
+        # skill listing names every installed skill, so "both substrings present" matched
+        # in every session and silently pinned the caller to its already-ran branch.
+        for name in _COMMAND_NAME_RE.findall(line):
+            if any(n in name for n in needles):
+                return True
         for block in _tool_use_blocks(line):
             inp = block.get("input") or {}
             if hit(inp.get("skill")) or hit(inp.get("subagent_type")):

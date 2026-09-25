@@ -9,20 +9,21 @@
 # - audit unavailable (override pointing elsewhere, no python3): fall back to the
 #   skill nudge alone, once per session per file.
 #
-# Deliberately self-contained: the writing plugin installs without dev-hooks, so this
-# script cannot source dev-hooks' lib/reminder-common.sh.
+# Shares this plugin's lib/voice-common.sh (payload read, opt-out, once-per-session marker,
+# emit + fire telemetry). Still never sources dev-hooks' lib: the writing plugin installs
+# without dev-hooks.
 #
 # Opt out per repo/user with WRITING_README=false (in .claude settings "env").
 # WRITING_README_AUDIT_SCRIPT overrides the audit script path (mainly for tests).
 
-case "${WRITING_README:-}" in
-  false | 0 | no | off) exit 0 ;;
-esac
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=lib/voice-common.sh
+source "$SELF_DIR/lib/voice-common.sh"
 
-command -v jq >/dev/null 2>&1 || exit 0
+voice_opt_out WRITING_README
+voice_payload
 
-PAYLOAD=$(cat 2>/dev/null)
-FILE=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+FILE=$(voice_field '.tool_input.file_path')
 [ -z "$FILE" ] && exit 0
 BASE=${FILE##*/}
 
@@ -32,14 +33,10 @@ case "${BASE,,}" in
   *) exit 0 ;;
 esac
 
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-
-# Advisory PostToolUse additionalContext, then exit 0 — never blocks the write.
-emit() {
-  jq -cn --arg msg "$1" \
-    '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
-  exit 0
-}
+# After the basename gate (this hook runs on every write, so a non-README shouldn't pay a
+# jq spawn) but before any emit: SESSION is what makes a fire attributable to a repo, and
+# the audit path below emits without reaching the once-per-session block that used to set it.
+SESSION=$(voice_field '.session_id')
 
 NUDGE="Use the \`writing:github-readme\` skill (Skill tool) before finalizing this README — it covers section structure, onboarding flow, examples, and contribution guidance — and re-run its audit script (skills/github-readme/scripts/github_readme_audit.py) until it passes."
 
@@ -47,18 +44,13 @@ NUDGE="Use the \`writing:github-readme\` skill (Skill tool) before finalizing th
 AUDIT="${WRITING_README_AUDIT_SCRIPT:-$SELF_DIR/../../skills/github-readme/scripts/github_readme_audit.py}"
 if [ -f "$AUDIT" ] && command -v python3 >/dev/null 2>&1 && [ -f "$FILE" ]; then
   if OUT=$(python3 "$AUDIT" "$FILE" 2>&1); then
-    emit "README audit passed on $BASE (review any WARN lines):"$'\n'"$OUT"$'\n\n'"$NUDGE"
+    voice_emit PostToolUse "README audit passed on $BASE (review any WARN lines):"$'\n'"$OUT"$'\n\n'"$NUDGE"
   else
-    emit "README audit found failures in $BASE — fix before finalizing:"$'\n'"$OUT"$'\n\n'"$NUDGE"
+    voice_emit PostToolUse "README audit found failures in $BASE — fix before finalizing:"$'\n'"$OUT"$'\n\n'"$NUDGE"
   fi
 fi
 
 # --- audit unavailable: fall back to a once-per-session-per-file skill reminder ---------
-SESSION=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "nosession"' 2>/dev/null)
-MARKER_DIR="${TMPDIR:-/tmp}/writing-readme-reminder"
-mkdir -p "$MARKER_DIR" 2>/dev/null
-MARKER="$MARKER_DIR/${SESSION:-nosession}-$(printf '%s' "$FILE" | tr -c 'A-Za-z0-9._-' _)"
-[ -e "$MARKER" ] && exit 0
-: >"$MARKER" 2>/dev/null
+voice_fire_once readme-reminder "$(printf '%s' "$FILE" | tr -c 'A-Za-z0-9._-' _)" || exit 0
 
-emit "You just wrote $BASE. $NUDGE"
+voice_emit PostToolUse "You just wrote $BASE. $NUDGE"

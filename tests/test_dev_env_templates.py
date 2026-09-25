@@ -280,7 +280,17 @@ def test_gitleaks_template_allowlists_gitignored_artifacts():
     text = GITLEAKS_TEMPLATE.read_text()
     assert "useDefault = true" in text, "must extend the default ruleset"
     # Allowlist must cover the gitignored secret/artifact paths the standard relies on.
-    for needle in (r"^\.env", "log/", r"config/credentials/.*\.key"):
+    # __pycache__ and .pytest_cache are v25: running pytest before committing regenerates
+    # them, and bytecode next to a credential-shaped test fixture matched gitleaks'
+    # github-pat rule on binary adjacency — blocking the commit with a finding in a file
+    # that was never staged, and naming a path the committer had no reason to look at.
+    for needle in (
+        r"^\.env",
+        "log/",
+        r"config/credentials/.*\.key",
+        "__pycache__/",
+        r"\.pytest_cache/",
+    ):
         assert needle in text, f".gitleaks.toml allowlist is missing {needle!r}"
 
 
@@ -528,3 +538,13 @@ def test_devcontainer_setup_sh_order():
     )
     # No global pnpm in a real command (the comment mentioning it is stripped above).
     assert "npm install -g pnpm" not in body and "npm i -g pnpm" not in body
+
+
+@pytest.mark.parametrize("stack", ["python", "shell"])
+def test_uv_uses_the_python_mise_installs(stack):
+    """uv prefers its own managed interpreters over mise's, so without these two [env] lines a
+    local `uv run` picked a uv-managed 3.13 while CI (which has none) ran mise's 3.14."""
+    text = (TEMPLATES_DIR / f"mise.{stack}.toml").read_text()
+    env = text.split("[env]", 1)[1]
+    assert 'UV_PYTHON_PREFERENCE = "only-system"' in env
+    assert 'UV_PYTHON_DOWNLOADS = "never"' in env

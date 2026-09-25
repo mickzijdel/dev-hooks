@@ -1,7 +1,7 @@
 {
   "name": "writing",
-  "description": "Writing and content skills: github-readme (README structure, onboarding flow, examples, contribution guidance), humanizer (strip signs of AI-generated writing, based on Wikipedia's guide), and readability (clarity and scannability for web content, docs, and long-form text) — adapted from Nate Berkopec's dotfiles — plus voice-profile (match a person's writing voice from a profile of their own rules). Ships a readme-reminder hook that audits READMEs with the github-readme checker, a voice-intent-reminder hook that nudges applying a discovered voice profile before writing, and a voice-reminder hook that scans prose (incl. HTML webcopy) against that profile on write.",
-  "version": "1.3.0",
+  "description": "Writing and content skills: github-readme (README structure, onboarding flow, examples, contribution guidance), humanizer (strip signs of AI-generated writing, based on Wikipedia's guide), and readability (clarity and scannability for web content, docs, and long-form text) — adapted from Nate Berkopec's dotfiles — plus voice-profile (match a person's writing voice from a profile of their own rules). Ships a readme-reminder hook that audits READMEs with the github-readme checker, plus a four-stage voice chain: voice-intent-reminder (writing-flavoured prompt), voice-prewrite-reminder (before a prose file is written), voice-reminder (banned-word scan of what landed) and voice-stop-reminder (blocks the turn when the session wrote prose without applying the profile). Prose covers documents and markup/templating alike, incl. HTML webcopy and Rails views.",
+  "version": "1.4.5",
   "author": {
     "name": "Mick Zijdel"
   },

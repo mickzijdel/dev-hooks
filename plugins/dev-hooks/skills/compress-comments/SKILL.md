@@ -27,6 +27,10 @@ rule decides everything:
 Delete-biased: when in doubt, delete. Compress only when a real "why" is buried in
 verbosity — keep the why, drop the narration.
 
+The rule is per-comment, so it is not sufficient on its own: a file where every comment
+passes it can still carry five times the comments a human would write. Apply the budget
+and the register rule below as well.
+
 ## Find the comments
 
 Judge only comments on lines this session's work added or changed. Never touch pre-existing
@@ -46,6 +50,54 @@ comments.
 | **Delete** (default) | The comment fails the survival rule: code-echo, change narration, planning forensics, reviewer justification, section headers, leftovers — see [references/comment-smells.md](references/comment-smells.md) for the taxonomy with examples. |
 | **Compress** | A real why is buried in narration: rewrite to just the constraint, usually one line. |
 | **Docstring-compress** | Public-API docstrings (Python docstrings, JSDoc, YARD, rustdoc) are never deleted — doc tooling and linters expect them. Drop parameter/return lines that restate names and types; keep the one-line summary and real semantics (units, side effects, invariants, raised errors). |
+
+## The budget
+
+Measured across Django 4.0, Flask 2.0, requests 2.27 and git 2.34, human code converges
+on **~10 comment lines per 100 code lines** regardless of language or project. AI-written
+code in this repo sits at 50%.
+
+Check a touched file with
+`plugins/dev-hooks/skills/deslop/scripts/slop_scan.py --metrics-only <file>`.
+
+Under ~15%, the survival rule alone is enough. Over it, switch from filtering to
+**ranking**: order the comments by how much constraint each one carries and keep the top
+few. Comments that would individually survive still go, because the reader's attention is
+the budget, not the rule.
+
+A file can be over budget for a real reason — a format spec, a vendored algorithm, a
+lookup table where each row needs a source. Say so and move on; don't strip it to hit a
+number.
+
+## The register
+
+Human comments are **clipped fragments that name identifiers**. AI comments are complete
+sentences about policy. The measured gap:
+
+| | Human codebases | AI-written |
+|---|---|---|
+| Words per comment | 7–8 | 12 |
+| Contains an em dash | under 1% | 19% |
+| Contains a parenthetical | 11–13% | 39% |
+| Sits directly above a code line | 53% | 29% |
+
+So when rewriting a survivor: no em dashes, no parenthetical asides, no balanced clauses,
+one thing per comment. Name the identifier and state the constraint.
+
+```python
+# We use NFKD rather than NFC here — ligatures and accented characters need to
+# decompose (rather than compose) before the ASCII strip below, otherwise "ﬁ"
+# survives as a single codepoint and gets dropped entirely.
+```
+
+becomes
+
+```python
+# NFKD, not NFC: ligatures must decompose before the ASCII strip below
+```
+
+Full details and the reproduction method:
+[[deslop]]'s [measurements.md](../deslop/references/measurements.md).
 
 ## Never touch
 

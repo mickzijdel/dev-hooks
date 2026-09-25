@@ -63,7 +63,7 @@ local linters = new Mapping<String, Step> {
     // suite anyway; this surfaces drift at commit time, only when skill files are staged.
     ["dev-env-version-sync"] {
         glob = List("plugins/dev-hooks/skills/dev-env-setup/**", "tests/test_dev_env_templates.py")
-        check = "uv run pytest -q tests/test_dev_env_templates.py"
+        check = "uv run pytest -q -n 0 tests/test_dev_env_templates.py"
     }
     // Marketplace + per-plugin manifest validation via the Claude CLI, whenever plugin
     // files are staged. Local-only (CI doesn't install the Claude CLI); scans the whole

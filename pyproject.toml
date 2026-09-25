@@ -7,12 +7,13 @@
 name = "dev-hooks"
 version = "0.0.0"
 description = "Dev tooling for the dev-hooks Claude Code plugin."
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = []
 
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-xdist",
     # Pinned below 0.16: for a 0.x tool the minor line is the breaking line, and 0.16 both
     # expands the default rule set (68 new findings here) and the formatter's file scope
     # (it now reformats Python fences inside Markdown). hk's pre-commit `ruff`/`ruff_format`
@@ -35,3 +36,6 @@ exclude-newer = "4 days"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Subprocess-bound and isolated per tmp_path: ~44s serial, ~10s parallel.
+# `-n 0` runs serially, which pdb and -s need.
+addopts = "-n auto"

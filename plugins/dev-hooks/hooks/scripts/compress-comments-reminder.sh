@@ -35,68 +35,39 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 reminder_stop_init ""
 
 # ── Count comment lines this session added ──────────────────────────────────────
-CODE_GLOBS=('*.rb' '*.erb' '*.rake' '*.py' '*.js' '*.ts' '*.jsx' '*.tsx' '*.vue' '*.mjs' '*.cjs' '*.sh')
+# reminder_session_added_lines supplies the shared half (added lines in the working tree,
+# in commits since the session started, and every line of an untracked code file, over the
+# lib's one code-extension list); this hook only filters them down to comments.
 # `*` needs trailing space/EOL: a bare `^\s*\*` would count Python's `*args,` lines.
 COMMENT_RE='^[[:space:]]*(#|//|/\*|\*([[:space:]]|$))'
 NOISE_RE='^[[:space:]]*#!|shellcheck|eslint|noqa|biome-ignore|jscpd:|rubocop:|type:[[:space:]]*ignore|frozen_string_literal'
 
-reminder_session_since
-SINCE=$REPLY
-
-COUNT=$(
-  {
-    {
-      git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
-      if [ -n "$SINCE" ]; then
-        git log -p --no-color --format= --since="$SINCE" -- "${CODE_GLOBS[@]}" 2>/dev/null
-      fi
-    } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
-    git ls-files -z --others --exclude-standard -- "${CODE_GLOBS[@]}" 2>/dev/null |
-      xargs -0 -r cat 2>/dev/null
-  } | grep -E "$COMMENT_RE" | grep -cvE "$NOISE_RE"
-)
+# shellcheck disable=SC2119  # no args = the default code globs, not the script's $@.
+reminder_session_added_lines
+COUNT=$(printf '%s\n' "$REPLY" | grep -E "$COMMENT_RE" | grep -cvE "$NOISE_RE")
 COUNT=${COUNT:-0}
 
 # ── Compare against the last-fired baseline ─────────────────────────────────────
-reminder_state_file compress-comments
-MARKER=$REPLY
-STORED=$(cat "$MARKER" 2>/dev/null)
-case "$STORED" in *[!0-9]* | "") STORED="" ;; esac
-
 SENTINEL="[compress-comments-reminder]"
-if [ -z "$STORED" ]; then
+
+reminder_rearm_baseline compress-comments
+if [ -z "$REPLY" ]; then
   # No reminder yet this session. A skill run that already happened seeds the baseline:
-  # the current comments are considered handled, only growth beyond them re-arms.
-  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-    RAN=$(
-      python3 - "$TRANSCRIPT" "$SELF_DIR/lib" <<'PYEOF'
-import sys
-
-sys.dont_write_bytecode = True
-sys.path.insert(0, sys.argv[2])
-from hook_helpers import transcript_invoked
-
-print(1 if transcript_invoked(sys.argv[1], ("compress-comments",)) else 0)
-PYEOF
-    )
-    if [ "$RAN" = "1" ]; then
-      printf '%s' "$COUNT" >"$MARKER" 2>/dev/null
-      exit 0
-    fi
-  fi
-  [ "$COUNT" -ge 3 ] || exit 0
-  MSG="${SENTINEL} This session added ${COUNT} comment lines."
-else
-  if [ "$COUNT" -lt "$STORED" ]; then
-    # Comments were cleaned up since the last reminder: rebase, don't nag.
-    printf '%s' "$COUNT" >"$MARKER" 2>/dev/null
+  # the current comments count as handled, and only growth beyond them re-arms.
+  reminder_transcript_invoked "" compress-comments
+  if [ "$REPLY" = "1" ]; then
+    reminder_rearm_seed compress-comments "$COUNT"
     exit 0
   fi
-  [ $((COUNT - STORED)) -ge 3 ] || exit 0
-  MSG="${SENTINEL} $((COUNT - STORED)) more comment lines since the last reminder (session total ${COUNT})."
 fi
 
-printf '%s' "$COUNT" >"$MARKER" 2>/dev/null
+reminder_rearm compress-comments "$COUNT" 3
+case "$REPLY" in
+  silent) exit 0 ;;
+  first) MSG="${SENTINEL} This session added ${COUNT} comment lines." ;;
+  *) MSG="${SENTINEL} ${REMINDER_REARM_DELTA} more comment lines since the last reminder (session total ${COUNT})." ;;
+esac
+
 MSG="${MSG} Before finishing, review the comments you wrote: run the dev-hooks compress-comments skill on this session's diff. Delete comments that restate the code (code-echo, change narration, planning forensics, reviewer justification); compress the rest. A comment survives only if it states something the code cannot show."
 
 reminder_emit_stop "$MSG"

@@ -7,9 +7,11 @@ the silent-gate path and the firing path are exercised for every hook.
 
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -54,20 +56,6 @@ def assert_json_with(stdout, needle):
     payload = json.loads(stdout)
     assert needle in json.dumps(payload)
     return payload
-
-
-# ── detect-stack-skills.sh ──────────────────────────────────────────────────────────
-def test_detect_stack_fires_for_python(tmp_path):
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "Python")
-
-
-def test_detect_stack_silent_when_unrecognized(tmp_path):
-    r = run_hook("detect-stack-skills.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
 
 
 # ── dev-env-reminder.sh ─────────────────────────────────────────────────────────────
@@ -450,6 +438,292 @@ def test_voice_reminder_scans_html_webcopy(tmp_path):
     r = _run_voice(payload, base_env(HOME=str(tmp_path)))
     assert r.returncode == 0
     assert_json_with(r.stdout, "voice-profile")
+
+
+# ── voice-prewrite-reminder.sh (writing plugin; PreToolUse) ─────────────────────────
+def _run_prewrite(payload, env):
+    return run_hook(
+        "voice-prewrite-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _prewrite_payload(tmp_path, name="post.md", session="s1"):
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "tool_input": {"file_path": str(tmp_path / name)},
+        }
+    )
+
+
+def test_voice_prewrite_fires_before_writing_prose(tmp_path):
+    # The point of this hook: it fires on the file about to be written, so the profile is
+    # in context for the FIRST draft rather than patched in afterwards.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(_prewrite_payload(tmp_path), base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    payload = assert_json_with(r.stdout, "voice_profile.md")
+    assert payload["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    # Advisory only — no permission decision, so the write proceeds normally.
+    assert "permissionDecision" not in payload["hookSpecificOutput"]
+
+
+def test_voice_prewrite_silent_without_profile(tmp_path):
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_for_code(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name="app.py"), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_fires_once_per_session(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() != ""
+    assert _run_prewrite(_prewrite_payload(tmp_path), env).stdout.strip() == ""
+
+
+def test_voice_prewrite_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path),
+        base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "name", ["page.html", "show.html.erb", "hero.liquid", "doc.rst"]
+)
+def test_voice_prewrite_covers_markup_and_templates(tmp_path, name):
+    # Webcopy and Rails views carry the sentences a reader reads; they were the gap.
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name=name), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.stdout.strip() != ""
+
+
+# ── voice-stop-reminder.sh (writing plugin; Stop) ───────────────────────────────────
+def _run_voice_stop(payload, env):
+    return run_hook(
+        "voice-stop-reminder.sh", stdin=payload, env=env, scripts=WRITING_HOOKS
+    )
+
+
+def _voice_write_block(path):
+    return json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": str(path)},
+                    }
+                ]
+            }
+        }
+    )
+
+
+_VOICE_SKILL_BLOCK = json.dumps(
+    {
+        "message": {
+            "content": [
+                {"type": "tool_use", "input": {"skill": "writing:voice-profile"}}
+            ]
+        }
+    }
+)
+
+
+def _voice_stop_payload(tmp_path, lines, session="s1"):
+    # First line mirrors a real transcript's skill_listing, which names every installed
+    # skill — a hook that greps for "voice-profile" instead of walking tool_use blocks
+    # would see a match here and go silent in every session.
+    listing = json.dumps(
+        {
+            "timestamp": "2000-01-01T00:00:00.000Z",
+            "attachment": {
+                "type": "skill_listing",
+                "content": "writing:voice-profile: Use when drafting prose in a voice",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *lines]) + "\n")
+    return json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": session,
+            "transcript_path": str(transcript),
+        }
+    )
+
+
+def test_voice_stop_blocks_when_prose_written_without_skill(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[voice-stop-reminder]")
+
+
+def test_voice_stop_silent_when_skill_ran(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path, [_voice_write_block(tmp_path / "post.md"), _VOICE_SKILL_BLOCK]
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_only_code_written(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "app.py")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_does_not_loop_on_unchanged_prose(tmp_path):
+    # Fires once, then stays silent while nothing more is written — otherwise Stop loops.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    assert _run_voice_stop(payload, env).returncode == 2
+    assert _run_voice_stop(payload, env).returncode == 0
+
+
+def test_voice_stop_reasks_when_more_prose_written(tmp_path):
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    first = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "a.md")])
+    assert _run_voice_stop(first, env).returncode == 2
+    second = _voice_stop_payload(
+        tmp_path,
+        [_voice_write_block(tmp_path / "a.md"), _voice_write_block(tmp_path / "b.md")],
+    )
+    assert _run_voice_stop(second, env).returncode == 2
+
+
+def test_voice_stop_nudges_are_bounded(tmp_path):
+    # A Claude that cannot apply the profile must still be able to stop.
+    _voice_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    codes = []
+    for i in range(5):
+        lines = [_voice_write_block(tmp_path / f"f{j}.md") for j in range(i + 1)]
+        codes.append(
+            _run_voice_stop(_voice_stop_payload(tmp_path, lines), env).returncode
+        )
+    assert codes[:3] == [2, 2, 2]
+    assert codes[3:] == [0, 0]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["plugins/x/skills/y/SKILL.md", "README.md", "CLAUDE.md", "plans/notes.md"],
+)
+def test_voice_stop_ignores_repo_scaffolding(tmp_path, name):
+    """This is the only blocking voice hook, and a global ~/.claude/voice_profile.md makes
+    it apply to every repo. Counting a SKILL.md or CHANGELOG as prose would refuse to end
+    three ordinary coding sessions out of three."""
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / name)])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path,
+        [
+            _voice_write_block(tmp_path / "plugins/x/skills/y/SKILL.md"),
+            _voice_write_block(tmp_path / "blog/launch-post.md"),
+        ],
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 2
+    # Only the blog post counted.
+    assert "wrote 1 prose file" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/tmp/claude-1000/sess/scratchpad/msg.txt", "work/scratchpad/draft.md"],
+)
+def test_voice_prewrite_ignores_scratch_and_git_paths(tmp_path, path):
+    """Commit messages are written to a scratchpad file, and Mick's CLAUDE.md puts "code or
+    commit messages" outside the voice profile's scope. The hook fired on one of its own
+    commit messages before this gate existed. The gate keys on that directory, not on a /tmp
+    prefix: a checkout can live under /tmp — every fixture here does — and excluding it
+    would silence the hook on real prose. (Git's own COMMIT_EDITMSG needs no entry; it has
+    no prose extension, so voice_is_prose_file rejects it first.)"""
+    _voice_repo(tmp_path)
+    payload = json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "session_id": f"s-{abs(hash(path))}",
+            "tool_input": {"file_path": path},
+        }
+    )
+    r = _run_prewrite(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_ignores_scratch_paths(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(
+        tmp_path, [_voice_write_block("/tmp/claude-1000/sess/scratchpad/msg.txt")]
+    )
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_prewrite_ignores_repo_scaffolding(tmp_path):
+    _voice_repo(tmp_path)
+    r = _run_prewrite(
+        _prewrite_payload(tmp_path, name="SKILL.md"), base_env(TMPDIR=str(tmp_path))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_without_profile(tmp_path):
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(
+        payload,
+        base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_voice_stop_silent_when_opted_out(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
 
 
 # ── voice-intent-reminder.sh (writing plugin; UserPromptSubmit, self-contained) ─────
@@ -1082,24 +1356,133 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
 
 
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
+def _plan_env(tmp_path, session="plan-session"):
+    """Isolate the hook's state dir per test, and give it a stable session id."""
+    return base_env(TMPDIR=str(tmp_path / "state")), json.dumps({"session_id": session})
+
+
+def _write_plan(tmp_path, *, age):
+    plan = tmp_path / ".claude" / "current_plan.md"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text("# plan\n")
+    stamp = time.time() - age
+    os.utime(plan, (stamp, stamp))
+    return plan
+
+
 def test_plan_reminder_silent_without_plan(tmp_path):
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
 
 def test_plan_reminder_fires_for_stale_plan(tmp_path):
-    plan = tmp_path / ".claude" / "current_plan.md"
-    plan.parent.mkdir()
-    plan.write_text("# plan\n")
-    old = time.time() - 200  # > 120s threshold
-    os.utime(plan, (old, old))
-    r = run_hook("plan-reminder.sh", cwd=tmp_path)
+    _write_plan(tmp_path, age=200)  # > 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert r.returncode == 0
     assert "REMINDER:" in r.stdout
 
 
+def test_plan_reminder_silent_for_fresh_plan(tmp_path):
+    _write_plan(tmp_path, age=10)  # inside the 120s threshold
+    env, stdin = _plan_env(tmp_path)
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_plan_reminder_does_not_repeat_for_an_unchanged_plan(tmp_path):
+    """The Stop hook runs on every stop; an untouched plan must be nagged about once.
+
+    Without a re-arm this fired on every single stop for the rest of the session —
+    84 times in one session in the 2026-08-20 fire log.
+    """
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    first = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in first.stdout
+
+    for _ in range(3):
+        again = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+        assert again.returncode == 0
+        assert again.stdout.strip() == ""
+
+
+def test_plan_reminder_rearms_after_the_plan_is_updated(tmp_path):
+    """Once the plan is actually touched, a later staleness is worth one more nudge."""
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout
+    )
+    assert (
+        run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin).stdout.strip()
+        == ""
+    )
+
+    _write_plan(tmp_path, age=300)  # a different mtime => the plan moved on
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in r.stdout
+
+
+def test_plan_reminder_state_is_per_session(tmp_path):
+    """Two sessions in one repo must each get their own reminder."""
+    _write_plan(tmp_path, age=200)
+    env, stdin_a = _plan_env(tmp_path, session="session-a")
+    _, stdin_b = _plan_env(tmp_path, session="session-b")
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_a).stdout
+    )
+    assert (
+        "REMINDER:"
+        in run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin_b).stdout
+    )
+
+
 # ── review-reminder.sh ──────────────────────────────────────────────────────────────
+def _review_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"):
+    # Mirrors a real transcript: a timestamped first line (the session start the
+    # committed-work gate measures from) plus the skill_listing attachment that names every
+    # installed skill — so a guard that greps for the bare name "code-review" instead of
+    # walking tool_use blocks fails here rather than silently in production.
+    listing = json.dumps(
+        {
+            "timestamp": started,
+            "attachment": {
+                "type": "skill_listing",
+                "content": "code-review: Review the current diff for correctness bugs",
+            },
+        }
+    )
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join([listing, *(extra_lines or [])]) + "\n")
+    return json.dumps({"transcript_path": str(transcript), "session_id": tmp_path.name})
+
+
+def _run_review(tmp_path, payload):
+    """TMPDIR pinned to the test dir so the per-session nudge counter and re-arm baseline
+    are hermetic — otherwise state from an earlier run leaks in through "nosession"."""
+    return run_hook(
+        "review-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+
+
+REVIEW_LINE = json.dumps(
+    {"message": {"content": [{"type": "tool_use", "input": {"skill": "code-review"}}]}}
+)
+
+
+def _code_lines(n, start=0):
+    return "".join(f"x{i} = {i}\n" for i in range(start, start + n))
+
+
 def test_review_reminder_silent_outside_git(tmp_path):
     r = run_hook("review-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
     assert r.returncode == 0
@@ -1109,12 +1492,7 @@ def test_review_reminder_silent_outside_git(tmp_path):
 def test_review_reminder_fires_on_unreviewed_code(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # untracked code change
-    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    r = _run_review(tmp_path, _review_payload(tmp_path))
     assert r.returncode == 2
     assert_json_with(r.stdout, "[review-reminder]")
 
@@ -1122,23 +1500,519 @@ def test_review_reminder_fires_on_unreviewed_code(tmp_path):
 def test_review_reminder_silent_after_review(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")
-    review_line = json.dumps(
-        {
-            "message": {
-                "content": [{"type": "tool_use", "input": {"skill": "code-review"}}]
-            }
-        }
-    )
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=2, extra_lines=[review_line]
-    )
-    r = run_hook(
-        "review-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    r = _run_review(tmp_path, payload)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+def test_review_reminder_fires_on_committed_only_work(tmp_path):
+    # The headline fix: commit-as-you-go leaves a clean tree, and the old porcelain-only
+    # gate went silent on exactly those sessions. The commit is dated after the fixture
+    # session start, so reminder_session_files must still see it.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("seed\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "feature.py").write_text(_code_lines(30))
+    _commit_dated(tmp_path, run, "2024-01-01T12:00:00", msg="feature")
+    assert (
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == ""
+    )  # tree really is clean
+    r = _run_review(tmp_path, _review_payload(tmp_path))
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "[review-reminder]")
+
+
+def test_review_reminder_keeps_asking_while_unreviewed(tmp_path):
+    # A substantial change earns repeated nudges — a single fire is easy to acknowledge and
+    # then ignore — but the count is bounded so a Claude that cannot review still stops.
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    payload = _review_payload(tmp_path)
+    codes = [_run_review(tmp_path, payload).returncode for _ in range(4)]
+    assert codes == [2, 2, 2, 0]
+
+
+def test_review_reminder_nudges_small_change_only_once(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "tiny.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    assert _run_review(tmp_path, payload).returncode == 2
+    assert _run_review(tmp_path, payload).returncode == 0
+
+
+def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
+    # A review that ran seeds the baseline; code written afterwards makes it stale.
+    init_git_repo(tmp_path)
+    f = tmp_path / "mod.py"
+    f.write_text(_code_lines(5))
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    assert _run_review(tmp_path, payload).returncode == 0  # baseline seeded
+    assert _run_review(tmp_path, payload).returncode == 0  # nothing changed: no loop
+    f.write_text(_code_lines(40))
+    r = _run_review(tmp_path, payload)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "stale")
+
+
+def test_review_reminder_ignores_command_name_lookalike(tmp_path):
+    """A transcript line that merely *contains* both "command-name" and a needle is not an
+    invocation. Real transcripts hit this every session: one line carries a whole API
+    request, in which the Skill tool's schema documents the "<command-name> block" while the
+    skill listing separately names code-review. Treating that as a review pinned the hook to
+    its already-reviewed branch in every session in this repo."""
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    lookalike = json.dumps(
+        {
+            "schema": "If a `<command-name>` block is already present this turn, "
+            "the skill is loaded.",
+            "listing": "code-review: Review the current diff for correctness bugs",
+        }
+    )
+    payload = _review_payload(tmp_path, extra_lines=[lookalike])
+    r = _run_review(tmp_path, payload)
+    assert r.returncode == 2
+    # The un-reviewed wording, not the stale-review wording.
+    assert "have not run a code review" in r.stdout
+    assert "stale" not in r.stdout
+
+
+def test_review_reminder_honors_a_real_slash_command(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "big.py").write_text(_code_lines(30))
+    real = json.dumps({"text": "<command-name>code-review</command-name>"})
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[real]))
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── reminder_session_files / _added_lines (lib behaviour the hooks all sit on) ───────
+def _lib_probe(tmp_path, transcript, script, env=None):
+    """Source the lib in a scratch repo and print what a helper actually returns. The Stop
+    fixtures all pin the session start to 2000-01-01, so the mtime filter and the size cap
+    below are never exercised through a hook — they need a probe of their own."""
+    # .txt, not .sh: the probe lives inside the scratch repo, and a *.sh there would be
+    # counted as untracked code by the very helper under test.
+    probe = tmp_path / "probe.txt"
+    probe.write_text(
+        f'source "$1/reminder-common.sh"\nTRANSCRIPT="$2"\nSESSION=p\n{script}\n'
+    )
+    return subprocess.run(
+        ["bash", str(probe), str(HOOKS / "lib"), str(transcript)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+
+def _dated_transcript(tmp_path, started):
+    t = tmp_path / "t.jsonl"
+    t.write_text(json.dumps({"timestamp": started}) + "\n")
+    return t
+
+
+def test_session_files_excludes_long_standing_untracked(tmp_path):
+    # An old untracked scratch dir is not this session's work; counting it tripped
+    # big-change-reminder's size gate in every session.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("s\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "old.py").write_text("x = 1\n")
+    (tmp_path / "new.py").write_text("y = 2\n")
+    os.utime(tmp_path / "old.py", (0, 946684800))  # 2000-01-01
+    t = _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "'
+    )
+    assert "new.py" in out
+    assert "old.py" not in out
+
+
+def test_session_added_lines_skips_huge_untracked_file(tmp_path):
+    # `-size -1M` rounds up and so matched only EMPTY files; the cap is in bytes. A widened
+    # pathspec would otherwise read a multi-hundred-MB artifact into a shell variable.
+    init_git_repo(tmp_path)
+    (tmp_path / "small.py").write_text("a = 1\n")
+    (tmp_path / "big.py").write_text("b = 2\n" * 200_000)  # ~1.2 MB
+    assert (tmp_path / "big.py").stat().st_size > 1_048_576
+    t = _dated_transcript(tmp_path, "2000-01-01T00:00:00.000Z")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_added_lines; printf "%s\\n" "$REPLY" | grep -c .'
+    )
+    assert out == "1", f"expected only small.py's line, got {out}"
+
+
+def _untracked_probe_repo(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("s\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "old.py").write_text("x = 1\n")
+    (tmp_path / "new.py").write_text("y = 2\n")
+    os.utime(tmp_path / "old.py", (0, 946684800))  # 2000-01-01, before the session
+    # Explicitly in the past, not "just now": a whole-second epoch of *now* would still be
+    # older than a file written microseconds ago, so a same-instant mtime lets a broken
+    # "session start = now" pass by accident.
+    os.utime(tmp_path / "new.py", (0, int(time.time()) - 600))
+    return _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+
+
+def _shim_dir(tmp_path, name, body):
+    d = tmp_path / f"shim-{name}"
+    d.mkdir(exist_ok=True)
+    (d / name).write_text(body)
+    (d / name).chmod(0o755)
+    return d
+
+
+def test_untracked_since_needs_neither_date_nor_find(tmp_path):
+    """The session filter runs in python, so no shell date/find dialect can change it.
+
+    Both tools are shimmed to misbehave the way BSD does — `date -d` exiting 0 with the
+    CURRENT time (there `-d` sets the kernel DST value), and `find` failing outright. Each
+    of those silently returned an empty list in earlier shell implementations, which reads
+    exactly like "this session did no work"."""
+    t = _untracked_probe_repo(tmp_path)
+    shim = _shim_dir(
+        tmp_path,
+        "date",
+        f'#!/bin/sh\n[ "$1" = "--version" ] && exit 1\necho {int(time.time())}\n',
+    )
+    (shim / "find").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "find").chmod(0o755)
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
+    )
+    assert "new.py" in out, f"broken date/find changed the result: {out!r}"
+    assert "old.py" not in out
+
+
+def test_untracked_since_over_reports_without_python3(tmp_path):
+    # python3 absent: list every untracked file rather than none. An empty result would be
+    # indistinguishable from "the session did no work" — the failure this whole helper
+    # exists to avoid.
+    t = _untracked_probe_repo(tmp_path)
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_untracked_since "*.py" | sort | tr "\\n" " "', env=env
+    )
+    assert "new.py" in out and "old.py" in out
+
+
+def test_added_lines_over_reports_without_python3(tmp_path):
+    """The sibling of test_untracked_since_over_reports_without_python3. This helper had no
+    such guard, so a missing python3 dropped every untracked line — an empty count, which
+    silences the re-arming Stop hooks exactly as if the session had done no work."""
+    init_git_repo(tmp_path)
+    (tmp_path / "n.py").write_text("# a\n# b\n# c\n")
+    (tmp_path / "huge.py").write_text("# z\n" * 400_000)
+    t = _dated_transcript(tmp_path, "2000-01-01T00:00:00.000Z")
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+    env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path,
+        t,
+        'reminder_session_added_lines; printf "%s\\n" "$REPLY" | grep -c .',
+        env=env,
+    )
+    # n.py's three lines; huge.py still excluded, so the size cap survives the fallback.
+    assert out == "3", f"expected 3 lines without python3, got {out}"
+
+
+@pytest.mark.parametrize(
+    "first_line",
+    ["[1, 2, 3]", '{"timestamp": 12345}', "not json at all", '{"timestamp": null}'],
+)
+def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
+    """A transcript's first line is not always a message object — it can be a
+    queue-operation record — and a timestamp is not always a string. Narrow exception
+    handling raised AttributeError here, which surfaced as a traceback on hook stderr and
+    an empty count."""
+    t = tmp_path / "odd.jsonl"
+    t.write_text(first_line + "\n")
+    r = subprocess.run(
+        [
+            "python3",
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]);"
+            "from hook_helpers import session_start, session_start_epoch;"
+            "print(repr(session_start_epoch(session_start(sys.argv[2]))))",
+            str(HOOKS / "lib"),
+            str(t),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "None"
+    assert r.stderr.strip() == ""
+
+
+@pytest.mark.parametrize("use_python3", [True, False])
+@pytest.mark.parametrize(
+    ("first_line", "expected"),
+    [
+        ('{"timestamp": 12345}', ""),
+        ('{"timestamp": "hello world"}', ""),
+        # Date-SHAPED but not a real date: passes the jq mirror's `YYYY-` check, so it
+        # catches a python branch that falls through to jq on an empty (= rejected) answer.
+        ('{"timestamp": "2026-13-45T99:99:99.000Z"}', ""),
+        # Each of these slipped through a glob-based mirror: day 32 and day 00 both match
+        # `[0-3][0-9]`, and a trailing `*` accepts anything after a valid date. git does not
+        # reject them either — it silently reinterprets them under --since=.
+        ('{"timestamp": "2026-01-32T00:00:00.000Z"}', ""),
+        ('{"timestamp": "2026-01-00T00:00:00.000Z"}', ""),
+        ('{"timestamp": "2026-01-01Tgarbage"}', ""),
+        # Valid shapes the mirror must still accept.
+        ('{"timestamp": "2026-09-22"}', "2026-09-22"),
+        ('{"timestamp": "2026-09-22T13:45:59+02:00"}', "2026-09-22T13:45:59+02:00"),
+        ("[1, 2, 3]", ""),
+        ("not json", ""),
+        ('{"timestamp": "2026-09-22T00:00:00.000Z"}', "2026-09-22T00:00:00.000Z"),
+    ],
+)
+def test_session_since_rejects_non_date_timestamps(
+    tmp_path, first_line, expected, use_python3
+):
+    """`git log --since=12345` returns zero commits rather than erroring, so a numeric
+    timestamp made the session's committed work vanish and the re-arming Stop hooks go
+    quiet. Both paths are checked: the python helper, and the jq shape-check used when
+    python3 is unavailable — they must not drift."""
+    t = tmp_path / "t.jsonl"
+    t.write_text(first_line + "\n")
+    env = base_env()
+    if not use_python3:
+        shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+        env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    )
+    assert out == expected
+
+
+# session_start needs .timestamp() to succeed, which underflows for instants within the
+# local UTC offset of datetime.min. Which stamps those are depends on the machine's
+# timezone, so the shell mirror cannot match portably; it over-accepts them, passing a
+# value to git rather than blanking REPLY. Exactly one entry, named rather than skipped by
+# a pattern — a broad exclusion here would hide the drift this sweep exists to find.
+_TIMEZONE_DEPENDENT_STAMPS = {"0001-01-01"}
+
+
+def _generated_stamps():
+    """Stamps spanning the grammar's edges, generated rather than chosen.
+
+    Hand-picked cases are why this mirror drifted through four review rounds: each round
+    fixed the example the review named while the two implementations stayed different. An
+    independent fuzz of one such "fixed" regex found 192 disagreements a 22-case list had
+    missed. Here the oracle picks the cases."""
+    out = []
+    # Boundaries, not ranges: the suite runs on every Stop, so the sweep is kept to a
+    # couple of seconds. A full cartesian product found nothing these edges miss.
+    # 0001 and 0002 straddle where .timestamp() starts working, which is part of
+    # session_start's contract and not of fromisoformat's.
+    # 2000 is the only %400 leap case and 0002 the only year just past where .timestamp()
+    # starts working; a speed trim dropped both, leaving those branches live but
+    # unexercised. Mutation-checked: without 2000, breaking the %400 test still passes.
+    for year in ("0000", "0001", "0002", "1900", "2000", "2024"):
+        # 12 is the only month that exercises the upper bound on the ACCEPT side, and 28
+        # the only day that distinguishes February's 28 from a wrong 27 — both dropped by
+        # the same speed trim as the years above.
+        # Every 30-day month, not just one: the mirror lists them as `4 | 6 | 9 | 11`, and
+        # with only 04 present, dropping any of the others from that alternation survives.
+        for month in ("00", "02", "04", "06", "09", "11", "12", "13"):
+            for day in ("00", "01", "28", "29", "30", "31", "32"):
+                out.append(f"{year}-{month}-{day}")
+    base = "2026-09-22"
+    for hour in ("00", "23", "24", "25"):
+        for minute in ("00", "59", "60"):
+            for second in ("", "59", "60"):
+                stamp = f"{base}T{hour}:{minute}" + (f":{second}" if second else "")
+                out += [stamp, stamp + "Z"]
+    # Offsets are the case a character class cannot get right: fromisoformat takes any
+    # offset whose TOTAL is under 24h, so +02:99 is valid (it normalises to +03:39).
+    for sign in "+-":
+        for off_h in ("00", "14", "24"):
+            for off_m in ("00", "99"):
+                # Both separator styles, WITH and WITHOUT a seconds field, plus the mixed
+                # forms. The offset-seconds branch previously had zero cases here, which is
+                # how a grammar accepting "+0000:30" passed a green sweep.
+                # 123456/1234567 push the body past 13 characters — the length the
+                # grammar used to cap at, which silently rejected what isoformat() emits.
+                for off_s in ("", "99", "30.500", "00.123456", "30.1234567"):
+                    colon = f"{sign}{off_h}:{off_m}" + (f":{off_s}" if off_s else "")
+                    plain = f"{sign}{off_h}{off_m}" + (off_s if off_s else "")
+                    mixed_a = f"{sign}{off_h}{off_m}" + (f":{off_s}" if off_s else "")
+                    mixed_b = f"{sign}{off_h}:{off_m}" + (off_s if off_s else "")
+                    for tail in (colon, plain, mixed_a, mixed_b):
+                        out.append(f"{base}T13:45:59{tail}")
+                out.append(f"{base}T13:45:59{sign}{off_h}")
+    rng = random.Random(7)
+    for _ in range(50):
+        out.append(
+            "".join(rng.choice("0123456789-:TZ+. ") for _ in range(rng.randint(1, 26)))
+        )
+    out += ["hello world", "2026-9-2", "2026", "2026-09", f"{base}Tgarbage"]
+    return out
+
+
+def test_jq_stamp_mirror_agrees_with_python(tmp_path):
+    """Every generated stamp must get the same verdict from the shell mirror and from
+    datetime.fromisoformat. One bash process walks the whole sweep, so this stays fast."""
+    stamps = _generated_stamps()
+    shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+    probe = tmp_path / "sweep.txt"
+    probe.write_text(
+        'source "$1/reminder-common.sh"\n'
+        "while IFS= read -r stamp; do\n"
+        '  printf \'{"timestamp": "%s"}\\n\' "$stamp" > "$2/t.jsonl"\n'
+        '  TRANSCRIPT="$2/t.jsonl"\n'
+        "  reminder_session_since\n"
+        '  printf \'%s\\t%s\\n\' "$stamp" "$REPLY"\n'
+        'done < "$2/stamps.txt"\n'
+    )
+    # one jq spawn per stamp: split across concurrent bash processes, every stamp still checked
+    chunks = 8
+    procs = []
+    for i in range(chunks):
+        work = tmp_path / f"chunk{i}"
+        work.mkdir()
+        (work / "stamps.txt").write_text("\n".join(stamps[i::chunks]) + "\n")
+        procs.append(
+            subprocess.Popen(
+                ["bash", str(probe), str(HOOKS / "lib"), str(work)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=base_env(PATH=f"{shim}:{os.environ['PATH']}"),
+            )
+        )
+    got = {}
+    for proc in procs:
+        out, err = proc.communicate()
+        assert proc.returncode == 0, err
+        for line in out.splitlines():
+            stamp, _, reply = line.partition("\t")
+            got[stamp] = reply
+
+    # The oracle is hook_helpers.session_start itself, not a reimplementation of what it
+    # is thought to do. An earlier version of this test used datetime.fromisoformat, which
+    # is only half the contract — session_start also requires .timestamp() to succeed — so
+    # it asserted the mirror's answer for "0001-01-01" was right when python returns "".
+    # Reimplementing the oracle reintroduces exactly the drift the sweep exists to catch.
+    sys.path.insert(0, str(HOOKS / "lib"))
+    from hook_helpers import session_start
+
+    oracle = tmp_path / "oracle.jsonl"
+    disagreements = []
+    for stamp in stamps:
+        if not stamp:
+            continue
+        oracle.write_text(json.dumps({"timestamp": stamp}) + "\n")
+        expected = session_start(str(oracle))
+        if stamp in _TIMEZONE_DEPENDENT_STAMPS:
+            continue
+        if got.get(stamp, "<missing>") != expected:
+            disagreements.append((stamp, expected, got.get(stamp, "<missing>")))
+    assert not disagreements, (
+        f"{len(disagreements)} of {len(stamps)} stamps disagree "
+        f"(python, mirror): {disagreements[:10]}"
+    )
+
+
+# ── session-start cache ─────────────────────────────────────────────────────────────
+STOP_HOOKS_USING_SINCE = [
+    "review-reminder.sh",
+    "change-summary-reminder.sh",
+    "compress-comments-reminder.sh",
+    "big-change-reminder.sh",
+    "missing-test-reminder.sh",
+    "verify-work.sh",
+]
+
+
+def _python_import_log_shim(tmp_path):
+    """python3 that logs each spawn's hook_helpers import, then runs the real interpreter."""
+    log = tmp_path / "py.log"
+    body = (
+        "#!/bin/bash\n"
+        'src=$(mktemp); cat >"$src"\n'
+        f"grep -oE 'from hook_helpers import .*' \"$src\" | head -n1 >>'{log}'\n"
+        f'"{shutil.which("python3")}" "$@" <"$src"; rc=$?; rm -f "$src"; exit $rc\n'
+    )
+    return _shim_dir(tmp_path, "python3", body), log
+
+
+@requires_python3
+def test_stop_hooks_compute_session_start_once_per_session(tmp_path):
+    """Session start is fixed per session: one python computation across all Stop hooks."""
+    run = init_git_repo(tmp_path)
+    (tmp_path / "seed.txt").write_text("seed\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    (tmp_path / "mod.py").write_text(_code_lines(30))
+    shim, log = _python_import_log_shim(tmp_path)
+    env = base_env(
+        PATH=f"{shim}:{os.environ['PATH']}",
+        TMPDIR=str(tmp_path),
+        DEV_HOOKS_VERIFY_TESTS="off",
+    )
+    payload = _stop_payload(tmp_path)
+    for _ in range(2):
+        for hook in STOP_HOOKS_USING_SINCE:
+            run_hook(hook, cwd=tmp_path, stdin=payload, env=env)
+    imports = log.read_text().splitlines()
+    assert any("untracked_since" in i for i in imports), (
+        imports
+    )  # the shim saw the hooks
+    assert imports.count("from hook_helpers import session_start") == 1, imports
+    # untracked helpers receive the cached value
+    assert not [i for i in imports if "session_start," in i], imports
+
+
+def test_session_since_cache_is_per_session_and_transcript(tmp_path):
+    """A reused session id with another transcript, or no real session id, recomputes."""
+    a = tmp_path / "a.jsonl"
+    b = tmp_path / "b.jsonl"
+    a.write_text(json.dumps({"timestamp": "2024-01-01T00:00:00Z"}) + "\n")
+    b.write_text(json.dumps({"timestamp": "2025-02-02T00:00:00Z"}) + "\n")
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        'source "$1/reminder-common.sh"\n'
+        'SESSION=s1 TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=s1 TRANSCRIPT="$2/b.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=s1 TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        'SESSION=nosession TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+        """printf '{"timestamp": "2026-03-03T00:00:00Z"}\\n' >"$2/a.jsonl"\n"""
+        'SESSION=nosession TRANSCRIPT="$2/a.jsonl"; reminder_session_since; echo "$REPLY"\n'
+    )
+    r = subprocess.run(
+        ["bash", str(probe), str(HOOKS / "lib"), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=base_env(TMPDIR=str(tmp_path)),
+    )
+    assert r.returncode == 0, r.stderr
+    # cache miss must be silent: hook stderr shows up as Stop hook feedback
+    assert r.stderr == ""
+    assert r.stdout.splitlines() == [
+        "2024-01-01T00:00:00Z",
+        "2025-02-02T00:00:00Z",
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:00Z",
+        "2026-03-03T00:00:00Z",
+    ]
 
 
 # ── compress-comments-reminder.sh ───────────────────────────────────────────────────
@@ -2104,77 +2978,6 @@ def test_swallow_silent_for_handled(tmp_path):
     assert r.stdout.strip() == ""
 
 
-# ── todo-leftover-reminder.sh ────────────────────────────────────────────────────────
-TODO_SENTINEL = "[todo-leftover] new TODO/FIXME markers added this session"
-
-
-def test_todo_leftover_fires_on_new_marker(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("def f():\n    # TODO: handle errors\n    pass\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 2
-    payload = assert_json_with(r.stdout, "[todo-leftover]")
-    assert "foo.py" in json.dumps(payload)
-
-
-def test_todo_leftover_silent_for_preexisting_committed(tmp_path):
-    run = init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# FIXME: later\nx = 1\n")
-    run("add", "foo.py")
-    run("commit", "-q", "-m", "add foo")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_ignores_test_files(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "test_foo.py").write_text("# TODO: write more tests\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# TODO: x\n")
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=base_env(DEV_HOOKS_TODO_LEFTOVER="false"),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_todo_leftover_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "foo.py").write_text("# TODO: x\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", extra_lines=[json.dumps({"text": TODO_SENTINEL})]
-    )
-    r = run_hook(
-        "todo-leftover-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-    )
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
 # ── cross-hook behavior: opt-out and fire-once-per-session ──────────────────────────
 # Every reminder hook honors its DEV_HOOKS_* opt-out env var, and the marker-based hooks
 # fire at most once per session (per category/file where applicable). One payload table
@@ -2360,6 +3163,7 @@ def _guard(command, *, cwd=None, **env_overrides):
     env_overrides.setdefault("DEV_HOOKS_BASH_GUARD", None)
     env_overrides.setdefault("DEV_HOOKS_GUARD_MAIN", None)
     env_overrides.setdefault("DEV_HOOKS_GUARD_DENY", None)
+    env_overrides.setdefault("DEV_HOOKS_GUARD_SECRETS", None)
     payload = {"tool_input": {"command": command}, "session_id": "g1"}
     if cwd is not None:
         payload["cwd"] = str(cwd)
@@ -2553,6 +3357,304 @@ def test_guard_silent_when_opted_out():
     r = _guard("rm -rf /", DEV_HOOKS_BASH_GUARD="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── dangerous-command-guard.sh: secrets reaching the transcript ──────────────────────
+# Commands whose output puts a secret *value* in the transcript, where it is logged,
+# summarised, and impossible to recall. These ask for confirmation; they are never
+# denied, because Mick legitimately needs every one of them.
+SECRET_ASK_COMMANDS = [
+    # printing a secret-bearing file
+    "cat .env",
+    "cat .env.local",
+    "head -20 .env.production",
+    "tail -n2 .env.staging",
+    "less config/master.key",
+    "cat config/credentials.yml.enc",
+    "bat $HOME/.ssh/id_ed25519",
+    "cat $HOME/.ssh/id_rsa",
+    "cat $HOME/.netrc",
+    "cat $HOME/.pgpass",
+    "cat service-account.json",
+    "jq . credentials.json",
+    "cat certs/server.pem",
+    "xxd secrets/keystore.p12",
+    # the two real leaks from the 2026-08-20 review window
+    "cat client_secret_298705257701-p83bg2uhc4p4vmko.apps.googleusercontent.com.json",
+    "cd config && cat credentials.yml.enc",
+    # wrapper-stripped and segment-aware forms
+    "sudo cat certs/server.pem",
+    "cd config && cat master.key",
+    "npm ci && cat .env && npm start",
+    # grep prints the matching line, value and all
+    "grep DATABASE_URL .env",
+    # secret managers that print to stdout by default
+    "bws secret get 8a3f-2b1c",
+    "bws secret list",
+    "fnox get DATABASE_URL",
+    "op read op://vault/stripe/api-key",
+    "op item get stripe",
+    "vault kv get secret/prod/db",
+    "gh auth token",
+    "aws secretsmanager get-secret-value --secret-id prod/db",
+    "aws ssm get-parameter --name /prod/token --with-decryption",
+    "doppler secrets get STRIPE_KEY",
+    "kubectl get secret db-creds -o yaml",
+    # echoing a secret-named variable
+    "echo $GITHUB_TOKEN",
+    'echo "$AWS_SECRET_ACCESS_KEY"',
+    "printf '%s' $DATABASE_PASSWORD",
+    "printenv BWS_ACCESS_TOKEN",
+]
+
+
+@pytest.fixture
+def secret_tree(tmp_path):
+    """A checkout holding the real secret-bearing files, plus a fake HOME.
+
+    The guard only flags a *file that exists*: a path it cannot resolve cannot be
+    printed either, and requiring existence is what keeps a quoted grep pattern
+    (`grep 'event.key === "Escape"' src/x.ts`, whose words split into things that
+    look like key files) from being mistaken for a read.
+    """
+    repo, home = tmp_path / "repo", tmp_path / "home"
+    for rel in [
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.staging",
+        ".env.example",
+        ".env.sample",
+        ".env.template",
+        ".env.dist",
+        "config/master.key",
+        "config/credentials.yml.enc",
+        "config/credentials.yml.enc.example",
+        "service-account.json",
+        "credentials.json",
+        "certs/server.pem",
+        "certs/server.pub",
+        "secrets/keystore.p12",
+        "client_secret_298705257701-p83bg2uhc4p4vmko.apps.googleusercontent.com.json",
+        "README.md",
+        "package.json",
+        "docs/secrets-management.md",
+        "app/models/api_key.rb",
+        "src/hooks/useKeyboardListener.ts",
+        ".kamal/secrets",
+    ]:
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    for rel in [
+        ".ssh/id_ed25519",
+        ".ssh/id_ed25519.pub",
+        ".ssh/id_rsa",
+        ".netrc",
+        ".pgpass",
+    ]:
+        f = home / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    return repo, home
+
+
+def _guard_in(secret_tree, command, **env):
+    repo, home = secret_tree
+    return _guard(command, cwd=repo, HOME=str(home), **env)
+
+
+@pytest.mark.parametrize("command", SECRET_ASK_COMMANDS)
+def test_guard_denies_before_a_secret_reaches_the_transcript(command, secret_tree):
+    """Deny, not ask: under auto mode the classifier answers `ask`, and it reads a
+    two-branch `${VAR:+SET}${VAR:-UNSET}` as the presence check it imitates."""
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert _decision(r) == "deny"
+    assert (
+        "transcript"
+        in json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The 2026-09-10 leak, verbatim in shape: the `:+SET` half makes the whole
+        # thing look like a presence check, and the `:-UNSET` half prints the value.
+        'echo "BWS: ${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"',
+        'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+    ],
+)
+def test_guard_denies_the_two_branch_presence_check(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert _decision(r) == "deny"
+
+
+def test_guard_secrets_can_be_downgraded_to_ask(secret_tree):
+    """The escape hatch stays: a session that really needs the prompt can opt down."""
+    r = _guard_in(
+        secret_tree,
+        'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+        DEV_HOOKS_GUARD_SECRETS="ask",
+    )
+    assert _decision(r) == "ask"
+
+
+def test_guard_ignores_a_secret_looking_path_that_does_not_exist(secret_tree):
+    """`cat` on a missing file prints nothing, so there is nothing to confirm."""
+    r = _guard_in(secret_tree, "cat config/nonexistent.key")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# Regressions found by replaying 4633 real Bash commands from one week of transcripts
+# through the guard. Each of these fired, and each was wrong.
+REPLAY_FALSE_POSITIVES = [
+    # A quoted grep pattern is word-split by the segment parser; 'event.key' then
+    # looks exactly like a *.key file.
+    'grep -n \'event.key === "Escape"\\|event.key === "Arrow\' src/hooks/useKeyboardListener.ts',
+    # echo of a secret-shaped *word* — these report presence, never a value.
+    'grep -c "ADMIN_API_KEY" .kamal/secrets && echo "ADMIN_API_KEY present in .kamal/secrets"',
+    '[ -n "$BWS_ACCESS_TOKEN" ] && echo "BWS_ACCESS_TOKEN present" || echo "BWS_ACCESS_TOKEN absent"',
+    'echo "IMPAMP_S3_ACCESS_KEY_ID is set"',
+]
+
+
+@pytest.mark.parametrize("command", REPLAY_FALSE_POSITIVES)
+def test_guard_silent_on_replayed_false_positives(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ...while the two genuine leaks the same replay surfaced must still be caught.
+@pytest.mark.parametrize(
+    "command",
+    [
+        "fnox get REDIS_PASSWORD 2>&1 | head -5",
+        'bws secret list b569f8b6-d0c4-498f | grep -iE "key|kamal"',
+    ],
+)
+def test_guard_catches_replayed_true_positives(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
+
+
+# Parameter expansions that print the value while *looking* like presence checks.
+#
+# `${VAR:-word}` is the trap: it expands to `word` only when the variable is unset, so
+# on a machine where the secret is configured it prints the secret. Written as the
+# "unset" half of a two-branch check (`${VAR:+SET}${VAR:-UNSET}`) it reads as safe and
+# is not — that exact command put a live BWS_ACCESS_TOKEN into a deploy transcript on
+# 2026-09-05, and it had been sitting in this file as an asserted false positive,
+# which is why the guard was silent on it. Only `+`/`:+` and `${#VAR}` are safe; every
+# other operator yields the value or a slice of it.
+SECRET_EXPANSION_LEAKS = [
+    # the command that actually leaked
+    'echo "BWS_ACCESS_TOKEN: ${BWS_ACCESS_TOKEN:+SET}${BWS_ACCESS_TOKEN:-UNSET}"',
+    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}${BWS_ACCESS_TOKEN:-no}"',
+    # the default-value operators, with and without the colon
+    'echo "${GITHUB_TOKEN:-none}"',
+    'echo "${GITHUB_TOKEN-none}"',
+    'echo "${AWS_SECRET_ACCESS_KEY:=fallback}"',
+    'echo "${DATABASE_PASSWORD:?must be set}"',
+    # a slice is still a leak, and four characters is enough to identify a credential
+    'echo "${DATABASE_PASSWORD:0:6}"',
+    # trimming and substitution operators hand back a modified value
+    'echo "${STRIPE_SECRET_KEY#sk_}"',
+    'echo "${STRIPE_SECRET_KEY/live/test}"',
+    # braced plain form, and one with no space to word-split on
+    'echo "${BWS_ACCESS_TOKEN}"',
+    'echo "token=$STRIPE_SECRET_KEY"',
+    "printf '%s\\n' \"${GITHUB_TOKEN:-}\"",
+]
+
+
+@pytest.mark.parametrize("command", SECRET_EXPANSION_LEAKS)
+def test_guard_catches_secret_parameter_expansions(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
+
+
+# The false positives that would make this hook unusable. Every one of these is an
+# ordinary command Mick runs constantly; nagging on them trains him to ignore the hook.
+SECRET_SILENT_COMMANDS = [
+    # example/template files carry placeholders, not values
+    "cat .env.example",
+    "cat .env.sample",
+    "cat .env.template",
+    "cat .env.dist",
+    "cat config/credentials.yml.enc.example",
+    # public halves of keypairs
+    "cat $HOME/.ssh/id_ed25519.pub",
+    "cat certs/server.pub",
+    # ordinary files that merely sound sensitive
+    "cat README.md",
+    "cat package.json",
+    "cat docs/secrets-management.md",
+    "cat app/models/api_key.rb",
+    # secret managers used to *inject*, not print
+    "fnox run -- rails server",
+    "bws run -- npm test",
+    "op run -- ./bin/deploy",
+    "doppler run -- rails c",
+    "vault status",
+    "kubectl get pods",
+    # loading, not printing
+    "source .env",
+    ". .env",
+    "set -a && . ./.env && set +a",
+    # output that goes nowhere
+    "cat .env > /dev/null",
+    # grep asking whether, not what
+    "grep -c DATABASE_URL .env",
+    "grep -q TOKEN .env",
+    "grep -l SECRET .env",
+    # a commit message that merely mentions the topic
+    'git commit -m "rotate the API key and secret token"',
+    "echo done",
+    'echo "deploy finished"',
+    # the variable name is not secret-shaped
+    "echo $PATH",
+    "echo $HOME",
+    # presence checks that genuinely cannot print the value. `:+` and `+` expand to
+    # the *word*, never the variable, and `${#VAR}` is a length — these are the forms
+    # to reach for, so nagging on them would push Mick back to the leaky one.
+    'echo "BWS_ACCESS_TOKEN set: ${BWS_ACCESS_TOKEN:+yes}"',
+    'echo "${GITHUB_TOKEN:+configured}"',
+    'echo "${AWS_SECRET_ACCESS_KEY+present}"',
+    'echo "${#BWS_ACCESS_TOKEN}"',
+]
+
+
+@pytest.mark.parametrize("command", SECRET_SILENT_COMMANDS)
+def test_guard_silent_on_ordinary_commands(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_guard_secrets_can_be_escalated_to_deny(secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_GUARD_SECRETS="deny")
+    assert _decision(r) == "deny"
+
+
+@pytest.mark.parametrize("value", ["allow", "off", "false", "0", "no"])
+def test_guard_secrets_can_be_disabled(value, secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_GUARD_SECRETS=value)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_guard_secrets_respects_the_whole_hook_opt_out(secret_tree):
+    r = _guard_in(secret_tree, "cat .env", DEV_HOOKS_BASH_GUARD="false")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_catastrophic_check_still_wins_over_secrets(secret_tree):
+    """A command doing both is reported as the destructive one, and denied."""
+    r = _guard_in(secret_tree, "cat .env && rm -rf /")
+    assert _decision(r) == "deny"
 
 
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
@@ -2891,6 +3993,107 @@ def test_prompt_log_rotates_at_cap(tmp_path):
     lines = log.read_text().splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["prompt"] == "fresh"
+
+
+# ── prompt-log.sh: secret redaction ─────────────────────────────────────────────────
+# Real credentials were pasted into prompts and persisted verbatim (2026-08-06, 2026-08-15,
+# 2026-09-01 x2). The hook is the one place in the suite whose job is to write user text to
+# disk, so the filter belongs here. Prefix rules are zero-false-positive; the assignment rule
+# reuses the secret-name vocabulary from dangerous-command-guard.sh.
+
+# Fixtures are SYNTHETIC: every value keeps a real token's prefix, charset and length but
+# uses a sequential low-entropy filler, so nothing resembling a live credential is committed
+# and gitleaks' entropy rules stay quiet. Two are still matched by gitleaks on prefix alone
+# (Slack, PEM header) and carry an inline allow.
+_FILL = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+REDACT_CASES = [
+    ("ptr_" + _FILL + "ABCD=", "portainer"),
+    ("ghp_" + _FILL, "github classic"),
+    ("github_pat_11ABCDEFG0" + _FILL + "ABCD", "github fine-grained"),
+    ("sk-ant-api03-" + _FILL + "-_", "anthropic"),
+    ("xoxb-111111111111-2222222222222-" + _FILL, "slack bot"),  # gitleaks:allow
+    ("AKIAIOSFODNN7EXAMPLE", "aws access key id"),
+    ("glpat-" + _FILL, "gitlab pat"),
+    ("bws_" + _FILL, "bitwarden secrets"),
+    ("eyJ" + _FILL + "." + _FILL + "." + _FILL, "jwt"),
+]
+
+
+@pytest.mark.parametrize("secret,label", REDACT_CASES, ids=[c[1] for c in REDACT_CASES])
+def test_prompt_log_redacts_secret_values(tmp_path, secret, label):
+    run_prompt_log(tmp_path, prompt=f"here is the {label} token for you: {secret}")
+    body = _prompt_log_path(tmp_path).read_text()
+    assert secret not in body, f"{label} secret survived redaction"
+    # Marker text varies by rule ([REDACTED], [REDACTED JWT], [REDACTED PRIVATE KEY]).
+    assert "REDACTED" in body
+
+
+def test_prompt_log_redacts_token_glued_to_previous_word(tmp_path):
+    # Regression found by replaying the real log: the 2026-09-01 leak was typed with no space
+    # ("...here api key to fix" + the token), so a leading \\b in the pattern missed it entirely.
+    secret = "ptr_" + _FILL + "ABCD="
+    run_prompt_log(
+        tmp_path, prompt=f"credentials are invalid again, here api key to fix{secret}"
+    )
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert secret not in entry["prompt"]
+    assert entry["prompt"].endswith("to fixptr_[REDACTED]")
+
+
+def test_prompt_log_redacts_secret_shaped_assignment(tmp_path):
+    run_prompt_log(tmp_path, prompt=f"run PRETIX_API_TOKEN={_FILL} bin/rails x")
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert _FILL not in entry["prompt"]
+    assert "PRETIX_API_TOKEN" in entry["prompt"]
+    assert "[REDACTED]" in entry["prompt"]
+
+
+def test_prompt_log_redacts_private_key_block(tmp_path):
+    key = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\n"  # gitleaks:allow
+        + _FILL
+        + "\n-----END OPENSSH PRIVATE KEY-----"
+    )
+    run_prompt_log(tmp_path, prompt=f"my key is\n{key}\nplease use it")
+    body = _prompt_log_path(tmp_path).read_text()
+    assert _FILL not in body
+    assert "REDACTED" in body
+
+
+# Values that merely look secret-ish must survive — the log stays useful for the weekly
+# automation review only if ordinary text is untouched.
+KEEP_CASES = [
+    ("e47b9f4c8a1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "40-char git sha"),
+    ("/home/mick/Stack/Programmeren/dev-hooks/plugins", "absolute path"),
+    ('PRETIX_API_TOKEN="$(cat ../../PRETIX_API_TOKEN)"', "command substitution"),
+    ("I put the token in a file called PRETIX_API_TOKEN", "prose naming a token"),
+    ("https://github.com/Screenly/Anthias/pull/3310", "url"),
+    ("can you run the weekly review please", "ordinary prose"),
+    ("the risk-assessment doc mentions asterisk-notes", "sk- inside a word"),
+]
+
+
+@pytest.mark.parametrize("text,label", KEEP_CASES, ids=[c[1] for c in KEEP_CASES])
+def test_prompt_log_keeps_non_secrets(tmp_path, text, label):
+    run_prompt_log(tmp_path, prompt=text)
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    assert entry["prompt"] == text, f"{label} was mangled by redaction"
+
+
+def test_prompt_log_len_records_original_length(tmp_path):
+    secret = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    prompt = f"token: {secret}"
+    run_prompt_log(tmp_path, prompt=prompt)
+    entry = json.loads(_prompt_log_path(tmp_path).read_text().splitlines()[0])
+    # len is the pre-redaction length, so prompt-size signals stay comparable across the log.
+    assert entry["len"] == len(prompt)
+
+
+def test_prompt_log_file_is_owner_only(tmp_path):
+    run_prompt_log(tmp_path, prompt="anything")
+    mode = _prompt_log_path(tmp_path).stat().st_mode & 0o777
+    assert mode == 0o600, f"log is {mode:o}, expected 600"
 
 
 # ── intent-check-reminder.sh (UserPromptSubmit) ──────────────────────────────────────

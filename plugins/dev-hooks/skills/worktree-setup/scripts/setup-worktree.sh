@@ -4,8 +4,8 @@
 # The native EnterWorktree tool (or `git worktree add`) checks out a worktree but leaves it
 # unprovisioned. This script — run *inside* the new worktree, right after creation — closes
 # the gaps:
-#   1. mise:      trusts the worktree's mise.toml (it's the same repo you already trust, so
-#                 this does NOT contradict dev-env-setup's "never auto-trust unknown configs")
+#   1. mise:      trusts the worktree's mise config at any supported path (it's the same repo
+#                 you already trust, so this does NOT contradict dev-env-setup's "never auto-trust unknown configs")
 #                 and sets `worktree.baseref head` so future worktrees branch from local HEAD.
 #   2. secrets:   copies gitignored-but-needed files (Rails config/master.key, .env, …) from
 #                 the main checkout, since git never put them in the worktree. Everything
@@ -24,10 +24,12 @@
 # Emits machine-readable KEY=VALUE lines on stdout, then "# " summary lines. Keys:
 #   source         absolute path of the main checkout copied from
 #   worktree       absolute path of the provisioned worktree
-#   mise_trusted   1 if `mise trust` ran on the worktree's mise.toml, else 0
+#   mise_trusted   1 if `mise trust` ran on the worktree's mise config, else 0
 #   copied         number of gitignored entries copied in
 #   skipped_heavy  number of gitignored entries skipped as heavy/excluded
 #   exec_fixed     number of shebang scripts re-marked executable
+#   isolated       per-worktree offset allocated, or `no`
+#   post_setup     ok | failed | none — result of the config's WT_POST_SETUP command
 
 set -u
 
@@ -72,7 +74,20 @@ fi
 # ── 1. mise trust + baseref ─────────────────────────────────────────────────────────
 git -C "$SRC" config worktree.baseref head 2>/dev/null || true
 mise_trusted=0
-if command -v mise >/dev/null 2>&1 && [ -f "$WT/mise.toml" ]; then
+# mise reads its config from any of several paths, not just ./mise.toml — a repo may keep it
+# in mise/config.toml, .config/mise.toml and so on, and moving it there is a normal tidy-up.
+# Gating the trust on ./mise.toml alone silently skipped it for those repos, and the worktree
+# then failed later with "config file is not trusted", nowhere near this step.
+mise_config_path=""
+for candidate in \
+  mise.toml .mise.toml mise/config.toml .mise/config.toml \
+  .config/mise.toml .config/mise/config.toml; do
+  if [ -f "$WT/$candidate" ]; then
+    mise_config_path="$candidate"
+    break
+  fi
+done
+if command -v mise >/dev/null 2>&1 && [ -n "$mise_config_path" ]; then
   mise trust "$WT" >/dev/null 2>&1 && mise_trusted=1
 fi
 
@@ -146,6 +161,39 @@ if [ -f "$WT/.worktree-isolate.conf" ] && [ -f "$SELF_DIR/isolate-worktree.sh" ]
   [ -n "$iso_offset" ] && isolated="$iso_offset"
 fi
 
+# ── 5. post-setup seeding (opt-in via WT_POST_SETUP in .worktree-isolate.conf) ────────
+# Isolation allocates the port and database *names*; nothing exists behind them until these
+# commands run, and an unseeded worktree fails like a broken branch rather than like a
+# missing setup step (unprepared test DB → InnoDB deadlocks in unrelated tests; no
+# `public/vite-test` → every JS-dependent system test at once).
+#
+# Runs after isolation so the commands see the generated mise.local.toml. Reported but
+# non-fatal: a worktree with unseeded databases is still usable, and aborting would strand
+# it half-provisioned.
+post_setup=none
+if [ "$isolated" != no ] || [ -f "$WT/.worktree-isolate.conf" ]; then
+  POST_CMD="$(sed -n 's/^[[:space:]]*WT_POST_SETUP=//p' "$WT/.worktree-isolate.conf" 2>/dev/null |
+    sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' | tail -1)"
+  if [ -n "$POST_CMD" ]; then
+    echo "# WT_POST_SETUP: $POST_CMD"
+    # `mise x` so the commands inherit the worktree's own PORT/DB suffix rather than the
+    # ambient shell's — a worktree's mise env follows the shell, not the command's cwd.
+    if command -v mise >/dev/null 2>&1; then
+      runner=(mise x -- bash -c "$POST_CMD")
+    else
+      runner=(bash -c "$POST_CMD")
+    fi
+    post_rc=0
+    (cd "$WT" && timeout "${WT_POST_SETUP_TIMEOUT:-600}" "${runner[@]}") || post_rc=$?
+    if [ "$post_rc" -eq 0 ]; then
+      post_setup=ok
+    else
+      post_setup=failed
+      echo "# WT_POST_SETUP failed (exit $post_rc) — the worktree is provisioned but not seeded." >&2
+    fi
+  fi
+fi
+
 # ── Output ────────────────────────────────────────────────────────────────────────────
 cat <<EOF
 source=$SRC
@@ -155,14 +203,15 @@ copied=$copied
 skipped_heavy=$skipped_heavy
 exec_fixed=$exec_fixed
 isolated=$isolated
+post_setup=$post_setup
 EOF
 
 echo "# Provisioned worktree $WT"
 echo "# Copied $copied gitignored file(s) from $SRC (skipped $skipped_heavy heavy/excluded)."
 if [ "$mise_trusted" = 1 ]; then
-  echo "# mise trusted; set worktree.baseref=head."
+  echo "# mise trusted ($mise_config_path); set worktree.baseref=head."
 elif command -v mise >/dev/null 2>&1; then
-  echo "# No mise.toml — skipped mise trust; set worktree.baseref=head."
+  echo "# No mise config found — skipped mise trust; set worktree.baseref=head."
 else
   echo "# mise not installed — skipped trust; set worktree.baseref=head."
 fi

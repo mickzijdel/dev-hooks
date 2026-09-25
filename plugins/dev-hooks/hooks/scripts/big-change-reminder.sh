@@ -30,25 +30,17 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 # Already working a deliberate, multi-session plan → don't second-guess the size.
 [ -f .claude/current_plan.md ] && exit 0
 
-reminder_changed_files # sets CHANGED (staged + unstaged + untracked filenames)
+# Committed work counts too — see reminder_session_files.
+reminder_session_files
+CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
 
-# Files: tracked changes from porcelain status + untracked files enumerated one by one
-# (porcelain collapses an untracked directory into a single entry, hiding its contents).
-tracked_files=$(git status --porcelain 2>/dev/null | grep -vc '^??')
-
-# Added lines: additions across tracked files (numstat) + every line of untracked files.
-tracked_added=$(git diff HEAD --numstat 2>/dev/null | awk '{ s += ($1 == "-" ? 0 : $1) } END { print s + 0 }')
-untracked_files=0
-untracked_added=0
-while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  untracked_files=$((untracked_files + 1))
-  n=$(wc -l <"$f" 2>/dev/null || echo 0)
-  untracked_added=$((untracked_added + n))
-done < <(git ls-files --others --exclude-standard 2>/dev/null)
-files=$((tracked_files + untracked_files))
-lines=$((tracked_added + untracked_added))
+# Both counts come from the session view, not the working tree: a session that committed
+# as it went has a clean tree, and counting only porcelain reported 0 files / 0 lines for
+# exactly the large changes this hook exists to catch.
+files=$(printf '%s\n' "$SESSION_FILES" | grep -c .)
+reminder_session_added_lines .
+lines=$(printf '%s\n' "$REPLY" | grep -c .)
 
 FILES_THRESHOLD=${DEV_HOOKS_BIG_CHANGE_FILES:-25}
 LINES_THRESHOLD=${DEV_HOOKS_BIG_CHANGE_LINES:-800}
@@ -57,6 +49,6 @@ if [ "$files" -lt "$FILES_THRESHOLD" ] && [ "$lines" -lt "$LINES_THRESHOLD" ]; t
   exit 0
 fi
 
-MSG="$SENTINEL: the working tree holds $files changed file(s) / ~$lines added lines and none of it is committed yet. A change this big is hard to review and easy to lose. Before finishing: commit the working pieces in small, focused commits (each with a clear message), make sure tests pass, and get a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
+MSG="$SENTINEL: this session touched $files file(s) / ~$lines added lines, committed and uncommitted together. A change this big is hard to review and easy to lose. Before finishing: make sure anything still uncommitted is committed in small, focused commits (each with a clear message), that tests pass, and that the work has had a code review. For the next chunk, consider planning it first (plan mode) so the work stays in reviewable steps. If this size is expected for the task, say so and carry on."
 
 reminder_emit_stop "$MSG"
