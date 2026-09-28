@@ -2269,6 +2269,72 @@ def _verify_work_py_repo(tmp_path):
     (tmp_path / "test_x.py").write_text("def test_bad():\n    assert 7 == 42\n")
 
 
+def _verify_work_bash_tests_repo(tmp_path):
+    # server-setup-like repo: bash *.test.sh tests plus a Python helper script that is NOT a
+    # pytest test (no test_*.py / *_test.py naming), and a pyproject.toml with no
+    # [tool.pytest...] section. Nothing here is a pytest test.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "base.test.sh").write_text("#!/bin/bash\necho ok\n")
+    (tmp_path / "tests" / "ntfy-listener.py").write_text(
+        "# helper script, not a pytest test\n"
+    )
+
+
+def test_verify_work_skips_pytest_when_no_pytest_tests_exist(tmp_path):
+    # A repo whose tests/ holds bash *.test.sh scripts plus a Python helper, with pytest and
+    # pyproject.toml both present, must NOT run pytest just because pyproject.toml + tests/
+    # exist — that's a false positive (e.g. server-setup, whose tests aren't pytest at all).
+    _verify_work_bash_tests_repo(tmp_path)
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    marker = tmp_path / "pytest-ran"
+    fake_pytest = bindir / "pytest"
+    fake_pytest.write_text(f"#!/bin/bash\ntouch '{marker}'\nexit 1\n")
+    fake_pytest.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert not marker.exists(), "pytest must not be invoked for a non-pytest test suite"
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "No test suite")
+
+
+def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
+    # Real pytest tests exist, but the `pytest` on PATH is a broken version-manager shim (e.g.
+    # mise with no version selected). verify-work must not try to run it and dump the raw
+    # mise error; it should report one clear line instead.
+    _verify_work_py_repo(tmp_path)  # real pytest tests (test_x.py)
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    fake_pytest = bindir / "pytest"
+    fake_pytest.write_text(
+        "#!/bin/bash\necho 'mise ERROR No version is set for shim: pytest' >&2\nexit 1\n"
+    )
+    fake_pytest.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    body = json.dumps(assert_json_with(r.stdout, "pytest"))
+    assert "mise ERROR" not in body
+    assert "not runnable" in body
+
+
+def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
+    # A conftest.py (no test_*.py at the top level) is still a real pytest-tests signal.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "conftest.py").write_text("# fixtures live here\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_thing.py").write_text(
+        "def test_bad():\n    assert 1 == 2\n"
+    )
+    env = base_env(TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert r.returncode == 2
+    assert_json_with(r.stdout, "Verification failed")
+
+
 @requires_python3
 def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
     # The "no tooling detected" nudge is a judgment guess (absence of known configs), so it

@@ -98,6 +98,27 @@ _capped() {
   fi
 }
 
+# Whether the project actually has pytest tests, not just generic Python-project markers — a
+# bare pyproject.toml or tests/ dir also matches repos whose tests aren't pytest at all (e.g.
+# a tests/ full of bash *.test.sh scripts plus a Python helper script). Search is pruned to
+# skip heavy/vendor dirs and stay cheap.
+_verify_work_has_pytest_tests() {
+  [ -f "pytest.ini" ] && return 0
+  [ -f "conftest.py" ] && return 0
+  if [ -f "pyproject.toml" ] && grep -q '^\[tool\.pytest' pyproject.toml 2>/dev/null; then
+    return 0
+  fi
+  find . \( -path ./.venv -o -path ./node_modules -o -path ./.git \) -prune -o \
+    \( -name conftest.py -o -name 'test_*.py' -o -name '*_test.py' \) -print 2>/dev/null |
+    grep -q .
+}
+
+# Whether pytest can actually run. `command -v` alone isn't enough: a version-manager shim
+# (mise, asdf, ...) can resolve on PATH with no version selected and fail loudly on first use.
+_verify_work_pytest_runnable() {
+  command -v pytest >/dev/null 2>&1 && pytest --version >/dev/null 2>&1
+}
+
 # ── Ruby ──────────────────────────────────────────────────────────────────────
 if [ "$HAS_RUBY" = "1" ]; then
   # RuboCop (check only — autocorrect already runs on each file write)
@@ -192,11 +213,18 @@ if [ "$HAS_PYTHON" = "1" ]; then
     fi
   fi
 
-  # pytest
-  if [ "$MODE" != off ] && command -v pytest >/dev/null 2>&1 &&
-    { [ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]; }; then
+  # pytest — gated on actual pytest-tests evidence, not just generic Python-project markers
+  # (a bare pyproject.toml or tests/ dir also matches non-pytest repos, e.g. a tests/ full of
+  # bash *.test.sh scripts plus a Python helper script — server-setup is exactly this shape).
+  if [ "$MODE" != off ] && _verify_work_has_pytest_tests; then
     TOOLS_RAN=1
-    if [ "$MODE" = changed ]; then
+    if ! _verify_work_pytest_runnable; then
+      # pytest resolved on PATH but doesn't actually run (not installed, or a version manager
+      # shim like mise/asdf has no version selected) — report one clear line instead of letting
+      # `pytest` dump its raw (and possibly unrelated-looking, e.g. "mise ERROR ...") failure.
+      printf '=== pytest ===\n%s\n\n' \
+        "pytest tests were detected but pytest is not runnable (not installed, or a version manager has no version selected for this project). Fix the pytest toolchain, then rerun." >>"$TMPFILE"
+    elif [ "$MODE" = changed ]; then
       targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing)
       # shellcheck disable=SC2086
       [ -n "$targets" ] && run_test "pytest (changed)" pytest $targets
