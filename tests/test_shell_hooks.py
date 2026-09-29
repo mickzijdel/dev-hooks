@@ -2282,11 +2282,8 @@ def _verify_work_bash_tests_repo(tmp_path):
     )
 
 
-def test_verify_work_skips_pytest_when_no_pytest_tests_exist(tmp_path):
-    # A repo whose tests/ holds bash *.test.sh scripts plus a Python helper, with pytest and
-    # pyproject.toml both present, must NOT run pytest just because pyproject.toml + tests/
-    # exist — that's a false positive (e.g. server-setup, whose tests aren't pytest at all).
-    _verify_work_bash_tests_repo(tmp_path)
+def _assert_verify_work_skips_pytest(tmp_path, why):
+    # Puts a fake pytest on PATH that leaves a marker if run, then checks the hook never ran it.
     bindir = tmp_path / "fakebin"
     bindir.mkdir()
     marker = tmp_path / "pytest-ran"
@@ -2295,9 +2292,35 @@ def test_verify_work_skips_pytest_when_no_pytest_tests_exist(tmp_path):
     fake_pytest.chmod(0o755)
     env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert not marker.exists(), "pytest must not be invoked for a non-pytest test suite"
+    assert not marker.exists(), why
     assert r.returncode == 2
     assert_json_with(r.stdout, "No test suite")
+
+
+def test_verify_work_skips_pytest_when_no_pytest_tests_exist(tmp_path):
+    # A repo whose tests/ holds bash *.test.sh scripts plus a Python helper, with pytest and
+    # pyproject.toml both present, must NOT run pytest just because pyproject.toml + tests/
+    # exist — that's a false positive (e.g. server-setup, whose tests aren't pytest at all).
+    _verify_work_bash_tests_repo(tmp_path)
+    _assert_verify_work_skips_pytest(
+        tmp_path, "pytest must not be invoked for a non-pytest test suite"
+    )
+
+
+def test_verify_work_ignores_pytest_files_in_gitignored_dirs(tmp_path):
+    # Vendored third-party code in a gitignored dir (server-setup's .ansible/collections holds
+    # Ansible's own test_*.py files) is not the project's test suite.
+    _verify_work_bash_tests_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".ansible/\n")
+    vendored = tmp_path / ".ansible" / "collections" / "community" / "tests" / "unit"
+    vendored.mkdir(parents=True)
+    (vendored / "test_inventory_filter.py").write_text(
+        "def test_x():\n    assert True\n"
+    )
+    (vendored / "conftest.py").write_text("")
+    _assert_verify_work_skips_pytest(
+        tmp_path, "pytest must not run for test files only in gitignored dirs"
+    )
 
 
 def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):

@@ -108,6 +108,13 @@ _verify_work_has_pytest_tests() {
   if [ -f "pyproject.toml" ] && grep -q '^\[tool\.pytest' pyproject.toml 2>/dev/null; then
     return 0
   fi
+  # In a git repo, only files git tracks or would track count: gitignored dirs hold vendored
+  # code with its own test_*.py (e.g. Ansible collections under .ansible/).
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git ls-files -co --exclude-standard 2>/dev/null |
+      grep -qE '(^|/)(conftest\.py|test_[^/]*\.py|[^/]*_test\.py)$'
+    return
+  fi
   find . \( -path ./.venv -o -path ./node_modules -o -path ./.git \) -prune -o \
     \( -name conftest.py -o -name 'test_*.py' -o -name '*_test.py' \) -print 2>/dev/null |
     grep -q .
