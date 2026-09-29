@@ -8,6 +8,34 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-09-29 (Run 32)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits after Run 31's cutoff (`52755d8`) through `a812e05` (2026-09-29), ~40 commits.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-09-25 to 2026-09-29.
+
+PRs opened this run:
+- dev-hooks [#37 feat(dev-hooks): upstream-bug skill](https://github.com/mickzijdel/dev-hooks/pull/37)
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Add a skill for reproducing, reporting, and working around upstream bugs with a fork and a `blocked` tracking issue | dotfiles commit `72bc346` ("add fix-upstream skill", Sep 28) | **Implement** | dev-hooks PR #37, generalised as `upstream-bug`. Nothing in this marketplace covers the report/fork/exit-tracking flow. |
+| Add `frontend-design` as a global agent skill | dotfiles commit `a46be13` (Sep 28) | Duplicate | Anthropic's own skill, already available to the user; `design-process` and `tailwind` cover the marketplace's angle. |
+| Update `skill-creator` to current Anthropic upstream | dotfiles commit `b575508` (Sep 28) | Out of scope | Vendored Anthropic skill; user already has `anthropic-skills:skill-creator`. |
+| Slim AGENTS.md CI/lint notes down to a pointer at `hk.pkl` | dotfiles commit `604e83e` (Sep 28) | Duplicate | Already the dev-env standard: hk config is the single source, docs don't restate it. |
+| Pi/Meridian/datasafe/ADR 0009 work, Thaw/OmniWM/Ice, Tinycast, caffeinate, Fish update-notice lock, `__pycache__` ignore, npm download cap, dependency-factory fixes, mise pin/lock updates | dotfiles commits `85f6275`, `5d54c8c`, `a812e05`, `951c0fa`, `68da768`, `7e9ad00`, `3d76a1f`, `4c53e31` et al. (Sep 24-29) | Out of scope | Personal macOS/Pi/dotfiles-runner configuration with no hook or skill surface here. |
+| After an agent finishes a PR, start a fresh-context agent to cut unneeded code | feed item 2026-09-27 (https://x.com/championswimmer/status/2103926500198101334) | Duplicate | `deslop` already does exactly this in a fresh-context subagent. |
+| Write agent skills as specs (output formats, interview flows) rather than step lists | feed item 2026-09-26 (https://x.com/geoffreylitt/status/2103693608729932025) | Deferred | Authoring-style advice; CLAUDE.md's skill-authoring rules already push outcome-oriented, checkable criteria. Revisit if skills drift step-heavy. |
+| Validate LLM judges against human labels; log every usefulness issue when reviewing AI output; generate eval data by listing request dimensions | feed items 2026-09-26/27 (https://x.com/HamelHusain/status/2103922583791874164, .../2104305090743992821, .../2103862190188990814) | Out of scope | Evals methodology; logged as out of scope in earlier runs. |
+| Run bots stepwise: watch and correct, turn what works into a skill, then schedule as a routine; manager bot only delegates | feed items 2026-09-27/28 (https://x.com/petergyang/status/2104213287353356531, .../2104575614263144794, .../2104288769457394082) | Duplicate | Covered by `weekly-automation-review`, `loop-oversight`, and `board`. |
+| Opus 5.5 guidance: define "done", gather context first, medium effort, drop "think step by step" | feed item 2026-09-28 (https://x.com/itsolelehmann/status/2104692885052645576) | Duplicate | Same guidance as the 2026-09-22 item; `agent-brief` encodes the outcome-not-method brief. |
+| Point the agent at 3 past examples, references, and skills before starting | feed item 2026-09-28 (https://x.com/trq212/status/2104608785696440510) | Rejected | Prompting tip; no hook/skill surface. |
+| Feed a jargon list to voice transcription; Figma MCP keyframes; TikTok drafts via Post Bridge; Copilot issue forms for ops; cross-check agent research across tools | feed items 2026-09-26 to 09-29 | Out of scope | Personal productivity / non-dev workflows. |
+
+---
+
 ## 2026-09-25 (Run 31)
 
 Sources scanned:
