@@ -58,6 +58,23 @@ def assert_json_with(stdout, needle):
     return payload
 
 
+def stop_blocked(r):
+    """True when a Stop hook blocked the stop so Claude keeps working: exit 0 with
+    `{"decision": "block", "reason": …}`. Never `continue: false`, which halts Claude
+    entirely instead of letting it act on the reason."""
+    if r.returncode != 0 or not r.stdout.strip():
+        return False
+    out = json.loads(r.stdout)
+    assert "continue" not in out, out
+    return out.get("decision") == "block" and bool(out.get("reason"))
+
+
+def stop_allowed(r):
+    """True when a Stop hook let the stop proceed: exit 0 and no block. Unlike
+    `not stop_blocked(r)`, a crashing hook does not count as silent."""
+    return r.returncode == 0 and not stop_blocked(r)
+
+
 # ── dev-env-reminder.sh ─────────────────────────────────────────────────────────────
 def test_dev_env_reminder_silent_outside_git(tmp_path):
     r = run_hook("dev-env-reminder.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
@@ -578,7 +595,7 @@ def test_voice_stop_blocks_when_prose_written_without_skill(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[voice-stop-reminder]")
 
 
@@ -588,7 +605,7 @@ def test_voice_stop_silent_when_skill_ran(tmp_path):
         tmp_path, [_voice_write_block(tmp_path / "post.md"), _VOICE_SKILL_BLOCK]
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -596,7 +613,7 @@ def test_voice_stop_silent_when_only_code_written(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "app.py")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -605,20 +622,20 @@ def test_voice_stop_does_not_loop_on_unchanged_prose(tmp_path):
     _voice_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
-    assert _run_voice_stop(payload, env).returncode == 2
-    assert _run_voice_stop(payload, env).returncode == 0
+    assert stop_blocked(_run_voice_stop(payload, env))
+    assert stop_allowed(_run_voice_stop(payload, env))
 
 
 def test_voice_stop_reasks_when_more_prose_written(tmp_path):
     _voice_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     first = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "a.md")])
-    assert _run_voice_stop(first, env).returncode == 2
+    assert stop_blocked(_run_voice_stop(first, env))
     second = _voice_stop_payload(
         tmp_path,
         [_voice_write_block(tmp_path / "a.md"), _voice_write_block(tmp_path / "b.md")],
     )
-    assert _run_voice_stop(second, env).returncode == 2
+    assert stop_blocked(_run_voice_stop(second, env))
 
 
 def test_voice_stop_nudges_are_bounded(tmp_path):
@@ -629,10 +646,9 @@ def test_voice_stop_nudges_are_bounded(tmp_path):
     for i in range(5):
         lines = [_voice_write_block(tmp_path / f"f{j}.md") for j in range(i + 1)]
         codes.append(
-            _run_voice_stop(_voice_stop_payload(tmp_path, lines), env).returncode
+            stop_blocked(_run_voice_stop(_voice_stop_payload(tmp_path, lines), env))
         )
-    assert codes[:3] == [2, 2, 2]
-    assert codes[3:] == [0, 0]
+    assert codes == [True, True, True, False, False]
 
 
 @pytest.mark.parametrize(
@@ -646,7 +662,7 @@ def test_voice_stop_ignores_repo_scaffolding(tmp_path, name):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / name)])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -660,7 +676,7 @@ def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
         ],
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     # Only the blog post counted.
     assert "wrote 1 prose file" in r.stdout
 
@@ -695,7 +711,7 @@ def test_voice_stop_ignores_scratch_paths(tmp_path):
         tmp_path, [_voice_write_block("/tmp/claude-1000/sess/scratchpad/msg.txt")]
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -714,7 +730,7 @@ def test_voice_stop_silent_without_profile(tmp_path):
         payload,
         base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -722,7 +738,7 @@ def test_voice_stop_silent_when_opted_out(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1327,7 +1343,7 @@ def test_memory_reminder_silent_when_not_in_use(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=base_env(HOME=str(home), DEV_HOOKS_MEMORY=None),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1338,7 +1354,7 @@ def test_memory_reminder_fires_on_substantial_session(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=base_env(DEV_HOOKS_MEMORY="1"),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[memory-reminder]")
 
 
@@ -1351,7 +1367,7 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=base_env(DEV_HOOKS_MEMORY="1"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1485,7 +1501,7 @@ def _code_lines(n, start=0):
 
 def test_review_reminder_silent_outside_git(tmp_path):
     r = run_hook("review-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1493,7 +1509,7 @@ def test_review_reminder_fires_on_unreviewed_code(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # untracked code change
     r = _run_review(tmp_path, _review_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[review-reminder]")
 
 
@@ -1502,7 +1518,7 @@ def test_review_reminder_silent_after_review(tmp_path):
     (tmp_path / "changed.py").write_text("x = 1\n")
     payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1526,7 +1542,7 @@ def test_review_reminder_fires_on_committed_only_work(tmp_path):
         == ""
     )  # tree really is clean
     r = _run_review(tmp_path, _review_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[review-reminder]")
 
 
@@ -1536,16 +1552,16 @@ def test_review_reminder_keeps_asking_while_unreviewed(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "big.py").write_text(_code_lines(30))
     payload = _review_payload(tmp_path)
-    codes = [_run_review(tmp_path, payload).returncode for _ in range(4)]
-    assert codes == [2, 2, 2, 0]
+    blocks = [stop_blocked(_run_review(tmp_path, payload)) for _ in range(4)]
+    assert blocks == [True, True, True, False]
 
 
 def test_review_reminder_nudges_small_change_only_once(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "tiny.py").write_text("x = 1\n")
     payload = _review_payload(tmp_path)
-    assert _run_review(tmp_path, payload).returncode == 2
-    assert _run_review(tmp_path, payload).returncode == 0
+    assert stop_blocked(_run_review(tmp_path, payload))
+    assert stop_allowed(_run_review(tmp_path, payload))
 
 
 def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
@@ -1554,11 +1570,11 @@ def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
     f = tmp_path / "mod.py"
     f.write_text(_code_lines(5))
     payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
-    assert _run_review(tmp_path, payload).returncode == 0  # baseline seeded
-    assert _run_review(tmp_path, payload).returncode == 0  # nothing changed: no loop
+    assert stop_allowed(_run_review(tmp_path, payload))  # baseline seeded
+    assert stop_allowed(_run_review(tmp_path, payload))  # nothing changed: no loop
     f.write_text(_code_lines(40))
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "stale")
 
 
@@ -1579,7 +1595,7 @@ def test_review_reminder_ignores_command_name_lookalike(tmp_path):
     )
     payload = _review_payload(tmp_path, extra_lines=[lookalike])
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     # The un-reviewed wording, not the stale-review wording.
     assert "have not run a code review" in r.stdout
     assert "stale" not in r.stdout
@@ -1590,7 +1606,7 @@ def test_review_reminder_honors_a_real_slash_command(tmp_path):
     (tmp_path / "big.py").write_text(_code_lines(30))
     real = json.dumps({"text": "<command-name>code-review</command-name>"})
     r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[real]))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2072,7 +2088,7 @@ def _commit_dated(tmp_path, run, date, msg="c"):
 
 def test_compress_comments_silent_outside_git(tmp_path):
     r = run_hook("compress-comments-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2080,7 +2096,7 @@ def test_compress_comments_fires_on_untracked_comment_heavy_file(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2092,7 +2108,7 @@ def test_compress_comments_fires_on_tracked_diff(tmp_path):
     run("commit", "-q", "-m", "init")
     _comment_heavy_file(f)  # unstaged modification: comments arrive via `git diff`
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "compress-comments")
 
 
@@ -2100,7 +2116,7 @@ def test_compress_comments_silent_below_threshold(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "new.py").write_text("# one lonely comment\nx = 1\ny = 2\n")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2109,7 +2125,7 @@ def test_compress_comments_silent_for_non_code_files(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "notes.md").write_text("# One\n# Two\n# Three\n# Four\n")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2123,7 +2139,7 @@ def test_compress_comments_ignores_shebang_and_directives(tmp_path):
         "echo hi\n"
     )
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2136,7 +2152,7 @@ def test_compress_comments_silent_when_opted_out(tmp_path):
         stdin=_stop_payload(tmp_path),
         env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_COMPRESS_COMMENTS="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2156,12 +2172,12 @@ def test_compress_comments_silent_when_skill_already_ran(tmp_path):
     )
     payload = _stop_payload(tmp_path, extra_lines=[skill_line])
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
     # ...but three MORE comment lines after that skill run warrant a fresh reminder.
     _comment_heavy_file(tmp_path / "more.py")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2171,9 +2187,9 @@ def test_compress_comments_second_stop_without_new_comments_is_silent(tmp_path):
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
     first = _run_cc(tmp_path, payload)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     second = _run_cc(tmp_path, payload)
-    assert second.returncode == 0
+    assert stop_allowed(second)
     assert second.stdout.strip() == ""
 
 
@@ -2183,11 +2199,11 @@ def test_compress_comments_refires_when_comment_total_grows(tmp_path):
     run = init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     _comment_heavy_file(tmp_path / "big.py")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one large commit")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     payload_json = assert_json_with(r.stdout, "[compress-comments-reminder]")
     assert "since the last reminder" in json.dumps(payload_json)
 
@@ -2196,10 +2212,10 @@ def test_compress_comments_no_refire_for_small_growth(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     (tmp_path / "small.py").write_text("# just one more comment\ny = 2\n")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2209,10 +2225,10 @@ def test_compress_comments_rebases_after_cleanup(tmp_path):
     f = tmp_path / "new.py"
     _comment_heavy_file(f)
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     f.write_text("x = 0\nfor i in range(3):\n    x += i\n")  # comments compressed away
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2225,7 +2241,7 @@ def test_compress_comments_fires_on_comments_committed_this_session(tmp_path):
     _comment_heavy_file(tmp_path / "mod.py")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "session work")
     r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2235,14 +2251,14 @@ def test_compress_comments_silent_for_commits_before_session(tmp_path):
     _comment_heavy_file(tmp_path / "old.py")
     _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "old work")
     r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
 # ── verify-work.sh ──────────────────────────────────────────────────────────────────
 def test_verify_work_silent_outside_git(tmp_path):
     r = run_hook("verify-work.sh", cwd=tmp_path)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2250,7 +2266,7 @@ def test_verify_work_silent_when_no_code_changed(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("hello\n")  # not a code file
     r = run_hook("verify-work.sh", cwd=tmp_path)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2259,7 +2275,7 @@ def test_verify_work_fires_when_no_tools_detected(tmp_path):
     (tmp_path / "changed.py").write_text("x = 1\n")  # code changed, no test/lint config
     # Isolated TMPDIR so the once-per-session marker can't leak across tests/runs.
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
 
 
@@ -2293,7 +2309,7 @@ def _assert_verify_work_skips_pytest(tmp_path, why):
     env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
     assert not marker.exists(), why
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
 
 
@@ -2337,7 +2353,7 @@ def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
     fake_pytest.chmod(0o755)
     env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "pytest"))
     assert "mise ERROR" not in body
     assert "not runnable" in body
@@ -2354,7 +2370,7 @@ def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
     )
     env = base_env(TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "Verification failed")
 
 
@@ -2367,11 +2383,11 @@ def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
     env = base_env(TMPDIR=str(tmp_path))
     stdin = json.dumps({"session_id": "vw1"})
     first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     assert_json_with(first.stdout, "No test suite")
     # Same session + TMPDIR → the marker suppresses the second stop; Claude may finish.
     second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert second.returncode == 0
+    assert stop_allowed(second)
     assert second.stdout.strip() == ""
 
 
@@ -2381,7 +2397,7 @@ def test_verify_work_blanket_opt_out_silences(tmp_path):
     _verify_work_py_repo(tmp_path)  # failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY="false")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2393,11 +2409,41 @@ def test_verify_work_real_failure_refires_every_stop(tmp_path):
     env = base_env(TMPDIR=str(tmp_path))
     stdin = json.dumps({"session_id": "vw2"})
     first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     assert_json_with(first.stdout, "Verification failed")
     second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert second.returncode == 2  # still blocks — real failures don't fire once
+    assert stop_blocked(second)  # still blocks — real failures don't fire once
     assert_json_with(second.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
+    # stop_hook_active means Claude is continuing because a Stop hook blocked — typically
+    # editing code to address it. That edit is exactly what verify-work must check, so
+    # unlike the advisory hooks it does not stand down.
+    _verify_work_py_repo(tmp_path)  # failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path))
+    stdin = json.dumps({"session_id": "vw-active", "stop_hook_active": True})
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
+    # A failure Claude cannot fix must not chain blocks forever: at most 3 in a row while
+    # stop_hook_active, then it lets Claude stop. The next natural stop starts afresh.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    natural = json.dumps({"session_id": "vw-cap"})
+    active = json.dumps({"session_id": "vw-cap", "stop_hook_active": True})
+    run = lambda stdin: run_hook(  # noqa: E731
+        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
+    )
+    assert stop_blocked(run(natural))
+    assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
+    assert stop_blocked(run(natural))
+    assert stop_blocked(run(active))
 
 
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
@@ -2416,7 +2462,7 @@ def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
     )
     env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "herb (ERB)" in body
 
@@ -2427,7 +2473,7 @@ def test_verify_work_skips_herb_when_not_bundled(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "x.html.erb").write_text("<div>\n")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
 
 
@@ -2443,7 +2489,7 @@ def test_verify_work_off_mode_skips_the_test_run(tmp_path):
     _verify_work_py_repo(tmp_path)  # untracked, failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="off")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2453,7 +2499,7 @@ def test_verify_work_changed_mode_runs_changed_test_file(tmp_path):
     _verify_work_py_repo(tmp_path)  # untracked (i.e. changed) failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "Verification failed")
 
 
@@ -2469,7 +2515,7 @@ def test_verify_work_changed_mode_skips_unchanged_tests(tmp_path):
     (tmp_path / "src.py").write_text("x = 1\n")  # unrelated change, no mapped test
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2497,7 +2543,7 @@ def test_verify_work_changed_mode_maps_source_to_minitest(tmp_path):
         DEV_HOOKS_VERIFY_TESTS="changed",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "RAILS-TEST-ARGS: test/models/user_test.rb" in body
 
@@ -2517,7 +2563,7 @@ def test_verify_work_slow_suite_recommends_changed(tmp_path):
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="1",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "too slow"))
     assert "DEV_HOOKS_VERIFY_TESTS=changed" in body
     assert "smoke-test" in body
@@ -2546,7 +2592,7 @@ def test_verify_work_changed_mode_maps_lib_to_flat_gem_spec(tmp_path):
         DEV_HOOKS_VERIFY_TESTS="changed",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "RSPEC-ARGS: spec/foo_spec.rb" in body
 
@@ -2561,7 +2607,7 @@ def test_verify_work_non_numeric_timeout_falls_back(tmp_path):
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="abc",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert (
         "pytest" in body
@@ -2582,7 +2628,7 @@ def test_debug_leftover_fires_on_new_debug_lines(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     payload = assert_json_with(r.stdout, "[debug-leftover]")
     body = json.dumps(payload)
     assert "foo.py" in body and "bar.rb" in body
@@ -2599,7 +2645,7 @@ def test_debug_leftover_silent_for_preexisting_committed(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2611,7 +2657,7 @@ def test_debug_leftover_ignores_test_files(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2699,7 +2745,7 @@ def test_missing_test_fires_for_untested_new_file(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[missing-test]")
 
 
@@ -2712,7 +2758,7 @@ def test_missing_test_silent_when_test_present(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2732,7 +2778,7 @@ def test_missing_test_silent_for_vendored_dirs(tmp_path, path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2746,7 +2792,7 @@ def test_missing_test_silent_for_minified_file(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2768,7 +2814,7 @@ def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path, jscpd_key):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert "bar.py" in r.stdout
     assert "thirdparty" not in r.stdout
 
@@ -2787,7 +2833,7 @@ def test_missing_test_fires_for_file_added_in_session_commit(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert "widget.py" in r.stdout
 
 
@@ -2801,7 +2847,7 @@ def test_missing_test_silent_for_file_committed_before_session(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2817,7 +2863,7 @@ def test_missing_test_silent_when_session_commit_added_its_test(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2836,7 +2882,7 @@ def test_missing_test_silent_for_session_file_added_then_deleted(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3763,7 +3809,7 @@ def test_big_change_silent_outside_git(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3775,7 +3821,7 @@ def test_big_change_silent_under_threshold(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3788,7 +3834,7 @@ def test_big_change_fires_over_threshold(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[big-change]")
 
 
@@ -3808,7 +3854,7 @@ def test_big_change_counts_files_inside_untracked_dirs(tmp_path):
             DEV_HOOKS_BIG_CHANGE_FILES="3", DEV_HOOKS_BIG_CHANGE_LINES="9999"
         ),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[big-change]")
 
 
@@ -3824,7 +3870,7 @@ def test_big_change_silent_with_plan_in_progress(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3837,7 +3883,7 @@ def test_big_change_silent_when_opted_out(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(DEV_HOOKS_BIG_CHANGE="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3853,7 +3899,7 @@ def test_big_change_silent_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=_big_change_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3876,7 +3922,7 @@ def test_change_summary_silent_outside_git(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3888,7 +3934,7 @@ def test_change_summary_silent_under_threshold(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3901,7 +3947,7 @@ def test_change_summary_fires_over_threshold(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_change_summary_env(),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[change-summary]")
 
 
@@ -3914,7 +3960,7 @@ def test_change_summary_silent_when_opted_out(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_change_summary_env(DEV_HOOKS_CHANGE_SUMMARY="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3930,7 +3976,7 @@ def test_change_summary_silent_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=_change_summary_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4453,8 +4499,8 @@ def test_save_script_fires_for_ephemeral(tmp_path):
         extra_lines=[_write_block(scratch / "one_off.py", SHEBANG_PY)],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
-    assert r.returncode == 2
-    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert stop_blocked(r)
+    ctx = json.loads(r.stdout)["reason"]
     assert "[save-script-reminder]" in ctx
     assert "one_off.py" in ctx
 
@@ -4473,8 +4519,8 @@ def test_save_script_flags_in_repo_scripts_too(tmp_path):
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
-    assert r.returncode == 2
-    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert stop_blocked(r)
+    ctx = json.loads(r.stdout)["reason"]
     assert "in_repo_tool.py" in ctx
     assert "saved_lib_tool" not in ctx
 
@@ -4492,7 +4538,7 @@ def test_save_script_excludes_all_library_roots(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript), "cwd": str(proj)}),
         env=base_env(DEV_HOOKS_SCRIPT_DIR=f"{bin_dir}:{repo}"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4500,7 +4546,7 @@ def test_save_script_excludes_all_library_roots(tmp_path):
 def test_save_script_silent_no_scripts(tmp_path):
     transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
     r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4517,7 +4563,7 @@ def test_save_script_opt_out(tmp_path):
         cwd=tmp_path / "proj",
         DEV_HOOKS_SAVE_SCRIPT="false",
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4533,7 +4579,7 @@ def test_save_script_fire_once(tmp_path):
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4543,7 +4589,7 @@ def test_save_script_silent_without_transcript(tmp_path):
         stdin=json.dumps({"cwd": str(tmp_path)}),
         env=base_env(DEV_HOOKS_SCRIPT_DIR=str(tmp_path / "bin")),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4623,3 +4669,156 @@ def test_ci_watch_opt_out(tmp_path):
     r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# ── Stop decision: block, never halt ────────────────────────────────────────────────
+def _with_stop_hook_active(payload):
+    data = json.loads(payload)
+    data["stop_hook_active"] = True
+    return json.dumps(data)
+
+
+def test_stop_hooks_block_rather_than_halt(tmp_path):
+    # `continue: false` halts Claude outright, so it never acted on a reminder within the
+    # turn. A Stop hook has to emit decision:block + reason and exit 0 for Claude to act.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review(tmp_path, _review_payload(tmp_path))
+    assert r.returncode == 0
+    out = json.loads(r.stdout)
+    assert out == {"decision": "block", "reason": out["reason"]}
+    assert out["reason"].startswith("[review-reminder]")
+
+
+def test_voice_stop_blocks_rather_than_halts(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    out = json.loads(r.stdout)
+    assert out == {"decision": "block", "reason": out["reason"]}
+
+
+def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
+    # stop_hook_active means Claude is already continuing because of a Stop block. One
+    # forced continuation per natural stop is the cap; blocking again would chain.
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    active = _with_stop_hook_active(_review_payload(tmp_path))
+    assert stop_allowed(_run_review(tmp_path, active))
+    assert stop_allowed(
+        _run_cc(tmp_path, _with_stop_hook_active(_stop_payload(tmp_path)))
+    )
+    voice = tmp_path / "voice"
+    voice.mkdir()
+    _voice_repo(voice)
+    vpayload = _voice_stop_payload(voice, [_voice_write_block(voice / "post.md")])
+    vr = _run_voice_stop(
+        _with_stop_hook_active(vpayload), base_env(TMPDIR=str(tmp_path))
+    )
+    assert stop_allowed(vr)
+
+
+def test_rearm_baseline_is_per_repo(tmp_path):
+    # One session whose Stop fires from the main checkout and then from a worktree with
+    # nothing in it: the empty repo must not reset the first repo's baseline, or the next
+    # Stop back in the first repo re-reports every comment as new growth.
+    main, wt = tmp_path / "main", tmp_path / "wt"
+    for repo in (main, wt):
+        repo.mkdir()
+        init_git_repo(repo)
+    _comment_heavy_file(main / "new.py")
+    payload = _stop_payload(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    run = lambda cwd: run_hook(  # noqa: E731
+        "compress-comments-reminder.sh", cwd=cwd, stdin=payload, env=env
+    )
+    assert stop_blocked(run(main))
+    assert stop_allowed(run(wt))
+    assert stop_allowed(run(main))
+
+
+def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
+    # Subagent-driven sessions review through general-purpose agents ("Review Task 8"),
+    # not the code-review skill. That review is real and must count.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Review Task 8 implementation",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Review the diff for task 8.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_allowed(r)
+
+
+@pytest.mark.parametrize(
+    "description,reviewed",
+    [
+        ("Re-review task 5 fixes", True),
+        ("Final whole-branch review phase 0a", True),
+        ("Adversarial review of item 1", True),
+        ("Add product review form", False),
+        ("Fix final review blockers", False),
+        ("Final review fix wave", False),
+    ],
+)
+def test_review_reminder_agent_description_names_the_job(
+    tmp_path, description, reviewed
+):
+    # A review agent's description names reviewing as its job; an implementer that merely
+    # mentions a review (a product review form, review findings to fix) is not one.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {"description": description, "prompt": "…"},
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r) is not reviewed
+    assert r.returncode == 0
+
+
+def test_review_reminder_ignores_non_review_agent(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Implement Task 9",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Implement task 9; a reviewer will check it later.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r)

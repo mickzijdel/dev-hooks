@@ -5,9 +5,10 @@
 # and feeds failures back to Claude so it can fix them before finishing.
 #
 # Opt out entirely with DEV_HOOKS_VERIFY=false (per-repo/user, in a .claude/settings.json
-# "env" block). Real linter/test failures re-block on every stop until fixed; the "no tooling
-# detected" advisory fires at most once per session so a repo with no recognised tooling is
-# never trapped in a Stop loop.
+# "env" block). Real linter/test failures re-block on every stop until fixed — including the
+# continuation another Stop hook forced, since that is where Claude edits code — capped at 3
+# blocks in a row within one such chain; the "no tooling detected" advisory fires at most once
+# per session so a repo with no recognised tooling is never trapped in a Stop loop.
 #
 # Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
 #   full     run the whole test suite when code changed (the default; unchanged behaviour)
@@ -28,8 +29,9 @@ reminder_opt_out DEV_HOOKS_VERIFY
 
 # Consume the hook payload and populate SESSION for the once-per-session no-tools nudge below.
 # Pass "" so no sentinel is imposed on the dynamic failure path (real failures must re-fire
-# every stop until fixed — that's ground truth, not a one-shot reminder).
-reminder_stop_init ""
+# every stop until fixed — that's ground truth, not a one-shot reminder). --when-active:
+# unlike the advisory Stop hooks, keep verifying while stop_hook_active.
+reminder_stop_init "" --when-active
 
 # Must be in a git repo
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
@@ -278,7 +280,18 @@ Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.
 fi
 
 if [ -n "$MSG" ]; then
-  # Real failures re-fire on every stop attempt until fixed — correct for ground truth.
+  # Real failures re-fire on every stop attempt until fixed — correct for ground truth. Within
+  # one forced-continuation chain, cap the blocks so an unfixable failure still lets Claude
+  # stop; a natural stop resets the count.
+  reminder_state_file verify-work-active-blocks
+  BLOCKS=0
+  if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+    BLOCKS=$(cat "$REPLY" 2>/dev/null)
+    case "$BLOCKS" in *[!0-9]* | "") BLOCKS=0 ;; esac
+    [ "$BLOCKS" -ge 3 ] && exit 0
+    BLOCKS=$((BLOCKS + 1))
+  fi
+  printf '%s' "$BLOCKS" >"$REPLY" 2>/dev/null
   reminder_emit_stop "$MSG"
 elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ] && reminder_fire_once verify-work-notools; then
   # No tools detected — nudge Claude to check manually, but only ONCE per session (suppressed

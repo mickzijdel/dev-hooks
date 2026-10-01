@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stop hook: this session wrote prose files but never invoked the `writing:voice-profile`
-# skill — refuse to end the turn (exit 2) and send Claude back to apply the profile.
+# skill — refuse to end the turn (decision:block) and send Claude back to apply the profile.
 #
 # The one the voice hooks were missing. The other three are advisory: they inject context and
 # Claude may or may not act on it, and nothing checks afterwards. A Stop hook is the last
@@ -26,6 +26,8 @@ source "$SELF_DIR/lib/voice-common.sh"
 
 voice_opt_out
 voice_payload
+# Already continuing because a Stop hook blocked: one forced continuation per stop.
+[ "$(voice_field '.stop_hook_active')" = "true" ] && exit 0
 
 TRANSCRIPT=$(voice_field '.transcript_path')
 SESSION=$(voice_field '.session_id')

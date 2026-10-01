@@ -61,19 +61,26 @@ reminder_old_content() {
     + "\n" + ([.tool_input.edits[]?.old_string // ""] | join("\n"))' 2>/dev/null)
 }
 
-# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT and SESSION, and
-# exit 0 (silent) when the given sentinel string already appears in the transcript — the
-# once-per-session guard: the sentinel is embedded in the hook's own reminder, so
-# finding it means we already prompted, and a re-fire would loop the Stop hook.
+# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT and SESSION, exit 0
+# (silent) when stop_hook_active is set, and exit 0 when the given sentinel string already
+# appears in the transcript — the once-per-session guard: the sentinel is embedded in the
+# hook's own reminder, so finding it means we already prompted, and a re-fire would loop
+# the Stop hook.
 # Pass "" as the sentinel to skip the guard (a hook managing its own re-arm state).
+# Pass --when-active as $2 to keep running under stop_hook_active (STOP_HOOK_ACTIVE says
+# which) — only for a hook that checks ground truth and bounds its own blocks (verify-work).
 reminder_stop_init() {
   INPUT=$(cat 2>/dev/null)
   local _si
   mapfile -t _si < <(printf '%s' "$INPUT" |
-    jq -r '(.transcript_path // ""), (.session_id // "nosession")' 2>/dev/null)
+    jq -r '(.transcript_path // ""), (.session_id // "nosession"), (.stop_hook_active // false)' 2>/dev/null)
   TRANSCRIPT=${_si[0]:-}
   # shellcheck disable=SC2034
   SESSION=${_si[1]:-nosession}
+  # Claude is already continuing because a Stop hook blocked: stand down, so each natural
+  # stop forces at most one continuation instead of a chain.
+  STOP_HOOK_ACTIVE=${_si[2]:-false}
+  [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "${2:-}" != "--when-active" ] && exit 0
   if [ -n "$1" ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     grep -qF "$1" "$TRANSCRIPT" 2>/dev/null && exit 0
   fi
@@ -375,12 +382,13 @@ reminder_emit_note() {
   exit 0
 }
 
-# Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
-# message back to Claude so it acts before finishing.
+# Block the stop with decision:block + reason and exit 0: Claude keeps working and acts on
+# the message in this turn. Never `continue: false` — that halts Claude outright, so the
+# reminder waited for the user's next prompt (~5 of ~1,050 halts were acted on in-turn).
 reminder_emit_stop() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-  exit 2
+  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  exit 0
 }
 
 # Changed files (staged + unstaged + untracked) from porcelain status, one per line,
@@ -627,16 +635,29 @@ PYEOF
 # (re-arming) averages ~3.9 fires per session it speaks in; review-reminder (sentinel)
 # averages exactly 1.0.
 #
+# Baselines are per session AND per repo: one session's Stop can fire from the main
+# checkout and then from a worktree, and the counts measure different trees. A shared
+# baseline thrashed — the empty worktree reset it to 0, and the next Stop back in the main
+# checkout re-reported every line as new growth.
+_reminder_repo_key() {
+  if [ -z "${_REMINDER_REPO_KEY:-}" ]; then
+    _REMINDER_REPO_KEY=$(git rev-parse --show-toplevel 2>/dev/null | cksum | cut -d' ' -f1)
+  fi
+  REPLY=$_REMINDER_REPO_KEY
+}
+
 # Current baseline for $1 into $REPLY ("" when the hook has not fired yet this session).
 reminder_rearm_baseline() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   REPLY=$(cat "$REPLY" 2>/dev/null)
   case "$REPLY" in *[!0-9]* | "") REPLY="" ;; esac
 }
 
 # Record $2 as the baseline for $1 without firing — "this much is already handled".
 reminder_rearm_seed() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   printf '%s' "$2" >"$REPLY" 2>/dev/null
 }
 

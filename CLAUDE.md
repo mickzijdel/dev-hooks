@@ -133,7 +133,15 @@ Do not include changelog or detective-work where it does not belong, such as in 
   hooks), the re-arm trio
   `reminder_rearm_baseline`/`reminder_rearm_seed`/`reminder_rearm <name> <count> <threshold>`
   ($REPLY `first`/`growth`/`silent`, growth in `REMINDER_REARM_DELTA`), and
-  `reminder_emit_stop <msg>` (continue:false + exit 2).
+  `reminder_emit_stop <msg>` (`{"decision":"block","reason":…}` + exit 0 — Claude keeps working
+  and acts on the reason in the same turn). **Never `continue: false` on Stop**: it halts Claude
+  outright, and one halting hook overrides every blocking one; across every transcript since June
+  only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
+  payload's `stop_hook_active` is true, capping each natural stop at one forced continuation
+  (`--when-active` opts out, for verify-work: the continuation is where Claude edits code, so it
+  keeps verifying there, bounding its own blocks), and
+  the re-arm baselines are keyed per session **and per repo** (an orchestrator's Stop fires from
+  the main checkout and from worktrees alike).
   **Prefer a re-arming baseline over a once-per-session sentinel** for any "do this before you
   finish" hook. A sentinel fires once and then goes quiet however little that nudge got done;
   the fire log shows re-arming compress-comments-reminder averaging ~3.9 fires per session it
@@ -171,7 +179,7 @@ Do not include changelog or detective-work where it does not belong, such as in 
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
   weekly-automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
   exit 0, shown to the user) < `reminder_emit`/`_session`/`_prompt` (additionalContext) <
-  `reminder_emit_correction`/`_stop` (exit 2, fed back to Claude). `reminder_emit_decision`
+  `reminder_emit_correction` (exit 2, fed back to Claude) and `reminder_emit_stop` (blocks the stop). `reminder_emit_decision`
   is its own thing (PreToolUse permission). `tests/test_hook_sunset_bets.py` gates all of it:
   every emit function in the lib must call `_reminder_log_fire`; every hook must call some
   `reminder_emit_*` or sit in that test's `SILENT_HOOKS` allowlist with a reason (only
