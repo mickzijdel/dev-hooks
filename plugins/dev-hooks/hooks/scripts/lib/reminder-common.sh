@@ -567,10 +567,12 @@ reminder_session_files() {
     grep -v '^$' | sort -u)
 }
 
-# Lines of code this session added — added lines in `git diff HEAD`, in commits since the
-# session started, and every line of an untracked code file — into $REPLY. The growth
-# signal reminder_rearm compares against, and the shared half of compress-comments-
-# reminder's comment count (which filters these lines further).
+# Lines of code this session added, into $REPLY: the added side of one diff from the last
+# commit before the session started to the working tree, plus every line of an untracked
+# code file. One cumulative diff, not a sum of per-commit patches: summing counted a line
+# again each time a later commit rewrote it, so compressing comments read as growth.
+# The growth signal reminder_rearm compares against, and the shared half of
+# compress-comments-reminder's comment count (which filters these lines further).
 # Pass pathspecs to widen beyond code (big-change-reminder counts every file); with no
 # arguments it uses REMINDER_CODE_EXTS.
 reminder_session_added_lines() {
@@ -579,15 +581,18 @@ reminder_session_added_lines() {
   else
     reminder_code_globs
   fi
-  local since
+  local since base=HEAD
   reminder_session_since
   since=$REPLY
+  if [ -n "$since" ] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    base=$(git rev-list -1 --before="$since" HEAD 2>/dev/null)
+    # Every commit is from this session: diff from the empty tree
+    [ -n "$base" ] || base=$(git hash-object -t tree /dev/null)
+  fi
   REPLY=$(
     {
-      {
-        git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
-        [ -n "$since" ] && git log -p --no-color --format= --since="$since" -- "${CODE_GLOBS[@]}" 2>/dev/null
-      } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
+      git diff "$base" --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null |
+        grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
       reminder_untracked_text "${CODE_GLOBS[@]}"
     } | cat
   )

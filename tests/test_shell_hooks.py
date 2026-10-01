@@ -4812,3 +4812,52 @@ def test_review_reminder_ignores_non_review_agent(tmp_path):
     )
     r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
     assert stop_blocked(r)
+
+
+# ── Session growth is a net diff, not a sum of commits ──────────────────────────────
+def _long_comment_file(path):
+    path.write_text(
+        "".join(
+            f"# this comment explains step {i} at some length\nx{i} = {i}\n"
+            for i in range(30)
+        )
+    )
+
+
+def test_compress_comments_rewriting_comments_is_not_growth(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "base.txt").write_text("base\n")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    f = tmp_path / "mod.py"
+    _long_comment_file(f)
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "add commented code")
+    payload = _stop_payload(tmp_path)
+    assert stop_blocked(_run_cc(tmp_path, payload))
+    # Compress every comment and commit: fewer comment lines than before, not more
+    f.write_text("".join(f"# step {i}\nx{i} = {i}\n" for i in range(30)))
+    _commit_dated(tmp_path, run, "2025-06-02T00:00:00", "compress comments")
+    assert stop_allowed(_run_cc(tmp_path, payload))
+
+
+def test_review_reminder_rewrite_after_review_is_not_growth(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "base.txt").write_text("base\n")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    f = tmp_path / "mod.py"
+    _long_comment_file(f)
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "add code")
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    assert stop_allowed(_run_review(tmp_path, payload))  # review ran: baseline seeded
+    f.write_text("".join(f"# step {i}\nx{i} = {i}\n" for i in range(30)))
+    _commit_dated(tmp_path, run, "2025-06-02T00:00:00", "comment-only rewrite")
+    assert stop_allowed(_run_review(tmp_path, payload))
+
+
+def test_session_growth_excludes_lines_committed_before_the_session(tmp_path):
+    # Lines that predate the session never count, even if the file changes later
+    run = init_git_repo(tmp_path)
+    _long_comment_file(tmp_path / "old.py")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    (tmp_path / "old.py").write_text((tmp_path / "old.py").read_text() + "y = 1\n")
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one code line")
+    assert stop_allowed(_run_cc(tmp_path, _stop_payload(tmp_path)))
