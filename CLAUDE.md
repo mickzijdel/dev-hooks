@@ -118,7 +118,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
   session?" Stop hook wants, and the default over `reminder_changed_files`; review-reminder,
   verify-work, big-change and change-summary all used porcelain alone and so went silent on
   exactly the commit-as-you-go sessions that did the most work), `reminder_session_added_lines`
-  (this session's added code lines in `$REPLY`, over `REMINDER_CODE_EXTS` — the growth signal,
+  (this session's net added code lines in `$REPLY`: one diff from the last pre-session commit
+  to the working tree, never a sum of per-commit patches, which counted every rewrite as
+  growth; over `REMINDER_CODE_EXTS` — the growth signal,
   and the shared half of compress-comments-reminder's comment count),
   `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (ONE code-extension
   list; the two hand-rolled copies had already drifted over `*.sh`),

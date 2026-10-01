@@ -98,9 +98,3 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   check whether the next non-hook row is `assistant`). Once the hooks block, the walker has to
   look for `Stop hook feedback` user rows followed by the matching skill or agent action. Fire
   counts alone hid that the Stop hooks did nothing for three months.
-- **Compressing comments re-arms compress-comments-reminder and review-reminder.** Both
-  count *added* lines in this session's commits, and a rewritten comment counts as an added
-  line. After a comment-only compression commit (35 lines added, 62 removed), the next Stop
-  reported "31 more comment lines" and "33 more lines of code since the last review". Now
-  that Stop hooks block, each false re-arm costs a forced turn. Count net growth instead
-  (added minus removed per file), or skip commits whose diff touches only comments.
