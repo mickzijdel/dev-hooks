@@ -73,7 +73,10 @@ ecosystem**.
    package manager** (never hand-edit it — see references/ecosystems.md for the exact commands).
    Run the tests. Green → **one commit per ecosystem** (`chore(deps): bump JS patch/minor deps`).
    Red → bisect the offending package out (pin it back), commit the rest, and note the held-back
-   one in the report.
+   one in the report. **Ruby: bump Bundler itself before the gems**
+   (`bundle update --bundler=<version>`, version picked as in references/ecosystems.md). A plain
+   `bundle update` never moves `BUNDLED WITH`, and a Bundler older than 4.0.13 ignores the
+   cooldown.
 
 5. **Major pass — one major at a time.** Majors carry breaking changes, so handle them singly:
    - `WebFetch` the changelog / release notes / migration guide (npm package "Changelog",

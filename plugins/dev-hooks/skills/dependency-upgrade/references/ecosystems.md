@@ -35,6 +35,27 @@ Pick the manager by lockfile (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, e
 | Patch/minor (conservative) | `bundle update --conservative` |
 | One gem | `bundle update <gem>` |
 | Regenerate lockfile | bundler rewrites `Gemfile.lock` on any `bundle update`/`install` |
+| Bundler itself | `bundle update --bundler=<version>` (rewrites `BUNDLED WITH`; see below) |
+
+- **Bump Bundler itself on every sweep, and do it FIRST.** `BUNDLED WITH` names the Bundler
+  that every `bundle` call, CI's `setup-ruby` and a Docker `bundle install` switch to, and a
+  plain `bundle update` never moves it. Bundler ships with Ruby, so a repo stays on whatever
+  its Ruby came with. **`cooldown` only exists from Bundler 4.0.13.** An older one accepts the
+  Gemfile's `cooldown:` and `BUNDLE_COOLDOWN` and silently ignores both, so the gem bumps
+  that follow would take day-old releases. The preflight prints `ruby_bundled_with` and
+  `ruby_cooldown_enforced=0` for that case.
+- **Name the version: the cooldown does not cover Bundler.** A bare `bundle update --bundler`
+  takes the newest release, even one published yesterday. Pick the newest stable release that
+  is past the cooldown:
+  ```bash
+  v=$(curl -s https://rubygems.org/api/v1/versions/bundler.json \
+    | jq -r '(now - 4*86400 | todate) as $cut
+             | [.[] | select(.prerelease | not) | select(.created_at < $cut)][0].number')
+  bundle update --bundler="$v"
+  ```
+  Only `BUNDLED WITH` should change. Commit it on its own
+  (`chore(deps): lock Bundler <v>`) before the gem batch, so the gem bumps resolve under the
+  cooldown.
 
 - For a **major**, widen the gem's constraint in the `Gemfile` (e.g. `"~> 3.0"` → `"~> 4.0"`),
   then `bundle update <gem>`.
