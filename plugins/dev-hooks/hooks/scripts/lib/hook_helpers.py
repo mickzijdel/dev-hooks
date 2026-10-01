@@ -229,6 +229,32 @@ def _tool_use_blocks(line):
 _COMMAND_NAME_RE = re.compile(r"<command-name>([^<>\n]{1,100})</command-name>")
 
 
+# An agent description that opens with one of these verbs is doing the work, not checking
+# it: "Fix final review blockers", "Build candidate review UI".
+_AGENT_DOER_RE = re.compile(
+    r"\s*(?:fix|fixes|implement|build|add|create|write|update|refactor|address|apply"
+    r"|predict|simulate)\b",
+    re.IGNORECASE,
+)
+
+
+def _agent_job_re(word):
+    """Match `word` as an agent description's job rather than a modifier. Calibrated on
+    real Agent descriptions: verb first ("Review task 8", "Re-review fixes"), a re-<word>
+    anywhere, a leading code/final/whole-branch <word> not followed by "fix" ("Final review
+    fix wave" is an implementer), or <word> closing a phrase ("Adversarial review of …",
+    "Board review: …"). Never mid-noun-phrase: "Add product review form" does not match."""
+    w = re.escape(word)
+    return re.compile(
+        rf"^\s*(?:re-?)?{w}(?:ing)?\b"
+        rf"|\bre-?{w}\b"
+        rf"|^\s*(?:code|final|whole-branch|final whole-branch)[- ]{w}\b(?!\s+fix)"
+        rf"|\bwhole-branch {w}\b"
+        rf"|\b{w}(?:ing)?(?=\s*(?:$|[:,;(—–-]|\s+(?:of|for|round|pass|loop)\b))",
+        re.IGNORECASE,
+    )
+
+
 def transcript_invoked(transcript_path, needles, sentinel=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
@@ -238,16 +264,15 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     matches in EVERY session and would permanently suppress the caller. Shared by the
     review-reminder and compress-comments-reminder Stop hooks."""
 
-    # "agent:<word>" needles match a dispatched Agent/Task's `description` as a whole word,
-    # case-insensitively: a subagent-driven session reviews through general-purpose agents
-    # ("Review Task 8"), which name no review skill or agent type.
-    agent_words = [n[len("agent:") :] for n in needles if n.startswith("agent:")]
+    # "agent:<word>" needles match a dispatched Agent/Task whose `description` names <word>
+    # as the agent's job: a subagent-driven session reviews through general-purpose agents
+    # ("Review Task 8", "Re-review task 5 fixes", "Final whole-branch review"), which name no
+    # review skill or agent type. A bare word match is not enough — "Add product review form"
+    # is an implementer — so see _agent_job_re.
+    agent_res = [
+        _agent_job_re(n[len("agent:") :]) for n in needles if n.startswith("agent:")
+    ]
     needles = tuple(n for n in needles if not n.startswith("agent:"))
-    agent_re = (
-        re.compile(r"\b(?:%s)\b" % "|".join(map(re.escape, agent_words)), re.IGNORECASE)
-        if agent_words
-        else None
-    )
 
     def hit(value):
         return isinstance(value, str) and any(n in value for n in needles)
@@ -267,12 +292,12 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
             inp = block.get("input") or {}
             if hit(inp.get("skill")) or hit(inp.get("subagent_type")):
                 return True
-            if (
-                agent_re
-                and block.get("name") in ("Agent", "Task")
-                and agent_re.search(str(inp.get("description") or ""))
-            ):
-                return True
+            if block.get("name") in ("Agent", "Task"):
+                desc = str(inp.get("description") or "")
+                if not _AGENT_DOER_RE.match(desc) and any(
+                    r.search(desc) for r in agent_res
+                ):
+                    return True
     return False
 
 

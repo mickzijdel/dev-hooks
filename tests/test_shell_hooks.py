@@ -4728,6 +4728,42 @@ def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
     assert not stop_blocked(r)
 
 
+@pytest.mark.parametrize(
+    "description,reviewed",
+    [
+        ("Re-review task 5 fixes", True),
+        ("Final whole-branch review phase 0a", True),
+        ("Adversarial review of item 1", True),
+        ("Add product review form", False),
+        ("Fix final review blockers", False),
+        ("Final review fix wave", False),
+    ],
+)
+def test_review_reminder_agent_description_names_the_job(
+    tmp_path, description, reviewed
+):
+    # A review agent's description names reviewing as its job; an implementer that merely
+    # mentions a review (a product review form, review findings to fix) is not one.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {"description": description, "prompt": "…"},
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r) is not reviewed
+    assert r.returncode == 0
+
+
 def test_review_reminder_ignores_non_review_agent(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text(_code_lines(30))
