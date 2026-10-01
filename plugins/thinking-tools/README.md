@@ -21,6 +21,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `commit-digest` | Weekly cadence — reviews recent commits in tracked external repos (+ optional Atom/RSS feeds), pulls applicable improvements in as separate PRs, and logs every skipped suggestion to the `claude/skipped-log` branch with dedup and a per-run PR comment. Companion to `weekly-automation-review`, which reviews the local repo's own activity. |
 | `adr` | When you've made (or are about to make) a significant architectural decision — captures why in a lightweight Markdown document so future contributors don't re-litigate it. |
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
+| `needs-spec` | Working a `need-spec`-labeled GitHub issue queue — fetches the queue oldest-first, runs `grill` per issue to turn a vague ask into an agreed spec, then writes the resolved spec back to the issue and drops the label. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
 
