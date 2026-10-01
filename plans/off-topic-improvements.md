@@ -84,3 +84,17 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   The pytest pass here (durations → parallel-safety check → xdist → shared expensive
   fixtures → chunk the one long sweep) generalises to parallel_tests / vitest threads and
   would fit dev-hooks next to dependency-upgrade.
+- **Stop-hook state lives in `/tmp`, which a reboot wipes, but sessions resume across
+  reboots.** `reminder_state_file` writes under `${TMPDIR:-/tmp}/dev-hooks-*`. After a crash
+  or reboot, a resumed long session loses every re-arm baseline and nudge counter, so
+  review-reminder spends a fresh 3-nudge budget each day. The server-setup orchestrator
+  session (09-24 → 10-01) showed this. Candidate: `${XDG_STATE_HOME:-~/.local/state}/dev-hooks`
+  with a prune of files older than ~30 days, keeping the `TMPDIR` override for tests.
+- **review-reminder's `review-nudges` counter is per session, not per repo.** Since 2.50.1
+  the re-arm baselines are per repo, but the main checkout and its worktrees still share one
+  nudge budget. It stays bounded, so this is a consistency fix, not a loop risk.
+- **Save the "did the Stop nudge get acted on?" transcript walker as a script.** The
+  2026-10-01 weekly review measured it ad hoc (a `hook_stopped_continuation` attachment, then
+  check whether the next non-hook row is `assistant`). Once the hooks block, the walker has to
+  look for `Stop hook feedback` user rows followed by the matching skill or agent action. Fire
+  counts alone hid that the Stop hooks did nothing for three months.
