@@ -4,6 +4,7 @@ Every bundled script (the Python skill CLIs and the shell hooks) is exercised as
 subprocess, asserting on real output — never by importing internals.
 """
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -22,6 +23,29 @@ def _clean_fire_log_env(monkeypatch):
     overrides, writing into this developer's real ~/.claude/automation-review/hook-fires.jsonl.
     Strip it by default; tests that exercise the opt-in path set it back explicitly."""
     monkeypatch.delenv("DEV_HOOKS_FIRE_LOG", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _mise_trusts_real_home(monkeypatch):
+    """Tests point HOME at tmp_path, and mise >= 2026.9 then no longer trusts the real
+    ~/.config/mise — so every mise shim (jq included) a hook subprocess runs dies with
+    "not trusted" and the hook silently sees empty input. Pin mise's dirs to the real
+    HOME's (a cold cache costs ~20s per shim call) and pre-trust it."""
+    home = str(Path.home())
+    env = os.environ.get
+    for var, default in (
+        ("MISE_CONFIG_DIR", f"{env('XDG_CONFIG_HOME', home + '/.config')}/mise"),
+        ("MISE_DATA_DIR", f"{env('XDG_DATA_HOME', home + '/.local/share')}/mise"),
+        ("MISE_CACHE_DIR", f"{env('XDG_CACHE_HOME', home + '/.cache')}/mise"),
+        ("MISE_STATE_DIR", f"{env('XDG_STATE_HOME', home + '/.local/state')}/mise"),
+    ):
+        if not env(var):
+            monkeypatch.setenv(var, default)
+    current = os.environ.get("MISE_TRUSTED_CONFIG_PATHS", "")
+    if home not in current.split(":"):
+        monkeypatch.setenv(
+            "MISE_TRUSTED_CONFIG_PATHS", f"{current}:{home}" if current else home
+        )
 
 
 DEV_HOOKS = ROOT / "plugins" / "dev-hooks"
