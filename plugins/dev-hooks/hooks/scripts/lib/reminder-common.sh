@@ -586,8 +586,14 @@ reminder_session_added_lines() {
   since=$REPLY
   if [ -n "$since" ] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
     base=$(git rev-list -1 --before="$since" HEAD 2>/dev/null)
-    # Every commit is from this session: diff from the empty tree
-    [ -n "$base" ] || base=$(git hash-object -t tree /dev/null)
+    # No older commit: the repo was born this session, unless a shallow clone hid history
+    if [ -z "$base" ]; then
+      if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+        base=HEAD
+      else
+        base=$(git hash-object -t tree /dev/null)
+      fi
+    fi
   fi
   REPLY=$(
     {

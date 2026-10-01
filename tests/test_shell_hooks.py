@@ -4861,3 +4861,20 @@ def test_session_growth_excludes_lines_committed_before_the_session(tmp_path):
     (tmp_path / "old.py").write_text((tmp_path / "old.py").read_text() + "y = 1\n")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one code line")
     assert stop_allowed(_run_cc(tmp_path, _stop_payload(tmp_path)))
+
+
+def test_session_growth_shallow_clone_does_not_count_the_whole_repo(tmp_path):
+    # A shallow clone can hide every pre-session commit; that must not make the whole
+    # tree count as added
+    src = tmp_path / "src"
+    src.mkdir()
+    run = init_git_repo(src)
+    _long_comment_file(src / "old.py")
+    _commit_dated(src, run, "1999-01-01T00:00:00", "old")
+    (src / "other.py").write_text("z = 1\n")
+    _commit_dated(src, run, "2025-06-01T00:00:00", "in session")
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{src}", str(clone)], check=True
+    )
+    assert stop_allowed(_run_cc(clone, _stop_payload(clone)))
