@@ -238,6 +238,17 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     matches in EVERY session and would permanently suppress the caller. Shared by the
     review-reminder and compress-comments-reminder Stop hooks."""
 
+    # "agent:<word>" needles match a dispatched Agent/Task's `description` as a whole word,
+    # case-insensitively: a subagent-driven session reviews through general-purpose agents
+    # ("Review Task 8"), which name no review skill or agent type.
+    agent_words = [n[len("agent:") :] for n in needles if n.startswith("agent:")]
+    needles = tuple(n for n in needles if not n.startswith("agent:"))
+    agent_re = (
+        re.compile(r"\b(?:%s)\b" % "|".join(map(re.escape, agent_words)), re.IGNORECASE)
+        if agent_words
+        else None
+    )
+
     def hit(value):
         return isinstance(value, str) and any(n in value for n in needles)
 
@@ -255,6 +266,12 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
         for block in _tool_use_blocks(line):
             inp = block.get("input") or {}
             if hit(inp.get("skill")) or hit(inp.get("subagent_type")):
+                return True
+            if (
+                agent_re
+                and block.get("name") in ("Agent", "Task")
+                and agent_re.search(str(inp.get("description") or ""))
+            ):
                 return True
     return False
 

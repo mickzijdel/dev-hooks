@@ -4700,3 +4700,53 @@ def test_rearm_baseline_is_per_repo(tmp_path):
     assert stop_blocked(run(main))
     assert not stop_blocked(run(wt))
     assert not stop_blocked(run(main))
+
+
+def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
+    # Subagent-driven sessions review through general-purpose agents ("Review Task 8"),
+    # not the code-review skill. That review is real and must count.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Review Task 8 implementation",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Review the diff for task 8.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert not stop_blocked(r)
+
+
+def test_review_reminder_ignores_non_review_agent(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Implement Task 9",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Implement task 9; a reviewer will check it later.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r)
