@@ -2416,6 +2416,36 @@ def test_verify_work_real_failure_refires_every_stop(tmp_path):
     assert_json_with(second.stdout, "Verification failed")
 
 
+@requires_python3
+def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
+    # stop_hook_active means Claude is continuing because a Stop hook blocked — typically
+    # editing code to address it. That edit is exactly what verify-work must check, so
+    # unlike the advisory hooks it does not stand down.
+    _verify_work_py_repo(tmp_path)  # failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path))
+    stdin = json.dumps({"session_id": "vw-active", "stop_hook_active": True})
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
+    # A failure Claude cannot fix must not chain blocks forever: at most 3 in a row while
+    # stop_hook_active, then it lets Claude stop. The next natural stop starts afresh.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    natural = json.dumps({"session_id": "vw-cap"})
+    active = json.dumps({"session_id": "vw-cap", "stop_hook_active": True})
+    run = lambda stdin: run_hook(  # noqa: E731
+        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
+    )
+    assert stop_blocked(run(natural))
+    assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
+    assert stop_blocked(run(natural))
+    assert stop_blocked(run(active))
+
+
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
     # An ERB change + herb in Gemfile.lock → verify-work runs `herb lint app/`; a failure is
     # fed back to Claude. The fake bundle fails herb lint and no-ops everything else (so the

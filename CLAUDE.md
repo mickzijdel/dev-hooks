@@ -137,7 +137,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
   and acts on the reason in the same turn). **Never `continue: false` on Stop**: it halts Claude
   outright, and one halting hook overrides every blocking one; across every transcript since June
   only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
-  payload's `stop_hook_active` is true, capping each natural stop at one forced continuation, and
+  payload's `stop_hook_active` is true, capping each natural stop at one forced continuation
+  (`--when-active` opts out, for verify-work: the continuation is where Claude edits code, so it
+  keeps verifying there, bounding its own blocks), and
   the re-arm baselines are keyed per session **and per repo** (an orchestrator's Stop fires from
   the main checkout and from worktrees alike).
   **Prefer a re-arming baseline over a once-per-session sentinel** for any "do this before you

@@ -67,6 +67,8 @@ reminder_old_content() {
 # hook's own reminder, so finding it means we already prompted, and a re-fire would loop
 # the Stop hook.
 # Pass "" as the sentinel to skip the guard (a hook managing its own re-arm state).
+# Pass --when-active as $2 to keep running under stop_hook_active (STOP_HOOK_ACTIVE says
+# which) — only for a hook that checks ground truth and bounds its own blocks (verify-work).
 reminder_stop_init() {
   INPUT=$(cat 2>/dev/null)
   local _si
@@ -77,7 +79,8 @@ reminder_stop_init() {
   SESSION=${_si[1]:-nosession}
   # Claude is already continuing because a Stop hook blocked: stand down, so each natural
   # stop forces at most one continuation instead of a chain.
-  [ "${_si[2]:-}" = "true" ] && exit 0
+  STOP_HOOK_ACTIVE=${_si[2]:-false}
+  [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "${2:-}" != "--when-active" ] && exit 0
   if [ -n "$1" ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     grep -qF "$1" "$TRANSCRIPT" 2>/dev/null && exit 0
   fi
