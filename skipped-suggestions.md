@@ -8,6 +8,29 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-01 (Run 33)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits after Run 32's cutoff (`a812e05`) through `bad57d4` (2026-09-30), 8 commits.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-09-29 to 2026-10-01 (feed `lastBuildDate` 2026-10-01T13:10:42Z).
+
+PRs opened this run: none — nothing new cleared the bar (the nearest candidates are all covered by existing skills or are the user's `superpowers` territory).
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Skip sudo-dependent steps / OmniWM / immutable-flag removal / update-completion errors on non-admin macOS; install Homebrew casks individually and report denied installs; explain skipped `duti` associations; invalidate Ghostty path cache | dotfiles commits `3fc780c`, `5b206b2`, `3aee54c`, `854480e`, `a177072`, `809c643` (Sep 29-30) | Out of scope | Personal macOS provisioning for a non-admin machine; no hook or skill surface. |
+| Refresh Pi/OpenRouter US model catalogs in the background and before subagent model resolution | dotfiles commits `c04cef6`, `bad57d4` (Sep 30) | Out of scope | Personal Pi router work; same standing Pi/datasafe rejections. |
+| Run GPT at high/max reasoning effort but keep Claude on medium | feed item 2026-10-01 (https://x.com/intellectronica/status/2105607557351886868) | Out of scope | Model-effort tuning is user config; same as earlier Opus 5.5 effort items. |
+| Pair a stronger orchestrator model with a cheaper fast model for implementation | feed item 2026-09-30 (https://x.com/iannuttall/status/2105213523249004925) | Duplicate | Covered by `board` and the earlier role-pairing item (2026-09-12). |
+| Have a cheap local model ingest all files so frontier models query it for context | feed item 2026-09-30 (https://x.com/0xSero/status/2105263233741549579) | Out of scope | Same local-model routing territory as the 2026-08-13 delegate-wave row. |
+| End sessions by asking the model to trace what worked, what didn't, and what to improve | feed item 2026-09-30 (https://x.com/amirmxt/status/2105152737159585907) | Duplicate | `weekly-automation-review` (see the 2026-09-10/11 rows). |
+| Look at your data before writing AI evals; have a coding agent build a custom annotation app | feed item 2026-09-29 (https://x.com/HamelHusain/status/2104945863084904737) | Out of scope | Evals methodology; the look-at-data-first principle is already `data-before-design`. |
+| Do nearly all Claude work inside Projects; 10/80/10 saved-skill workflow; ChatGPT "chief of staff"; browser agent compiling tax records; paperwork chores; Copilot issue forms for ops | feed items 2026-09-29 to 10-01 (https://x.com/bcherny/status/2105448431972217045, .../petergyang/status/2105466622542807168, .../2105374125669884120, https://x.com/kr0der/status/2105466732416811499, https://x.com/itsolelehmann/status/2104957925609578962, https://x.com/github/status/2104769385395069354) | Out of scope | Personal productivity / non-dev workflows; no hook or skill surface. |
+
+---
+
 ## 2026-09-29 (Run 32)
 
 Sources scanned:
