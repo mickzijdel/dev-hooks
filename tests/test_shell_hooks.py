@@ -4681,3 +4681,22 @@ def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
         _with_stop_hook_active(vpayload), base_env(TMPDIR=str(tmp_path))
     )
     assert not stop_blocked(vr)
+
+
+def test_rearm_baseline_is_per_repo(tmp_path):
+    # One session whose Stop fires from the main checkout and then from a worktree with
+    # nothing in it: the empty repo must not reset the first repo's baseline, or the next
+    # Stop back in the first repo re-reports every comment as new growth.
+    main, wt = tmp_path / "main", tmp_path / "wt"
+    for repo in (main, wt):
+        repo.mkdir()
+        init_git_repo(repo)
+    _comment_heavy_file(main / "new.py")
+    payload = _stop_payload(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    run = lambda cwd: run_hook(  # noqa: E731
+        "compress-comments-reminder.sh", cwd=cwd, stdin=payload, env=env
+    )
+    assert stop_blocked(run(main))
+    assert not stop_blocked(run(wt))
+    assert not stop_blocked(run(main))

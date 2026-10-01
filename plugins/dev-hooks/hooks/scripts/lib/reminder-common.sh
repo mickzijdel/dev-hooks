@@ -632,16 +632,29 @@ PYEOF
 # (re-arming) averages ~3.9 fires per session it speaks in; review-reminder (sentinel)
 # averages exactly 1.0.
 #
+# Baselines are per session AND per repo: one session's Stop can fire from the main
+# checkout and then from a worktree, and the counts measure different trees. A shared
+# baseline thrashed — the empty worktree reset it to 0, and the next Stop back in the main
+# checkout re-reported every line as new growth.
+_reminder_repo_key() {
+  if [ -z "${_REMINDER_REPO_KEY:-}" ]; then
+    _REMINDER_REPO_KEY=$(git rev-parse --show-toplevel 2>/dev/null | cksum | cut -d' ' -f1)
+  fi
+  REPLY=$_REMINDER_REPO_KEY
+}
+
 # Current baseline for $1 into $REPLY ("" when the hook has not fired yet this session).
 reminder_rearm_baseline() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   REPLY=$(cat "$REPLY" 2>/dev/null)
   case "$REPLY" in *[!0-9]* | "") REPLY="" ;; esac
 }
 
 # Record $2 as the baseline for $1 without firing — "this much is already handled".
 reminder_rearm_seed() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   printf '%s' "$2" >"$REPLY" 2>/dev/null
 }
 
