@@ -2418,9 +2418,7 @@ def test_verify_work_real_failure_refires_every_stop(tmp_path):
 
 @requires_python3
 def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
-    # stop_hook_active means Claude is continuing because a Stop hook blocked — typically
-    # editing code to address it. That edit is exactly what verify-work must check, so
-    # unlike the advisory hooks it does not stand down.
+    # The forced continuation is where Claude edits code, so verify-work keeps running
     _verify_work_py_repo(tmp_path)  # failing test_x.py
     env = base_env(TMPDIR=str(tmp_path))
     stdin = json.dumps({"session_id": "vw-active", "stop_hook_active": True})
@@ -2431,8 +2429,7 @@ def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
 
 @requires_python3
 def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
-    # A failure Claude cannot fix must not chain blocks forever: at most 3 in a row while
-    # stop_hook_active, then it lets Claude stop. The next natural stop starts afresh.
+    # Max 3 blocks per chain; a natural stop resets the count
     _verify_work_py_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     natural = json.dumps({"session_id": "vw-cap"})
@@ -4679,8 +4676,7 @@ def _with_stop_hook_active(payload):
 
 
 def test_stop_hooks_block_rather_than_halt(tmp_path):
-    # `continue: false` halts Claude outright, so it never acted on a reminder within the
-    # turn. A Stop hook has to emit decision:block + reason and exit 0 for Claude to act.
+    # continue:false halts Claude; only decision:block makes it act in-turn
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")
     r = _run_review(tmp_path, _review_payload(tmp_path))
@@ -4700,8 +4696,7 @@ def test_voice_stop_blocks_rather_than_halts(tmp_path):
 
 
 def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
-    # stop_hook_active means Claude is already continuing because of a Stop block. One
-    # forced continuation per natural stop is the cap; blocking again would chain.
+    # One forced continuation per natural stop; blocking again would chain
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     active = _with_stop_hook_active(_review_payload(tmp_path))
@@ -4720,9 +4715,7 @@ def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
 
 
 def test_rearm_baseline_is_per_repo(tmp_path):
-    # One session whose Stop fires from the main checkout and then from a worktree with
-    # nothing in it: the empty repo must not reset the first repo's baseline, or the next
-    # Stop back in the first repo re-reports every comment as new growth.
+    # An empty worktree must not reset main's baseline in the same session
     main, wt = tmp_path / "main", tmp_path / "wt"
     for repo in (main, wt):
         repo.mkdir()
@@ -4739,8 +4732,7 @@ def test_rearm_baseline_is_per_repo(tmp_path):
 
 
 def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
-    # Subagent-driven sessions review through general-purpose agents ("Review Task 8"),
-    # not the code-review skill. That review is real and must count.
+    # Subagent reviews use general-purpose agents, not the code-review skill
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text(_code_lines(30))
     dispatch = json.dumps(
@@ -4778,8 +4770,6 @@ def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
 def test_review_reminder_agent_description_names_the_job(
     tmp_path, description, reviewed
 ):
-    # A review agent's description names reviewing as its job; an implementer that merely
-    # mentions a review (a product review form, review findings to fix) is not one.
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text(_code_lines(30))
     dispatch = json.dumps(

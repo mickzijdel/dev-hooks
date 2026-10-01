@@ -5,10 +5,9 @@
 # and feeds failures back to Claude so it can fix them before finishing.
 #
 # Opt out entirely with DEV_HOOKS_VERIFY=false (per-repo/user, in a .claude/settings.json
-# "env" block). Real linter/test failures re-block on every stop until fixed — including the
-# continuation another Stop hook forced, since that is where Claude edits code — capped at 3
-# blocks in a row within one such chain; the "no tooling detected" advisory fires at most once
-# per session so a repo with no recognised tooling is never trapped in a Stop loop.
+# "env" block). Real linter/test failures re-block on every stop until fixed, forced
+# continuations included (max 3 blocks in a row); the "no tooling detected" advisory fires at
+# most once per session so a repo with no recognised tooling is never trapped in a Stop loop.
 #
 # Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
 #   full     run the whole test suite when code changed (the default; unchanged behaviour)
@@ -29,8 +28,8 @@ reminder_opt_out DEV_HOOKS_VERIFY
 
 # Consume the hook payload and populate SESSION for the once-per-session no-tools nudge below.
 # Pass "" so no sentinel is imposed on the dynamic failure path (real failures must re-fire
-# every stop until fixed — that's ground truth, not a one-shot reminder). --when-active:
-# unlike the advisory Stop hooks, keep verifying while stop_hook_active.
+# every stop until fixed — that's ground truth, not a one-shot reminder).
+# --when-active: a forced continuation is where Claude edits code, so verify it too.
 reminder_stop_init "" --when-active
 
 # Must be in a git repo
@@ -280,9 +279,8 @@ Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.
 fi
 
 if [ -n "$MSG" ]; then
-  # Real failures re-fire on every stop attempt until fixed — correct for ground truth. Within
-  # one forced-continuation chain, cap the blocks so an unfixable failure still lets Claude
-  # stop; a natural stop resets the count.
+  # Real failures re-fire on every stop attempt until fixed — correct for ground truth.
+  # Capped within a forced-continuation chain so an unfixable failure still stops.
   reminder_state_file verify-work-active-blocks
   BLOCKS=0
   if [ "$STOP_HOOK_ACTIVE" = "true" ]; then

@@ -229,8 +229,7 @@ def _tool_use_blocks(line):
 _COMMAND_NAME_RE = re.compile(r"<command-name>([^<>\n]{1,100})</command-name>")
 
 
-# An agent description that opens with one of these verbs is doing the work, not checking
-# it: "Fix final review blockers", "Build candidate review UI".
+# Opening verbs of an implementer, not a checker: "Fix final review blockers"
 _AGENT_DOER_RE = re.compile(
     r"\s*(?:fix|fixes|implement|build|add|create|write|update|refactor|address|apply"
     r"|predict|simulate)\b",
@@ -239,11 +238,8 @@ _AGENT_DOER_RE = re.compile(
 
 
 def _agent_job_re(word):
-    """Match `word` as an agent description's job rather than a modifier. Calibrated on
-    real Agent descriptions: verb first ("Review task 8", "Re-review fixes"), a re-<word>
-    anywhere, a leading code/final/whole-branch <word> not followed by "fix" ("Final review
-    fix wave" is an implementer), or <word> closing a phrase ("Adversarial review of …",
-    "Board review: …"). Never mid-noun-phrase: "Add product review form" does not match."""
+    """Match `word` as a description's job, not a modifier: "Review task 8" matches,
+    "Add product review form" does not. Calibrated on real Agent descriptions."""
     w = re.escape(word)
     return re.compile(
         rf"^\s*(?:re-?)?{w}(?:ing)?\b"
@@ -264,11 +260,8 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     matches in EVERY session and would permanently suppress the caller. Shared by the
     review-reminder and compress-comments-reminder Stop hooks."""
 
-    # "agent:<word>" needles match a dispatched Agent/Task whose `description` names <word>
-    # as the agent's job: a subagent-driven session reviews through general-purpose agents
-    # ("Review Task 8", "Re-review task 5 fixes", "Final whole-branch review"), which name no
-    # review skill or agent type. A bare word match is not enough — "Add product review form"
-    # is an implementer — so see _agent_job_re.
+    # agent:<word> matches an Agent/Task description naming <word> as its job; subagent
+    # reviews run as general-purpose agents with no review skill or type
     agent_res = [
         _agent_job_re(n[len("agent:") :]) for n in needles if n.startswith("agent:")
     ]
