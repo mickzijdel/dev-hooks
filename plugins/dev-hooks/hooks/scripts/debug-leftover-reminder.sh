@@ -3,7 +3,7 @@
 # sunset: model reliably strips its own debug statements before stopping
 # Stop hook: flag debug statements Claude *newly introduced* this session (console.log,
 # debugger, binding.pry, breakpoint(), pdb, Ruby `p`, ...) so they get stripped before
-# finishing. Advisory — feeds the findings back via exit 2; never edits or hard-blocks.
+# finishing. Advisory — feeds the findings back by blocking the stop; never edits or hard-blocks.
 #
 # Only NEW lines are considered: added lines in `git diff HEAD` plus the full contents of
 # untracked files. Pre-existing debug lines (already committed, unchanged) are ignored, so

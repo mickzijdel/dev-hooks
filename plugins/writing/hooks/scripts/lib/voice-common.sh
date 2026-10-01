@@ -196,11 +196,11 @@ voice_emit() {
   exit 0
 }
 
-# Stop-hook feedback: continue:false + exit 2, so Claude acts before the turn ends rather
-# than after the user has already read the draft.
+# Stop-hook feedback: decision:block + reason and exit 0, so Claude acts before the turn
+# ends rather than after the user has already read the draft. Never `continue: false`,
+# which halts Claude instead.
 voice_emit_stop() {
   _voice_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" \
-    '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-  exit 2
+  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  exit 0
 }

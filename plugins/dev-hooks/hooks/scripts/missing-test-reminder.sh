@@ -2,7 +2,7 @@
 # bet: model adds new source files without a matching test
 # sunset: model reliably adds a test alongside new source unprompted
 # Stop hook: when Claude adds a NEW source file this session with no matching test file,
-# nudge it to add one (TDD / "Always Works"). Advisory — feeds back via exit 2; never edits.
+# nudge it to add one (TDD / "Always Works"). Advisory — feeds back by blocking the stop; never edits.
 #
 # Only newly-added files are considered — untracked `??`, staged-added `A`, and files added
 # by commits made since the session started (the transcript's first-line timestamp).

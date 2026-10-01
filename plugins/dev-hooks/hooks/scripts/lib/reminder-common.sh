@@ -61,19 +61,23 @@ reminder_old_content() {
     + "\n" + ([.tool_input.edits[]?.old_string // ""] | join("\n"))' 2>/dev/null)
 }
 
-# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT and SESSION, and
-# exit 0 (silent) when the given sentinel string already appears in the transcript — the
-# once-per-session guard: the sentinel is embedded in the hook's own reminder, so
-# finding it means we already prompted, and a re-fire would loop the Stop hook.
+# Stop-hook preamble: read hook stdin into INPUT, resolve TRANSCRIPT and SESSION, exit 0
+# (silent) when stop_hook_active is set, and exit 0 when the given sentinel string already
+# appears in the transcript — the once-per-session guard: the sentinel is embedded in the
+# hook's own reminder, so finding it means we already prompted, and a re-fire would loop
+# the Stop hook.
 # Pass "" as the sentinel to skip the guard (a hook managing its own re-arm state).
 reminder_stop_init() {
   INPUT=$(cat 2>/dev/null)
   local _si
   mapfile -t _si < <(printf '%s' "$INPUT" |
-    jq -r '(.transcript_path // ""), (.session_id // "nosession")' 2>/dev/null)
+    jq -r '(.transcript_path // ""), (.session_id // "nosession"), (.stop_hook_active // false)' 2>/dev/null)
   TRANSCRIPT=${_si[0]:-}
   # shellcheck disable=SC2034
   SESSION=${_si[1]:-nosession}
+  # Claude is already continuing because a Stop hook blocked: stand down, so each natural
+  # stop forces at most one continuation instead of a chain.
+  [ "${_si[2]:-}" = "true" ] && exit 0
   if [ -n "$1" ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     grep -qF "$1" "$TRANSCRIPT" 2>/dev/null && exit 0
   fi
@@ -375,12 +379,13 @@ reminder_emit_note() {
   exit 0
 }
 
-# Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
-# message back to Claude so it acts before finishing.
+# Block the stop with decision:block + reason and exit 0: Claude keeps working and acts on
+# the message in this turn. Never `continue: false` — that halts Claude outright, so the
+# reminder waited for the user's next prompt (~5 of ~1,050 halts were acted on in-turn).
 reminder_emit_stop() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-  exit 2
+  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  exit 0
 }
 
 # Changed files (staged + unstaged + untracked) from porcelain status, one per line,
