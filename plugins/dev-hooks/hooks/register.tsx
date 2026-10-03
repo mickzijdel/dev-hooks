@@ -261,8 +261,27 @@ export const guardQuestion = (ask: string, command: string): string => {
   return `${reason}\n\nCommand: ${shown}\n\nLet it run?`
 }
 
+// An unanswered dialog refuses after this long (DEV_HOOKS_GUARD_DIALOG_TIMEOUT, seconds;
+// 0 waits forever), and tells Claude the safer route instead of leaving it stuck.
+const DEFAULT_GUARD_TIMEOUT_S = 60
+
+export const guardTimeoutReason = (ask: string, seconds: number): string => {
+  const base = `No answer in the dev-hooks guard dialog within ${seconds}s, so this command did not run.`
+  return /the `[^`]+` branch directly/.test(ask)
+    ? `${base} Make this change on a separate branch in a git worktree instead (branch off the current HEAD), not directly on the main branch.`
+    : `${base} Ask the person in the chat before trying again, or find a route that doesn't need this command.`
+}
+
 // From session.start: whether a person is there to answer the dialog.
 let isInteractive = false
+
+async function guardTimeoutSeconds($: EngineInterface): Promise<number> {
+  const raw = await $.env.get('DEV_HOOKS_GUARD_DIALOG_TIMEOUT').catch(() => undefined)
+  const seconds = Number(raw)
+  return raw !== undefined && raw.trim() !== '' && Number.isFinite(seconds) && seconds >= 0
+    ? seconds
+    : DEFAULT_GUARD_TIMEOUT_S
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -414,12 +433,22 @@ export const register: Register = on => {
   on('classic.PreToolUse', async ($, e, next) => {
     const decided = await next(e)
     if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
+    const seconds = await guardTimeoutSeconds($)
+    const asked = $.ui.ask(guardQuestion(decided.ask, e.command), {
+      header: 'dev-hooks',
+      options: ['Allow', 'Deny'],
+    })
     let answer: string
     try {
-      answer = await $.ui.ask(guardQuestion(decided.ask, e.command), {
-        header: 'dev-hooks',
-        options: ['Allow', 'Deny'],
-      })
+      const never = new Promise<never>(() => {})
+      // A timer that can't run means no timeout, never a decision.
+      const timedOut = seconds > 0 ? $.clock.sleep(seconds * 1000).then(() => undefined, () => never) : never
+      const first = await Promise.race([asked, timedOut])
+      if (first === undefined) {
+        asked.catch(() => undefined)
+        return { deny: guardTimeoutReason(decided.ask, seconds) }
+      }
+      answer = first
     } catch {
       // Dismissed: refuse, since handing the question back would let auto mode answer
       // it. With no one to ask at all (claude -p) the guard's question stands as it was.

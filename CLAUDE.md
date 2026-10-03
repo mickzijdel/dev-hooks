@@ -95,6 +95,16 @@ Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_
 enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
 `classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.
 
+The module also routes **the guard's questions to the person**: its `classic.PreToolUse` hook
+takes a decision whose `ask` starts with `GUARD_PREFIX` (`dev-hooks guard — `, pinned on both
+sides by `test_guard_prefix_matches_the_mod`) and asks via `$.ui.ask`, which reaches the person
+even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by the classifier).
+Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
+rules still run; Deny, a dismissal and a timeout (`DEV_HOOKS_GUARD_DIALOG_TIMEOUT`) all refuse.
+A `$.ui.ask` can't be closed from the mod, so a timed-out dialog may linger. Note that
+`$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
+included — only ever set variables that are inert outside this session or keyed to its id.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description

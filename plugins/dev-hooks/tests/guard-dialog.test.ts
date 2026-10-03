@@ -1,7 +1,7 @@
 import type { On, PreToolUseResult } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
-import { guardQuestion, isGuardAsk } from '../hooks/register'
+import { guardQuestion, guardTimeoutReason, isGuardAsk } from '../hooks/register'
 
 const GUARD_ASK = "dev-hooks guard — please confirm: You're about to push the `main` branch directly."
 const COMMAND = 'git push origin main'
@@ -108,4 +108,63 @@ test('in an interactive session a dismissed dialog refuses, not falls back to au
 
   expect(seen.ran).toBe(0)
   expect(String(ran.text ?? ran.deny)).toContain('dismissed')
+})
+
+const MAIN_ASK =
+  "dev-hooks guard — please confirm: You're about to commit the `main` branch directly. The safer habit is to make changes on a separate branch and open a pull request, so `main` always stays working. Confirm if you really want to change `main` directly."
+
+// The person never answers: the dialog's call stays pending.
+function unanswered(on: On, verdict: PreToolUseResult) {
+  const seen = { ran: 0 }
+  on('classic.PreToolUse', () => verdict)
+  on('tool.call', { tool: 'AskUserQuestion' }, () => new Promise<never>(() => {}))
+  on('tool.call', { tool: 'Bash' }, () => {
+    seen.ran += 1
+    return { result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }
+  })
+  return seen
+}
+
+test('guardTimeoutReason sends a main-branch change to a worktree', async () => {
+  expect(guardTimeoutReason(MAIN_ASK, 60)).toContain('worktree')
+  expect(guardTimeoutReason(MAIN_ASK, 60)).toContain('60s')
+  expect(guardTimeoutReason(GUARD_ASK.replace('push the `main` branch directly', 'print a secret'), 60)).not.toContain('worktree')
+})
+
+test('an unanswered dialog refuses after the timeout, with what to do instead', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  const seen = unanswered(on, { ask: MAIN_ASK })
+
+  const call = $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  await clock.advance(59_000)
+  expect(seen.ran).toBe(0)
+  await clock.advance(1_000)
+  const ran = await call
+
+  expect(seen.ran).toBe(0)
+  expect(String(ran.text ?? ran.deny)).toContain('worktree')
+})
+
+test('the timeout can be changed, or switched off with 0', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { DEV_HOOKS_GUARD_DIALOG_TIMEOUT: '5' })
+  unanswered(on, { ask: MAIN_ASK })
+
+  const call = $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  await clock.advance(5_000)
+  expect(String((await call).text)).toContain('5s')
+})
+
+test('with the timeout switched off the dialog waits as long as it takes', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { DEV_HOOKS_GUARD_DIALOG_TIMEOUT: '0' })
+  const seen = unanswered(on, { ask: MAIN_ASK })
+  let settled = false
+
+  void $.tool.call({ tool: 'Bash', command: 'git commit -m wip' }).then(() => (settled = true))
+  await clock.advance(3_600_000)
+
+  expect(settled).toBe(false)
+  expect(seen.ran).toBe(0)
 })
