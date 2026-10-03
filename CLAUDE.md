@@ -1,7 +1,7 @@
 This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
 root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
-each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks and
-writing also ship `hooks/` — dev-hooks the main suite, writing a single `readme-reminder`).
+each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks,
+writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below).
 Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
