@@ -86,8 +86,7 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
   (`voice_opt_out [VAR]`, `voice_payload`/`voice_field`, `voice_profile`,
   `VOICE_PROSE_EXTS` + `voice_is_prose_file`, `voice_transcript_scan`,
   `voice_state_file`/`voice_fire_once`, `voice_emit <event> <msg>`, `voice_emit_stop`, and
-  the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). That lib replaced the
-  `# jscpd:ignore`-wrapped copies the hooks used to carry. `VOICE_PROSE_EXTS` is passed into
+  the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). `VOICE_PROSE_EXTS` is passed into
   `voice_transcript_scan`'s python heredoc by argv rather than re-listed there — a drifted
   copy of an extension list doesn't error, it just silently stops seeing files.
   `thinking-tools`' two hooks have no sibling to share with, so their small reimplemented
@@ -120,23 +119,21 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
   pass). The split is deliberate: these hooks run on *every* Bash tool call, so the second jq
   spawn isn't paid by a command the hook is about to ignore. **`reminder_cwd_session` is not
   optional** — SESSION is what makes a fire attributable to a repo (a session id resolves to
-  `~/.claude/projects/<dir>/<session>.jsonl`), and three hooks silently logged `"nosession"`
-  for five weekly reviews before `test_every_emitting_hook_establishes_a_session` in
-  `tests/test_hook_sunset_bets.py` started failing any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  `~/.claude/projects/<dir>/<session>.jsonl`), and `test_every_emitting_hook_establishes_a_session`
+  in `tests/test_hook_sunset_bets.py` fails any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
   guard when the hook manages its own re-arm state), **`reminder_session_files`** (SESSION_FILES
   = porcelain + files committed since the session started — the gate any "did Claude work this
-  session?" Stop hook wants, and the default over `reminder_changed_files`; review-reminder,
-  verify-work, big-change and change-summary all used porcelain alone and so went silent on
-  exactly the commit-as-you-go sessions that did the most work), `reminder_session_added_lines`
+  session?" Stop hook wants, and the default over `reminder_changed_files`, because porcelain
+  alone goes silent on exactly the commit-as-you-go sessions that do the most work), `reminder_session_added_lines`
   (this session's net added code lines in `$REPLY`: one diff from the last pre-session commit
   to the working tree, never a sum of per-commit patches, which counted every rewrite as
   growth; over `REMINDER_CODE_EXTS` — the growth signal,
   and the shared half of compress-comments-reminder's comment count),
-  `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (ONE code-extension
-  list; the two hand-rolled copies had already drifted over `*.sh`),
+  `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (the one
+  code-extension list — a hand-rolled copy drifts),
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
-  `transcript_invoked`, which two hooks used to embed as duplicate heredocs),
+  `transcript_invoked`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
   the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
   rather than threading the value through — and pass that value to python rather than
@@ -168,7 +165,7 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
-  on purpose, because a real leak was typed glued to the previous word),
+  on purpose, so a secret pasted with no space before it still matches),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
   `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the
@@ -178,9 +175,7 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
   matches in every session and permanently suppresses the hook. Its `<command-name>` branch
   must match INSIDE the tag (`[^<>\n]{1,100}`), not "both substrings on the same line": a
   transcript line is often a whole API request, in which the Skill tool's schema documents
-  the "`<command-name>` block" while the skill listing separately names the needle — that
-  lookalike made `code-review` and `compress-comments` report invoked in every session in
-  this repo. An unbounded `.*?` is no better; it spans the docstring that documents the tag) live in `lib/hook_helpers.py` — import them by
+  the "`<command-name>` block" while the skill listing separately names the needle. An unbounded `.*?` is no better; it spans the docstring that documents the tag) live in `lib/hook_helpers.py` — import them by
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
