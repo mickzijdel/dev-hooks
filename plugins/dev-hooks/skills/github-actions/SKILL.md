@@ -86,13 +86,15 @@ If you do nothing else when writing or reviewing a workflow, get these right:
 ## Fleet-wide bump
 
 Turn the per-repo recipe into one cross-repo pass (this is the "bump my fleet's actions"
-request). Mirror the cadence in the [[dev-env-bump-backfill-fleet]] memory: do the whole fleet
-in one session — branch, bump, verify, commit, push — so the repos stay in lockstep.
+request). Do the whole fleet in one session — bump, verify, commit, push — so the repos stay
+in lockstep.
 
-1. **Enumerate the fleet.** Start from the dev-env fleet (repos carrying `DEV_ENV_VERSION` in
-   `mise.toml`; the [[dev-env-bump-backfill-fleet]] memory lists the current set), and
-   cross-check with live discovery:
+1. **Enumerate the fleet.** Start from the dev-env fleet: [[dev-env-setup]]'s
+   `fleet_roster.sh` discovers every local repo whose `mise.toml` carries `DEV_ENV_VERSION`
+   (one line per repo with its path, version, checked-out branch, and a dirty flag). Cross-check
+   it with the remote list, since a repo can have workflows without tracking the standard:
    ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"   # or: fleet_roster.sh ROOT ...
    gh repo list "$(gh api user -q .login)" --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
    ```
    Keep only repos that actually have `.github/workflows/`. **Show the user the target set and
