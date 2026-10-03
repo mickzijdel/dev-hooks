@@ -13,10 +13,11 @@
 # `curl … | sh` — passes straight through to the normal permission flow, which already
 # prompts on them (and Claude Code's own auto-mode classifier catches them besides).
 #
-# The command is split into simple-command segments (newlines and the ;, &, | operators
-# end one), and each command's flags and operands are judged only against that command —
-# so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message that merely
-# *mentions* a footgun doesn't trip it.
+# The command is split into the simple commands the shell would run (lib/shell-segments.awk
+# honours quoting, and splits out $(…), backticks, `bash -c '…'`, `eval` and a heredoc fed
+# to a shell), and each command's flags and operands are judged only against that
+# command — so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message or
+# search pattern that merely *mentions* a footgun doesn't trip it.
 #
 # What happens on a match is configurable with DEV_HOOKS_GUARD_DENY (in .claude
 # settings "env"):
@@ -33,8 +34,9 @@
 #
 # Second check: commands whose *output* puts a secret value into the transcript —
 # printing a secret-bearing file (`cat .env`, `cat config/master.key`), a secret
-# manager read that prints to stdout (`bws secret get`, `op read`, `gh auth token`),
-# or echoing a secret-named variable. Once a value is in the transcript it is logged,
+# manager read that prints to stdout (`bws secret get`, `op read`), a credential probe
+# (`git credential fill`, a helper's `get`, `gh auth token`, `secret-tool lookup`), or
+# echoing a secret-named variable. Once a value is in the transcript it is logged,
 # summarised, and pasted onward, and the only real remedy is rotating the credential.
 # So this BLOCKS rather than asking: `ask` selects whoever answers prompts, and under
 # `"defaultMode": "auto"` that is the auto-mode classifier, which reads a two-branch
@@ -46,9 +48,11 @@
 #   allow / off / false / 0  — pass through silently
 # Deliberately narrow: template files (.env.example), public key halves (*.pub),
 # inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,
-# counting greps, and output redirected to /dev/null all stay silent. So do the two
-# parameter expansions that cannot print a value — `${VAR:+word}` and `${#VAR}` — since
-# those are the forms to reach for; `${VAR:-word}` is *not* one of them and is caught.
+# counting greps, and stdout sent to /dev/null or a file or captured into a variable
+# (`v=$(fnox get X)`) all stay silent; `2>/dev/null` hides only stderr, so it does not.
+# So do the two parameter expansions that cannot print a value — `${VAR:+word}` and
+# `${#VAR}` — since those are the forms to reach for; `${VAR:-word}` is *not* one of
+# them and is caught.
 #
 # Advisory by design; opt out of the whole hook per repo/user with
 # DEV_HOOKS_BASH_GUARD=false (in .claude settings "env").
@@ -63,30 +67,49 @@ reminder_pre_init DEV_HOOKS_BASH_GUARD
 # for the few footguns that inherently span command boundaries (a pipe, a redirect).
 cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 
-# Simple-command segments: newlines and the shell operators ;, &, | all end one (so &&
-# and || do too). Splitting ignores quoting — a separator inside a quoted string only
-# splits it into *more* segments, never glues two commands together.
-SEGMENTS=$(printf '%s\n' "$COMMAND" | tr ';&|' '\n')
+# Simple-command segments, split the way the shell would by lib/shell-segments.awk: one
+# per line, words separated by \037 with their quotes removed, wrappers (sudo, env,
+# xargs, …) and leading assignments already dropped, and each redirection as one word
+# starting with \035. Quoting decides what is code, so a separator inside a quoted
+# string (`rg "fnox get|bws secret get"`, a commit message) no longer starts a command,
+# while $(…), backticks, `bash -c '…'`, `eval`, `ssh host …` and a heredoc fed to a
+# shell are split out as commands of their own. On a parse failure (an unbalanced quote)
+# the awk falls back to the old quote-blind split, which over-matches rather than hides.
+SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk")
+US=$'\037'
+RDM=$'\035'
 
-# Dissect one segment into NAME (the command word, any path prefix stripped) and ARGS.
-# Wrappers (sudo, command, nohup, time, env, xargs) and env assignments are skipped so
-# `sudo rm …` is judged as `rm …`.
+# Dissect one segment into NAME (the command word, any path prefix stripped), ARGS, and
+# REDIRS (its redirections, marker stripped: `>/dev/null`, `2>&1`, `<file`).
 seg_parse() {
   local -a w
-  read -ra w <<<"$1"
-  NAME="" ARGS=()
-  local i=0
-  while [ "$i" -lt "${#w[@]}" ]; do
-    case "${w[$i]##*/}" in
-      sudo | command | nohup | time | env | xargs | *=*)
-        i=$((i + 1))
-        ;;
-      *) break ;;
+  local x
+  IFS="$US" read -ra w <<<"$1"
+  NAME="" ARGS=() REDIRS=()
+  [ "${#w[@]}" -eq 0 ] && return
+  NAME="${w[0]##*/}"
+  for x in "${w[@]:1}"; do
+    case "$x" in
+      "$RDM"*) REDIRS+=("${x#"$RDM"}") ;;
+      *) ARGS+=("$x") ;;
     esac
   done
-  [ "$i" -ge "${#w[@]}" ] && return
-  NAME="${w[$i]##*/}"
-  ARGS=("${w[@]:$((i + 1))}")
+}
+
+# Does the segment's stdout stay out of the transcript? It does when it goes to
+# /dev/null or a file, or is captured into a variable (`v=$(fnox get X)`, marked
+# `=captured` by the awk). `2>/dev/null` only hides stderr, and the value goes to stdout,
+# so it does not count; nor does `>&2` or `>/dev/stderr`, which still reach the screen.
+seg_stdout_discarded() {
+  local r
+  for r in "${REDIRS[@]}"; do
+    case "$r" in
+      =captured) return 0 ;;
+      *'>&'* | *'>/dev/std'* | *'>/dev/tty' | *'>/dev/fd/'[12]) ;;
+      '>'* | '1>'* | '&>'*) return 0 ;;
+    esac
+  done
+  return 1
 }
 
 # Strip one layer of surrounding quotes from an operand (agents often quote paths).
@@ -120,22 +143,24 @@ seg_rm() {
   done
 }
 
-# git's subcommand, skipping the global options that take a separate value.
+# git's subcommand, skipping the global options that take a separate value; GIT_REST
+# holds the subcommand's own non-flag operands.
 seg_git_sub() {
-  GIT_SUB=""
+  GIT_SUB="" GIT_REST=()
   local skip="" a
   for a in "${ARGS[@]}"; do
     if [ -n "$skip" ]; then
       skip=""
       continue
     fi
+    if [ -n "$GIT_SUB" ]; then
+      case "$a" in -*) ;; *) GIT_REST+=("$a") ;; esac
+      continue
+    fi
     case "$a" in
       -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
       -*) ;;
-      *)
-        GIT_SUB="$a"
-        return
-        ;;
+      *) GIT_SUB="$a" ;;
     esac
   done
 }
@@ -153,11 +178,11 @@ seg_words() {
   WORDS="${WORDS# } "
 }
 
-# Does this operand resolve to a file that actually exists? The segment parser
-# word-splits without honouring quotes, so a quoted grep pattern arrives as several
-# operands and one of them can look exactly like a key file (`event.key` from
-# `grep 'event.key === "Escape"' src/x.ts`). Requiring the file to exist settles it,
-# and costs no coverage: a path that isn't there can't be printed either.
+# Does this operand resolve to a file that actually exists? A grep pattern is an operand
+# too, and can look exactly like a key file (`grep event.key src/x.ts`; the quote-blind
+# fallback splits `'event.key === "Escape"'` into such words as well). Requiring the
+# file to exist settles it, and costs no coverage: a path that isn't there can't be
+# printed either.
 file_exists() {
   local q=$1
   # shellcheck disable=SC2088,SC2016  # ~ / $HOME are literal *text* in the inspected command; expanding them is this function's job
@@ -203,10 +228,15 @@ path_is_secret() {
   case "$base" in
     .env | .env.* | *.key | *.pem | *.p12 | *.pfx | *.jks | *.keystore | \
       id_rsa | id_dsa | id_ecdsa | id_ed25519 | \
-      .netrc | .pgpass | .npmrc | .pypirc | \
+      .netrc | .pgpass | .npmrc | .pypirc | .git-credentials | \
       credentials | credentials.json | credentials.yml.enc | \
       client_secret*.json | service*account*.json | \
       secrets.json | secrets.yml | secrets.yaml) return 0 ;;
+  esac
+  # gh keeps its OAuth token in hosts.yml when no keyring is available; the name alone
+  # is too common to match without its directory.
+  case "$1" in
+    *gh/hosts.yml | *gh/hosts.yaml) return 0 ;;
   esac
   return 1
 }
@@ -332,20 +362,22 @@ if [ -n "$DENY" ]; then
 fi
 
 # ── secrets that would land in the transcript ────────────────────────────────────
-SECRET_ASK=""
+# SECRET_KIND=cred marks a credential probe (a git credential helper's `get`, gh's
+# token, the desktop keyring), whose block message names the isolated way to test one.
+SECRET_ASK="" SECRET_KIND=""
 case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
     SEG_CWD="${CWD:-.}"
     while IFS= read -r seg; do
-      # Output that goes nowhere can't reach the transcript.
-      printf '%s' "$seg" | grep -Eq '>[[:space:]]*/dev/null' && continue
       seg_parse "$seg"
       [ -z "$NAME" ] && continue
       if [ "$NAME" = cd ]; then
         seg_cd
         continue
       fi
+      # Output that goes nowhere can't reach the transcript.
+      seg_stdout_discarded && continue
       case "$NAME" in
         cat | head | tail | less | more | bat | batcat | strings | xxd | od | jq | yq | grep | rg | ag)
           # A grep that reports whether, not what, prints no values.
@@ -358,30 +390,96 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             esac
           done
           [ -n "$skip" ] && continue
+          # Operands, plus the file of an input redirection (`cat < .env`).
+          files=()
           for a in "${ARGS[@]}"; do
             case "$a" in -*) continue ;; esac
+            files+=("$a")
+          done
+          for a in "${REDIRS[@]}"; do
+            case "$a" in '<<'* | '<&'* | '<>'*) ;; '<'*) files+=("${a#<}") ;; esac
+          done
+          for a in "${files[@]}"; do
             unquote "$a"
             if path_is_secret "$UQ" && file_exists "$UQ"; then
               SECRET_ASK="\`$NAME $UQ\` prints the contents of a file that holds secret values."
+              case "$UQ" in *.git-credentials | *gh/hosts.y*ml) SECRET_KIND=cred ;; esac
               break
             fi
           done
           ;;
-        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass)
+        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass | secret-tool | security)
           seg_words
           case "$NAME:$WORDS" in
             bws:'secret get '* | bws:'secret list '* | \
               fnox:'get '* | fnox:'show '* | \
               op:'read '* | op:'item get '* | \
               vault:'kv get '* | vault:'read '* | \
-              gh:'auth token '* | \
               aws:'secretsmanager get-secret-value '* | aws:'ssm get-parameter '* | \
               doppler:'secrets get '* | doppler:'secrets download '* | \
               kubectl:'get secret '* | kubectl:'get secrets '* | \
               pass:'show '*)
               SECRET_ASK="\`$NAME\` prints the secret's value to stdout."
               ;;
+            # gh's token, and the credential helper `git credential fill` calls.
+            gh:'auth token '* | gh:'auth git-credential get '*)
+              SECRET_ASK="\`gh ${WORDS% }\` prints your GitHub token."
+              SECRET_KIND=cred
+              ;;
+            gh:'auth status '*)
+              for a in "${ARGS[@]}"; do
+                case "$a" in
+                  -t | --show-token | --show-token=true)
+                    SECRET_ASK="\`gh auth status $a\` prints your GitHub token unmasked."
+                    SECRET_KIND=cred
+                    ;;
+                esac
+              done
+              ;;
+            # The desktop keyring: `lookup` prints the secret, `search` prints each match's.
+            secret-tool:'lookup '* | secret-tool:'search '*)
+              SECRET_ASK="\`secret-tool ${WORDS%% *}\` prints a secret from your keyring."
+              SECRET_KIND=cred
+              ;;
+            # The macOS keychain prints the password itself with -w (stdout) or -g (stderr).
+            security:'find-generic-password '* | security:'find-internet-password '*)
+              for a in "${ARGS[@]}"; do
+                case "$a" in
+                  --*) ;;
+                  -*[wg]*)
+                    SECRET_ASK="\`security ${WORDS%% *} $a\` prints a password from your keychain."
+                    SECRET_KIND=cred
+                    ;;
+                esac
+              done
+              ;;
           esac
+          ;;
+        # A credential helper's `get` prints the password it holds: `git credential fill`
+        # runs every configured helper, `git credential-<helper> get` and
+        # `git-credential-<helper> get` call one directly. approve/reject/store/erase only
+        # read a credential from stdin, and print nothing.
+        git)
+          seg_git_sub
+          case "$GIT_SUB" in
+            credential)
+              [ "${GIT_REST[0]:-}" = fill ] && SECRET_ASK="\`git credential fill\` asks your credential helpers for a password and prints it."
+              ;;
+            credential-*)
+              for a in "${GIT_REST[@]}"; do
+                [ "$a" = get ] && SECRET_ASK="\`git $GIT_SUB get\` prints the password that credential helper holds."
+              done
+              ;;
+          esac
+          [ -n "$SECRET_ASK" ] && SECRET_KIND=cred
+          ;;
+        git-credential-*)
+          for a in "${ARGS[@]}"; do
+            if [ "$a" = get ]; then
+              SECRET_ASK="\`$NAME get\` prints the password that credential helper holds."
+              SECRET_KIND=cred
+            fi
+          done
           ;;
         echo | printf | printenv)
           kind=ref
@@ -401,7 +499,17 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
 esac
 
 if [ -n "$SECRET_ASK" ]; then
-  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential. Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential."
+  if [ "$SECRET_KIND" = cred ]; then
+    # On 2026-10-02 `PATH=/usr/bin:/bin git credential fill`, meant to test a "gh
+    # missing" case, reached the laptop's logged-in /usr/bin/gh and printed a live token.
+    # Inline variables are not accepted as isolation: a repo's own .git/config, a helper
+    # named by absolute path, and the desktop keyring all survive them, and a parser that
+    # tried to judge them would be one more thing to get wrong.
+    REASON="$REASON To test credential plumbing, cut it off from the real stores — a temp \`HOME\`, \`GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1\`, a temp \`GH_CONFIG_DIR\`, empty \`GH_TOKEN\`/\`GITHUB_TOKEN\`/\`SSH_AUTH_SOCK\`, and a PATH with a fake \`gh\` first — and never print the helper's output (count its bytes or redact it). Setting those variables inline here is not trusted, since a repo's own .git/config, a helper named by absolute path and the desktop keyring survive them: write the probe into a test script that builds that isolation, or ask the user to run it outside the agent."
+  else
+    REASON="$REASON Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+  fi
   case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
     ask | ASK | Ask)
       reminder_emit_decision ask "$REASON Confirm if you do need to see it."
