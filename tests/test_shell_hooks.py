@@ -4714,6 +4714,145 @@ def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
     assert stop_allowed(vr)
 
 
+def _run_review_env(tmp_path, payload, **env):
+    return run_hook(
+        "review-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), **env),
+    )
+
+
+def test_stop_hooks_stand_down_when_the_mod_runs_them(tmp_path):
+    # The dev-hooks mod sets DEV_HOOKS_MOD_SESSION to its session id and runs the Stop
+    # hooks itself; the copies Claude Code runs directly must then stay silent.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    session = json.loads(payload)["session_id"]
+    r = _run_review_env(
+        tmp_path, payload, DEV_HOOKS_MOD_SESSION=session, DEV_HOOKS_ORCHESTRATED=None
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_stop_hooks_run_when_the_mod_orchestrates_them(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    session = json.loads(payload)["session_id"]
+    r = _run_review_env(
+        tmp_path, payload, DEV_HOOKS_MOD_SESSION=session, DEV_HOOKS_ORCHESTRATED="1"
+    )
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "[review-reminder]")
+
+
+def test_stop_hooks_ignore_a_mod_marker_from_another_session(tmp_path):
+    # A nested `claude` started from Bash inherits its parent's marker but has its own
+    # session id; its Stop hooks must still run if its own mod isn't there to run them.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_MOD_SESSION="some-parent-session",
+        DEV_HOOKS_ORCHESTRATED=None,
+    )
+    assert stop_blocked(r)
+
+
+def _facts_file(tmp_path, skills=(), agents=()):
+    path = tmp_path / "facts.json"
+    path.write_text(
+        json.dumps(
+            {
+                "updatedAt": 0,
+                "skills": [{"skill": s, "at": 0} for s in skills],
+                "agents": [
+                    {"description": d, "subagentType": t, "at": 0} for d, t in agents
+                ],
+                "repos": [],
+                "stops": [],
+            }
+        )
+    )
+    return str(path)
+
+
+def test_review_reminder_counts_a_review_skill_run_inside_a_subagent(tmp_path):
+    # The transcript only has the parent's tool calls; a subagent that ran /code-review
+    # is visible in the mod's session facts alone.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=_facts_file(tmp_path, skills=["code-review"]),
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_review_reminder_counts_a_review_agent_from_the_facts(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path, agents=[("Review the session diff", "general-purpose")]
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_allowed(r)
+
+
+def test_review_reminder_still_fires_when_the_facts_show_no_review(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path,
+        skills=["thinking-tools:self-rate"],
+        agents=[("Fix the review findings", "general-purpose")],  # a doer, not a review
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_blocked(r)
+
+
+def test_review_reminder_ignores_an_unreadable_facts_file(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    bad = tmp_path / "facts.json"
+    bad.write_text("{not json")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=str(bad),
+    )
+    assert stop_blocked(r)
+
+
+def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
+    # The stand-down lives in reminder_stop_init; a Stop hook that skipped it would run
+    # twice once the mod orchestrates — once directly, once from the mod.
+    hooks = json.loads((DEV_HOOKS / "hooks" / "hooks.json").read_text())
+    commands = [h["command"] for g in hooks["hooks"]["Stop"] for h in g["hooks"]]
+    assert commands
+    for command in commands:
+        script = HOOKS / command.split("/hooks/scripts/")[1].rstrip('"')
+        assert "reminder_stop_init" in script.read_text(), script.name
+
+
 def test_rearm_baseline_is_per_repo(tmp_path):
     # An empty worktree must not reset main's baseline in the same session
     main, wt = tmp_path / "main", tmp_path / "wt"
