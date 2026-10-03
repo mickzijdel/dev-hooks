@@ -14,7 +14,7 @@ function world(on: On, store: Record<string, unknown>, version = '9.9.9') {
     value: String(e.path).endsWith('plugin.json') ? JSON.stringify({ name: 'dev-hooks', version }) : HOOKS,
   }))
   on('env.set', (_$, e) => {
-    marked.push(e.value)
+    if (e.name === 'DEV_HOOKS_MOD_SESSION') marked.push(e.value)
     return { value: undefined }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))

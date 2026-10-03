@@ -35,6 +35,9 @@ def test_module_validates():
         "agent.spawn",
         "tool.call",
         "classic.Stop",
+        "classic.PreToolUse",
+        "session.end",
+        "tool.call{tool=Bash}",
     ):
         assert hook in out.stdout, f"{hook} not registered:\n{out.stdout}"
 
