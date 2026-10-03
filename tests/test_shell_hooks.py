@@ -3971,6 +3971,10 @@ def test_guard_denies_real_invocations(command, secret_tree):
         "export GH_TOKEN=$(gh auth token)",
         'v=$(fnox get K 2>/dev/null); echo "${v:+resolves} (${#v} chars)"',
         'RAILS_MASTER_KEY="$(cat config/master.key)" bin/rails runner "p 1" >/dev/null',
+        # compared by a test, never printed (replayed from a real session)
+        'if [ "$(fnox get RAILS_MASTER_KEY 2>/dev/null)" = "$(cat config/master.key)" ]; then echo same; fi',
+        '[[ -n "$(gh auth token)" ]] && echo logged-in',
+        'test -n "$(git credential fill </tmp/req)" && echo ok',
     ],
 )
 def test_guard_silent_when_stdout_stays_off_screen(command, secret_tree):

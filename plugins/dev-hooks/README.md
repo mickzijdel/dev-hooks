@@ -367,7 +367,8 @@ $ claude
   `*.sample`, `*.template`, `*.dist`), public key halves (`*.pub`), the inject-don't-print
   wrappers (`fnox run`, `bws run`, `op run`, `doppler run`), `source .env`, a grep that counts
   rather than prints (`-c`/`-l`/`-q`), stdout sent to `/dev/null` or a file, and a value captured
-  into a variable (`v=$(fnox get X)`, `KEY="$(cat master.key)" cmd`) are all silent;
+  into a variable (`v=$(fnox get X)`, `KEY="$(cat master.key)" cmd`) or only compared by a
+  test (`[ "$(fnox get X)" = … ]`) are all silent;
   `2>/dev/null`, `>&2` and `>/dev/stderr` are not, since the value still reaches the screen.
   Silence the whole guard with `DEV_HOOKS_BASH_GUARD=false` (in
   `.claude/settings.local.json` `"env"`).

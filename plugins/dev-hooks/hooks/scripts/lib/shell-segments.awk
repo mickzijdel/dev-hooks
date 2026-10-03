@@ -15,7 +15,8 @@
 #
 # A command whose output is captured into a variable (`v=$(fnox get X)`,
 # `KEY="$(cat master.key)" bin/rails …`, `export T=$(…)`) prints nothing, so its line
-# carries an extra `\035=captured` word, as do the commands nested inside it.
+# carries an extra `\035=captured` word, as do the commands nested inside it; so does
+# one whose output is only compared by `[`, `[[` or `test`.
 #
 # On an unbalanced quote or substitution it prints the old quote-blind split instead
 # (split on ; & | and newlines, then on blanks), so a parse failure never hides a command.
@@ -242,11 +243,12 @@ function subst(s, i,    c, j, inner, f, a) {
   # Captured when the substitution is an assignment's value: the word began with an
   # unquoted `NAME=` and the segment has no command yet, or only a declarer (`export`).
   CAPNEXT = CAP[D]
-  if (ASSIGN[D] && c != "<" && c != ">") {
-    f = finish(SG[D])
-    split(f, a, US)
-    if (f == "" || a[1] in DECLARERS) CAPNEXT = 1
-  }
+  f = finish(SG[D])
+  split(f, a, US)
+  if (ASSIGN[D] && c != "<" && c != ">" && (f == "" || a[1] in DECLARERS)) CAPNEXT = 1
+  # An argument to a test (`[ "$(fnox get X)" = "$(cat master.key)" ]`) is compared,
+  # never printed.
+  if (a[1] == "[" || a[1] == "[[" || a[1] == "test") CAPNEXT = 1
   tokenize(inner)
   return j
 }
