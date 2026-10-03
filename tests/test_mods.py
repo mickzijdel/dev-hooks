@@ -1,8 +1,8 @@
 """dev-hooks' function-hook module (hooks/register.tsx) under Claude Code's own runner.
 
 `claude plugin test` loads the plugin the way a session does and runs its *.test.ts(x)
-files against the engine; there is no other way to exercise a mod. CI has no Claude CLI,
-and a CLI whose mods rollout switch is off refuses to run them, so both cases skip.
+files against the engine; there is no other way to exercise a mod. CI installs a pinned
+CLI for this. Without a CLI, or with one whose mods rollout switch is off, both skip.
 """
 
 import shutil

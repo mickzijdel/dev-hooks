@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Pins the Claude Code CLI for CI's tests/test_mods.py (mods need >= 2.1.287); installed with npm ci from the lockfile.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.287"
+  }
+}

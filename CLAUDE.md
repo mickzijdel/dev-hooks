@@ -43,8 +43,8 @@ changed). A plugin's version lives **only** in its `plugins/<name>/.claude-plugi
 marketplace.json deliberately carries no per-plugin versions (Claude Code uses plugin.json's
 when both exist) and only stable one-line descriptions; don't re-add either. The hk
 `plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
-plugin when plugin files are staged; it is the one hk step CI doesn't mirror (CI has no Claude
-CLI).
+plugin when plugin files are staged; CI runs the same validation through `tests/test_mods.py`
+on the dev-hooks plugin.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
@@ -53,8 +53,10 @@ Do not include changelog or detective-work where it does not belong, such as in 
 `hooks.json` names one function-hook module under `modules`, beside the command hooks; its
 state contract is `plugins/dev-hooks/types/index.d.ts` (named as `types` in plugin.json) and
 its tests are `plugins/dev-hooks/tests/*.test.ts(x)`, run by `claude plugin test
-plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI, so CI never
-runs it — run it locally). Load the `plugin-authoring` skill before editing it. A Claude Code
+plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI; CI's `test`
+job installs a pinned one, needing no login). tsc can't run in CI — only a logged-in session
+load writes `.claude-plugin/types/` — so type-check locally after a session has loaded the
+plugin (`npx -p typescript tsc -p plugins/dev-hooks`; the engine writes that `tsconfig.json`). Load the `plugin-authoring` skill before editing it. A Claude Code
 that predates mods, or has them switched off, skips the module and still runs every command
 hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
 bundled examples use; call `$.state.get`/`$.state.set` directly.

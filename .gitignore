@@ -4,6 +4,8 @@ tmp/
 
 # Type declarations Claude Code writes beside a mod it loads from this working copy
 plugins/*/.claude-plugin/types/
+plugins/*/tsconfig.json
+.github/claude-cli/node_modules/
 
 # Local-only weekly automation review reports (weekly-automation-review skill)
 plans/automation-reviews/
