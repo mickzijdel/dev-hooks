@@ -29,7 +29,9 @@ printf '%s' "$COMMAND" |
 reminder_cwd_session
 
 # Only nudge when there's actually a GitHub Actions run to watch.
-ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
+# Judged in the pushed repo, not the session's (`cd other && git push`, `git -C other push`).
+reminder_git_target_dir push
+ROOT=$(git -C "$REPLY" rev-parse --show-toplevel 2>/dev/null) || exit 0
 shopt -s nullglob
 workflows=("$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml)
 [ ${#workflows[@]} -gt 0 ] || exit 0

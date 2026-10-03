@@ -171,6 +171,9 @@ enforces it) — one that doesn't would run twice. Don't stand hooks down by ski
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
   `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
   `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
+  `reminder_git_target_dir <words…>` (the directory the first `git <words…>` in $COMMAND runs
+  in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
+  git command acts on", since `cd other && git commit` acts on `other`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
   the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
   rather than threading the value through — and pass that value to python rather than

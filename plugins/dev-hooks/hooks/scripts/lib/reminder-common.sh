@@ -615,6 +615,24 @@ reminder_session_added_lines() {
 # rather than grepping: the transcript carries a skill_listing attachment naming every
 # installed skill, so a bare-name grep matches in EVERY session and would suppress the
 # caller forever. Needs $TRANSCRIPT.
+# The directory the first `git <words…>` in $COMMAND runs in — following `cd` segments and
+# git's `-C` — in $REPLY ($CWD when none). Use it, not $CWD, for "the repo this git command
+# acts on": `cd other && git commit` from a session sitting elsewhere acts on `other`.
+reminder_git_target_dir() {
+  REPLY=$(
+    python3 - "$REMINDER_LIB_DIR" "$COMMAND" "${CWD:-$PWD}" "$@" <<'PYEOF'
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import git_target_dir
+
+print(git_target_dir(sys.argv[2], sys.argv[3], tuple(sys.argv[4:])))
+PYEOF
+  ) || REPLY=""
+  [ -n "$REPLY" ] || REPLY=${CWD:-$PWD}
+}
+
 reminder_transcript_invoked() {
   local sentinel=$1
   shift

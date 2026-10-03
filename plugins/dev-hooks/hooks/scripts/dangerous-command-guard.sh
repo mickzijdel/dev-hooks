@@ -429,7 +429,9 @@ case "${DEV_HOOKS_GUARD_MAIN:-}" in
       esac
     done <<<"$SEGMENTS"
     if [ -n "$GIT_COMMITS" ] || [ -n "$GIT_PUSHES" ]; then
-      branch=$(git -C "$CWD" branch --show-current 2>/dev/null)
+      # The repo the command acts on, not the session's: `cd repo && git commit`, `git -C repo push`.
+      if [ -n "$GIT_COMMITS" ]; then reminder_git_target_dir commit; else reminder_git_target_dir push; fi
+      branch=$(git -C "$REPLY" branch --show-current 2>/dev/null)
       case "$branch" in
         main | master)
           verb="change"

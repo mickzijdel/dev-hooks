@@ -32,7 +32,10 @@ reminder_cwd_session
 command -v git >/dev/null 2>&1 || exit 0
 
 # The main working tree is the first entry of `git worktree list`; linked worktrees follow.
-mapfile -t WT_PATHS < <(git -C "$CWD" worktree list --porcelain 2>/dev/null |
+# The repo `worktree add` ran in, not the session's (`cd repo && git worktree add …`).
+reminder_git_target_dir worktree add
+GIT_DIR_USED=$REPLY
+mapfile -t WT_PATHS < <(git -C "$GIT_DIR_USED" worktree list --porcelain 2>/dev/null |
   awk '/^worktree /{ sub(/^worktree /,""); print }')
 [ ${#WT_PATHS[@]} -ge 2 ] || exit 0
 MAIN=${WT_PATHS[0]}
@@ -60,8 +63,8 @@ for ((i = 0; i < ${#TOKENS[@]}; i++)); do
   break
 done
 [ -n "$NEW" ] || exit 0
-# `git worktree add` resolves a relative path against the shell's cwd, so do the same.
-case $NEW in /*) ;; *) NEW="$CWD/$NEW" ;; esac
+# `git worktree add` resolves a relative path against the directory it ran in.
+case $NEW in /*) ;; *) NEW="$GIT_DIR_USED/$NEW" ;; esac
 [ -d "$NEW" ] || exit 0
 
 # Only audit a path git actually registered as a worktree — guards against a mis-parse.

@@ -289,6 +289,65 @@ def memory_written(transcript_path, facts_path=None):
     return False
 
 
+_SEGMENT_WRAPPERS = {"sudo", "command", "nohup", "time", "env", "exec"}
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def git_target_dir(command, cwd, words):
+    """The directory the first `git <words…>` in `command` runs in: follows the `cd` segments
+    before it and git's own `-C` flags, falling back to `cwd`. Hooks that inspect "the repo
+    this git command acts on" must use this, not the session cwd — `cd other && git commit`
+    and `git -C other push` act on another repo. Unparseable quoting falls back to `cwd`."""
+    import shlex
+
+    try:
+        lexer = shlex.shlex(
+            command.replace("\n", " ; "), posix=True, punctuation_chars=";&|"
+        )
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return cwd
+
+    def resolve(base, path):
+        return os.path.normpath(
+            os.path.join(base, os.path.expandvars(os.path.expanduser(path)))
+        )
+
+    segments, current = [], []
+    for token in tokens:
+        if token and set(token) <= set(";&|"):
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    segments.append(current)
+
+    here = cwd
+    for seg in segments:
+        while seg and (_ASSIGNMENT_RE.match(seg[0]) or seg[0] in _SEGMENT_WRAPPERS):
+            seg = seg[1:]
+        if not seg:
+            continue
+        name = os.path.basename(seg[0])
+        if name in ("cd", "pushd"):
+            target = next((t for t in seg[1:] if not t.startswith("-")), "~")
+            here = resolve(here, target)
+        elif name == "git":
+            gdir, rest, i = here, seg[1:], 0
+            while i < len(rest) and rest[i].startswith("-"):
+                if rest[i] == "-C" and i + 1 < len(rest):
+                    gdir = resolve(gdir, rest[i + 1])
+                    i += 2
+                elif rest[i] in ("-c", "--git-dir", "--work-tree", "--namespace"):
+                    i += 2
+                else:
+                    i += 1
+            if tuple(rest[i : i + len(words)]) == tuple(words):
+                return gdir
+    return cwd
+
+
 def facts_invoked(facts_path, needles):
     """True when the dev-hooks mod's session facts (DEV_HOOKS_FACTS_FILE) show one of
     `needles` ran: a skill or subagent type naming it, or — for `agent:<word>` — a
