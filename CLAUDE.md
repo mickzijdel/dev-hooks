@@ -107,6 +107,20 @@ A `$.ui.ask` can't be closed from the mod, so a timed-out dialog may linger. Not
 `$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
 included — only ever set variables that are inert outside this session or keyed to its id.
 
+The module also tracks **Stop-nudge outcomes** (`hooks/nudge-outcomes.ts`, pure; `$` stays in
+`register.tsx`'s `trackNudges`/`closeNudges`/`sweepNudges`/`logNudges`). Each reason the
+orchestration returns is a `Nudge` in the session's facts, named by its script (`hookName`), not
+its tag. The next orchestrated Stop — normally the continuation the block forced — resolves the
+pending ones with `resolveNudge`, one remedy per hook from facts recorded after the fire
+(`lastEdit` gives per-file edit times); `session.end` and, for sessions idle 6h+, the next
+`session.start` resolve leftovers as `unknown` unless evidence says acted. Resolved nudges go to
+`nudgeOutcomes` in `$.store` (union by session+hook+time, 90 days, 3,000 max) and are exported
+to `~/.claude/automation-review/stop-nudges.json` when that directory exists — the file the
+weekly-automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
+`resolveNudge`; give it one only for a remedy the facts can show. The review needles and the
+memory-dir regex are mirrors of `review-reminder.sh` and `hook_helpers.MEMORY_DIR_RE`, pinned
+by `tests/test_nudge_parity.py`.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description
