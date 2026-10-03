@@ -495,8 +495,7 @@ use without a `fnox.toml`, it emits `suggests_fnox=1` and the setup/upgrade repo
 
 - The version stamp is the single source of truth in `references/../VERSION`; the reminder hook
   reads the same file, so a repo on an older stamp gets flagged automatically.
-- Never auto-run this from a hook — it's invoked by the user (or offered by the reminder), and it
-  writes commit-tracked config, so confirm before committing.
+- Never auto-run this from a hook — it's invoked by the user (or offered by the reminder).
 - The standard ships **no `.gitignore` template** — Claude's defaults are usually right, but
   check the gotchas in [`references/standard.md`](references/standard.md) (".gitignore
   gotchas"): keep `.env` ignored AND allowlisted in `.gitleaks.toml`, commit lockfiles and
