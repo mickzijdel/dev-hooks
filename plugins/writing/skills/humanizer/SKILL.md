@@ -29,13 +29,15 @@ When given text to humanize:
 2. **Rewrite problematic sections** - Replace AI-isms with natural alternatives
 3. **Preserve meaning** - Keep the core message intact. Never add facts, sources, names, numbers, or quotes the input lacks; where a vague claim needs a specific, mark the gap with `[source needed]`
 4. **Maintain voice** - Match the intended tone (formal, casual, technical, etc.)
-5. **Add soul** - Don't just remove bad patterns; inject actual personality
+5. **Add soul** - Don't just remove bad patterns; inject actual personality (skip this step when a voice profile is in use; see below)
 
 ---
 
 ## PERSONALITY AND SOUL
 
-Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as obvious as slop. Good writing has a human behind it.
+When the `voice-profile` skill is in use (a person's profile, or its default rules), skip this section: the profile sets the voice, and humanizer only strips the AI patterns below.
+
+Otherwise: avoiding AI patterns is only half the job. Sterile, voiceless writing is just as obvious as slop. Good writing has a human behind it.
 
 ### Signs of soulless writing (even if technically "clean"):
 - Every sentence is the same length and structure

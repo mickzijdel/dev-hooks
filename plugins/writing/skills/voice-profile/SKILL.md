@@ -20,7 +20,9 @@ builds a new one, or falls back to baseline expository rules when no profile exi
 
 This skill is the personal-voice layer. The `humanizer` skill removes generic AI tells (em-dash
 overuse, rule of three, AI vocabulary, sycophancy); run it first or alongside. `voice-profile`
-adds one person's specific habits and expository concision on top.
+adds one person's specific habits and expository concision on top. Where the two disagree on
+voice, this skill wins: skip humanizer's "Personality and soul" section and keep only its
+AI-pattern fixes.
 
 ## Which mode
 
