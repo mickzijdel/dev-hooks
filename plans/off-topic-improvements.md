@@ -115,3 +115,18 @@ Noticed 2026-10-03 while adding Stop-nudge outcome tracking to the mod:
   `$.fs.write` can't set a mode; if that matters, create it from a shell hook first.
 - **The vischeck PostToolUse reminder fires on `hooks/register.tsx`** (a mod module with no UI
   route) — `.tsx` alone isn't a view.
+
+Noticed 2026-10-03 while building the guard dialog:
+
+- **ci-watch-reminder fires on any command whose *text* contains `git push`.** Its
+  `grep -E '…git(…)*push…'` runs over the whole command string, so a heredoc, a commit message
+  or a `python3 - <<EOF` body that merely mentions `git push` triggers "You just pushed" (seen
+  several times in one session). The mod's CI watch avoids this by reading the push's own
+  output; the shell reminder (still used where mods are off) should parse segments like the
+  guard's `seg_parse`/`seg_git_sub` instead of grepping the raw text.
+- **worktree-provision-reminder's "missing gitignored state" list looks wrong here.** After
+  `git worktree add .worktrees/x` in this repo it reported ", plans, plugins/ (2 missing),
+  .ruby-lsp/ (5 missing), tests" — an empty first entry, and `plans`/`tests` as if gitignored.
+  Probably its top-level grouping of `git ls-files --others --ignored --directory` output
+  (e.g. `tests/__pycache__/` grouped as `tests`, a root-level entry as ""). Worth a test with a
+  nested ignored dir and a root-level ignored file.

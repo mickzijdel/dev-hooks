@@ -103,7 +103,11 @@ Allow returns the decision **minus** its `ask` — never `allow`, so the user's 
 rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
 leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
 refuses), else the session env, else 120 s.
-A `$.ui.ask` can't be closed from the mod, so a timed-out dialog may linger. Note that
+A `$.ui.ask` can't be closed from the mod, so a timed-out dialog lingers, and the VS Code extension
+doesn't draw it through `ui.render` (the `guardTimedOut` redraw only helps surfaces that do). What
+works everywhere is the late answer: the abandoned `ask` promise still resolves, and
+`lateGuardAnswer` submits it to Claude, a late Allow also granting that exact command one
+ask-free run within 10 minutes (`lateAllowed`, module memory — a reload drops it). Note that
 `$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
 included — only ever set variables that are inert outside this session or keyed to its id.
 
