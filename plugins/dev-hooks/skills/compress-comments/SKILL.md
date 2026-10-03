@@ -54,8 +54,9 @@ comments.
 ## The budget
 
 Measured across Django 4.0, Flask 2.0, requests 2.27 and git 2.34, human code converges
-on **~10 comment lines per 100 code lines** regardless of language or project. AI-written
-code in this repo sits at 50%.
+on **~10 comment lines per 100 code lines** regardless of language or project. An
+AI-written corpus measured the same way (dev-hooks' own shell hooks) sat at 50% — see
+deslop's [measurements](../deslop/references/measurements.md).
 
 Check a touched file with
 `"$CLAUDE_PLUGIN_ROOT/skills/deslop/scripts/slop_scan.py" --metrics-only <file>`.
