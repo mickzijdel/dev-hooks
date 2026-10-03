@@ -133,15 +133,13 @@ grep -rnE 'os\.system|subprocess.*shell=True|eval\(|exec\(' --include='*.py' . 2
 **6. Test health — coverage *and* runnability**
 Two distinct checks. First, **does the suite even run from a clean checkout?** A suite that
 needs a Postgres role, a browser, or unset env that isn't provisioned is a real gap — note
-exactly what's missing (this is the spotify-tools `role "mick" does not exist` class of
-problem). Don't report coverage on a suite you couldn't run. Second, coverage and staleness:
+exactly what's missing (e.g. a database role the suite assumes but nothing creates). Don't report coverage on a suite you couldn't run. Second, coverage and staleness:
 ```bash
 ls -d test tests spec __tests__ 2>/dev/null
 git log -1 --pretty=format:'%ci %s' -- test tests spec 2>/dev/null; echo
 ```
-No suite, or tests last touched long before app code → flag it. For the deep testing strategy
-on a Rails repo this would route to rails-testing, but this skill only reaches non-Rails repos
-(Rails goes to rails-audit at step 2).
+No suite, or tests last touched long before app code → flag it. On a Rails repo this axis is
+part of what step 3 hands to [[rails-audit]], which routes testing depth to rails-testing.
 
 **7. Dev-env / tooling compliance → [[dev-env-setup]]**
 Is the repo set up to the standard — `mise.toml` pinning tools, an `hk` pre-commit hook running

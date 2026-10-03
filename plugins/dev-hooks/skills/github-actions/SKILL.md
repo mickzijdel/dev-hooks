@@ -80,45 +80,37 @@ If you do nothing else when writing or reviewing a workflow, get these right:
    ```
    Both are mise-pinned in every dev-env repo (`mise.toml`); install ad hoc with
    `mise use -g zizmor actionlint` elsewhere. Suppress a deliberate zizmor exception inline with
-   `# zizmor: ignore[<audit>]`, never by lowering the persona. (Dogfooded: the dev-env-setup CI
-   templates ship one `actions-lint` job that runs both.)
+   `# zizmor: ignore[<audit>]`, never by lowering the persona.
 
 ## Fleet-wide bump
 
 Turn the per-repo recipe into one cross-repo pass (this is the "bump my fleet's actions"
-request). Mirror the cadence in the [[dev-env-bump-backfill-fleet]] memory: do the whole fleet
-in one session — branch, bump, verify, commit, push — so the repos stay in lockstep.
+request). Do the whole fleet in one session — bump, verify, commit, push — so the repos stay
+in lockstep.
 
-1. **Enumerate the fleet.** Start from the dev-env fleet (repos carrying `DEV_ENV_VERSION` in
-   `mise.toml`; the [[dev-env-bump-backfill-fleet]] memory lists the current set), and
-   cross-check with live discovery:
+1. **Enumerate the fleet.** Start from the dev-env fleet: [[dev-env-setup]]'s
+   `fleet_roster.sh` discovers every local repo whose `mise.toml` carries `DEV_ENV_VERSION`
+   (one line per repo with its path, version, checked-out branch, and a dirty flag). Cross-check
+   it with the remote list, since a repo can have workflows without tracking the standard:
    ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"   # or: fleet_roster.sh ROOT ...
    gh repo list "$(gh api user -q .login)" --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
    ```
    Keep only repos that actually have `.github/workflows/`. **Show the user the target set and
    confirm it before changing anything** — don't sweep in repos they don't want touched.
-2. **Per repo** (work in a temp clone or worktree, never on a dirty main):
+2. **Per repo**, on its clean, up-to-date default branch — never on a dirty one (skip a dirty
+   repo and report it):
    ```bash
-   git switch -c chore/bump-actions
    pinact run -u                       # pin + update every uses: to the latest SHA + comment
-   bash "$CHECKER" .github/workflows   # verify refs resolve and comments match
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows   # refs resolve, comments match
    git diff                            # eyeball before committing
    ```
    Also add a `permissions: { contents: read }` block to any workflow missing one, and apply
    any other checklist gaps you spot.
-3. **Commit + push/PR** with a consistent message per repo (e.g.
-   `chore(ci): pin actions to SHAs and bump to latest`). Open a PR unless the user wants direct
-   pushes. Do all repos in the same session, then report a one-line summary per repo.
+3. **Commit + push** with a consistent message per repo (e.g.
+   `chore(ci): pin actions to SHAs and bump to latest`), straight to the repo's **own default
+   branch** — the roster's `branch=` field tells you; several repos are on `master`, not
+   `main`. Do all repos in the same session, then report a one-line summary per repo.
 
 Guardrails: `gh`/`pinact` missing or unauthenticated → stop and surface it. A repo whose CI
-is intentionally bespoke → flag it, don't force the standard. Never push to a repo's default
-branch directly.
-
-## How this skill is reached
-
-- **Editing a workflow** → the `ci-action-ref-reminder` hook fires and points here.
-- **Setting up / upgrading the dev env** → dev-env-setup's CI templates ship pre-hardened to
-  this standard (SHA pins + `permissions:`) and link back here; the dev-env v16 bump is where
-  this became the default.
-- **"Review this CI workflow" / "audit my GitHub Actions"** → this skill's description triggers
-  directly.
+is intentionally bespoke → flag it, don't force the standard.

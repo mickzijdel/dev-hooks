@@ -34,9 +34,10 @@ the bundled checker over them for the mechanical issues, then eyeball the rest o
 
 ```bash
 # scans HTML / ERB / JSX / TSX / Vue / Svelte and reports file:line: issue
-plugins/dev-hooks/skills/accessibility/scripts/a11y_audit.py app/views/**/*.erb app/javascript/**/*.tsx
+AUDIT="$CLAUDE_PLUGIN_ROOT/skills/accessibility/scripts/a11y_audit.py"
+"$AUDIT" app/views/**/*.erb app/javascript/**/*.tsx
 # or just the files git says changed:
-git diff --name-only --diff-filter=d | grep -E '\.(html|erb|haml|slim|jsx|tsx|vue|svelte)$' | xargs a11y_audit.py
+git diff --name-only --diff-filter=d | grep -E '\.(html|erb|haml|slim|jsx|tsx|vue|svelte)$' | xargs "$AUDIT"
 ```
 
 The checker is heuristic (regex, not a real DOM) — it catches the common, high-signal mistakes

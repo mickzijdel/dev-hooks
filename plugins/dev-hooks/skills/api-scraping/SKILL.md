@@ -1,15 +1,10 @@
 ---
 name: api-scraping
 description: |
-  Get structured data off a website by reverse-engineering the private JSON/GraphQL API
-  behind it instead of scraping rendered HTML. Use when the user wants to "scrape a site",
-  "get all the X from", "pull listings/results/posts/prices from", "build a scraper/client
-  for", says "there's no public API for this", or "reverse-engineer this site's API". The
-  loop: capture network traffic (HAR), find the request carrying the data, replay it outside
-  the browser, minimize headers/auth to only what's required, then generate a paginating,
-  rate-limited, resumable client. Escalates only as far as it must (headers → cookies/token →
-  TLS impersonation → headless browser) and stops at bot challenges and anything needing the
-  user's legal/ToS call.
+  Get structured data off a website by calling the private JSON/GraphQL API behind it
+  instead of scraping rendered HTML. Use when the user wants to "scrape a site", "get all
+  the X from", "pull listings/results/posts/prices from", "build a scraper/client for",
+  says "there's no public API for this", or "reverse-engineer this site's API".
 allowed-tools:
   - Read
   - Write
