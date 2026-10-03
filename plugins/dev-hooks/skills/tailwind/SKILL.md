@@ -1,6 +1,6 @@
 ---
 name: tailwind
-description: Use when writing or fixing Tailwind CSS — in HTML, ERB/ViewComponent, JSX, Vue, or any template that carries utility classes. Covers design tokens, taming class soup, component-first extraction, dark mode, responsive layout, and accessibility. Triggers on "tailwind", "css", "styling", "dark mode", "responsive", "class soup", "@apply", "design system", or any "make this look right / fix this layout" request — even when styling isn't named explicitly, since templates almost always contain Tailwind classes.
+description: Use when writing or fixing Tailwind utility classes in any template (HTML, ERB/ViewComponent, JSX, Vue), or restyling a Tailwind UI.
 ---
 
 # Tailwind CSS
