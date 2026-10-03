@@ -5119,6 +5119,12 @@ def test_every_guard_ask_carries_the_mod_prefix(tmp_path, secret_tree):
     asks = [
         _guard("rm -rf /", DEV_HOOKS_GUARD_DENY="ask"),
         _guard("git commit -m wip", cwd=tmp_path, DEV_HOOKS_GUARD_MAIN="1"),
+        # Claude's per-command dialog wait (read by the mod) must not hide the commit.
+        _guard(
+            "DEV_HOOKS_GUARD_DIALOG_TIMEOUT=600 git commit -m wip",
+            cwd=tmp_path,
+            DEV_HOOKS_GUARD_MAIN="1",
+        ),
         _guard_in(
             secret_tree,
             'echo "${BWS_ACCESS_TOKEN:-UNSET}"',

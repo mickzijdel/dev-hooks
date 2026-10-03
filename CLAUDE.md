@@ -100,7 +100,9 @@ takes a decision whose `ask` starts with `GUARD_PREFIX` (`dev-hooks guard — `,
 sides by `test_guard_prefix_matches_the_mod`) and asks via `$.ui.ask`, which reaches the person
 even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by the classifier).
 Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
-rules still run; Deny, a dismissal and a timeout (`DEV_HOOKS_GUARD_DIALOG_TIMEOUT`) all refuse.
+rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
+leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
+refuses), else the session env, else 120 s.
 A `$.ui.ask` can't be closed from the mod, so a timed-out dialog may linger. Note that
 `$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
 included — only ever set variables that are inert outside this session or keyed to its id.

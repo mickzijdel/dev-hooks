@@ -1,7 +1,7 @@
 import type { On, PreToolUseResult } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { guardQuestion, guardTimeoutReason, isGuardAsk } from '../hooks/register'
+import { commandTimeout, guardQuestion, guardTimeoutReason, isGuardAsk } from '../hooks/register'
 
 const GUARD_ASK = "dev-hooks guard — please confirm: You're about to push the `main` branch directly."
 const COMMAND = 'git push origin main'
@@ -127,7 +127,7 @@ function unanswered(on: On, verdict: PreToolUseResult) {
 
 test('guardTimeoutReason sends a main-branch change to a worktree', async () => {
   expect(guardTimeoutReason(MAIN_ASK, 60)).toContain('worktree')
-  expect(guardTimeoutReason(MAIN_ASK, 60)).toContain('60s')
+  expect(guardTimeoutReason(MAIN_ASK, 120)).toContain('120s')
   expect(guardTimeoutReason(GUARD_ASK.replace('push the `main` branch directly', 'print a secret'), 60)).not.toContain('worktree')
 })
 
@@ -136,9 +136,11 @@ test('an unanswered dialog refuses after the timeout, with what to do instead', 
   mock.env(on, {})
   const seen = unanswered(on, { ask: MAIN_ASK })
 
+  let settled = false
   const call = $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
-  await clock.advance(59_000)
-  expect(seen.ran).toBe(0)
+  void call.then(() => (settled = true))
+  await clock.advance(119_000)
+  expect(settled).toBe(false)
   await clock.advance(1_000)
   const ran = await call
 
@@ -167,4 +169,34 @@ test('with the timeout switched off the dialog waits as long as it takes', async
 
   expect(settled).toBe(false)
   expect(seen.ran).toBe(0)
+})
+
+test('commandTimeout reads a leading DEV_HOOKS_GUARD_DIALOG_TIMEOUT= on the command', async () => {
+  expect(commandTimeout('DEV_HOOKS_GUARD_DIALOG_TIMEOUT=600 git push')).toBe(600)
+  expect(commandTimeout('FOO=1 DEV_HOOKS_GUARD_DIALOG_TIMEOUT=0 git push')).toBe(0)
+  expect(commandTimeout("cd x && DEV_HOOKS_GUARD_DIALOG_TIMEOUT='30' git commit -m y")).toBe(30)
+  expect(commandTimeout('git push')).toBeUndefined()
+  expect(commandTimeout('echo DEV_HOOKS_GUARD_DIALOG_TIMEOUT=5')).toBeUndefined()
+  expect(commandTimeout('DEV_HOOKS_GUARD_DIALOG_TIMEOUT=soon git push')).toBeUndefined()
+})
+
+test('Claude can set the wait on the command itself, over the session setting', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, { DEV_HOOKS_GUARD_DIALOG_TIMEOUT: '5' })
+  const seen = unanswered(on, { ask: MAIN_ASK })
+  let settled = false
+
+  const call = $.tool.call({ tool: 'Bash', command: 'DEV_HOOKS_GUARD_DIALOG_TIMEOUT=600 git commit -m wip' })
+  void call.then(() => (settled = true))
+  await clock.advance(599_000)
+  expect(settled).toBe(false)
+  await clock.advance(1_000)
+
+  expect(String((await call).text)).toContain('600s')
+  expect(seen.ran).toBe(0)
+})
+
+test('the dialog tells the person how long it waits', async () => {
+  expect(guardQuestion(GUARD_ASK, COMMAND, 120)).toContain('2 min')
+  expect(guardQuestion(GUARD_ASK, COMMAND, 0)).not.toContain('refuse')
 })
