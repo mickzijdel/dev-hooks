@@ -58,7 +58,7 @@ on **~10 comment lines per 100 code lines** regardless of language or project. A
 code in this repo sits at 50%.
 
 Check a touched file with
-`plugins/dev-hooks/skills/deslop/scripts/slop_scan.py --metrics-only <file>`.
+`"$CLAUDE_PLUGIN_ROOT/skills/deslop/scripts/slop_scan.py" --metrics-only <file>`.
 
 Under ~15%, the survival rule alone is enough. Over it, switch from filtering to
 **ranking**: order the comments by how much constraint each one carries and keep the top
