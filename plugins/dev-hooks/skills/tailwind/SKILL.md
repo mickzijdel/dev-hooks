@@ -19,7 +19,7 @@ that must stay on-screen, see the companion [popovers-tooltips](../popovers-tool
 2. **No inline styles.** Never use the `style` attribute. If Tailwind lacks a utility, extend the config.
 3. **Reuse components first.** Before adding classes to a new element, check whether an existing partial, component, or shared pattern already handles it.
 4. **Design tokens over magic numbers.** Use the colors, spacing, and sizes from your config — not arbitrary values like `bg-[#3b82f6]` or `p-[13px]`.
-5. **Every UI works in light and dark mode.** No exceptions.
+5. **Every UI works in light and dark mode**, unless the brief pins otherwise.
 6. **Every UI is responsive.** No exceptions.
 
 ---
@@ -218,7 +218,7 @@ Styling affects accessibility directly.
 | Copy-paste 15 classes | Extract a component | Components are the reuse mechanism |
 | Raw CSS in `.css` files | Tailwind utilities, or `@apply` in `@layer` | Plain CSS diverges from the system |
 | `p-[13px]` | `p-3` (or extend the config) | Arbitrary spacing breaks visual rhythm |
-| Forget `dark:` variants | Pair light and dark always | Half your users see a broken UI |
+| Forget `dark:` variants | Pair light and dark, unless the brief pins one | Half your users see a broken UI |
 | Forget breakpoints | Mobile-first, add `md:`/`lg:` | Mobile users are the majority |
 | `focus:` for focus rings | `focus-visible:` | Avoids focus rings on mouse clicks |
 | Remove outline, no replacement | `focus:outline-none focus-visible:ring-2` | Keyboard users must see focus |
