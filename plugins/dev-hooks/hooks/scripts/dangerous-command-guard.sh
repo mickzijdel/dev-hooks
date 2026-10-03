@@ -34,8 +34,9 @@
 #
 # Second check: commands whose *output* puts a secret value into the transcript —
 # printing a secret-bearing file (`cat .env`, `cat config/master.key`), a secret
-# manager read that prints to stdout (`bws secret get`, `op read`, `gh auth token`),
-# or echoing a secret-named variable. Once a value is in the transcript it is logged,
+# manager read that prints to stdout (`bws secret get`, `op read`), a credential probe
+# (`git credential fill`, a helper's `get`, `gh auth token`, `secret-tool lookup`), or
+# echoing a secret-named variable. Once a value is in the transcript it is logged,
 # summarised, and pasted onward, and the only real remedy is rotating the credential.
 # So this BLOCKS rather than asking: `ask` selects whoever answers prompts, and under
 # `"defaultMode": "auto"` that is the auto-mode classifier, which reads a two-branch
@@ -142,22 +143,24 @@ seg_rm() {
   done
 }
 
-# git's subcommand, skipping the global options that take a separate value.
+# git's subcommand, skipping the global options that take a separate value; GIT_REST
+# holds the subcommand's own non-flag operands.
 seg_git_sub() {
-  GIT_SUB=""
+  GIT_SUB="" GIT_REST=()
   local skip="" a
   for a in "${ARGS[@]}"; do
     if [ -n "$skip" ]; then
       skip=""
       continue
     fi
+    if [ -n "$GIT_SUB" ]; then
+      case "$a" in -*) ;; *) GIT_REST+=("$a") ;; esac
+      continue
+    fi
     case "$a" in
       -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
       -*) ;;
-      *)
-        GIT_SUB="$a"
-        return
-        ;;
+      *) GIT_SUB="$a" ;;
     esac
   done
 }
@@ -225,10 +228,15 @@ path_is_secret() {
   case "$base" in
     .env | .env.* | *.key | *.pem | *.p12 | *.pfx | *.jks | *.keystore | \
       id_rsa | id_dsa | id_ecdsa | id_ed25519 | \
-      .netrc | .pgpass | .npmrc | .pypirc | \
+      .netrc | .pgpass | .npmrc | .pypirc | .git-credentials | \
       credentials | credentials.json | credentials.yml.enc | \
       client_secret*.json | service*account*.json | \
       secrets.json | secrets.yml | secrets.yaml) return 0 ;;
+  esac
+  # gh keeps its OAuth token in hosts.yml when no keyring is available; the name alone
+  # is too common to match without its directory.
+  case "$1" in
+    *gh/hosts.yml | *gh/hosts.yaml) return 0 ;;
   esac
   return 1
 }
@@ -354,7 +362,9 @@ if [ -n "$DENY" ]; then
 fi
 
 # ── secrets that would land in the transcript ────────────────────────────────────
-SECRET_ASK=""
+# SECRET_KIND=cred marks a credential probe (a git credential helper's `get`, gh's
+# token, the desktop keyring), whose block message names the isolated way to test one.
+SECRET_ASK="" SECRET_KIND=""
 case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
@@ -393,25 +403,83 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             unquote "$a"
             if path_is_secret "$UQ" && file_exists "$UQ"; then
               SECRET_ASK="\`$NAME $UQ\` prints the contents of a file that holds secret values."
+              case "$UQ" in *.git-credentials | *gh/hosts.y*ml) SECRET_KIND=cred ;; esac
               break
             fi
           done
           ;;
-        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass)
+        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass | secret-tool | security)
           seg_words
           case "$NAME:$WORDS" in
             bws:'secret get '* | bws:'secret list '* | \
               fnox:'get '* | fnox:'show '* | \
               op:'read '* | op:'item get '* | \
               vault:'kv get '* | vault:'read '* | \
-              gh:'auth token '* | \
               aws:'secretsmanager get-secret-value '* | aws:'ssm get-parameter '* | \
               doppler:'secrets get '* | doppler:'secrets download '* | \
               kubectl:'get secret '* | kubectl:'get secrets '* | \
               pass:'show '*)
               SECRET_ASK="\`$NAME\` prints the secret's value to stdout."
               ;;
+            # gh's token, and the credential helper `git credential fill` calls.
+            gh:'auth token '* | gh:'auth git-credential get '*)
+              SECRET_ASK="\`gh ${WORDS% }\` prints your GitHub token."
+              SECRET_KIND=cred
+              ;;
+            gh:'auth status '*)
+              for a in "${ARGS[@]}"; do
+                case "$a" in
+                  -t | --show-token | --show-token=true)
+                    SECRET_ASK="\`gh auth status $a\` prints your GitHub token unmasked."
+                    SECRET_KIND=cred
+                    ;;
+                esac
+              done
+              ;;
+            # The desktop keyring: `lookup` prints the secret, `search` prints each match's.
+            secret-tool:'lookup '* | secret-tool:'search '*)
+              SECRET_ASK="\`secret-tool ${WORDS%% *}\` prints a secret from your keyring."
+              SECRET_KIND=cred
+              ;;
+            # The macOS keychain prints the password itself with -w (stdout) or -g (stderr).
+            security:'find-generic-password '* | security:'find-internet-password '*)
+              for a in "${ARGS[@]}"; do
+                case "$a" in
+                  --*) ;;
+                  -*[wg]*)
+                    SECRET_ASK="\`security ${WORDS%% *} $a\` prints a password from your keychain."
+                    SECRET_KIND=cred
+                    ;;
+                esac
+              done
+              ;;
           esac
+          ;;
+        # A credential helper's `get` prints the password it holds: `git credential fill`
+        # runs every configured helper, `git credential-<helper> get` and
+        # `git-credential-<helper> get` call one directly. approve/reject/store/erase only
+        # read a credential from stdin, and print nothing.
+        git)
+          seg_git_sub
+          case "$GIT_SUB" in
+            credential)
+              [ "${GIT_REST[0]:-}" = fill ] && SECRET_ASK="\`git credential fill\` asks your credential helpers for a password and prints it."
+              ;;
+            credential-*)
+              for a in "${GIT_REST[@]}"; do
+                [ "$a" = get ] && SECRET_ASK="\`git $GIT_SUB get\` prints the password that credential helper holds."
+              done
+              ;;
+          esac
+          [ -n "$SECRET_ASK" ] && SECRET_KIND=cred
+          ;;
+        git-credential-*)
+          for a in "${ARGS[@]}"; do
+            if [ "$a" = get ]; then
+              SECRET_ASK="\`$NAME get\` prints the password that credential helper holds."
+              SECRET_KIND=cred
+            fi
+          done
           ;;
         echo | printf | printenv)
           kind=ref
@@ -431,7 +499,17 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
 esac
 
 if [ -n "$SECRET_ASK" ]; then
-  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential. Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+  REASON="dev-hooks guard — $SECRET_ASK Anything printed here enters the transcript, where it is logged and summarised, and the only real fix is rotating the credential."
+  if [ "$SECRET_KIND" = cred ]; then
+    # On 2026-10-02 `PATH=/usr/bin:/bin git credential fill`, meant to test a "gh
+    # missing" case, reached the laptop's logged-in /usr/bin/gh and printed a live token.
+    # Inline variables are not accepted as isolation: a repo's own .git/config, a helper
+    # named by absolute path, and the desktop keyring all survive them, and a parser that
+    # tried to judge them would be one more thing to get wrong.
+    REASON="$REASON To test credential plumbing, cut it off from the real stores — a temp \`HOME\`, \`GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1\`, a temp \`GH_CONFIG_DIR\`, empty \`GH_TOKEN\`/\`GITHUB_TOKEN\`/\`SSH_AUTH_SOCK\`, and a PATH with a fake \`gh\` first — and never print the helper's output (count its bytes or redact it). Setting those variables inline here is not trusted, since a repo's own .git/config, a helper named by absolute path and the desktop keyring survive them: write the probe into a test script that builds that isolation, or ask the user to run it outside the agent."
+  else
+    REASON="$REASON Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+  fi
   case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
     ask | ASK | Ask)
       reminder_emit_decision ask "$REASON Confirm if you do need to see it."

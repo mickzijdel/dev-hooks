@@ -3884,14 +3884,14 @@ QUOTED_MENTIONS = [
     'rg -n "fnox get|bws secret get" plugins/',
     "rg -n 'fnox get; gh auth token' .",
     'grep -rn "bws secret list\\|op read" docs/',
-    'git commit -m "guard: block fnox get; gh auth token; op read"',
+    'git commit -m "guard: block fnox get; gh auth token; git credential fill"',
     "git commit -m \"$(printf 'docs\\n\\nexplain why fnox get | head leaks')\"",
     "echo 'never run gh auth token here'",
     'echo "a | fnox get X"',
     # a heredoc body is data, not commands, unless a shell reads it
-    "cat > tests/probe.test.sh <<'EOF'\nfnox get X\ngh auth token\nop read op://v/i\nEOF",
+    "cat > tests/probe.test.sh <<'EOF'\nfnox get X\ngh auth token\ngit credential fill\nEOF",
     "cat > notes.md <<EOF\nfnox get X\nbws secret get abc\nEOF",
-    "cat <<-'EOF' > x.sh\n\tbws secret get abc\n\tEOF\necho done",
+    "cat <<-'EOF' > x.sh\n\tgit credential fill\n\tEOF\necho done",
     "python3 - <<'PY'\nprint('gh auth token')\nPY",
     # a comment is not a command
     "ls  # then fnox get X",
@@ -3932,7 +3932,9 @@ REAL_INVOCATIONS = [
     "TOKEN=$(gh auth token) && echo $TOKEN",
     # wrappers with options of their own
     "sudo -u mick gh auth token",
+    "timeout 5 git credential fill",
     "ssh agent-vm gh auth token",
+    "ssh -i ~/.ssh/key agent-vm 'git credential fill'",
     # a shell given the command as a string or on stdin runs it
     "bash -c 'fnox get X'",
     'sh -c "gh auth token"',
@@ -3982,6 +3984,118 @@ def test_guard_silent_when_stdout_stays_off_screen(command, secret_tree):
 )
 def test_guard_denies_catastrophic_inside_a_shell_string(command):
     assert _decision(_guard(command)) == "deny"
+
+
+# ── dangerous-command-guard.sh: credential probes ────────────────────────────────────
+# On 2026-10-02 a review subagent ran `git credential fill` with PATH=/usr/bin:/bin to
+# test a "gh missing" case. /usr/bin/gh, logged in, was the credential helper, so a live
+# gho_ token printed into the transcript and had to be revoked. A credential helper's
+# `get` and gh's token commands print the password; these are blocked like `bws secret
+# get`. Commands here are only ever fed to the guard as hook input, never run.
+CREDENTIAL_PROBES = [
+    "git credential fill",
+    "printf 'protocol=https\\nhost=github.com\\n\\n' | PATH=/usr/bin:/bin git credential fill",
+    "echo url=https://github.com | git credential fill",
+    "git -c credential.helper= credential fill",
+    "git -C repo credential fill </tmp/req",
+    "cd repo && git credential fill <<<'url=https://github.com'",
+    "git credential-manager get",
+    "git credential-store --file ~/.git-credentials get",
+    "git credential-cache get",
+    "git-credential-agent-github get",
+    "/usr/local/bin/git-credential-agent-github get </tmp/req",
+    "gh auth token",
+    "gh auth token --hostname github.com",
+    "gh auth token -h github.com -u mick",
+    "GH_HOST=github.com gh auth token",
+    "gh auth status -t",
+    "gh auth status --show-token",
+    "gh auth status --hostname github.com -t",
+    "gh auth git-credential get",
+    "echo 'host=github.com' | gh auth git-credential get",
+    "secret-tool lookup service github",
+    "secret-tool search --all service github",
+    "security find-generic-password -s github -w",
+    "security find-internet-password -s github.com -g",
+    "cat ~/.git-credentials",
+    "cat $HOME/.git-credentials",
+    "cat ~/.config/gh/hosts.yml",
+    "head -5 $HOME/.config/gh/hosts.yml",
+    'bash -c "git credential fill"',
+    # inline isolation is not trusted: a repo's own .git/config, an absolute-path
+    # helper, and the desktop keyring all survive these variables.
+    "HOME=$(mktemp -d) GH_CONFIG_DIR=/tmp/x GIT_CONFIG_GLOBAL=/dev/null "
+    "GIT_CONFIG_NOSYSTEM=1 GH_TOKEN= git credential fill",
+]
+
+
+@pytest.fixture
+def credential_tree(secret_tree):
+    repo, home = secret_tree
+    for rel in [".git-credentials", ".config/gh/hosts.yml", ".config/gh/config.yml"]:
+        f = home / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    return repo, home
+
+
+@pytest.mark.parametrize("command", CREDENTIAL_PROBES)
+def test_guard_denies_credential_probes(command, credential_tree):
+    r = _guard_in(credential_tree, command)
+    assert r.returncode == 0
+    assert _decision(r) == "deny", r.stdout
+    reason = json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert reason.startswith("BLOCKED: dev-hooks guard — ")
+    assert "transcript" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["git credential fill", "gh auth token", "git-credential-agent-github get"],
+)
+def test_guard_credential_block_names_the_isolated_route(command, credential_tree):
+    reason = json.loads(_guard_in(credential_tree, command).stdout)[
+        "hookSpecificOutput"
+    ]["permissionDecisionReason"]
+    for needle in ["GIT_CONFIG_GLOBAL=/dev/null", "GH_CONFIG_DIR", "fake `gh`"]:
+        assert needle in reason
+
+
+CREDENTIAL_SILENT = [
+    # approve/reject/store/erase read a credential from stdin and print nothing
+    "git credential approve",
+    "git credential reject </tmp/cred",
+    "git credential-store store",
+    "git credential-cache exit",
+    "gh auth git-credential store",
+    "gh auth git-credential erase",
+    "secret-tool store --label x service y",
+    "secret-tool clear service y",
+    # public key listings and masked status
+    "ssh-add -l",
+    "ssh-add -L",
+    "gh auth status",
+    "gh auth status --hostname github.com",
+    "gh auth login --web",
+    "gh auth setup-git",
+    # configuration, not credentials
+    "git config --global credential.helper",
+    "git config --get-all credential.https://github.com.helper",
+    "cat ~/.config/gh/config.yml",
+    # talking about it
+    'rg -n "git credential fill|gh auth token" .',
+    "git log --grep 'credential fill'",
+    'git commit -m "guard: block git credential fill"',
+    # stdout discarded
+    "gh auth token >/dev/null",
+]
+
+
+@pytest.mark.parametrize("command", CREDENTIAL_SILENT)
+def test_guard_silent_on_credential_neighbours(command, credential_tree):
+    r = _guard_in(credential_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == "", r.stdout
 
 
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
