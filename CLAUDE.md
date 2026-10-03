@@ -85,7 +85,12 @@ command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATE
 answer the way Claude Code does (`stopReason`) and returns one merged `block`. It writes the
 session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the path as
 `DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
-`reminder_transcript_invoked` and gets subagent-aware answers for free. So a new dev-hooks
+`reminder_transcript_invoked` and gets subagent-aware answers for free. If orchestration throws, the
+module unsets the marker (the command hooks take Stop back from the next turn) and records the
+plugin version under `stopOrchestrationFailed` in `$.store`; `session.start` won't mark a
+session on that version again, so only a version bump re-enables it. Every `--plugin-dir`
+copy named `dev-hooks` shares one inline store (`dev-hooks_inline-*.json`), separate from the
+marketplace install's — clear that key after fault-injection tests. So a new dev-hooks
 Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init`
 enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
 `classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.

@@ -202,6 +202,48 @@ async function ownStopHooks($: EngineInterface): Promise<StopHook[]> {
   return stopHooks(JSON.parse(await $.fs.read(`${$.plugin.root}/hooks/hooks.json`)))
 }
 
+// A failed orchestration is remembered against this plugin version, so a broken
+// release doesn't cost every new session its first Stop; a new version tries again.
+const ORCHESTRATION_FAILED = 'stopOrchestrationFailed'
+
+async function pluginVersion($: EngineInterface): Promise<string> {
+  const manifest = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)) as { version?: string }
+  return manifest.version ?? 'unknown'
+}
+
+// Runs dev-hooks' Stop commands as Claude Code would and merges their reasons after
+// `below` (any block from hooks beneath the module).
+async function orchestrateStop(
+  $: EngineInterface,
+  e: { session_id: string; cwd: string },
+  below: string | undefined,
+): Promise<string | undefined> {
+  const stdin = JSON.stringify(e)
+  // The facts reach the shell hooks as a file (reminder_transcript_invoked reads it):
+  // they see skills and agents run inside subagents, which the transcript doesn't.
+  // Optional — without them the hooks fall back to the transcript.
+  const factsFile = `${(await $.env.get('TMPDIR')) || '/tmp'}/dev-hooks-facts-${e.session_id}.json`
+  const hasFacts = await $.fs
+    .write(factsFile, JSON.stringify(await loadFacts($)))
+    .then(() => true, () => false)
+  const env = {
+    CLAUDE_PLUGIN_ROOT: $.plugin.root,
+    DEV_HOOKS_ORCHESTRATED: '1',
+    ...(hasFacts ? { DEV_HOOKS_FACTS_FILE: factsFile } : {}),
+  }
+  const runs = await Promise.all(
+    (await ownStopHooks($)).map(hook =>
+      $.process
+        .run(['bash', '-c', hook.command], { cwd: e.cwd, stdin, env, timeoutMs: hook.timeoutMs })
+        .then(stopReason, () => null),
+    ),
+  )
+  const block = mergeBlocks(below, runs.filter((r): r is string => r !== null))
+  const stop = { at: Date.now(), block: block ?? null }
+  await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) })).catch(() => undefined)
+  return block
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -214,9 +256,11 @@ export const register: Register = on => {
     })
     await pruneFacts($)
     if ((await $.state.get(isShown)).value) await refresh($)
-    // Only take the Stop hooks over once their config reads cleanly; otherwise leave
-    // the session unmarked so the command hooks keep running directly.
-    if ((await ownStopHooks($)).length > 0) {
+    // Only take the Stop hooks over once their config reads cleanly, and not on a
+    // version whose orchestration already failed; otherwise leave the session unmarked
+    // so the command hooks keep running directly.
+    const failedOn = await $.store.get(ORCHESTRATION_FAILED)
+    if ((await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))) {
       await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
     }
 
@@ -333,27 +377,16 @@ export const register: Register = on => {
     const below = await next(e)
     if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
 
-    const stdin = JSON.stringify(e)
-    // The facts reach the shell hooks as a file (reminder_transcript_invoked reads it):
-    // they see skills and agents run inside subagents, which the transcript doesn't.
-    const factsFile = `${(await $.env.get('TMPDIR')) || '/tmp'}/dev-hooks-facts-${e.session_id}.json`
-    await $.fs.write(factsFile, JSON.stringify(await loadFacts($)))
-    const env = {
-      CLAUDE_PLUGIN_ROOT: $.plugin.root,
-      DEV_HOOKS_ORCHESTRATED: '1',
-      DEV_HOOKS_FACTS_FILE: factsFile,
+    try {
+      const block = await orchestrateStop($, e, below.block)
+      return block === undefined ? below : { ...below, block }
+    } catch (error) {
+      // The command hooks stood down for this session, so a failure here would
+      // silence every later Stop too: hand Stop back to them from the next turn.
+      await $.env.set('DEV_HOOKS_MOD_SESSION', undefined)
+      await $.store.set(ORCHESTRATION_FAILED, await pluginVersion($).catch(() => 'unknown')).catch(() => undefined)
+      $.ui.log(`dev-hooks: Stop orchestration failed, the Stop hooks run directly from now on: ${String(error)}`)
+      return below
     }
-    const runs = await Promise.all(
-      (await ownStopHooks($)).map(hook =>
-        $.process
-          .run(['bash', '-c', hook.command], { cwd: e.cwd, stdin, env, timeoutMs: hook.timeoutMs })
-          .then(stopReason, () => null),
-      ),
-    )
-    const block = mergeBlocks(below.block, runs.filter((r): r is string => r !== null))
-    const stop = { at: Date.now(), block: block ?? null }
-    await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) }))
-
-    return block === undefined ? below : { ...below, block }
   })
 }
