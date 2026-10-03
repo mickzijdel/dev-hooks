@@ -1,14 +1,10 @@
 ---
 name: dependency-upgrade
 description: |
-  Bring a repo's dependencies up to the latest versions across JavaScript (npm/pnpm/yarn),
-  Ruby (bundler), Python (uv/poetry/pip), and GitHub Actions — reading changelogs/migration
-  guides for major bumps, applying the needed code changes, and landing each step as its own
-  verified commit. Use when the user wants to "update my packages", "upgrade dependencies",
-  "bump deps to latest", "check for outdated packages", or do this across all their repos
-  (fleet mode). Gates every commit on a green test suite; defers any major it can't get green
-  to a written report. Pairs with the github-actions skill (Actions pins) and respects
-  dev-env-setup's 4-day dependency cooldown.
+  Bring a repo's dependencies (JavaScript, Ruby, Python, GitHub Actions) up to their latest
+  versions. Use when the user wants to "update my packages", "upgrade dependencies", "bump
+  deps to latest", "check for outdated packages", or do this across all their repos (fleet
+  mode), or when the latest-deps-reminder hook flags stale versions.
 allowed-tools:
   - Read
   - Write
