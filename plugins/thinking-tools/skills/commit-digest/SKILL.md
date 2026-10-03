@@ -17,7 +17,7 @@ Override defaults via `.claude/settings.local.json` `"env"`:
 | Variable | Default | Meaning |
 |---|---|---|
 | `COMMIT_DIGEST_REPOS` | `nateberkopec/dotfiles` | Space-separated `owner/repo` list to watch |
-| `COMMIT_DIGEST_FEEDS` | `https://epoch-research.github.io/ai-productivity-digest/feed.xml https://upliftai.substack.com/feed` | Space-separated Atom/RSS feed URLs to include |
+| `COMMIT_DIGEST_FEEDS` | `https://epoch-research.github.io/ai-productivity-digest/feed.xml https://upliftai.substack.com/feed https://code.claude.com/docs/en/changelog/rss.xml https://claude.dev/rss.xml` | Space-separated Atom/RSS feed URLs to include |
 | `COMMIT_DIGEST_PAGES` | `https://ai-automations-db.vercel.app/database` | Space-separated web pages without a feed (curated lists, databases) to include |
 | `COMMIT_DIGEST_DAYS` | `7` | Look-back window in days |
 | `COMMIT_DIGEST_LOG_BRANCH` | `claude/skipped-log` | Branch that accumulates skipped-suggestions.md |
@@ -36,7 +36,9 @@ If the clone is blocked by network policy, fall back to `WebFetch` on
 `https://github.com/<owner>/<repo>/commit/<sha>`.
 
 **Atom/RSS feeds** — for each URL in `COMMIT_DIGEST_FEEDS`, fetch and parse items whose
-`<published>` or `<updated>` date falls within the look-back window.
+`<published>`, `<updated>` or `<pubDate>` date falls within the look-back window. Read the body
+from `<content:encoded>` when `<description>` is empty (the Claude Code changelog feed puts its
+release notes there).
 
 **Web pages** — for each URL in `COMMIT_DIGEST_PAGES`, fetch the raw HTML with `curl` rather
 than `WebFetch`: a summarising fetch drops the per-entry metadata you filter on. Many such pages
