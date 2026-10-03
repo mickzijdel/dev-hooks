@@ -80,8 +80,7 @@ If you do nothing else when writing or reviewing a workflow, get these right:
    ```
    Both are mise-pinned in every dev-env repo (`mise.toml`); install ad hoc with
    `mise use -g zizmor actionlint` elsewhere. Suppress a deliberate zizmor exception inline with
-   `# zizmor: ignore[<audit>]`, never by lowering the persona. (Dogfooded: the dev-env-setup CI
-   templates ship one `actions-lint` job that runs both.)
+   `# zizmor: ignore[<audit>]`, never by lowering the persona.
 
 ## Fleet-wide bump
 

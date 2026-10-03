@@ -111,11 +111,9 @@ REPORT BACK
 ## Complexity
 
 `slop_scan.py` measures verbosity. It does not measure the other half — complexity
-concentrating in a few functions — because a regex approximation of a cyclomatic count
-was built, measured against the reference corpora, and cut: it separated human from AI
-code about 2×, against 5× for comment density, and would have doubled the scanner's whole
-false-positive budget. The numbers are in
-[references/measurements.md](references/measurements.md).
+concentrating in a few functions — because a regex cannot separate human from AI code on
+complexity without doubling the scanner's false positives (numbers in
+[references/measurements.md](references/measurements.md)).
 
 Real AST tools do this properly, so run the one the project already has:
 

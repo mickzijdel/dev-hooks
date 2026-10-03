@@ -133,8 +133,7 @@ grep -rnE 'os\.system|subprocess.*shell=True|eval\(|exec\(' --include='*.py' . 2
 **6. Test health — coverage *and* runnability**
 Two distinct checks. First, **does the suite even run from a clean checkout?** A suite that
 needs a Postgres role, a browser, or unset env that isn't provisioned is a real gap — note
-exactly what's missing (this is the spotify-tools `role "mick" does not exist` class of
-problem). Don't report coverage on a suite you couldn't run. Second, coverage and staleness:
+exactly what's missing (e.g. a database role the suite assumes but nothing creates). Don't report coverage on a suite you couldn't run. Second, coverage and staleness:
 ```bash
 ls -d test tests spec __tests__ 2>/dev/null
 git log -1 --pretty=format:'%ci %s' -- test tests spec 2>/dev/null; echo

@@ -158,8 +158,8 @@ resolve secrets via the real fnox binary, never through mise.
 > **Do NOT load fnox via `mise.toml [env] _.source` (or any mise env directive).** When fnox
 > is a mise-managed tool it lives on `PATH` as a **mise shim**; calling it from inside mise's
 > own env evaluation re-enters mise, which re-runs the directive → an infinite
-> `bash → fnox → mise` fork loop that exhausts the kernel task limit (observed on mise
-> 2026.6.1). fnox's author keeps the two tools deliberately separate for this reason —
+> `bash → fnox → mise` fork loop that exhausts the kernel task limit. fnox's author keeps
+> the two tools deliberately separate for this reason —
 > `fnox activate`'s hook calls the resolved binary path directly, so it cannot re-enter mise.
 
 ### 6. Decide commit vs. gitignore for `fnox.toml`
