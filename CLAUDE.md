@@ -48,6 +48,17 @@ CLI).
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
+## The dev-hooks mod (`plugins/dev-hooks/hooks/register.tsx`)
+
+`hooks.json` names one function-hook module under `modules`, beside the command hooks; its
+state contract is `plugins/dev-hooks/types/index.d.ts` (named as `types` in plugin.json) and
+its tests are `plugins/dev-hooks/tests/*.test.ts(x)`, run by `claude plugin test
+plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI, so CI never
+runs it — run it locally). Load the `plugin-authoring` skill before editing it. A Claude Code
+that predates mods, or has them switched off, skips the module and still runs every command
+hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
+bundled examples use; call `$.state.get`/`$.state.set` directly.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description

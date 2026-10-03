@@ -11,6 +11,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `coding-onboardi
 
 - [Hooks](#hooks)
 - [Skills](#skills)
+- [Mods](#mods)
 - [Install](#install)
 - [Usage](#usage)
 - [Notes](#notes)
@@ -78,6 +79,19 @@ The companion skills the hooks point at:
 | `loop-oversight` | Setting up an iterating loop so it stays reviewable — a `/loop`, a `/schedule` routine, or a Workflow fan-out that grinds through many items ("loop over every X and track status", the Osman-style "make a canonical tracker and work through every item"). Requires three artifacts **before** launch: a **ledger** (a status table, `.claude/current_plan.md` by default, that the loop reads/writes each turn so oversight is *reading one file*), an explicit **bound** (max iterations / token budget / until-N-consecutive-empty — no unbounded loops), and an **independent verify pass** (a separate agent prompted to *refute*, not the one that did the work). Picks the substrate by how closely you can watch (`/loop` present → Workflow for a hard cost cap → `/schedule` unattended, PR-per-unit, no auto-merge) and gives a per-turn contract + ready generate/verify prompts, plus a lighter poll-until-true scaffold for waiting on a single condition (CI green, main settled, DNS switched) before one bounded action. NOT for a one-off task or one-shot parallel fan-out (that's `dispatching-parallel-agents`). |
 | `expose-service` | Making a service on an internal or private host reachable — "expose X", "give me access to the admin panel", "set up a tunnel to", or a just-deployed service that 502s or is unreachable. Picks the **narrowest** exposure that fits the audience (one-off `ssh -L`/SOCKS → Tailscale Serve → VIP Services for per-service hostnames → Cloudflare Tunnel + Access → public reverse proxy), then covers the four things that actually bite: arming a detached `systemd-run` recovery **before** a change that can cut your own access, an outward reachability ladder (process → bind address → proxy→origin → DNS → TLS) that names the failing rung instead of guessing, reboot survival (persisted config, a watchdog that catches a *hung* daemon and won't undo a human, boot-order port races), and the audit for a second unintended way in. References cover Tailscale (Serve, VIP Services, `set` vs `up`, `--bg` port contention), the public edge (Access is an *edge* gate, not an origin gate; Authenticated Origin Pulls only work orange-clouded; origin-cert vs padlock), and reachability triage. |
 | `agent-brief` | Writing a task brief for an agent aimed at an **outcome, not a method** — dispatching a subagent, handing off work, or turning a fuzzy request into instructions. Carries a fill-in-order skeleton (GOAL / WHY / DONE WHEN / DON'T / AUTONOMY / PROVE IT) where the method box stays near-empty: spend the words on a checkable target and explicit non-goals, not on steps. Ships one before/after worked example and the compounding habit — patch the *brief*, not the one instance. Paired with the `intent-check-reminder` hook (which nudges toward exactly this when a prompt states what to do but not why or what's out of scope). |
+
+## Mods
+
+dev-hooks also ships a Claude Code **mod**: TypeScript in `hooks/register.tsx` that hooks into
+Claude Code itself rather than running as a shell command. It needs Claude Code 2.1.287 or
+later; older versions ignore it and every hook above keeps working.
+
+| Command | What it does |
+|---------|--------------|
+| `/context-bar` | Toggles a stacked bar above the prompt showing the context window, one color per `/context` category (system prompt, tools, memory, messages, …), with free space and the autocompact buffer shaded, a `used% · tokens/window` total, and a legend. Refreshes after every turn from the local estimate, so it costs no API calls. |
+
+The mod's tests live in `tests/*.test.ts(x)`; run them with `claude plugin test plugins/dev-hooks`
+(the repo's `tests/test_mods.py` does this when a Claude CLI is on PATH).
 
 ## Install
 
