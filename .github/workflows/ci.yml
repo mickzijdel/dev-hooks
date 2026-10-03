@@ -53,7 +53,9 @@ jobs:
       # The dev-hooks mod (plugins/dev-hooks/hooks/register.tsx) only runs under Claude Code's
       # own runner, so tests/test_mods.py needs the CLI: `claude plugin validate --strict` and
       # `claude plugin test`, neither of which needs a login. Pinned with integrity hashes in
-      # .github/claude-cli/package-lock.json (mods need >= 2.1.287). --ignore-scripts skips the
+      # .github/claude-cli/package-lock.json (mods need >= 2.1.287; taken on 2026-10-03, two days
+      # into its release, as a deliberate exception to the 4-day dependency cooldown — later bumps
+      # follow the cooldown). --ignore-scripts skips the
       # wrapper's postinstall, which only copies the platform package's native binary into place,
       # so PATH gets that package's directory instead.
       - name: Install Claude Code CLI
