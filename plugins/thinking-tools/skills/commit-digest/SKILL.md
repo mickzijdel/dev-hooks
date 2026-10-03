@@ -1,12 +1,12 @@
 ---
 name: commit-digest
-description: Use on a weekly (or on-demand) cadence to review recent commits from tracked external repos (e.g. dotfiles, framework repos) and optionally Atom/RSS feeds, then pull in improvements applicable to the current project. Opens a separate PR for each implementation and logs skipped suggestions to a dedicated branch for searchable, dedup-safe history. Triggers on "check for new ideas", "what changed upstream", "any improvements to pull in from <repo>", "review dotfiles commits", or as a scheduled agent. Companion to weekly-automation-review, which reviews the local repo's own activity.
+description: Use on a weekly (or on-demand) cadence to review recent commits from tracked external repos (e.g. dotfiles, framework repos) and optionally Atom/RSS feeds and curated web pages, then pull in improvements applicable to the current project. Opens a separate PR for each implementation and logs skipped suggestions to a dedicated branch for searchable, dedup-safe history. Triggers on "check for new ideas", "what changed upstream", "any improvements to pull in from <repo>", "review dotfiles commits", or as a scheduled agent. Companion to weekly-automation-review, which reviews the local repo's own activity.
 ---
 
 # Commit Digest
 
 On a regular cadence, review recent commits from tracked external repositories (and optional
-Atom/RSS feeds), identify improvements applicable to the current project, implement the relevant
+Atom/RSS feeds and curated web pages), identify improvements applicable to the current project, implement the relevant
 ones as separate PRs, and log everything you skip — so the history is searchable and each run
 never re-logs the same suggestion twice.
 
@@ -18,6 +18,7 @@ Override defaults via `.claude/settings.local.json` `"env"`:
 |---|---|---|
 | `COMMIT_DIGEST_REPOS` | `nateberkopec/dotfiles` | Space-separated `owner/repo` list to watch |
 | `COMMIT_DIGEST_FEEDS` | `https://epoch-research.github.io/ai-productivity-digest/feed.xml` | Space-separated Atom/RSS feed URLs to include |
+| `COMMIT_DIGEST_PAGES` | `https://ai-automations-db.vercel.app/database` | Space-separated web pages without a feed (curated lists, databases) to include |
 | `COMMIT_DIGEST_DAYS` | `7` | Look-back window in days |
 | `COMMIT_DIGEST_LOG_BRANCH` | `claude/skipped-log` | Branch that accumulates skipped-suggestions.md |
 
@@ -36,6 +37,13 @@ If the clone is blocked by network policy, fall back to `WebFetch` on
 
 **Atom/RSS feeds** — for each URL in `COMMIT_DIGEST_FEEDS`, fetch and parse items whose
 `<published>` or `<updated>` date falls within the look-back window.
+
+**Web pages** — for each URL in `COMMIT_DIGEST_PAGES`, fetch the raw HTML with `curl` rather
+than `WebFetch`: a summarising fetch drops the per-entry metadata you filter on. Many such pages
+(Next.js and similar) embed their records as JSON in the page; pick out the entries whose date
+field (e.g. `dateAdded` on the automations database) falls within the look-back window. If a page
+carries no per-entry dates, treat every entry as a candidate and let the log's dedup (step 4) keep
+already-seen ones out. Follow an entry's own links (repo, demo) when judging it.
 
 ### 2. Evaluate each change
 
@@ -88,7 +96,7 @@ Append a dated section:
 
 | Suggestion | Source | Decision | Reasoning |
 |---|---|---|---|
-| … | commit `af41383` or feed item URL | Rejected / Deferred / Duplicate / Out of scope | one-line reason |
+| … | commit `af41383`, feed item URL, or page entry title + URL | Rejected / Deferred / Duplicate / Out of scope | one-line reason |
 ```
 
 - If nothing was skipped, add one row that says so and links to every PR opened this run.
@@ -105,13 +113,13 @@ If the PR already exists, the push updates it automatically. Then **add a PR com
 summarising this run so it surfaces in notifications:
 
 > **Commit-digest run — YYYY-MM-DD**
-> Repos: `<list>` · Feeds: `<list or none>` · Window: `<N>` days
+> Repos: `<list>` · Feeds: `<list or none>` · Pages: `<list or none>` · Window: `<N>` days
 > Commits / items reviewed: `<N>` · PRs opened: `<links or "none">` · Rows logged: `<N>`
 
 ## Output
 
 Report to the user at the end of each run:
-- Repos and feeds scanned, window used
+- Repos, feeds and pages scanned, window used
 - PRs opened (with links), or "none"
 - Count of suggestions logged to the skipped-log branch
 
