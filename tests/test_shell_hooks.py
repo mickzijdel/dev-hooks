@@ -1371,6 +1371,90 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
     assert r.stdout.strip() == ""
 
 
+def _memory_write(path):
+    return json.dumps(
+        {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": path, "content": "x"},
+                    }
+                ],
+            }
+        }
+    )
+
+
+def _run_memory(tmp_path, transcript, **env):
+    return run_hook(
+        "memory-reminder.sh",
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+        env=base_env(DEV_HOOKS_MEMORY="1", **env),
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/.claude/projects/-home-u-app/memory/some-fact.md",
+        "/home/u/.claude/projects/-home-u-app/memory/MEMORY.md",
+        "/home/u/.claude/memory/global-fact.md",
+    ],
+)
+def test_memory_reminder_silent_once_a_memory_was_written(tmp_path, path):
+    # Already captured this session: the reminder would only repeat what was done.
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=6, extra_lines=[_memory_write(path)]
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_memory_reminder_counts_a_memory_a_subagent_wrote(tmp_path):
+    # The parent transcript never shows a subagent's Write; the mod's facts do.
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    facts = tmp_path / "facts.json"
+    facts.write_text(
+        json.dumps(
+            {
+                "skills": [],
+                "agents": [],
+                "stops": [],
+                "repos": [
+                    {
+                        "root": None,
+                        "files": ["/home/u/.claude/projects/-x/memory/fact.md"],
+                        "added": 5,
+                        "bySubagent": 1,
+                    }
+                ],
+            }
+        )
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=str(facts))
+    assert stop_allowed(r)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/code/app/docs/memory/notes.md",  # a repo's own "memory" folder
+        "/home/u/.claude/projects/-home-u-app/notes.md",
+        "/home/u/code/app/memory.md",
+    ],
+)
+def test_memory_reminder_still_fires_for_writes_outside_memory_dirs(tmp_path, path):
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=6, extra_lines=[_memory_write(path)]
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_blocked(r)
+
+
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
 def _plan_env(tmp_path, session="plan-session"):
     """Isolate the hook's state dir per test, and give it a stable session id."""

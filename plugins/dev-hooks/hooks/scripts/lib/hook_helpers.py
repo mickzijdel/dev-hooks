@@ -259,6 +259,36 @@ def _split_needles(needles):
     return tuple(n for n in needles if not n.startswith("agent:")), jobs
 
 
+# Claude Code's file-based memory: per project (~/.claude/projects/<slug>/memory/) or
+# global (~/.claude/memory/). A repo's own "memory" folder is not it.
+MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
+_WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def memory_written(transcript_path, facts_path=None):
+    """True when this session wrote a memory file: a Write/Edit tool call into a memory
+    dir in the transcript, or — via the dev-hooks mod's session facts — such an edit made
+    by a subagent, which the parent transcript never records."""
+    if facts_path:
+        try:
+            with open(facts_path, encoding="utf-8") as f:
+                repos = (json.load(f) or {}).get("repos") or []
+        except OSError, ValueError, TypeError, AttributeError:
+            repos = []
+        for repo in repos:
+            if any(
+                MEMORY_DIR_RE.search(str(p)) for p in (repo or {}).get("files") or []
+            ):
+                return True
+    for line in _transcript_lines(transcript_path):
+        for block in _tool_use_blocks(line):
+            if block.get("name") in _WRITE_TOOLS:
+                path = str((block.get("input") or {}).get("file_path") or "")
+                if MEMORY_DIR_RE.search(path):
+                    return True
+    return False
+
+
 def facts_invoked(facts_path, needles):
     """True when the dev-hooks mod's session facts (DEV_HOOKS_FACTS_FILE) show one of
     `needles` ran: a skill or subagent type naming it, or — for `agent:<word>` — a
