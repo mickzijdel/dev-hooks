@@ -146,10 +146,3 @@ session) — but **one isolated agent per repo** so they never share state:
 - Never disable the cooldown or commit a red tree to "make progress" — defer instead.
 - Don't auto-run from a hook; this writes commit-tracked changes. It's invoked by the user (the
   `latest-deps-reminder` hook only nudges that deps may be stale).
-
-## How this skill is reached
-
-- The `latest-deps-reminder` hook flags that a manifest's versions may be stale → run this skill
-  to actually move them forward.
-- The user asks to "update packages" / "upgrade dependencies" / "bump deps" / do it across all
-  their repos → this skill's description triggers directly.

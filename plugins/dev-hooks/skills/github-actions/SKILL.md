@@ -115,12 +115,3 @@ in lockstep.
 
 Guardrails: `gh`/`pinact` missing or unauthenticated → stop and surface it. A repo whose CI
 is intentionally bespoke → flag it, don't force the standard.
-
-## How this skill is reached
-
-- **Editing a workflow** → the `ci-action-ref-reminder` hook fires and points here.
-- **Setting up / upgrading the dev env** → dev-env-setup's CI templates ship pre-hardened to
-  this standard (SHA pins + `permissions:`) and link back here; the dev-env v16 bump is where
-  this became the default.
-- **"Review this CI workflow" / "audit my GitHub Actions"** → this skill's description triggers
-  directly.
