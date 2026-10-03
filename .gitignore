@@ -2,6 +2,9 @@
 tmp/
 .worktrees/
 
+# Type declarations Claude Code writes beside a mod it loads from this working copy
+plugins/*/.claude-plugin/types/
+
 # Local-only weekly automation review reports (weekly-automation-review skill)
 plans/automation-reviews/
 
