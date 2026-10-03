@@ -1,5 +1,6 @@
 import type { On, PreToolUseResult } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine, MockClock } from 'claude-code/testing'
 
 import { commandTimeout, guardQuestion, guardTimeoutReason, isGuardAsk } from '../hooks/register'
 
@@ -255,4 +256,95 @@ test('other dialogs are drawn as they were', async ($, on) => {
     await ui.unmount()
   }
   expect(drawn.map(d => d.question)).toEqual(['Which colour?', 'Which colour?'])
+})
+
+// The dialog outlives its timeout: the person can still answer it later. `answer` resolves
+// the pending dialog; prompts Claude was sent are collected.
+function answeredLate(on: On, verdict: PreToolUseResult) {
+  const w = { asked: 0, ran: [] as string[], prompts: [] as string[], answer: (_text: string) => {} }
+  on('classic.PreToolUse', () => verdict)
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    w.asked += 1
+    const question = e.questions[0]?.question ?? ''
+    return new Promise(resolve => {
+      w.answer = text => resolve({ result: { questions: e.questions, answers: { [question]: text } }, text })
+    })
+  })
+  on('tool.call', { tool: 'Bash' }, (_$, e) => {
+    w.ran.push(e.command)
+    return { result: { stdout: 'ok', stderr: '', interrupted: false }, text: 'ok' }
+  })
+  on('prompt.submit', (_$, e) => {
+    w.prompts.push(e.text)
+    return { text: e.text }
+  })
+  return w
+}
+
+async function timeOut($: Engine, clock: MockClock, command: string) {
+  const call = $.tool.call({ tool: 'Bash', command })
+  await clock.advance(120_000)
+  return call
+}
+
+test('a late Allow tells Claude, and lets that exact command through once without asking', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  const w = answeredLate(on, { ask: MAIN_ASK })
+
+  expect(String((await timeOut($, clock, 'git commit -m wip')).text)).toContain('did not run')
+  expect(w.ran).toEqual([])
+  w.answer('Allow')
+  await clock.advance(0)
+  expect(w.prompts.at(-1)).toContain('Allow')
+  expect(w.prompts.at(-1)).toContain('git commit -m wip')
+
+  const asked = w.asked
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  expect(w.asked).toBe(asked)
+  expect(w.ran).toEqual(['git commit -m wip'])
+
+  // Used once: the next attempt asks again.
+  void $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  await clock.advance(0)
+  expect(w.asked).toBe(asked + 1)
+})
+
+test('a late Allow covers only that command, and only for ten minutes', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  const w = answeredLate(on, { ask: MAIN_ASK })
+
+  await timeOut($, clock, 'git commit -m wip')
+  w.answer('Allow')
+  await clock.advance(0)
+  const asked = w.asked
+
+  void $.tool.call({ tool: 'Bash', command: 'git commit -m other' })
+  await clock.advance(0)
+  expect(w.asked).toBe(asked + 1)
+
+  await clock.advance(10 * 60_000)
+  void $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  await clock.advance(0)
+  expect(w.asked).toBe(asked + 2)
+  expect(w.ran).toEqual([])
+})
+
+test('a late Deny or a typed reply reaches Claude', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  const w = answeredLate(on, { ask: MAIN_ASK })
+
+  await timeOut($, clock, 'git commit -m one')
+  w.answer('Deny')
+  await clock.advance(0)
+  expect(w.prompts.at(-1)).toMatch(/Deny/)
+  expect(w.prompts.at(-1)).toMatch(/don't run/i)
+
+  await timeOut($, clock, 'git commit -m two')
+  w.answer('Put it on a branch called fix-typo please')
+  await clock.advance(0)
+  expect(w.prompts.at(-1)).toContain('Put it on a branch called fix-typo please')
+  expect(w.prompts.at(-1)).toContain('git commit -m two')
 })

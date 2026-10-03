@@ -356,6 +356,20 @@ export const timedOutNote = (command: string, seconds: number, toldClaude: strin
   )
 }
 
+// The dialog outlives its timeout (VS Code doesn't draw it through the render hook above), and
+// the person may still answer it. That late answer reaches Claude as a prompt; a late Allow
+// also lets that exact command through once, for a while, without asking again.
+const LATE_ALLOW_MS = 10 * 60_000
+const lateAllowed = new Map<string, number>()
+
+export const lateAnswerNote = (command: string, answer: string): string => {
+  const head = `[dev-hooks guard] The person answered the guard question about \`${command}\` after it had timed out:`
+  if (answer === 'Allow')
+    return `${head} Allow. If you still want it, run that exact command again — it will go through once without asking (for the next 10 minutes).`
+  if (answer === 'Deny') return `${head} Deny. Don't run it.`
+  return `${head} "${answer}"`
+}
+
 // From session.start: whether a person is there to answer the dialog.
 let isInteractive = false
 
@@ -538,6 +552,15 @@ async function pollCi($: EngineInterface, key: string) {
   }
 }
 // ── end CI watch ────────────────────────────────────────────────────────────────────
+
+async function guardNow($: EngineInterface): Promise<number> {
+  return $.clock.now().catch(() => Date.now())
+}
+
+async function lateGuardAnswer($: EngineInterface, command: string, answer: string) {
+  if (answer === 'Allow') lateAllowed.set(command, (await guardNow($)) + LATE_ALLOW_MS)
+  await $.prompt.submit({ text: lateAnswerNote(command, answer) }).catch(() => undefined)
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -732,6 +755,14 @@ export const register: Register = on => {
   on('classic.PreToolUse', async ($, e, next) => {
     const decided = await next(e)
     if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
+    const allowedUntil = lateAllowed.get(e.command)
+    if (allowedUntil !== undefined) {
+      lateAllowed.delete(e.command)
+      if (allowedUntil > (await guardNow($))) {
+        const { ask: _answeredLate, ...rest } = decided
+        return rest
+      }
+    }
     const seconds = await guardTimeoutSeconds($, e.command)
     const question = guardQuestion(decided.ask, e.command, seconds)
     const asked = $.ui.ask(question, {
@@ -745,7 +776,10 @@ export const register: Register = on => {
       const timedOut = seconds > 0 ? $.clock.sleep(seconds * 1000).then(() => undefined, () => never) : never
       const first = await Promise.race([asked, timedOut])
       if (first === undefined) {
-        asked.catch(() => undefined)
+        asked.then(
+          answer => lateGuardAnswer($, e.command, answer),
+          () => undefined,
+        )
         const reason = guardTimeoutReason(decided.ask, seconds)
         const notes = (await $.state.get(GUARD_TIMED_OUT)).value ?? {}
         const kept = Object.entries(notes).slice(-(TIMED_OUT_KEPT - 1))
