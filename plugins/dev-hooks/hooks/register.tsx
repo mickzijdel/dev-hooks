@@ -244,8 +244,65 @@ async function orchestrateStop(
   return block
 }
 
+// ── Guard dialog ─────────────────────────────────────────────────────────────────
+// When dangerous-command-guard.sh asks (its `ask` modes), the mod puts the question to
+// the person in Claude Code's own dialog: a PreToolUse `ask` is answered by the
+// auto-mode classifier, the dialog is not. Allow only withdraws the guard's question —
+// the normal permission flow still runs — and Deny refuses; a hard deny is never asked.
+export const GUARD_PREFIX = 'dev-hooks guard — '
+
+export const isGuardAsk = (ask: string | undefined): ask is string => !!ask && ask.startsWith(GUARD_PREFIX)
+
+const COMMAND_SHOWN = 300
+
+const waitLabel = (seconds: number) => (seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`)
+
+export const guardQuestion = (ask: string, command: string, seconds = 0): string => {
+  const reason = ask.slice(GUARD_PREFIX.length).replace(/^please confirm:\s*/i, '')
+  const shown = command.length > COMMAND_SHOWN ? `${command.slice(0, COMMAND_SHOWN)}…` : command
+  const wait = seconds > 0 ? `\n\n(No answer within ${waitLabel(seconds)} refuses it.)` : ''
+  return `${reason}\n\nCommand: ${shown}${wait}\n\nLet it run?`
+}
+
+// An unanswered dialog refuses after this long, and tells Claude the safer route instead of
+// leaving it stuck. DEV_HOOKS_GUARD_DIALOG_TIMEOUT (seconds; 0 waits forever) set in front of
+// the command itself wins — Claude may pick a longer wait, since a timeout only ever refuses —
+// then the session's setting, then this default.
+const DEFAULT_GUARD_TIMEOUT_S = 120
+
+const COMMAND_TIMEOUT_RE =
+  /(?:^|[;&|]\s*)(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*DEV_HOOKS_GUARD_DIALOG_TIMEOUT=(['"]?)(\d+)\1(?=\s)/
+
+export const commandTimeout = (command: string): number | undefined => {
+  const match = COMMAND_TIMEOUT_RE.exec(command)
+  return match ? Number(match[2]) : undefined
+}
+
+export const guardTimeoutReason = (ask: string, seconds: number): string => {
+  const base =
+    `No answer in the dev-hooks guard dialog within ${seconds}s, so this command did not run.` +
+    ' (If the person may need longer, put DEV_HOOKS_GUARD_DIALOG_TIMEOUT=<seconds> in front of the command; 0 waits indefinitely.)'
+  return /the `[^`]+` branch directly/.test(ask)
+    ? `${base} Make this change on a separate branch in a git worktree instead (branch off the current HEAD), not directly on the main branch.`
+    : `${base} Ask the person in the chat before trying again, or find a route that doesn't need this command.`
+}
+
+// From session.start: whether a person is there to answer the dialog.
+let isInteractive = false
+
+async function guardTimeoutSeconds($: EngineInterface, command: string): Promise<number> {
+  const own = commandTimeout(command)
+  if (own !== undefined) return own
+  const raw = await $.env.get('DEV_HOOKS_GUARD_DIALOG_TIMEOUT').catch(() => undefined)
+  const seconds = Number(raw)
+  return raw !== undefined && raw.trim() !== '' && Number.isFinite(seconds) && seconds >= 0
+    ? seconds
+    : DEFAULT_GUARD_TIMEOUT_S
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    isInteractive = e.isInteractive
     await $.command.register({
       name: 'context-bar',
       description: 'Toggle a stacked context-usage bar above the prompt',
@@ -388,5 +445,38 @@ export const register: Register = on => {
       $.ui.log(`dev-hooks: Stop orchestration failed, the Stop hooks run directly from now on: ${String(error)}`)
       return below
     }
+  })
+
+  on('classic.PreToolUse', async ($, e, next) => {
+    const decided = await next(e)
+    if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
+    const seconds = await guardTimeoutSeconds($, e.command)
+    const asked = $.ui.ask(guardQuestion(decided.ask, e.command, seconds), {
+      header: 'dev-hooks',
+      options: ['Allow', 'Deny'],
+    })
+    let answer: string
+    try {
+      const never = new Promise<never>(() => {})
+      // A timer that can't run means no timeout, never a decision.
+      const timedOut = seconds > 0 ? $.clock.sleep(seconds * 1000).then(() => undefined, () => never) : never
+      const first = await Promise.race([asked, timedOut])
+      if (first === undefined) {
+        asked.catch(() => undefined)
+        return { deny: guardTimeoutReason(decided.ask, seconds) }
+      }
+      answer = first
+    } catch {
+      // Dismissed: refuse, since handing the question back would let auto mode answer
+      // it. With no one to ask at all (claude -p) the guard's question stands as it was.
+      return isInteractive
+        ? { deny: 'The dev-hooks guard dialog was dismissed, so this command did not run.' }
+        : decided
+    }
+    if (answer === 'Allow') {
+      const { ask: _withdrawn, ...rest } = decided
+      return rest
+    }
+    return { deny: `The person declined this command in the dev-hooks guard dialog (answer: ${answer}).` }
   })
 }

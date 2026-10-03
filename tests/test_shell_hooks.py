@@ -4708,6 +4708,7 @@ PUSH_COMMANDS = [
 @pytest.mark.parametrize("command", PUSH_COMMANDS)
 def test_ci_watch_fires_on_push_with_workflows(command, tmp_path):
     repo = _ci_repo(tmp_path)
+    (repo / "sub").mkdir()  # `git -C sub push` runs in a real sub-directory of the repo
     r = _ci_watch(command, cwd=repo)
     assert r.returncode == 0
     assert_json_with(r.stdout, "watch")
@@ -5101,3 +5102,133 @@ def test_session_growth_shallow_clone_does_not_count_the_whole_repo(tmp_path):
         ["git", "clone", "-q", "--depth", "1", f"file://{src}", str(clone)], check=True
     )
     assert stop_allowed(_run_cc(clone, _stop_payload(clone)))
+
+
+# The dev-hooks mod recognises the guard's questions by this prefix and puts them to the
+# person in a dialog (register.tsx GUARD_PREFIX); an ask without it would fall through to
+# the normal permission flow, which auto mode answers.
+GUARD_PREFIX = "dev-hooks guard — "
+
+
+def _guard_reason(r):
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_every_guard_ask_carries_the_mod_prefix(tmp_path, secret_tree):
+    init_git_repo(tmp_path)
+    asks = [
+        _guard("rm -rf /", DEV_HOOKS_GUARD_DENY="ask"),
+        _guard("git commit -m wip", cwd=tmp_path, DEV_HOOKS_GUARD_MAIN="1"),
+        # Claude's per-command dialog wait (read by the mod) must not hide the commit.
+        _guard(
+            "DEV_HOOKS_GUARD_DIALOG_TIMEOUT=600 git commit -m wip",
+            cwd=tmp_path,
+            DEV_HOOKS_GUARD_MAIN="1",
+        ),
+        _guard_in(
+            secret_tree,
+            'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+            DEV_HOOKS_GUARD_SECRETS="ask",
+        ),
+    ]
+    for r in asks:
+        assert _decision(r) == "ask"
+        assert _guard_reason(r).startswith(GUARD_PREFIX), _guard_reason(r)
+
+
+def test_guard_prefix_matches_the_mod():
+    source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    assert f"export const GUARD_PREFIX = '{GUARD_PREFIX}'" in source
+
+
+# ── The directory a git command actually runs in ─────────────────────────────────────
+# Three hooks used to judge the session's cwd instead of the repo the command targets
+# (`cd other-repo && git commit`, `git -C other-repo push`).
+@pytest.mark.parametrize(
+    "command, words, expected",
+    [
+        ("git commit -m x", ("commit",), "/s"),
+        ("cd /r && git commit -m x", ("commit",), "/r"),
+        ("cd sub && git -c user.name=t commit -m x", ("commit",), "/s/sub"),
+        ("git -C /r push", ("push",), "/r"),
+        ("cd /a; git -C ../b push origin main", ("push",), "/b"),
+        ("FOO=1 sudo git -C /r commit -m 'cd /x && git commit'", ("commit",), "/r"),
+        (
+            "cd /r && git status && git worktree add ../wt -b x",
+            ("worktree", "add"),
+            "/r",
+        ),
+        ("echo git commit", ("commit",), "/s"),
+        ("cd '/r w' && git commit", ("commit",), "/r w"),
+        ("cd /r && git commit 'unbalanced", ("commit",), "/s"),
+    ],
+)
+def test_git_target_dir(command, words, expected):
+    sys.path.insert(0, str(HOOKS / "lib"))
+    from hook_helpers import git_target_dir
+
+    assert git_target_dir(command, "/s", words) == expected
+
+
+def _branch_repo(path, branch):
+    path.mkdir(parents=True)
+    run = init_git_repo(path)
+    run("commit", "-q", "--allow-empty", "-m", "init")
+    if branch != "main":
+        run("checkout", "-q", "-b", branch)
+    return path
+
+
+def test_guard_main_check_follows_cd_into_a_repo_on_main(tmp_path):
+    main_repo = _branch_repo(tmp_path / "on-main", "main")
+    feature = _branch_repo(tmp_path / "on-feature", "feature")
+    r = _guard(
+        f"cd {main_repo} && git commit -m wip", cwd=feature, DEV_HOOKS_GUARD_MAIN="1"
+    )
+    assert _decision(r) == "ask"
+    r = _guard(f"git -C {main_repo} push", cwd=feature, DEV_HOOKS_GUARD_MAIN="1")
+    assert _decision(r) == "ask"
+
+
+def test_guard_main_check_ignores_the_session_repo_when_cd_leaves_it(tmp_path):
+    main_repo = _branch_repo(tmp_path / "on-main", "main")
+    feature = _branch_repo(tmp_path / "on-feature", "feature")
+    r = _guard(
+        f"cd {feature} && git commit -m wip", cwd=main_repo, DEV_HOOKS_GUARD_MAIN="1"
+    )
+    assert r.stdout.strip() == ""
+
+
+def test_ci_watch_follows_cd_into_the_pushed_repo(tmp_path):
+    (tmp_path / "pushed").mkdir()
+    (tmp_path / "session").mkdir()
+    pushed = _ci_repo(tmp_path / "pushed")
+    session = _ci_repo(tmp_path / "session", workflows=False)
+    r = _ci_watch(f"cd {pushed} && git push", cwd=session)
+    assert_json_with(r.stdout, "You just pushed")
+    r = _ci_watch(f"cd {session} && git push", cwd=pushed)
+    assert r.stdout.strip() == ""
+
+
+def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    run = init_git_repo(main_repo)
+    (main_repo / ".gitignore").write_text("local.env\n")
+    (main_repo / "local.env").write_text("X=1\n")
+    run("add", ".gitignore")
+    run("commit", "-q", "-m", "init")
+    run("worktree", "add", "-q", str(tmp_path / "wt"), "-b", "wt")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    payload = {
+        "tool_input": {"command": f"cd {main_repo} && git worktree add ../wt -b wt"},
+        "cwd": str(elsewhere),
+        "session_id": "w1",
+    }
+    r = run_hook(
+        "worktree-provision-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None, TMPDIR=str(tmp_path)),
+    )
+    assert "local.env" in r.stdout

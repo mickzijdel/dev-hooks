@@ -95,6 +95,18 @@ Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_
 enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
 `classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.
 
+The module also routes **the guard's questions to the person**: its `classic.PreToolUse` hook
+takes a decision whose `ask` starts with `GUARD_PREFIX` (`dev-hooks guard — `, pinned on both
+sides by `test_guard_prefix_matches_the_mod`) and asks via `$.ui.ask`, which reaches the person
+even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by the classifier).
+Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
+rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
+leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
+refuses), else the session env, else 120 s.
+A `$.ui.ask` can't be closed from the mod, so a timed-out dialog may linger. Note that
+`$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
+included — only ever set variables that are inert outside this session or keyed to its id.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description
@@ -171,6 +183,9 @@ enforces it) — one that doesn't would run twice. Don't stand hooks down by ski
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
   `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
   `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
+  `reminder_git_target_dir <words…>` (the directory the first `git <words…>` in $COMMAND runs
+  in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
+  git command acts on", since `cd other && git commit` acts on `other`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
   the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
   rather than threading the value through — and pass that value to python rather than
