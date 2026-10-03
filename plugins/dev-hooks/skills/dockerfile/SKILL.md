@@ -58,7 +58,6 @@ CMD ["node", "server.js"]
 | Create and switch to a non-root `USER` | Least privilege |
 | Use exec form: `CMD ["node", "server.js"]` not `CMD node server.js` | Proper signal handling (SIGTERM) |
 | Consider BuildKit cache mounts: `RUN --mount=type=cache,target=/root/.npm npm ci` | Reuses the package cache across builds |
-| Never `chown -R` / `chmod -R` a directory holding a large dependency tree (`.venv`, `node_modules`, site-packages) | `chown -R /app` rewrites **every** file into a new layer, so the whole dep tree is stored twice in the image — doubling push and registry-cache time. Set ownership as files land with `COPY --chown` (incl. `COPY --from=… --chown`), or only `chown` the small dirs that need write access |
 
 ## Don't `chown -R` a dependency tree
 
