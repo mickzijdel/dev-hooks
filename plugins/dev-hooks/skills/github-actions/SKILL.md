@@ -99,22 +99,22 @@ in lockstep.
    ```
    Keep only repos that actually have `.github/workflows/`. **Show the user the target set and
    confirm it before changing anything** — don't sweep in repos they don't want touched.
-2. **Per repo** (work in a temp clone or worktree, never on a dirty main):
+2. **Per repo**, on its clean, up-to-date default branch — never on a dirty one (skip a dirty
+   repo and report it):
    ```bash
-   git switch -c chore/bump-actions
    pinact run -u                       # pin + update every uses: to the latest SHA + comment
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows   # refs resolve, comments match
    git diff                            # eyeball before committing
    ```
    Also add a `permissions: { contents: read }` block to any workflow missing one, and apply
    any other checklist gaps you spot.
-3. **Commit + push/PR** with a consistent message per repo (e.g.
-   `chore(ci): pin actions to SHAs and bump to latest`). Open a PR unless the user wants direct
-   pushes. Do all repos in the same session, then report a one-line summary per repo.
+3. **Commit + push** with a consistent message per repo (e.g.
+   `chore(ci): pin actions to SHAs and bump to latest`), straight to the repo's **own default
+   branch** — the roster's `branch=` field tells you; several repos are on `master`, not
+   `main`. Do all repos in the same session, then report a one-line summary per repo.
 
 Guardrails: `gh`/`pinact` missing or unauthenticated → stop and surface it. A repo whose CI
-is intentionally bespoke → flag it, don't force the standard. Never push to a repo's default
-branch directly.
+is intentionally bespoke → flag it, don't force the standard.
 
 ## How this skill is reached
 
