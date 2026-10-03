@@ -138,9 +138,7 @@ session) — but **one isolated agent per repo** so they never share state:
    - **No deploy** (library / CLI / plugin): just merge + push.
 4. **Dispatch one agent per repo**, each in its **own worktree/branch** (the Task tool's
    `isolation: "worktree"`, or [[dispatching-parallel-agents]]), each running the per-repo workflow
-   above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3, and a stable,
-   **correct agent↔repo mapping** — if you later message an agent mid-run (e.g. to change the deploy
-   plan), triple-check the agent id matches the repo, or the instruction lands on the wrong repo.
+   above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3.
 5. **Report** a one-line summary per repo at the end — upgraded / deferred, push state (pushed /
    PR #), and deploy state (deployed / not).
 
