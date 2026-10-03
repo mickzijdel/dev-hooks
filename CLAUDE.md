@@ -121,6 +121,22 @@ weekly-automation-review skill reads. A new Stop hook gets `unknown` until it ha
 memory-dir regex are mirrors of `review-reminder.sh` and `hook_helpers.MEMORY_DIR_RE`, pinned
 by `tests/test_nudge_parity.py`.
 
+The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
+push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported
+and unit-tested directly). A `tool.call` hook on `{ tool: 'Bash' }` runs after `next(e)`, reads
+the pushed commits from git's push output in the tool result's `text` (stderr is in it), adds a
+`context` note to that result, and chains `$.clock.after` polls of `gh run list --commit <sha>`
+outside the dispatch (a timer's closure keeps using the hook's `$`). Elapsed time comes from
+`$.clock.now()`, not `Date.now()`, so `mock.clock` drives it in tests. The outcome reaches Claude
+two ways, both verified live: `$.session.append` (a user-role note, read at the running turn's
+next request, starting no turn) for a pass, and `$.prompt.submit` (queued until idle, then a turn
+of its own, even under `claude -p`) for a failure. `session.start` sets
+`DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
+down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.
+In `claude plugin test` a test hook never sees a plugin's own `$.session.append` and the call
+rejects with "no implementation for session.append"; `tests/ci-watch-hook.test.ts` asserts on
+that logged rejection to tell the append path from the prompt path.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description

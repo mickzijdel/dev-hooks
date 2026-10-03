@@ -4687,6 +4687,7 @@ def _ci_repo(path, *, workflows=True):
 
 def _ci_watch(command, *, cwd, **env_overrides):
     env_overrides.setdefault("DEV_HOOKS_CI_WATCH", None)
+    env_overrides.setdefault("DEV_HOOKS_CI_WATCH_SESSION", None)
     payload = {"tool_input": {"command": command}, "cwd": str(cwd), "session_id": "c1"}
     return run_hook(
         "ci-watch-reminder.sh",
@@ -4751,6 +4752,25 @@ def test_ci_watch_opt_out(tmp_path):
     r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# The dev-hooks mod watches the run itself and marks its session with its id.
+def test_ci_watch_stands_down_when_the_mod_watches_this_session(tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH_SESSION="c1")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# A nested claude inherits the marker but runs under its own session id, where no mod
+# may be watching: it still nudges.
+def test_ci_watch_nudges_when_the_marker_names_another_session(tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch(
+        "git push", cwd=repo, DEV_HOOKS_CI_WATCH_SESSION="some-parent-session"
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "watch")
 
 
 # ── Stop decision: block, never halt ────────────────────────────────────────────────

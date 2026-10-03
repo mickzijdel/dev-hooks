@@ -17,9 +17,27 @@
 //
 // Stop-nudge outcomes: each reason the orchestration returns is resolved at the next
 // Stop as acted on or not (nudge-outcomes.ts), shown by /session-facts nudges.
+//
+// CI watch: after a git push the module follows that push's GitHub Actions runs and
+// tells the person and Claude how they ended (the block marked below).
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Facts, Nudge, NudgeRecord, Segment, Snapshot } from '../types'
+import {
+  ciNote,
+  ciStatusLine,
+  ciToast,
+  ciVerdict,
+  githubRepo,
+  isDryRun,
+  isGitPush,
+  parsePushOutput,
+  parseRuns,
+  pushDir,
+  RUN_FIELDS,
+  watchingNote,
+} from './ci-watch'
+import type { Run, Watch } from './ci-watch'
 import {
   formatNudgeStats,
   hookName,
@@ -410,6 +428,103 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
   if (await $.fs.exists(dir)) await $.fs.write(`${dir}/stop-nudges.json`, `${JSON.stringify(nudgeExport(log, now))}\n`)
 }
 
+// ── CI watch ────────────────────────────────────────────────────────────────────────
+// After a successful `git push` the module watches that push's GitHub Actions runs:
+// progress in the status line, a toast when they end, and the outcome handed to Claude
+// (a pass as a conversation note, a failure as a prompt that wakes the session). It
+// marks the session with DEV_HOOKS_CI_WATCH_SESSION so ci-watch-reminder.sh stands down;
+// DEV_HOOKS_CI_WATCH=false turns both off. Watches live in module variables: a reload
+// of the module drops them.
+const CI_FIRST_POLL_MS = 3_000
+const CI_APPEAR_MS = 120_000
+const CI_RETRY_MS = 5_000
+const CI_POLL_MS = 15_000
+const CI_GIVE_UP_MS = 90 * 60_000
+
+const ciWatches = new Map<string, Watch & { startedAt: number }>()
+
+async function ciOptedOut($: EngineInterface): Promise<boolean> {
+  return (await $.env.get('DEV_HOOKS_CI_WATCH')) === 'false'
+}
+
+async function claimCiWatch($: EngineInterface) {
+  if (!(await ciOptedOut($))) await $.env.set('DEV_HOOKS_CI_WATCH_SESSION', await $.session.id())
+}
+
+function showCiStatus($: EngineInterface) {
+  $.ui.status(ciStatusLine([...ciWatches.values()]))
+}
+
+async function git($: EngineInterface, cwd: string, ...args: string[]): Promise<string | null> {
+  const run = await $.process.run(['git', '-C', cwd, ...args]).catch(() => null)
+  return run?.exitCode === 0 ? run.stdout.trim() : null
+}
+
+// The commits a push sent to GitHub, from its output; a quiet push (`-q`) prints no
+// ref lines, so it falls back to HEAD and the branch's default remote.
+async function pushTargets($: EngineInterface, command: string, output: string): Promise<{ repo: string; sha: string }[]> {
+  const root = await git($, pushDir(command, await $.session.cwd()), 'rev-parse', '--show-toplevel')
+  if (root === null) return []
+  const workflows = await $.fs.list(`${root}/.github/workflows`).catch(() => [])
+  if (!workflows.some(w => /\.ya?ml$/.test(w.name))) return []
+
+  const pushed = parsePushOutput(output)
+  if (pushed.refs.length === 0 && /Everything up-to-date/.test(output)) return []
+  const repo = githubRepo(pushed.remote ?? (await git($, root, 'ls-remote', '--get-url')) ?? '')
+  if (repo === null) return []
+  const refs = pushed.refs.length > 0 ? pushed.refs.map(r => r.sha ?? r.src) : ['HEAD']
+  const shas = await Promise.all(refs.map(ref => git($, root, 'rev-parse', `${ref}^{commit}`)))
+  return [...new Set(shas.filter((s): s is string => s !== null))].map(sha => ({ repo, sha }))
+}
+
+async function startCiWatch($: EngineInterface, target: { repo: string; sha: string }) {
+  const key = `${target.repo}@${target.sha}`
+  if (ciWatches.has(key)) return
+  ciWatches.set(key, { ...target, done: 0, total: 0, startedAt: await $.clock.now() })
+  showCiStatus($)
+  $.clock.after(CI_FIRST_POLL_MS, () => void pollCi($, key))
+}
+
+async function pollCi($: EngineInterface, key: string) {
+  const w = ciWatches.get(key)
+  if (!w) return
+  try {
+    let runs: Run[] = []
+    let error: string | undefined
+    try {
+      const argv = ['gh', 'run', 'list', '--repo', w.repo, '--commit', w.sha, '--json', RUN_FIELDS, '--limit', '50']
+      const run = await $.process.run(argv, { timeoutMs: 30_000 })
+      if (run.exitCode === 0) runs = parseRuns(run.stdout)
+      else error = run.stderr.trim().split('\n')[0] || `gh exited ${run.exitCode}`
+    } catch (err) {
+      error = String(err)
+    }
+    const { verdict, runs: mine } = ciVerdict(runs, w.sha)
+    const elapsed = (await $.clock.now()) - w.startedAt
+    if (verdict === 'pending' ? elapsed < CI_GIVE_UP_MS : verdict === 'none' && elapsed < CI_APPEAR_MS) {
+      w.done = mine.filter(r => r.status === 'completed').length
+      w.total = mine.length
+      showCiStatus($)
+      $.clock.after(verdict === 'none' ? CI_RETRY_MS : CI_POLL_MS, () => void pollCi($, key))
+      return
+    }
+
+    ciWatches.delete(key)
+    showCiStatus($)
+    $.ui.toast(ciToast(w.repo, w.sha, verdict, mine), { timeoutMs: verdict === 'success' ? 8_000 : 20_000 })
+    const note = ciNote(w.repo, w.sha, verdict, mine, error)
+    // A failure needs Claude to act, so it starts a turn (once the session is idle);
+    // anything else is read with Claude's next request without waking it.
+    if (verdict === 'failure') await $.prompt.submit({ text: note })
+    else await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: note }] } })
+  } catch (err) {
+    ciWatches.delete(key)
+    showCiStatus($)
+    $.ui.log(`dev-hooks: CI watch for ${key} failed: ${String(err)}`)
+  }
+}
+// ── end CI watch ────────────────────────────────────────────────────────────────────
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     isInteractive = e.isInteractive
@@ -431,6 +546,7 @@ export const register: Register = on => {
     if ((await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))) {
       await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
     }
+    await claimCiWatch($)
 
     return next(e)
   })
@@ -549,6 +665,19 @@ export const register: Register = on => {
     await closeNudges($, e.sessionId).catch(() => undefined)
 
     return next(e)
+  })
+
+  // CI watch: a push that went through starts a watch on its runs.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.deny !== undefined || ran.isError || e.tool !== 'Bash') return ran
+    if (!isGitPush(e.command) || isDryRun(e.command) || (await ciOptedOut($))) return ran
+
+    const targets = await pushTargets($, e.command, ran.text ?? '')
+    if (targets.length === 0) return ran
+    for (const target of targets) await startCiWatch($, target)
+
+    return { ...ran, context: [...(ran.context ?? []), watchingNote(targets)] }
   })
 
   // Sees the command hooks' Stop verdict folded last-write-wins: with several
