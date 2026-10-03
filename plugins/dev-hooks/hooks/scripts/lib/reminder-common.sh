@@ -619,21 +619,23 @@ reminder_transcript_invoked() {
   local sentinel=$1
   shift
   REPLY=0
-  [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
+  # The mod's session facts (DEV_HOOKS_FACTS_FILE, set when it runs the Stop hooks) also
+  # see skills and agents run inside subagents, which the transcript never records.
+  { [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; } || [ -f "${DEV_HOOKS_FACTS_FILE:-}" ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   REPLY=$(
-    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "$@" <<'PYEOF'
+    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" "$@" <<'PYEOF'
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
-from hook_helpers import transcript_invoked
+from hook_helpers import facts_invoked, transcript_invoked
 
+needles = tuple(sys.argv[5:])
 print(
     1
-    if transcript_invoked(
-        sys.argv[1], tuple(sys.argv[4:]), sentinel=sys.argv[2] or None
-    )
+    if (sys.argv[4] and facts_invoked(sys.argv[4], needles))
+    or transcript_invoked(sys.argv[1], needles, sentinel=sys.argv[2] or None)
     else 0
 )
 PYEOF

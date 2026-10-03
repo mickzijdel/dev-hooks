@@ -334,7 +334,15 @@ export const register: Register = on => {
     if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
 
     const stdin = JSON.stringify(e)
-    const env = { CLAUDE_PLUGIN_ROOT: $.plugin.root, DEV_HOOKS_ORCHESTRATED: '1' }
+    // The facts reach the shell hooks as a file (reminder_transcript_invoked reads it):
+    // they see skills and agents run inside subagents, which the transcript doesn't.
+    const factsFile = `${(await $.env.get('TMPDIR')) || '/tmp'}/dev-hooks-facts-${e.session_id}.json`
+    await $.fs.write(factsFile, JSON.stringify(await loadFacts($)))
+    const env = {
+      CLAUDE_PLUGIN_ROOT: $.plugin.root,
+      DEV_HOOKS_ORCHESTRATED: '1',
+      DEV_HOOKS_FACTS_FILE: factsFile,
+    }
     const runs = await Promise.all(
       (await ownStopHooks($)).map(hook =>
         $.process

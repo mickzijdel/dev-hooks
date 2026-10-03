@@ -4763,6 +4763,85 @@ def test_stop_hooks_ignore_a_mod_marker_from_another_session(tmp_path):
     assert stop_blocked(r)
 
 
+def _facts_file(tmp_path, skills=(), agents=()):
+    path = tmp_path / "facts.json"
+    path.write_text(
+        json.dumps(
+            {
+                "updatedAt": 0,
+                "skills": [{"skill": s, "at": 0} for s in skills],
+                "agents": [
+                    {"description": d, "subagentType": t, "at": 0} for d, t in agents
+                ],
+                "repos": [],
+                "stops": [],
+            }
+        )
+    )
+    return str(path)
+
+
+def test_review_reminder_counts_a_review_skill_run_inside_a_subagent(tmp_path):
+    # The transcript only has the parent's tool calls; a subagent that ran /code-review
+    # is visible in the mod's session facts alone.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=_facts_file(tmp_path, skills=["code-review"]),
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_review_reminder_counts_a_review_agent_from_the_facts(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path, agents=[("Review the session diff", "general-purpose")]
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_allowed(r)
+
+
+def test_review_reminder_still_fires_when_the_facts_show_no_review(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path,
+        skills=["thinking-tools:self-rate"],
+        agents=[("Fix the review findings", "general-purpose")],  # a doer, not a review
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_blocked(r)
+
+
+def test_review_reminder_ignores_an_unreadable_facts_file(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    bad = tmp_path / "facts.json"
+    bad.write_text("{not json")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=str(bad),
+    )
+    assert stop_blocked(r)
+
+
 def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
     # The stand-down lives in reminder_stop_init; a Stop hook that skipped it would run
     # twice once the mod orchestrates — once directly, once from the mod.

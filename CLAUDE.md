@@ -82,7 +82,10 @@ The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_
 session id (`$.env.set` reaches every command hook started afterwards), which makes
 `reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
 command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
-answer the way Claude Code does (`stopReason`) and returns one merged `block`. So a new dev-hooks
+answer the way Claude Code does (`stopReason`) and returns one merged `block`. It writes the
+session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the path as
+`DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
+`reminder_transcript_invoked` and gets subagent-aware answers for free. So a new dev-hooks
 Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init`
 enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
 `classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.
@@ -161,7 +164,8 @@ enforces it) — one that doesn't would run twice. Don't stand hooks down by ski
   `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (the one
   code-extension list — a hand-rolled copy drifts),
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
-  `transcript_invoked`),
+  `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
+  `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
   the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
   rather than threading the value through — and pass that value to python rather than

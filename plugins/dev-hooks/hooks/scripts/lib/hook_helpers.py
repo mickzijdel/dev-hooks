@@ -251,6 +251,40 @@ def _agent_job_re(word):
     )
 
 
+def _split_needles(needles):
+    """Plain needles (skill / subagent-type substrings) and the `agent:<word>` job regexes."""
+    jobs = [
+        _agent_job_re(n[len("agent:") :]) for n in needles if n.startswith("agent:")
+    ]
+    return tuple(n for n in needles if not n.startswith("agent:")), jobs
+
+
+def facts_invoked(facts_path, needles):
+    """True when the dev-hooks mod's session facts (DEV_HOOKS_FACTS_FILE) show one of
+    `needles` ran: a skill or subagent type naming it, or — for `agent:<word>` — a
+    subagent described as doing that job. Unlike the transcript, the facts include
+    skills run *inside* subagents. A missing or unreadable file is no evidence."""
+    try:
+        with open(facts_path, encoding="utf-8") as f:
+            facts = json.load(f)
+    except OSError, ValueError, TypeError:
+        return False
+    if not isinstance(facts, dict):
+        return False
+    names, agent_res = _split_needles(needles)
+    for skill in facts.get("skills") or []:
+        if any(n in str((skill or {}).get("skill", "")) for n in names):
+            return True
+    for agent in facts.get("agents") or []:
+        agent = agent or {}
+        if any(n in str(agent.get("subagentType", "")) for n in names):
+            return True
+        desc = str(agent.get("description") or "")
+        if not _AGENT_DOER_RE.match(desc) and any(r.search(desc) for r in agent_res):
+            return True
+    return False
+
+
 def transcript_invoked(transcript_path, needles, sentinel=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
@@ -262,10 +296,7 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
 
     # agent:<word> matches an Agent/Task description naming <word> as its job; subagent
     # reviews run as general-purpose agents with no review skill or type
-    agent_res = [
-        _agent_job_re(n[len("agent:") :]) for n in needles if n.startswith("agent:")
-    ]
-    needles = tuple(n for n in needles if not n.startswith("agent:"))
+    needles, agent_res = _split_needles(needles)
 
     def hit(value):
         return isinstance(value, str) and any(n in value for n in needles)
