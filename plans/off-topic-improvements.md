@@ -130,3 +130,21 @@ Noticed 2026-10-03 while building the guard dialog:
   Probably its top-level grouping of `git ls-files --others --ignored --directory` output
   (e.g. `tests/__pycache__/` grouped as `tests`, a root-level entry as ""). Worth a test with a
   nested ignored dir and a root-level ignored file.
+
+Noticed 2026-10-03 while adding credential probes to the guard:
+
+- **lib/shell-segments.awk could serve the other Bash hooks.** ci-watch-reminder (above) and any
+  hook that greps the raw command for a subcommand could read the awk's segments instead, which
+  already honour quoting and heredocs.
+- **The guard doesn't follow commands into other runners.** `docker exec c …`, `incus exec vm --
+  …`, `kubectl exec … --`, `watch …` and `script -c '…'` run a command the guard never judges;
+  `ssh host …`, `bash -c`, `eval` and a heredoc fed to a shell are covered. Same for other
+  token printers: `glab auth status -t`, `az account get-access-token`,
+  `gcloud auth print-access-token`, `docker-credential-* get`, `~/.docker/config.json`.
+- **A secret manager piped into a projecting jq is now blocked.** `bws secret list -o json
+  2>/dev/null | jq -r '.[].key'` slipped through before only because of the `2>/dev/null` hole;
+  the producer's stdout goes to jq, and judging a jq filter is out of scope. If it bites, the
+  non-printing route is `bws secret list -o json > "$tmp"; jq -r '.[].key' "$tmp"`.
+- **`ruff format --check` wants to reformat `skills/api-scraping/scripts/har_scan.py`** with the
+  local ruff (`latest`), so `hk check --all` stops at ruff-format; CI is green, so this is a ruff
+  version drift between the laptop and CI.
