@@ -5101,3 +5101,34 @@ def test_session_growth_shallow_clone_does_not_count_the_whole_repo(tmp_path):
         ["git", "clone", "-q", "--depth", "1", f"file://{src}", str(clone)], check=True
     )
     assert stop_allowed(_run_cc(clone, _stop_payload(clone)))
+
+
+# The dev-hooks mod recognises the guard's questions by this prefix and puts them to the
+# person in a dialog (register.tsx GUARD_PREFIX); an ask without it would fall through to
+# the normal permission flow, which auto mode answers.
+GUARD_PREFIX = "dev-hooks guard — "
+
+
+def _guard_reason(r):
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_every_guard_ask_carries_the_mod_prefix(tmp_path, secret_tree):
+    init_git_repo(tmp_path)
+    asks = [
+        _guard("rm -rf /", DEV_HOOKS_GUARD_DENY="ask"),
+        _guard("git commit -m wip", cwd=tmp_path, DEV_HOOKS_GUARD_MAIN="1"),
+        _guard_in(
+            secret_tree,
+            'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+            DEV_HOOKS_GUARD_SECRETS="ask",
+        ),
+    ]
+    for r in asks:
+        assert _decision(r) == "ask"
+        assert _guard_reason(r).startswith(GUARD_PREFIX), _guard_reason(r)
+
+
+def test_guard_prefix_matches_the_mod():
+    source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    assert f"export const GUARD_PREFIX = '{GUARD_PREFIX}'" in source

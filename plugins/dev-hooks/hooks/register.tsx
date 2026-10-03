@@ -244,8 +244,29 @@ async function orchestrateStop(
   return block
 }
 
+// ── Guard dialog ─────────────────────────────────────────────────────────────────
+// When dangerous-command-guard.sh asks (its `ask` modes), the mod puts the question to
+// the person in Claude Code's own dialog: a PreToolUse `ask` is answered by the
+// auto-mode classifier, the dialog is not. Allow only withdraws the guard's question —
+// the normal permission flow still runs — and Deny refuses; a hard deny is never asked.
+export const GUARD_PREFIX = 'dev-hooks guard — '
+
+export const isGuardAsk = (ask: string | undefined): ask is string => !!ask && ask.startsWith(GUARD_PREFIX)
+
+const COMMAND_SHOWN = 300
+
+export const guardQuestion = (ask: string, command: string): string => {
+  const reason = ask.slice(GUARD_PREFIX.length).replace(/^please confirm:\s*/i, '')
+  const shown = command.length > COMMAND_SHOWN ? `${command.slice(0, COMMAND_SHOWN)}…` : command
+  return `${reason}\n\nCommand: ${shown}\n\nLet it run?`
+}
+
+// From session.start: whether a person is there to answer the dialog.
+let isInteractive = false
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    isInteractive = e.isInteractive
     await $.command.register({
       name: 'context-bar',
       description: 'Toggle a stacked context-usage bar above the prompt',
@@ -388,5 +409,28 @@ export const register: Register = on => {
       $.ui.log(`dev-hooks: Stop orchestration failed, the Stop hooks run directly from now on: ${String(error)}`)
       return below
     }
+  })
+
+  on('classic.PreToolUse', async ($, e, next) => {
+    const decided = await next(e)
+    if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
+    let answer: string
+    try {
+      answer = await $.ui.ask(guardQuestion(decided.ask, e.command), {
+        header: 'dev-hooks',
+        options: ['Allow', 'Deny'],
+      })
+    } catch {
+      // Dismissed: refuse, since handing the question back would let auto mode answer
+      // it. With no one to ask at all (claude -p) the guard's question stands as it was.
+      return isInteractive
+        ? { deny: 'The dev-hooks guard dialog was dismissed, so this command did not run.' }
+        : decided
+    }
+    if (answer === 'Allow') {
+      const { ask: _withdrawn, ...rest } = decided
+      return rest
+    }
+    return { deny: `The person declined this command in the dev-hooks guard dialog (answer: ${answer}).` }
   })
 }
