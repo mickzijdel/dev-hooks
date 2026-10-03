@@ -109,13 +109,13 @@ ecosystem**.
 
 ## Fleet mode ("update all my repos")
 
-To sweep every repo, mirror the cadence in the [[dev-env-bump-backfill-fleet]] memory and the
-[[github-actions]] fleet bump — but **one isolated agent per repo** so they never share state:
+To sweep every repo, follow the [[github-actions]] fleet bump's cadence (the whole fleet in one
+session) — but **one isolated agent per repo** so they never share state:
 
 1. **Enumerate + confirm.** Start from the dev-env fleet — [[dev-env-setup]]'s
-   `scripts/fleet_roster.sh` discovers every repo carrying `DEV_ENV_VERSION` in `mise.toml`
-   live (any fleet memory holds per-repo quirks, not the roster) — and cross-check with the
-   remote list:
+   `scripts/fleet_roster.sh` discovers every local repo carrying `DEV_ENV_VERSION` in
+   `mise.toml` (one line per repo with its path, version, checked-out branch, and a dirty
+   flag) — and cross-check with the remote list:
    ```bash
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"
    gh repo list "$(gh api user -q .login)" --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
