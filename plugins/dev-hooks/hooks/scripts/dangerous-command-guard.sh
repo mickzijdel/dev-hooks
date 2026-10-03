@@ -13,10 +13,11 @@
 # `curl … | sh` — passes straight through to the normal permission flow, which already
 # prompts on them (and Claude Code's own auto-mode classifier catches them besides).
 #
-# The command is split into simple-command segments (newlines and the ;, &, | operators
-# end one), and each command's flags and operands are judged only against that command —
-# so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message that merely
-# *mentions* a footgun doesn't trip it.
+# The command is split into the simple commands the shell would run (lib/shell-segments.awk
+# honours quoting, and splits out $(…), backticks, `bash -c '…'`, `eval` and a heredoc fed
+# to a shell), and each command's flags and operands are judged only against that
+# command — so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message or
+# search pattern that merely *mentions* a footgun doesn't trip it.
 #
 # What happens on a match is configurable with DEV_HOOKS_GUARD_DENY (in .claude
 # settings "env"):
@@ -46,9 +47,11 @@
 #   allow / off / false / 0  — pass through silently
 # Deliberately narrow: template files (.env.example), public key halves (*.pub),
 # inject-don't-print wrappers (`fnox run`, `bws run`, `op run`), `source .env`,
-# counting greps, and output redirected to /dev/null all stay silent. So do the two
-# parameter expansions that cannot print a value — `${VAR:+word}` and `${#VAR}` — since
-# those are the forms to reach for; `${VAR:-word}` is *not* one of them and is caught.
+# counting greps, and stdout sent to /dev/null or a file or captured into a variable
+# (`v=$(fnox get X)`) all stay silent; `2>/dev/null` hides only stderr, so it does not.
+# So do the two parameter expansions that cannot print a value — `${VAR:+word}` and
+# `${#VAR}` — since those are the forms to reach for; `${VAR:-word}` is *not* one of
+# them and is caught.
 #
 # Advisory by design; opt out of the whole hook per repo/user with
 # DEV_HOOKS_BASH_GUARD=false (in .claude settings "env").
@@ -63,30 +66,49 @@ reminder_pre_init DEV_HOOKS_BASH_GUARD
 # for the few footguns that inherently span command boundaries (a pipe, a redirect).
 cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 
-# Simple-command segments: newlines and the shell operators ;, &, | all end one (so &&
-# and || do too). Splitting ignores quoting — a separator inside a quoted string only
-# splits it into *more* segments, never glues two commands together.
-SEGMENTS=$(printf '%s\n' "$COMMAND" | tr ';&|' '\n')
+# Simple-command segments, split the way the shell would by lib/shell-segments.awk: one
+# per line, words separated by \037 with their quotes removed, wrappers (sudo, env,
+# xargs, …) and leading assignments already dropped, and each redirection as one word
+# starting with \035. Quoting decides what is code, so a separator inside a quoted
+# string (`rg "fnox get|bws secret get"`, a commit message) no longer starts a command,
+# while $(…), backticks, `bash -c '…'`, `eval`, `ssh host …` and a heredoc fed to a
+# shell are split out as commands of their own. On a parse failure (an unbalanced quote)
+# the awk falls back to the old quote-blind split, which over-matches rather than hides.
+SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk")
+US=$'\037'
+RDM=$'\035'
 
-# Dissect one segment into NAME (the command word, any path prefix stripped) and ARGS.
-# Wrappers (sudo, command, nohup, time, env, xargs) and env assignments are skipped so
-# `sudo rm …` is judged as `rm …`.
+# Dissect one segment into NAME (the command word, any path prefix stripped), ARGS, and
+# REDIRS (its redirections, marker stripped: `>/dev/null`, `2>&1`, `<file`).
 seg_parse() {
   local -a w
-  read -ra w <<<"$1"
-  NAME="" ARGS=()
-  local i=0
-  while [ "$i" -lt "${#w[@]}" ]; do
-    case "${w[$i]##*/}" in
-      sudo | command | nohup | time | env | xargs | *=*)
-        i=$((i + 1))
-        ;;
-      *) break ;;
+  local x
+  IFS="$US" read -ra w <<<"$1"
+  NAME="" ARGS=() REDIRS=()
+  [ "${#w[@]}" -eq 0 ] && return
+  NAME="${w[0]##*/}"
+  for x in "${w[@]:1}"; do
+    case "$x" in
+      "$RDM"*) REDIRS+=("${x#"$RDM"}") ;;
+      *) ARGS+=("$x") ;;
     esac
   done
-  [ "$i" -ge "${#w[@]}" ] && return
-  NAME="${w[$i]##*/}"
-  ARGS=("${w[@]:$((i + 1))}")
+}
+
+# Does the segment's stdout stay out of the transcript? It does when it goes to
+# /dev/null or a file, or is captured into a variable (`v=$(fnox get X)`, marked
+# `=captured` by the awk). `2>/dev/null` only hides stderr, and the value goes to stdout,
+# so it does not count; nor does `>&2` or `>/dev/stderr`, which still reach the screen.
+seg_stdout_discarded() {
+  local r
+  for r in "${REDIRS[@]}"; do
+    case "$r" in
+      =captured) return 0 ;;
+      *'>&'* | *'>/dev/std'* | *'>/dev/tty' | *'>/dev/fd/'[12]) ;;
+      '>'* | '1>'* | '&>'*) return 0 ;;
+    esac
+  done
+  return 1
 }
 
 # Strip one layer of surrounding quotes from an operand (agents often quote paths).
@@ -153,11 +175,11 @@ seg_words() {
   WORDS="${WORDS# } "
 }
 
-# Does this operand resolve to a file that actually exists? The segment parser
-# word-splits without honouring quotes, so a quoted grep pattern arrives as several
-# operands and one of them can look exactly like a key file (`event.key` from
-# `grep 'event.key === "Escape"' src/x.ts`). Requiring the file to exist settles it,
-# and costs no coverage: a path that isn't there can't be printed either.
+# Does this operand resolve to a file that actually exists? A grep pattern is an operand
+# too, and can look exactly like a key file (`grep event.key src/x.ts`; the quote-blind
+# fallback splits `'event.key === "Escape"'` into such words as well). Requiring the
+# file to exist settles it, and costs no coverage: a path that isn't there can't be
+# printed either.
 file_exists() {
   local q=$1
   # shellcheck disable=SC2088,SC2016  # ~ / $HOME are literal *text* in the inspected command; expanding them is this function's job
@@ -338,14 +360,14 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   *)
     SEG_CWD="${CWD:-.}"
     while IFS= read -r seg; do
-      # Output that goes nowhere can't reach the transcript.
-      printf '%s' "$seg" | grep -Eq '>[[:space:]]*/dev/null' && continue
       seg_parse "$seg"
       [ -z "$NAME" ] && continue
       if [ "$NAME" = cd ]; then
         seg_cd
         continue
       fi
+      # Output that goes nowhere can't reach the transcript.
+      seg_stdout_discarded && continue
       case "$NAME" in
         cat | head | tail | less | more | bat | batcat | strings | xxd | od | jq | yq | grep | rg | ag)
           # A grep that reports whether, not what, prints no values.
@@ -358,8 +380,16 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             esac
           done
           [ -n "$skip" ] && continue
+          # Operands, plus the file of an input redirection (`cat < .env`).
+          files=()
           for a in "${ARGS[@]}"; do
             case "$a" in -*) continue ;; esac
+            files+=("$a")
+          done
+          for a in "${REDIRS[@]}"; do
+            case "$a" in '<<'* | '<&'* | '<>'*) ;; '<'*) files+=("${a#<}") ;; esac
+          done
+          for a in "${files[@]}"; do
             unquote "$a"
             if path_is_secret "$UQ" && file_exists "$UQ"; then
               SECRET_ASK="\`$NAME $UQ\` prints the contents of a file that holds secret values."

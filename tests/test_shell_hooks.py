@@ -3873,6 +3873,117 @@ def test_catastrophic_check_still_wins_over_secrets(secret_tree):
     assert _decision(r) == "deny"
 
 
+# ── dangerous-command-guard.sh: quote-aware segments ─────────────────────────────────
+# The segmenter used to split on ; & | and newlines without honouring quotes, so a
+# separator *inside* a quoted string started a new "command": `rg -n "fnox get|bws
+# secret get"` became a segment `bws secret get"` and was blocked as a secret read.
+# Segments now follow shell quoting: single quotes and quoted heredoc bodies are data,
+# while `$(…)` and backticks run even inside double quotes and unquoted heredocs.
+QUOTED_MENTIONS = [
+    'rg -n "fnox get"',
+    'rg -n "fnox get|bws secret get" plugins/',
+    "rg -n 'fnox get; gh auth token' .",
+    'grep -rn "bws secret list\\|op read" docs/',
+    'git commit -m "guard: block fnox get; gh auth token; op read"',
+    "git commit -m \"$(printf 'docs\\n\\nexplain why fnox get | head leaks')\"",
+    "echo 'never run gh auth token here'",
+    'echo "a | fnox get X"',
+    # a heredoc body is data, not commands, unless a shell reads it
+    "cat > tests/probe.test.sh <<'EOF'\nfnox get X\ngh auth token\nop read op://v/i\nEOF",
+    "cat > notes.md <<EOF\nfnox get X\nbws secret get abc\nEOF",
+    "cat <<-'EOF' > x.sh\n\tbws secret get abc\n\tEOF\necho done",
+    "python3 - <<'PY'\nprint('gh auth token')\nPY",
+    # a comment is not a command
+    "ls  # then fnox get X",
+]
+
+
+@pytest.mark.parametrize("command", QUOTED_MENTIONS)
+def test_guard_silent_on_quoted_mentions(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == "", r.stdout
+
+
+# ...while the same reads still block wherever they actually run.
+REAL_INVOCATIONS = [
+    "fnox get X",
+    "cd x && fnox get X",
+    "echo $(fnox get X)",
+    'echo "token: $(fnox get X)"',
+    "echo `fnox get X`",
+    'curl -H "Authorization: Bearer $(gh auth token)" https://api.github.com',
+    "env A=1 fnox get X",
+    "A=1 fnox get X",
+    "sudo fnox get X",
+    "(fnox get X)",
+    "{ fnox get X; }",
+    "true && fnox get X || true",
+    "fnox get X | cat",
+    # 2>/dev/null hides stderr only; the value goes to stdout
+    "fnox get X 2>/dev/null",
+    "cat .env 2>/dev/null",
+    "cat < .env",
+    "bws secret list -o json 2>/dev/null | jq -r '.[].key'",
+    # stderr and the terminal still reach the transcript
+    "fnox get X >&2",
+    "fnox get X > /dev/stderr",
+    # capturing is fine; printing the capture is not
+    "TOKEN=$(gh auth token) && echo $TOKEN",
+    # wrappers with options of their own
+    "sudo -u mick gh auth token",
+    "ssh agent-vm gh auth token",
+    # a shell given the command as a string or on stdin runs it
+    "bash -c 'fnox get X'",
+    'sh -c "gh auth token"',
+    "bash -lc 'cd /tmp && bws secret get abc'",
+    "eval 'fnox get X'",
+    "bash <<'EOF'\nfnox get X\nEOF",
+    "ssh host <<EOF\ngh auth token\nEOF",
+    # an unquoted heredoc expands $(…) in its body
+    "cat <<EOF\ntoken=$(gh auth token)\nEOF",
+    # an unbalanced quote falls back to splitting everything
+    "fnox get X 'oops",
+]
+
+
+@pytest.mark.parametrize("command", REAL_INVOCATIONS)
+def test_guard_denies_real_invocations(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat .env > /dev/null",
+        "cat .env >/dev/null 2>&1",
+        "cat .env &>/dev/null",
+        "cat .env 1>/dev/null",
+        "fnox get X >> /dev/null",
+        # into a file: the value never reaches the screen
+        "bws secret list -o json > /tmp/s.json",
+        "fnox get X > .secret-out",
+        # captured into a variable — the non-printing forms the block message points to
+        "X=$(fnox get X)",
+        "TOKEN=$(gh auth token)",
+        "export GH_TOKEN=$(gh auth token)",
+        'v=$(fnox get K 2>/dev/null); echo "${v:+resolves} (${#v} chars)"',
+        'RAILS_MASTER_KEY="$(cat config/master.key)" bin/rails runner "p 1" >/dev/null',
+    ],
+)
+def test_guard_silent_when_stdout_stays_off_screen(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.stdout.strip() == "", r.stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['bash -c "rm -rf /"', "sh -c 'cd /tmp; rm -rf ~'", "bash <<'EOF'\nrm -rf /\nEOF"],
+)
+def test_guard_denies_catastrophic_inside_a_shell_string(command):
+    assert _decision(_guard(command)) == "deny"
+
+
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
 BIG_CHANGE_SENTINEL = "[big-change] large unreviewed change this session"
 
