@@ -14,9 +14,22 @@
 // which makes the copies Claude Code runs directly stand down (reminder_stop_init), and
 // runs its own copies with DEV_HOOKS_ORCHESTRATED set. Without this module (an older
 // Claude Code, mods off) nothing is marked and the command hooks run as before.
+//
+// Stop-nudge outcomes: each reason the orchestration returns is resolved at the next
+// Stop as acted on or not (nudge-outcomes.ts), shown by /session-facts nudges.
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Facts, Segment, Snapshot } from '../types'
+import type { Facts, Nudge, NudgeRecord, Segment, Snapshot } from '../types'
+import {
+  formatNudgeStats,
+  hookName,
+  mergeNudgeLog,
+  newNudge,
+  NUDGE_LOG_KEY,
+  nudgeExport,
+  resolvePending,
+  toRecord,
+} from './nudge-outcomes'
 
 const isShown = { plugin: 'dev-hooks', key: 'contextBarShown' } as const
 const snapshot = { plugin: 'dev-hooks', key: 'contextBarSnapshot' } as const
@@ -73,8 +86,8 @@ const FACTS_TTL_MS = 30 * 86_400_000
 const emptyFacts = (): Facts => ({ updatedAt: 0, skills: [], agents: [], repos: [], stops: [] })
 
 // $.store, not $.state: facts must survive a reboot or a resumed session.
-async function loadFacts($: EngineInterface): Promise<Facts> {
-  const id = await $.session.id()
+async function loadFacts($: EngineInterface, sessionId?: string): Promise<Facts> {
+  const id = sessionId ?? (await $.session.id())
   return ((await $.store.get(`facts:${id}`)) as Facts | undefined) ?? emptyFacts()
 }
 
@@ -82,10 +95,10 @@ async function loadFacts($: EngineInterface): Promise<Facts> {
 // read-modify-write goes through one queue.
 let factsQueue: Promise<unknown> = Promise.resolve()
 
-function changeFacts($: EngineInterface, fn: (f: Facts) => Facts): Promise<Facts> {
+function changeFacts($: EngineInterface, fn: (f: Facts) => Facts, sessionId?: string): Promise<Facts> {
   const run = factsQueue.then(async () => {
-    const id = await $.session.id()
-    const next = { ...fn(await loadFacts($)), updatedAt: Date.now() }
+    const id = sessionId ?? (await $.session.id())
+    const next = { ...fn(await loadFacts($, id)), updatedAt: Date.now() }
     await $.store.set(`facts:${id}`, next)
     return next
   })
@@ -93,13 +106,17 @@ function changeFacts($: EngineInterface, fn: (f: Facts) => Facts): Promise<Facts
   return run
 }
 
-async function pruneFacts($: EngineInterface) {
+// Returns the facts kept, by session id.
+async function pruneFacts($: EngineInterface): Promise<Map<string, Facts>> {
   const cutoff = Date.now() - FACTS_TTL_MS
+  const kept = new Map<string, Facts>()
   for (const key of await $.store.keys()) {
     if (!key.startsWith('facts:')) continue
     const f = (await $.store.get(key)) as Facts | undefined
     if (!f || f.updatedAt < cutoff) await $.store.delete(key)
+    else kept.set(key.slice('facts:'.length), f)
   }
+  return kept
 }
 
 export const ago = (at: number, now: number): string => {
@@ -111,6 +128,16 @@ export const ago = (at: number, now: number): string => {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// This session's Stop nudges, shown only once one fired.
+const nudgeSection = (nudges: Nudge[], when: (at: number) => string): string[] =>
+  nudges.length === 0
+    ? []
+    : [
+        '',
+        `Stop nudges (${nudges.length})`,
+        ...nudges.map(n => `  ${when(n.at)} ${n.hook} · ${n.outcome ? `${n.outcome} (${n.evidence})` : 'pending'}`),
+      ]
 
 // Plain text: command output is shown as-is, not rendered as markdown.
 export const formatFacts = (f: Facts, now: number, home: string): string => {
@@ -148,9 +175,13 @@ export const formatFacts = (f: Facts, now: number, home: string): string => {
           `Stops (${f.stops.length}, ${blocked.length || 'none'} blocked)`,
           ...blocked.map(s => `  ${when(s.at)} ${(s.block ?? '').split('\n')[0]}`),
         ]),
+    ...nudgeSection(f.nudges ?? [], when),
   ]
   if (lines[lines.length - 1] !== '') lines.push('')
-  return [...lines, '/session-facts json prints the raw record.'].join('\n')
+  return [
+    ...lines,
+    '/session-facts json prints the raw record; /session-facts nudges, Stop-nudge outcomes across sessions.',
+  ].join('\n')
 }
 
 const repoRoots = new Map<string, string | null>()
@@ -215,7 +246,7 @@ async function pluginVersion($: EngineInterface): Promise<string> {
 // `below` (any block from hooks beneath the module).
 async function orchestrateStop(
   $: EngineInterface,
-  e: { session_id: string; cwd: string },
+  e: StopInput,
   below: string | undefined,
 ): Promise<string | undefined> {
   const stdin = JSON.stringify(e)
@@ -231,8 +262,9 @@ async function orchestrateStop(
     DEV_HOOKS_ORCHESTRATED: '1',
     ...(hasFacts ? { DEV_HOOKS_FACTS_FILE: factsFile } : {}),
   }
+  const hooks = await ownStopHooks($)
   const runs = await Promise.all(
-    (await ownStopHooks($)).map(hook =>
+    hooks.map(hook =>
       $.process
         .run(['bash', '-c', hook.command], { cwd: e.cwd, stdin, env, timeoutMs: hook.timeoutMs })
         .then(stopReason, () => null),
@@ -241,6 +273,11 @@ async function orchestrateStop(
   const block = mergeBlocks(below, runs.filter((r): r is string => r !== null))
   const stop = { at: Date.now(), block: block ?? null }
   await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) })).catch(() => undefined)
+  const fired = hooks.flatMap((hook, i) => {
+    const reason = runs[i]
+    return reason ? [{ hook: hookName(hook.command), reason }] : []
+  })
+  await trackNudges($, e, fired).catch(() => undefined)
   return block
 }
 
@@ -300,6 +337,79 @@ async function guardTimeoutSeconds($: EngineInterface, command: string): Promise
     : DEFAULT_GUARD_TIMEOUT_S
 }
 
+// ── Stop-nudge outcomes ─────────────────────────────────────────────────────────
+// Each reason the orchestration returns is a nudge in this session's facts; the next
+// Stop resolves the pending ones as acted/ignored/declined/unknown (nudge-outcomes.ts
+// holds the remedy per hook), and the resolved ones go to a cross-session log in the
+// store (`nudgeOutcomes`), exported for the weekly automation review.
+
+type StopInput = { session_id: string; cwd: string; last_assistant_message?: string }
+
+// A session idle this long with a nudge still pending never reached another Stop or a
+// clean session end (killed, crashed): resolve it from its facts at the next start.
+const NUDGE_SWEEP_IDLE_MS = 6 * 3_600_000
+
+async function trackNudges($: EngineInterface, e: StopInput, fired: { hook: string; reason: string }[]) {
+  const now = Date.now()
+  let resolved: Nudge[] = []
+  await changeFacts($, f => {
+    const ev = { facts: f, refired: fired.map(x => x.hook), lastMessage: e.last_assistant_message, atStop: true }
+    const r = resolvePending(f, ev, now)
+    resolved = r.resolved
+    if (fired.length === 0) return r.facts
+    const added = fired.map(x => newNudge(x.hook, x.reason, now))
+    return { ...r.facts, nudges: [...(r.facts.nudges ?? []), ...added].slice(-100) }
+  })
+  await logNudges($, resolved.map(n => toRecord(e.session_id, n)))
+}
+
+// The session is ending: whatever is still pending gets no further Stop.
+async function closeNudges($: EngineInterface, sessionId: string) {
+  if (!((await loadFacts($, sessionId)).nudges ?? []).some(n => n.outcome === undefined)) return
+  let resolved: Nudge[] = []
+  await changeFacts(
+    $,
+    f => {
+      const r = resolvePending(f, { facts: f, refired: [], atStop: false }, Date.now())
+      resolved = r.resolved
+      return r.facts
+    },
+    sessionId,
+  )
+  await logNudges($, resolved.map(n => toRecord(sessionId, n)))
+}
+
+// At session start: resolve abandoned sessions' pending nudges, and re-add every resolved
+// nudge the kept facts hold, repairing a log write another process raced.
+async function sweepNudges($: EngineInterface, kept: Map<string, Facts>, current: string) {
+  const now = Date.now()
+  const records: NudgeRecord[] = []
+  for (const [id, f] of kept) {
+    let facts = f
+    const pending = (f.nudges ?? []).some(n => n.outcome === undefined)
+    if (id !== current && pending && f.updatedAt < now - NUDGE_SWEEP_IDLE_MS) {
+      facts = resolvePending(f, { facts: f, refired: [], atStop: false }, now).facts
+      await $.store.set(`facts:${id}`, facts)
+    }
+    for (const n of facts.nudges ?? []) if (n.outcome !== undefined) records.push(toRecord(id, n))
+  }
+  await logNudges($, records)
+}
+
+async function loadNudgeLog($: EngineInterface): Promise<NudgeRecord[]> {
+  return ((await $.store.get(NUDGE_LOG_KEY)) as NudgeRecord[] | undefined) ?? []
+}
+
+async function logNudges($: EngineInterface, records: NudgeRecord[]) {
+  if (records.length === 0) return
+  const now = Date.now()
+  const log = mergeNudgeLog(await loadNudgeLog($), records, now)
+  await $.store.set(NUDGE_LOG_KEY, log)
+  // Beside the prompt log and hook-fires.jsonl; only where that directory already exists.
+  const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/automation-review`
+  if (await $.fs.exists(dir)) await $.fs.write(`${dir}/stop-nudges.json`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     isInteractive = e.isInteractive
@@ -309,9 +419,10 @@ export const register: Register = on => {
     })
     await $.command.register({
       name: 'session-facts',
-      description: 'Show what dev-hooks recorded about this session',
+      description: 'Show what dev-hooks recorded about this session (nudges: Stop-nudge outcomes)',
     })
-    await pruneFacts($)
+    const kept = await pruneFacts($)
+    await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
     // Only take the Stop hooks over once their config reads cleanly, and not on a
     // version whose orchestration already failed; otherwise leave the session unmarked
@@ -384,8 +495,13 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'session-facts' }, async ($, e) => {
+    const [sub, arg] = e.args.trim().split(/\s+/)
+    if (sub === 'nudges') {
+      const days = Number(arg) > 0 ? Number(arg) : 7
+      return { text: formatNudgeStats(await loadNudgeLog($), Date.now(), days) }
+    }
     const f = await loadFacts($)
-    if (e.args.trim() === 'json') return { text: JSON.stringify(f, null, 2) }
+    if (sub === 'json') return { text: JSON.stringify(f, null, 2) }
 
     return { text: formatFacts(f, Date.now(), (await $.env.get('HOME')) ?? '') }
   })
@@ -422,10 +538,17 @@ export const register: Register = on => {
         added: prev.added + added,
         bySubagent: prev.bySubagent + bySubagent,
       }
-      return { ...f, repos: [...f.repos.filter(r => r.root !== root), repo] }
+      const lastEdit = { ...f.lastEdit, [e.file_path]: Date.now() }
+      return { ...f, repos: [...f.repos.filter(r => r.root !== root), repo], lastEdit }
     })
 
     return ran
+  })
+
+  on('session.end', async ($, e, next) => {
+    await closeNudges($, e.sessionId).catch(() => undefined)
+
+    return next(e)
   })
 
   // Sees the command hooks' Stop verdict folded last-write-wins: with several

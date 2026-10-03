@@ -53,7 +53,7 @@ test('formatFacts summarises a session in plain text with relative times', async
       'Stops (2, 1 blocked)',
       '  2m ago   [review-reminder] You changed code this session.',
       '',
-      '/session-facts json prints the raw record.',
+      '/session-facts json prints the raw record; /session-facts nudges, Stop-nudge outcomes across sessions.',
     ].join('\n'),
   )
 })
@@ -70,7 +70,7 @@ test('formatFacts says so plainly when nothing has been recorded', async () => {
       'Edits via Edit/Write (Bash-made edits are not tracked): none',
       'Stops: none',
       '',
-      '/session-facts json prints the raw record.',
+      '/session-facts json prints the raw record; /session-facts nudges, Stop-nudge outcomes across sessions.',
     ].join('\n'),
   )
 })
@@ -88,4 +88,23 @@ test('formatFacts lists only the stops that blocked', async () => {
   }
 
   expect(formatFacts(facts, NOW, '/home/u').split('\n')).toContain('Stops (2, none blocked)')
+})
+
+test('formatFacts lists this session\'s Stop nudges with their outcome once one fired', async () => {
+  const facts: Facts = {
+    updatedAt: NOW,
+    skills: [],
+    agents: [],
+    repos: [],
+    stops: [],
+    nudges: [
+      { hook: 'review-reminder', at: NOW - 5 * MIN, summary: 'x', outcome: 'acted', evidence: 'skill code-review' },
+      { hook: 'memory-reminder', at: NOW - MIN, summary: 'y' },
+    ],
+  }
+
+  const lines = formatFacts(facts, NOW, '/home/u').split('\n')
+  expect(lines).toContain('Stop nudges (2)')
+  expect(lines).toContain('  5m ago   review-reminder · acted (skill code-review)')
+  expect(lines).toContain('  1m ago   memory-reminder · pending')
 })
