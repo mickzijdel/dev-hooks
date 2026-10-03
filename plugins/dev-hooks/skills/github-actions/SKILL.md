@@ -101,7 +101,7 @@ in one session — branch, bump, verify, commit, push — so the repos stay in l
    ```bash
    git switch -c chore/bump-actions
    pinact run -u                       # pin + update every uses: to the latest SHA + comment
-   bash "$CHECKER" .github/workflows   # verify refs resolve and comments match
+   bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .github/workflows   # refs resolve, comments match
    git diff                            # eyeball before committing
    ```
    Also add a `permissions: { contents: read }` block to any workflow missing one, and apply
