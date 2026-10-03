@@ -104,3 +104,14 @@ Noticed 2026-10-03 while spiking a Claude Code mod (session-facts):
 - **data-before-design-reminder fired on "we can install the CLI there of course / Let's try it"**
   — a prompt about running a live mod test, with no UI, card or data view anywhere in the
   conversation. Worth a replay of its trigger terms against recent prompts to see what matched.
+
+Noticed 2026-10-03 while adding Stop-nudge outcome tracking to the mod:
+
+- **`/session-facts` "Stops" shows only the merged block's first line**, which is whichever
+  hook ran first (usually verify-work's advisory), hiding the other reasons in that block. The
+  new "Stop nudges" section lists them per hook; the Stops section could drop its reason line.
+- **`stop-nudges.json` is written 0664** while `prompts.jsonl`/`hook-fires.jsonl` are 0600.
+  It holds no prompt text (hook names, session ids, agent descriptions, file basenames), but
+  `$.fs.write` can't set a mode; if that matters, create it from a shell hook first.
+- **The vischeck PostToolUse reminder fires on `hooks/register.tsx`** (a mod module with no UI
+  route) — `.tsx` alone isn't a view.
