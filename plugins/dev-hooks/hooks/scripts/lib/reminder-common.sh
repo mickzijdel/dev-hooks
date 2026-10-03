@@ -76,6 +76,11 @@ reminder_stop_init() {
   TRANSCRIPT=${_si[0]:-}
   # shellcheck disable=SC2034
   SESSION=${_si[1]:-nosession}
+  # The dev-hooks mod marks its session and runs the Stop hooks itself (setting
+  # DEV_HOOKS_ORCHESTRATED), so this direct run stands down. Matched on the session id:
+  # a nested claude inherits the marker but not the id.
+  [ -n "${DEV_HOOKS_MOD_SESSION:-}" ] && [ "$DEV_HOOKS_MOD_SESSION" = "$SESSION" ] &&
+    [ -z "${DEV_HOOKS_ORCHESTRATED:-}" ] && exit 0
   # At most one forced continuation per natural stop
   STOP_HOOK_ACTIVE=${_si[2]:-false}
   [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "${2:-}" != "--when-active" ] && exit 0
