@@ -98,3 +98,9 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   check whether the next non-hook row is `assistant`). Once the hooks block, the walker has to
   look for `Stop hook feedback` user rows followed by the matching skill or agent action. Fire
   counts alone hid that the Stop hooks did nothing for three months.
+
+Noticed 2026-10-03 while spiking a Claude Code mod (session-facts):
+
+- **data-before-design-reminder fired on "we can install the CLI there of course / Let's try it"**
+  — a prompt about running a live mod test, with no UI, card or data view anywhere in the
+  conversation. Worth a replay of its trigger terms against recent prompts to see what matched.
