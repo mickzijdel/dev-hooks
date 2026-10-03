@@ -190,7 +190,7 @@ Mobile-first: start with the mobile layout, then add larger breakpoints.
 Common patterns: `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3`, `hidden lg:block`,
 `text-2xl md:text-3xl lg:text-4xl`, `px-4 md:px-8 lg:px-16`.
 
-**Touch targets** need adequate size on mobile — minimum 44×44px: `class="min-h-[44px] min-w-[44px] px-4 py-2"`.
+**Touch targets** are ≥ 24×24px (WCAG 2.2 AA); aim for 44px on primary touch controls: `class="min-h-[44px] min-w-[44px] px-4 py-2"`.
 
 ---
 
@@ -231,7 +231,7 @@ Styling affects accessibility directly.
 2. **Design tokens** — colors, spacing, sizes from the theme, not arbitrary values.
 3. **Lean classes** — shorthand, drop defaults, consistent order (Prettier plugin).
 4. **Dark mode** — every color class has a `dark:` pair, contrast holds.
-5. **Responsive** — works from mobile up; touch targets ≥ 44px.
+5. **Responsive** — works from mobile up; touch targets ≥ 24×24px (WCAG 2.2 AA), 44px on primary touch controls.
 6. **Accessibility** — `focus-visible` states, semantic HTML, `sr-only` labels for icon-only buttons.
 7. **No plain CSS, no inline styles** — utilities or `@apply` in `@layer components` only.
 
