@@ -96,6 +96,57 @@ async function pruneFacts($: EngineInterface) {
   }
 }
 
+export const ago = (at: number, now: number): string => {
+  const mins = Math.floor((now - at) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)}h${mins % 60 ? `${mins % 60}m` : ''} ago`
+  return `${Math.floor(mins / (24 * 60))}d ago`
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// Plain text: command output is shown as-is, not rendered as markdown.
+export const formatFacts = (f: Facts, now: number, home: string): string => {
+  const tilde = (path: string) => (home && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path)
+  const when = (at: number) => ago(at, now).padEnd(8)
+  // "Title: none" when empty; otherwise the heading (with its count) and the rows.
+  const section = (title: string, count: string, rows: string[]) =>
+    rows.length === 0 ? [`${title}: none`] : [`${title}${count}`, ...rows, '']
+
+  const repos = [...f.repos].sort((a, b) => Number(a.root === null) - Number(b.root === null))
+  const edits = repos.flatMap(r => {
+    const where = r.root === null ? 'outside any repo' : tilde(r.root)
+    const inRepo = (file: string) => r.root !== null && file.startsWith(`${r.root}/`)
+    const bySub = r.bySubagent > 0 ? ` · ${plural(r.bySubagent, 'edit')} by subagents` : ''
+    return [
+      `  ${where} · ${r.added >= 0 ? '+' : ''}${r.added} lines · ${plural(r.files.length, 'file')}${bySub}`,
+      ...r.files.map(file => `    ${inRepo(file) ? file.slice((r.root ?? '').length + 1) : tilde(file)}`),
+    ]
+  })
+  const blocked = f.stops.filter(s => s.block !== null)
+
+  const lines = [
+    f.updatedAt ? `Session facts · updated ${ago(f.updatedAt, now)}` : 'Session facts · nothing recorded yet',
+    '',
+    ...section('Skills', ` (${f.skills.length})`, f.skills.map(s => `  ${when(s.at)} ${s.skill}`)),
+    ...section(
+      'Subagents',
+      ` (${f.agents.length})`,
+      f.agents.map(a => `  ${when(a.at)} ${a.subagentType} · ${a.description}`),
+    ),
+    ...section('Edits via Edit/Write (Bash-made edits are not tracked)', '', edits),
+    ...(f.stops.length === 0
+      ? ['Stops: none']
+      : [
+          `Stops (${f.stops.length}, ${blocked.length || 'none'} blocked)`,
+          ...blocked.map(s => `  ${when(s.at)} ${(s.block ?? '').split('\n')[0]}`),
+        ]),
+  ]
+  if (lines[lines.length - 1] !== '') lines.push('')
+  return [...lines, '/session-facts json prints the raw record.'].join('\n')
+}
+
 const repoRoots = new Map<string, string | null>()
 
 async function repoRoot($: EngineInterface, file: string): Promise<string | null> {
@@ -183,10 +234,11 @@ export const register: Register = on => {
     )
   })
 
-  on('command.run', { command: 'session-facts' }, async $ => {
+  on('command.run', { command: 'session-facts' }, async ($, e) => {
     const f = await loadFacts($)
+    if (e.args.trim() === 'json') return { text: JSON.stringify(f, null, 2) }
 
-    return { text: '```json\n' + JSON.stringify(f, null, 2) + '\n```' }
+    return { text: formatFacts(f, Date.now(), (await $.env.get('HOME')) ?? '') }
   })
 
   on('skill.prompt', async ($, e, next) => {
