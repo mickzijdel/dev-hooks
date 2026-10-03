@@ -16,6 +16,9 @@
 #   2. Substantial session — >= DEV_HOOKS_MEMORY_MIN_TURNS (default 6) human turns.
 #   3. Once per session — a sentinel embedded in the reminder; if already in the
 #      transcript we've prompted already, so stay silent. Prevents any Stop loop.
+#   4. Not already captured — a memory file written this session (a Write/Edit into a
+#      memory dir, or a subagent's, via the mod's DEV_HOOKS_FACTS_FILE) means the work
+#      the reminder asks for is done.
 
 MIN_TURNS="${DEV_HOOKS_MEMORY_MIN_TURNS:-6}"
 
@@ -41,14 +44,21 @@ reminder_stop_init "$SENTINEL"
 # Without a transcript we can't judge substance or the once-per-session guard.
 [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ] && exit 0
 
-# ── Gates 2 & 3: one transcript pass ─────────────────────────────────────────────
-# Prints "skip" if the sentinel is already present (already prompted), otherwise the
+# ── Gates 2–4: one transcript pass ─────────────────────────────────────────────
+# Prints "skip" if a memory was written or the sentinel is present (already prompted), otherwise the
 # integer count of human turns (user messages that aren't pure tool_result records).
 RESULT=$(
-  python3 - "$TRANSCRIPT" "$SENTINEL" <<'PYEOF'
+  python3 - "$TRANSCRIPT" "$SENTINEL" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" <<'PYEOF'
 import sys, json
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from hook_helpers import memory_written
+
 path, sentinel = sys.argv[1], sys.argv[2]
+if memory_written(path, sys.argv[4] or None):
+    print("skip")
+    sys.exit(0)
 
 
 def is_human_turn(rec):

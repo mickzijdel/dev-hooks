@@ -205,7 +205,8 @@ enforces it) — one that doesn't would run twice. Don't stand hooks down by ski
   on purpose, so a secret pasted with no space before it still matches),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
-  `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the
+  `scan_script_dirs()` for the recursive script-index inventory, `memory_written()` for "did this
+  session write a memory file?" (transcript Write/Edit into a memory dir, plus the facts file), `authored_scripts()` for the
   save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
   actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
   skill_listing attachment names every installed skill, so a plain grep for a skill name
