@@ -23,15 +23,13 @@ Report back as:
 - **Bugs found** — anything the scrutiny surfaced
 - **Verdict** — ship / don't ship, and what's left to verify
 
-## Red flags — STOP, you're about to violate this
+## Red flags
 
 - "This should work now" / "I've fixed it" / "try it now" — before you ran it yourself
 - "The logic looks correct" / "this matches the pattern"
 - "It's a trivial change, no need to test"
 - "I'll say it's done and the user can check"
 - Reporting a test as passing without seeing the actual output
-
-**All of these mean: go run it and look before you claim.**
 
 ## Rationalization table
 
