@@ -27,7 +27,7 @@ When given text to humanize:
 
 1. **Identify AI patterns** - Scan for the patterns listed below
 2. **Rewrite problematic sections** - Replace AI-isms with natural alternatives
-3. **Preserve meaning** - Keep the core message intact
+3. **Preserve meaning** - Keep the core message intact. Never add facts, sources, names, numbers, or quotes the input lacks; where a vague claim needs a specific, mark the gap with `[source needed]`
 4. **Maintain voice** - Match the intended tone (formal, casual, technical, etc.)
 5. **Add soul** - Don't just remove bad patterns; inject actual personality
 
@@ -63,7 +63,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > The experiment produced interesting results. The agents generated 3 million lines of code. Some developers were impressed while others were skeptical. The implications remain unclear.
 
 ### After (has a pulse):
-> I genuinely don't know how to feel about this one. 3 million lines of code, generated while the humans presumably slept. Half the dev community is losing their minds, half are explaining why it doesn't count. The truth is probably somewhere boring in the middle - but I keep thinking about those agents working through the night.
+> I genuinely don't know how to feel about this one. 3 million lines of code. Some developers are impressed, others are explaining why it doesn't count. The truth is probably somewhere boring in the middle, but nobody can say yet what it means, me included.
 
 ---
 
@@ -79,7 +79,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > The Statistical Institute of Catalonia was officially established in 1989, marking a pivotal moment in the evolution of regional statistics in Spain. This initiative was part of a broader movement across Spain to decentralize administrative functions and enhance regional governance.
 
 **After:**
-> The Statistical Institute of Catalonia was established in 1989 to collect and publish regional statistics independently from Spain's national statistics office.
+> The Statistical Institute of Catalonia was established in 1989, as part of a wider move to decentralize administration to Spain's regions.
 
 ---
 
@@ -93,7 +93,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Her views have been cited in The New York Times, BBC, Financial Times, and The Hindu. She maintains an active social media presence with over 500,000 followers.
 
 **After:**
-> In a 2024 New York Times interview, she argued that AI regulation should focus on outcomes rather than methods.
+> Her views have been cited in The New York Times and the BBC [source needed: which article, and what she said].
 
 ---
 
@@ -107,7 +107,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > The temple's color palette of blue, green, and gold resonates with the region's natural beauty, symbolizing Texas bluebonnets, the Gulf of Mexico, and the diverse Texan landscapes, reflecting the community's deep connection to the land.
 
 **After:**
-> The temple uses blue, green, and gold colors. The architect said these were chosen to reference local bluebonnets and the Gulf coast.
+> The temple uses blue, green, and gold, colors meant to evoke Texas bluebonnets and the Gulf of Mexico [source needed].
 
 ---
 
@@ -121,7 +121,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Nestled within the breathtaking region of Gonder in Ethiopia, Alamata Raya Kobo stands as a vibrant town with a rich cultural heritage and stunning natural beauty.
 
 **After:**
-> Alamata Raya Kobo is a town in the Gonder region of Ethiopia, known for its weekly market and 18th-century church.
+> Alamata Raya Kobo is a town in the Gonder region of Ethiopia.
 
 ---
 
@@ -135,7 +135,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Due to its unique characteristics, the Haolai River is of interest to researchers and conservationists. Experts believe it plays a crucial role in the regional ecosystem.
 
 **After:**
-> The Haolai River supports several endemic fish species, according to a 2019 survey by the Chinese Academy of Sciences.
+> Researchers and conservationists study the Haolai River for its role in the regional ecosystem [source needed: what role, and who says so].
 
 ---
 
@@ -149,7 +149,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Despite its industrial prosperity, Korattur faces challenges typical of urban areas, including traffic congestion and water scarcity. Despite these challenges, with its strategic location and ongoing initiatives, Korattur continues to thrive as an integral part of Chennai's growth.
 
 **After:**
-> Traffic congestion increased after 2015 when three new IT parks opened. The municipal corporation began a stormwater drainage project in 2022 to address recurring floods.
+> Korattur, an industrial area of Chennai, has traffic congestion and water shortages [source needed].
 
 ---
 
@@ -165,7 +165,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Additionally, a distinctive feature of Somali cuisine is the incorporation of camel meat. An enduring testament to Italian colonial influence is the widespread adoption of pasta in the local culinary landscape, showcasing how these dishes have integrated into the traditional diet.
 
 **After:**
-> Somali cuisine also includes camel meat, which is considered a delicacy. Pasta dishes, introduced during Italian colonization, remain common, especially in the south.
+> Somali cuisine includes camel meat. Pasta, introduced under Italian colonial rule, is now widely eaten.
 
 ---
 
@@ -179,7 +179,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Gallery 825 serves as LAAA's exhibition space for contemporary art. The gallery features four separate spaces and boasts over 3,000 square feet.
 
 **After:**
-> Gallery 825 is LAAA's exhibition space for contemporary art. The gallery has four rooms totaling 3,000 square feet.
+> Gallery 825 is LAAA's exhibition space for contemporary art. It has four separate spaces and over 3,000 square feet.
 
 ---
 
@@ -191,7 +191,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > It's not just about the beat riding under the vocals; it's part of the aggression and atmosphere. It's not merely a song, it's a statement.
 
 **After:**
-> The heavy beat adds to the aggressive tone.
+> The beat adds to the song's aggression and atmosphere.
 
 ---
 
@@ -203,7 +203,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > The event features keynote sessions, panel discussions, and networking opportunities. Attendees can expect innovation, inspiration, and industry insights.
 
 **After:**
-> The event includes talks and panels. There's also time for informal networking between sessions.
+> The event includes talks and panels, plus time to network.
 
 ---
 
@@ -227,7 +227,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Our journey through the universe has taken us from the singularity of the Big Bang to the grand cosmic web, from the birth and death of stars to the enigmatic dance of dark matter.
 
 **After:**
-> The book covers the Big Bang, star formation, and current theories about dark matter.
+> It covers the Big Bang, the cosmic web, the life cycle of stars, and dark matter.
 
 ---
 
@@ -267,7 +267,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > - **Security:** Security has been strengthened with end-to-end encryption.
 
 **After:**
-> The update improves the interface, speeds up load times through optimized algorithms, and adds end-to-end encryption.
+> The update improves the interface, speeds things up with optimized algorithms, and adds end-to-end encryption.
 
 ---
 
@@ -293,7 +293,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > ✅ **Next Steps:** Schedule follow-up meeting
 
 **After:**
-> The product launches in Q3. User research showed a preference for simplicity. Next step: schedule a follow-up meeting.
+> The product launches in Q3. Users prefer simplicity. Next step: schedule a follow-up meeting.
 
 ---
 
@@ -321,7 +321,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > Here is an overview of the French Revolution. I hope this helps! Let me know if you'd like me to expand on any section.
 
 **After:**
-> The French Revolution began in 1789 when financial crisis and food shortages led to widespread unrest.
+> [The overview itself, with the opening and closing chatbot lines deleted.]
 
 ---
 
@@ -335,7 +335,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > While specific details about the company's founding are not extensively documented in readily available sources, it appears to have been established sometime in the 1990s.
 
 **After:**
-> The company was founded in 1994, according to its registration documents.
+> The company was founded in the 1990s [exact year: source needed].
 
 ---
 
@@ -385,7 +385,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > The future looks bright for the company. Exciting times lie ahead as they continue their journey toward excellence. This represents a major step in the right direction.
 
 **After:**
-> The company plans to open two more locations next year.
+> [Cut it. End on the last concrete fact, or on a specific plan if the source states one.]
 
 ---
 
@@ -397,7 +397,7 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 4. Ensure the revised text:
    - Sounds natural when read aloud
    - Varies sentence structure naturally
-   - Uses specific details over vague claims
+   - Uses specific details over vague claims, taking them only from the input (mark gaps `[source needed]`)
    - Maintains appropriate tone for context
    - Uses simple constructions (is/are/has) where appropriate
 5. Present the humanized version
@@ -430,21 +430,17 @@ Provide:
 > In conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you’d like me to expand on any section!
 
 **After (Humanized):**
-> AI coding assistants speed up some tasks. In a 2024 study by Google, developers using Codex completed simple functions 55% faster than a control group, but showed no improvement on debugging or architectural decisions.
+> AI coding assistants generate code faster [how much faster: source needed]. Engineers also use them to write documentation and tests and to refactor.
 >
-> The tools are good at boilerplate: config files, test scaffolding, repetitive refactors. They are bad at knowing when they are wrong. I have mass-accepted suggestions that compiled, passed lint, and still did the wrong thing because I stopped paying attention.
+> Adoption has spread from hobbyists to whole companies, and from solo developers to teams [source needed].
 >
-> Mira, an engineer at a fintech startup I interviewed, said she uses Copilot "like autocomplete for boring code" but reviews every line before committing. Jake, a senior dev at a larger company, disabled it after it kept suggesting patterns from a deprecated internal library.
->
-> The productivity claims are hard to verify. GitHub says Copilot users "accept 30% of suggestions," but acceptance is not correctness, and correctness is not value. The 2024 Uplevel study found no statistically significant difference in pull-request throughput between teams with and without AI assistants.
->
-> None of this means the tools are useless. It means they are tools. They do not replace judgment, and they do not eliminate the need for tests. If you do not have tests, you cannot tell whether the suggestion is right.
+> Whether the output is better, not just faster, is harder to show. The tools hallucinate, carry bias, and leave it unclear who is accountable when generated code is wrong. They do not replace human judgment; someone still has to check what they produce.
 
 **Changes made:**
 - Removed chatbot artifacts ("Great question!", "I hope this helps!", "Let me know if...")
 - Removed significance inflation ("testament", "pivotal moment", "evolving landscape", "vital role")
 - Removed promotional language ("groundbreaking", "nestled", "seamless, intuitive, and powerful")
-- Removed vague attributions ("Industry observers") and replaced with specific sources (Google study, named engineers, Uplevel study)
+- Removed vague attributions ("Industry observers") and marked unsupported claims `[source needed]` instead of inventing sources
 - Removed superficial -ing phrases ("underscoring", "highlighting", "reflecting", "contributing to")
 - Removed negative parallelism ("It's not just X; it's Y")
 - Removed rule-of-three patterns and synonym cycling ("catalyst/partner/foundation")
@@ -454,10 +450,10 @@ Provide:
 - Removed formulaic challenges section ("Despite challenges... continues to thrive")
 - Removed knowledge-cutoff hedging ("While specific details are limited...")
 - Removed excessive hedging ("could potentially be argued that... might have some")
+- Cut the media name-dropping ("featured in The New York Times, Wired, and The Verge")
 - Removed filler phrases ("In order to", "At its core")
 - Removed generic positive conclusion ("the future looks bright", "exciting times lie ahead")
-- Replaced media name-dropping with specific claims from specific sources
-- Used simple sentence structures and concrete examples
+- Used simple sentence structures, and kept to the facts the original contains
 
 ---
 
@@ -469,5 +465,5 @@ Key insight from Wikipedia: "LLMs use statistical algorithms to guess what shoul
 
 ---
 
-**Credit:** Adapted verbatim from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles/blob/main/files/home/.claude/skills/humanizer/SKILL.md).
+**Credit:** Adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles/blob/main/files/home/.claude/skills/humanizer/SKILL.md).
 Based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) (WikiProject AI Cleanup).

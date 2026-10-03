@@ -15,9 +15,10 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
 | `voice-profile` | Matching a person's writing voice — apply a profile of their own rules (Do/Don't/banned words/before-after), build one from their samples, or fall back to baseline expository discipline. Bundles a `voice_audit.py` banned-word scanner. |
 
-> `github-readme`, `humanizer`, and `readability` are adapted **verbatim** from
-> [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles) (credit to Nate; each
-> `SKILL.md` links back to its source). `humanizer` is additionally based on
+> `github-readme` and `readability` are adapted **verbatim** from
+> [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles), and `humanizer` is
+> adapted from the same source (credit to Nate; each `SKILL.md` links back to its source).
+> `humanizer`'s examples are reworked to add no facts the input lacks, and it is based on
 > [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
 > (WikiProject AI Cleanup). `voice-profile` is original to this plugin.
 
