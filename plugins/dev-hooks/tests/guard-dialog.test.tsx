@@ -200,3 +200,59 @@ test('the dialog tells the person how long it waits', async () => {
   expect(guardQuestion(GUARD_ASK, COMMAND, 120)).toContain('2 min')
   expect(guardQuestion(GUARD_ASK, COMMAND, 0)).not.toContain('refuse')
 })
+
+// Stands in for the engine, which draws the dialog itself: record the props the plugin
+// passed down (what the person would see) and answer with the engine's own node.
+type Drawn = { question?: string; options?: { label: string; description?: string }[] }
+function drawDialog(on: On) {
+  const drawn: Drawn[] = []
+  on('ui.render', { component: 'AskUserQuestion' }, (_$, e) => {
+    drawn.push((e.props.questions[0] ?? {}) as Drawn)
+    return { type: 'engine', ref: 0 } as const
+  })
+  return drawn
+}
+
+const dialogProps = (question: string) => ({
+  tool: 'AskUserQuestion',
+  questions: [
+    { question, header: 'dev-hooks', multiSelect: false, options: [{ label: 'Allow', description: '' }, { label: 'Deny', description: '' }] },
+  ],
+})
+
+test('a dialog that timed out is redrawn as a note saying it no longer does anything', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  unanswered(on, { ask: MAIN_ASK })
+  const drawn = drawDialog(on)
+  const asked = guardQuestion(MAIN_ASK, 'git commit -m wip', 120)
+
+  const call = $.tool.call({ tool: 'Bash', command: 'git commit -m wip' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'dev-hooks', surface, component: 'AskUserQuestion', props: dialogProps(asked) })
+    await ui.unmount()
+  }
+  expect(drawn.map(d => d.question)).toEqual([asked, asked])
+
+  await clock.advance(120_000)
+  await call
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'dev-hooks', surface, component: 'AskUserQuestion', props: dialogProps(asked) })
+    await ui.unmount()
+  }
+  const note = drawn.at(-1)
+  expect(note?.question).toMatch(/timed out/i)
+  expect(note?.question).toContain('worktree')
+  expect(note?.question).toContain('git commit -m wip')
+  expect(note?.options?.map(o => o.label)).toEqual(['Close', 'OK'])
+})
+
+test('other dialogs are drawn as they were', async ($, on) => {
+  const drawn = drawDialog(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'dev-hooks', surface, component: 'AskUserQuestion', props: dialogProps('Which colour?') })
+    await ui.unmount()
+  }
+  expect(drawn.map(d => d.question)).toEqual(['Which colour?', 'Which colour?'])
+})

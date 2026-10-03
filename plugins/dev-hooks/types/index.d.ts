@@ -43,6 +43,6 @@ export type NudgeCounts = { fired: number } & Record<NudgeOutcome, number>
 
 declare module 'claude-code' {
   interface PluginState {
-    'dev-hooks': { contextBarShown: boolean; contextBarSnapshot: Snapshot | null }
+    'dev-hooks': { contextBarShown: boolean; contextBarSnapshot: Snapshot | null; guardTimedOut: Record<string, string> }
   }
 }

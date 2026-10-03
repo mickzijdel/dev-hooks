@@ -342,6 +342,20 @@ export const guardTimeoutReason = (ask: string, seconds: number): string => {
     : `${base} Ask the person in the chat before trying again, or find a route that doesn't need this command.`
 }
 
+// A dialog can't be closed from the mod, so one that timed out stays on screen. The mod
+// remembers it (question text -> note) and its render hook redraws it as a note: what was
+// asked, what Claude was told instead, and options that just close it.
+const GUARD_TIMED_OUT = { plugin: 'dev-hooks', key: 'guardTimedOut' } as const
+const TIMED_OUT_KEPT = 20
+
+export const timedOutNote = (command: string, seconds: number, toldClaude: string): string => {
+  const shown = command.length > COMMAND_SHOWN ? `${command.slice(0, COMMAND_SHOWN)}…` : command
+  return (
+    `⏱ This guard question timed out after ${waitLabel(seconds)} and no longer does anything.` +
+    `\n\nIt asked about: ${shown}\n\nClaude was told: ${toldClaude}\n\nEither option just closes this.`
+  )
+}
+
 // From session.start: whether a person is there to answer the dialog.
 let isInteractive = false
 
@@ -699,11 +713,28 @@ export const register: Register = on => {
     }
   })
 
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    const first = e.props.questions[0] as { question?: unknown } | undefined
+    if (!first || typeof first.question !== 'string') return next(e)
+    // Read while drawing, so a timeout recorded later redraws this dialog.
+    const note = ((await $.state.get(GUARD_TIMED_OUT)).value ?? {})[first.question]
+    if (!note) return next(e)
+    const closes = { description: 'Closes this note; it changes nothing.' }
+    return next({
+      ...e,
+      props: {
+        ...e.props,
+        questions: [{ ...first, question: note, multiSelect: false, options: [{ label: 'Close', ...closes }, { label: 'OK', ...closes }] }],
+      },
+    })
+  })
+
   on('classic.PreToolUse', async ($, e, next) => {
     const decided = await next(e)
     if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
     const seconds = await guardTimeoutSeconds($, e.command)
-    const asked = $.ui.ask(guardQuestion(decided.ask, e.command, seconds), {
+    const question = guardQuestion(decided.ask, e.command, seconds)
+    const asked = $.ui.ask(question, {
       header: 'dev-hooks',
       options: ['Allow', 'Deny'],
     })
@@ -715,7 +746,11 @@ export const register: Register = on => {
       const first = await Promise.race([asked, timedOut])
       if (first === undefined) {
         asked.catch(() => undefined)
-        return { deny: guardTimeoutReason(decided.ask, seconds) }
+        const reason = guardTimeoutReason(decided.ask, seconds)
+        const notes = (await $.state.get(GUARD_TIMED_OUT)).value ?? {}
+        const kept = Object.entries(notes).slice(-(TIMED_OUT_KEPT - 1))
+        await $.state.set(GUARD_TIMED_OUT, { ...Object.fromEntries(kept), [question]: timedOutNote(e.command, seconds, reason) })
+        return { deny: reason }
       }
       answer = first
     } catch {
