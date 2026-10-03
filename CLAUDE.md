@@ -78,6 +78,15 @@ outside any repo), and the `classic.Stop` verdict. Rules learned building it:
   (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
   wrong call shape such as `$.process.run({ argv })`.
 
+The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_SESSION` to the
+session id (`$.env.set` reaches every command hook started afterwards), which makes
+`reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
+command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
+answer the way Claude Code does (`stopReason`) and returns one merged `block`. So a new dev-hooks
+Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init`
+enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
+`classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description

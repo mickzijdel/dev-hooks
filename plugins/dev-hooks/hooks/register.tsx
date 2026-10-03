@@ -7,7 +7,13 @@
 // Session facts: what this session did, recorded as it happens rather than rebuilt
 // from git and the transcript at Stop — skills expanded (main loop and subagents),
 // subagents dispatched, files edited per repo with net growth, and the Stop verdict
-// the command hooks returned. Observation only; nothing reads it back yet.
+// the command hooks returned. The Stop orchestration below hands it to the Stop hooks.
+//
+// Stop orchestration: the module runs dev-hooks' own Stop command hooks itself and
+// returns their reasons as one block. It marks the session with DEV_HOOKS_MOD_SESSION,
+// which makes the copies Claude Code runs directly stand down (reminder_stop_init), and
+// runs its own copies with DEV_HOOKS_ORCHESTRATED set. Without this module (an older
+// Claude Code, mods off) nothing is marked and the command hooks run as before.
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Facts, Segment, Snapshot } from '../types'
@@ -159,6 +165,43 @@ async function repoRoot($: EngineInterface, file: string): Promise<string | null
   return root
 }
 
+export type StopHook = { command: string; timeoutMs: number }
+
+// Claude Code's default for a command hook with no `timeout`, in seconds.
+const DEFAULT_HOOK_TIMEOUT_S = 600
+
+type HookEntry = { type?: string; command?: string; timeout?: number }
+
+export const stopHooks = (config: unknown): StopHook[] => {
+  const groups = (config as { hooks?: { Stop?: { hooks?: HookEntry[] }[] } } | null)?.hooks?.Stop ?? []
+  return groups
+    .flatMap(group => group.hooks ?? [])
+    .filter((h): h is HookEntry & { command: string } => h.type === 'command' && typeof h.command === 'string')
+    .map(h => ({ command: h.command, timeoutMs: (h.timeout ?? DEFAULT_HOOK_TIMEOUT_S) * 1000 }))
+}
+
+// A command hook's Stop answer, read as Claude Code reads it: exit 2 blocks with
+// stderr as the reason; exit 0 blocks only with a decision:block JSON answer.
+export const stopReason = (run: { exitCode: number; stdout: string; stderr: string }): string | null => {
+  if (run.exitCode === 2) return run.stderr.trim() || null
+  if (run.exitCode !== 0) return null
+  try {
+    const out = JSON.parse(run.stdout) as { decision?: unknown; reason?: unknown }
+    return out.decision === 'block' && typeof out.reason === 'string' && out.reason.trim() ? out.reason : null
+  } catch {
+    return null
+  }
+}
+
+export const mergeBlocks = (below: string | undefined, reasons: string[]): string | undefined => {
+  const all = [...(below ? [below] : []), ...reasons]
+  return all.length > 0 ? all.join('\n\n') : undefined
+}
+
+async function ownStopHooks($: EngineInterface): Promise<StopHook[]> {
+  return stopHooks(JSON.parse(await $.fs.read(`${$.plugin.root}/hooks/hooks.json`)))
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -171,6 +214,11 @@ export const register: Register = on => {
     })
     await pruneFacts($)
     if ((await $.state.get(isShown)).value) await refresh($)
+    // Only take the Stop hooks over once their config reads cleanly; otherwise leave
+    // the session unmarked so the command hooks keep running directly.
+    if ((await ownStopHooks($)).length > 0) {
+      await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
+    }
 
     return next(e)
   })
@@ -282,10 +330,22 @@ export const register: Register = on => {
   // Sees the command hooks' Stop verdict folded last-write-wins: with several
   // blocking, only the last reason arrives here (Claude still gets them all).
   on('classic.Stop', async ($, e, next) => {
-    const verdict = await next(e)
-    const stop = { at: Date.now(), block: verdict.block ?? null }
+    const below = await next(e)
+    if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
+
+    const stdin = JSON.stringify(e)
+    const env = { CLAUDE_PLUGIN_ROOT: $.plugin.root, DEV_HOOKS_ORCHESTRATED: '1' }
+    const runs = await Promise.all(
+      (await ownStopHooks($)).map(hook =>
+        $.process
+          .run(['bash', '-c', hook.command], { cwd: e.cwd, stdin, env, timeoutMs: hook.timeoutMs })
+          .then(stopReason, () => null),
+      ),
+    )
+    const block = mergeBlocks(below.block, runs.filter((r): r is string => r !== null))
+    const stop = { at: Date.now(), block: block ?? null }
     await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) }))
 
-    return verdict
+    return block === undefined ? below : { ...below, block }
   })
 }
