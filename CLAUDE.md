@@ -59,6 +59,23 @@ that predates mods, or has them switched off, skips the module and still runs ev
 hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
 bundled examples use; call `$.state.get`/`$.state.set` directly.
 
+The module also records **session facts** (`facts:<session id>` in `$.store`, typed as `Facts` in
+`types/index.d.ts`): skills, subagent dispatches, per-repo edits with net growth (`root: null`
+outside any repo), and the `classic.Stop` verdict. Rules learned building it:
+- `$` is followed only into functions declared in `register.tsx`, never across an import — shared
+  code in another file must be pure. One unmatched `on(event)` per event per module: add to the
+  existing `session.start` hook rather than registering a second.
+- Persist facts in `$.store`, not `$.state` (which a reboot or resume loses). The store has no
+  compare-and-set and tool calls run in parallel, so every read-modify-write goes through the
+  module's `changeFacts` queue.
+- A `classic.Stop` hook sees the command hooks' verdict folded **last-write-wins**: with several
+  blocking, only the last reason reaches the module (Claude still gets them all). A mod can't
+  merge the shell Stop nudges from outside; that logic has to move into the module.
+- In `claude plugin test`, the test's own `$` has no `store`/`state` noun and `$.classic` is
+  undefined: answer `session.id`/`store.*`/`process.run` from a Map via the test's `on`
+  (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
+  wrong call shape such as `$.process.run({ argv })`.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description

@@ -28,7 +28,15 @@ def _claude(*args):
 def test_module_validates():
     out = _claude("validate", "--strict")
     assert out.returncode == 0, out.stdout + out.stderr
-    assert "command.run{command=context-bar}" in out.stdout
+    for hook in (
+        "command.run{command=context-bar}",
+        "command.run{command=session-facts}",
+        "skill.prompt",
+        "agent.spawn",
+        "tool.call",
+        "classic.Stop",
+    ):
+        assert hook in out.stdout, f"{hook} not registered:\n{out.stdout}"
 
 
 def test_module_tests_pass():
