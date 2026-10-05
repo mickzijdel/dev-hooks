@@ -8,6 +8,37 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-05 (Run 34)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits after Run 33's cutoff (`bad57d4`) through `1ae474c` (2026-10-05), ~35 commits.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-01 to 2026-10-05.
+- RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.287 to 2.1.289.
+- Unreachable (proxy 403): https://upliftai.substack.com/feed, https://claude.dev/rss.xml, https://ai-automations-db.vercel.app/database.
+
+PRs opened this run: none. Own-idea check: ran `dangerous-command-guard.sh` on commands with an env-var prefix holding an expansion (`TZ="$HOME" rm -rf /`, the 2.1.289 deny-rule fix scenario); the guard blocks them the same as the unprefixed form, so no gap.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| `handouts` skill: typeset print-ready PDFs (palette, grid, typography, Opus-writer delegation) | dotfiles commit `9e594df` | Out of scope | Tied to the author's printing skill, Meridian provider and `~/Documents/Inbox`; document layout, not dev workflow. |
+| Pi `you-should-know` / BTW side-chat extensions, notify readiness, intercom, Exa MCP, Meridian streaming, executor/gh-agent PAT work, model pins | dotfiles commits `2a25c98`, `8e4cf4b`, `ca2ae73`, `5e10884`, `d332f94`, `284e050`, `1ae474c` and related (Oct 2-5) | Out of scope | Personal Pi/Meridian infrastructure; same standing Pi rejections. |
+| Mise-managed CodexBar, Ghostty fork command, Time Machine exclusion, dependency refresh, ADR/README ownership docs | dotfiles commits `f90dd21`, `3d8dbe3`, `1516540`, `ce5c795`, `92b844f`, `1989d59` | Out of scope | Personal macOS/dotfiles housekeeping. |
+| Claude Code mods, built-in "You should know" side agent, `$.ui.selection()`, asyncRewake missing-script fix | changelog 2.1.287–2.1.289 | Duplicate | Mods are already how `register.tsx` works; "You should know" is built in. Nothing new to adopt. |
+| Ask the agent to explain the architecture of its changes before accepting | feed item 2026-10-05 (https://x.com/intellectronica/status/2106986326952194500) | Duplicate | `change-summary-reminder.sh`. |
+| Goals/values/guardrails for scheduled agents; manager-style briefs with success criteria | feed items 2026-10-04 (https://x.com/NickADobos/status/2106812623451050069, https://x.com/amirmxt/status/2106809585583432177) | Duplicate | `agent-brief` skill. |
+| Hard budget caps on every agent/API account | feed item 2026-10-03 (https://x.com/simonw/status/2106528704902164855) | Out of scope | Provider account setting; no hook surface. |
+| Ask coordinator for more frequent progress updates | feed item 2026-10-03 (https://x.com/kr0der/status/2106520125717495882) | Out of scope | Prompting tip. |
+| Low-reasoning setting for small tasks | feed item 2026-10-03 (https://x.com/davis7/status/2106513024173703416) | Out of scope | Model-effort tuning is user config. |
+| Strong model works, cheap fast model reviews | feed item 2026-10-02 (https://x.com/kr0der/status/2105810228088586486) | Duplicate | `board` and earlier role-pairing rows. |
+| Log last 12h of AI sessions to Linear each morning, research overnight | feed item 2026-10-01 (https://x.com/0xSero/status/2105800979287597542) | Duplicate | `weekly-automation-review`. |
+| Diagrams/plain-language/interactive HTML instead of prose | feed items 2026-10-02 (https://x.com/championswimmer/status/2106056667276493068, https://x.com/karpathy/status/2105819303471976479) | Out of scope | Prompting tip; artifacts are a Claude feature. |
+| Publish a page for AI readers; Granola MCP; ChatGPT daily digest; flight rebooking; CRM overnight job; replace SaaS with rebuilt core; Notion prompt; feedback-channel bug watcher; interview rehearsal | feed items 2026-10-01 to 10-05 (e.g. https://x.com/emollick/status/2106400580881252721, https://x.com/petergyang/status/2106072698564874410, https://x.com/gabrielchua/status/2106111435503980655) | Out of scope | Personal productivity or non-dev workflows. |
+| Sources unreachable | substack feed, claude.dev RSS, ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
+
+---
+
 ## 2026-10-01 (Run 33)
 
 Sources scanned:
