@@ -169,8 +169,9 @@ $ claude
   (`DEV_HOOKS_VERIFY_TEST_TIMEOUT`, default `110` seconds, under the hook's 120s hard limit; `0`
   disables it): a run that exceeds it is stopped gracefully and the hook recommends switching to
   `changed` and/or adding a fast smoke-test subset, instead of being silently hard-killed.
-  In a uv project (`uv.lock`), ruff and pytest run as `uv run --frozen …`, so a venv kept
-  outside the repo (`UV_PROJECT_ENVIRONMENT`) is found and `uv.lock` is never rewritten.
+  In a uv project (`uv.lock`), ruff and pytest run as `uv run --no-sync …`, so a venv kept
+  outside the repo (`UV_PROJECT_ENVIRONMENT`) is found, and the hook never installs packages or
+  rewrites `uv.lock`.
 - `dev-env-reminder.sh` only nudges on repos it judges **yours** and only when the standard
   applies but isn't met; it's advisory and never edits anything. Ownership = origin remote
   owner listed in `DEV_HOOKS_DEVENV_OWNERS` **or** ≥80% of the last month's commits authored by

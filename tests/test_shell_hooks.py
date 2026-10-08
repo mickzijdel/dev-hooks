@@ -2445,7 +2445,7 @@ def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
 
 def test_verify_work_runs_pytest_and_ruff_through_uv_in_a_uv_project(tmp_path):
     # A uv project may keep its venv outside the repo (UV_PROJECT_ENVIRONMENT), so a bare
-    # `pytest` never resolves there even though `uv run pytest` passes (mmex-finances).
+    # `pytest` never resolves there even though `uv run pytest` passes.
     init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\n[tool.pytest.ini_options]\n[tool.ruff]\n'
@@ -2469,8 +2469,29 @@ def test_verify_work_runs_pytest_and_ruff_through_uv_in_a_uv_project(tmp_path):
     assert stop_allowed(r)
     assert r.stdout.strip() == ""
     ran = calls.read_text().splitlines()
-    assert "run --frozen pytest" in ran
-    assert "run --frozen ruff check ." in ran
+    assert "run --no-sync pytest" in ran
+    assert "run --no-sync ruff check ." in ran
+
+
+def test_verify_work_reports_unrunnable_pytest_cleanly_under_uv(tmp_path):
+    # uv falls back to PATH, so a uv project without pytest still gets the one clear line,
+    # not uv's raw "Failed to spawn" error.
+    init_git_repo(tmp_path)
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    fake_uv = bindir / "uv"
+    fake_uv.write_text(
+        "#!/bin/bash\necho 'error: Failed to spawn: `pytest`' >&2\nexit 2\n"
+    )
+    fake_uv.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    body = json.dumps(assert_json_with(r.stdout, "pytest"))
+    assert "Failed to spawn" not in body
+    assert "not runnable" in body
 
 
 def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):

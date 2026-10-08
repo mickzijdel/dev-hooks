@@ -122,15 +122,18 @@ _verify_work_has_pytest_tests() {
 }
 
 # Python tools run through uv in a uv project: its venv may live outside the repo
-# (UV_PROJECT_ENVIRONMENT), where a bare `pytest` never resolves. --frozen never rewrites
-# uv.lock from a Stop hook.
+# (UV_PROJECT_ENVIRONMENT), where a bare `pytest` never resolves. --no-sync: a Stop hook
+# never installs packages or rewrites uv.lock.
 PY_RUN=()
-[ -f "uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --frozen)
+[ -f "uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --no-sync)
 
 # Whether pytest can actually run. `command -v` alone isn't enough: a version-manager shim
 # (mise, asdf, ...) can resolve on PATH with no version selected and fail loudly on first use.
 _verify_work_pytest_runnable() {
-  [ ${#PY_RUN[@]} -gt 0 ] && return 0
+  [ ${#PY_RUN[@]} -gt 0 ] && {
+    "${PY_RUN[@]}" pytest --version >/dev/null 2>&1
+    return
+  }
   command -v pytest >/dev/null 2>&1 && pytest --version >/dev/null 2>&1
 }
 

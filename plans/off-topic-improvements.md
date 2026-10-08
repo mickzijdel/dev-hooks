@@ -148,3 +148,12 @@ Noticed 2026-10-03 while adding credential probes to the guard:
 - **`ruff format --check` wants to reformat `skills/api-scraping/scripts/har_scan.py`** with the
   local ruff (`latest`), so `hk check --all` stops at ruff-format; CI is green, so this is a ruff
   version drift between the laptop and CI.
+
+- **Probe-session check vs a sandboxed `TMPDIR`** (`reminder_is_probe_session`, 2026-10-08 review):
+  if a session sets `TMPDIR` under `/tmp/claude-<uid>`, pytest's `tmp_path` lands there and
+  `test_session_start_hook_logs_a_fire` (payload cwd under `tmp_path`) stops logging. Give that
+  test a fixed fake cwd string, or match the scratchpad shape more narrowly.
+- **verify-work's cap marker on a timeout-only message**: the marker also prints when the only
+  message is the slow-suite advisory. Harmless today (that nudge resolves `unknown`), but gate it on
+  `$TMPFILE` being non-empty if the advisory ever gets a remedy. The ruff call also bypasses
+  `_capped`, so a slow ruff can still hit the 120 s hard kill.
