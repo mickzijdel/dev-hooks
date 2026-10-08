@@ -231,7 +231,15 @@ export const stopHooks = (config: unknown): StopHook[] => {
 
 // A command hook's Stop answer, read as Claude Code reads it: exit 2 blocks with
 // stderr as the reason; exit 0 blocks only with a decision:block JSON answer.
-export const stopReason = (run: { exitCode: number; stdout: string; stderr: string }): string | null => {
+// verify-work.sh's stderr (exit 0, which Claude Code ignores) when it stood down at its
+// block cap with the failure still standing.
+export const STOP_CAPPED_MARK = 'dev-hooks: block cap reached'
+
+type StopRun = { exitCode: number; stdout: string; stderr: string }
+
+export const stopCapped = (run: StopRun): boolean => run.exitCode === 0 && run.stderr.includes(STOP_CAPPED_MARK)
+
+export const stopReason = (run: StopRun): string | null => {
   if (run.exitCode === 2) return run.stderr.trim() || null
   if (run.exitCode !== 0) return null
   try {
@@ -285,17 +293,24 @@ async function orchestrateStop(
     hooks.map(hook =>
       $.process
         .run(['bash', '-c', hook.command], { cwd: e.cwd, stdin, env, timeoutMs: hook.timeoutMs })
-        .then(stopReason, () => null),
+        .then(
+          run => ({ reason: stopReason(run), capped: stopCapped(run) }),
+          () => ({ reason: null, capped: false }),
+        ),
     ),
   )
-  const block = mergeBlocks(below, runs.filter((r): r is string => r !== null))
+  const block = mergeBlocks(
+    below,
+    runs.flatMap(r => (r.reason !== null ? [r.reason] : [])),
+  )
   const stop = { at: Date.now(), block: block ?? null }
   await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) })).catch(() => undefined)
   const fired = hooks.flatMap((hook, i) => {
-    const reason = runs[i]
+    const reason = runs[i]?.reason
     return reason ? [{ hook: hookName(hook.command), reason }] : []
   })
-  await trackNudges($, e, fired).catch(() => undefined)
+  const capped = hooks.flatMap((hook, i) => (runs[i]?.capped ? [hookName(hook.command)] : []))
+  await trackNudges($, e, fired, capped).catch(() => undefined)
   return block
 }
 
@@ -395,11 +410,16 @@ type StopInput = { session_id: string; cwd: string; last_assistant_message?: str
 // clean session end (killed, crashed): resolve it from its facts at the next start.
 const NUDGE_SWEEP_IDLE_MS = 6 * 3_600_000
 
-async function trackNudges($: EngineInterface, e: StopInput, fired: { hook: string; reason: string }[]) {
+async function trackNudges(
+  $: EngineInterface,
+  e: StopInput,
+  fired: { hook: string; reason: string }[],
+  capped: string[],
+) {
   const now = Date.now()
   let resolved: Nudge[] = []
   await changeFacts($, f => {
-    const ev = { facts: f, refired: fired.map(x => x.hook), lastMessage: e.last_assistant_message, atStop: true }
+    const ev = { facts: f, refired: fired.map(x => x.hook), capped, lastMessage: e.last_assistant_message, atStop: true }
     const r = resolvePending(f, ev, now)
     resolved = r.resolved
     if (fired.length === 0) return r.facts

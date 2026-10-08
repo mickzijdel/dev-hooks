@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { mergeBlocks, stopHooks, stopReason } from '../hooks/register'
+import { mergeBlocks, STOP_CAPPED_MARK, stopCapped, stopHooks, stopReason } from '../hooks/register'
 
 const ran = (exitCode: number, stdout = '', stderr = '') => ({ exitCode, stdout, stderr })
 
@@ -57,4 +57,10 @@ test('mergeBlocks joins the reasons into one block after any block from beneath'
   expect(mergeBlocks('voice', [])).toBe('voice')
   expect(mergeBlocks(undefined, ['a', 'b'])).toBe('a\n\nb')
   expect(mergeBlocks('voice', ['a'])).toBe('voice\n\na')
+})
+
+test('stopCapped reads the block-cap marker from a silent run only', async () => {
+  expect(stopCapped(ran(0, '', `${STOP_CAPPED_MARK}\n`))).toBe(true)
+  expect(stopCapped(ran(0))).toBe(false)
+  expect(stopCapped(ran(2, '', STOP_CAPPED_MARK))).toBe(false)
 })

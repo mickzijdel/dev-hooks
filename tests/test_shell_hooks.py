@@ -2443,6 +2443,36 @@ def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
     assert "not runnable" in body
 
 
+def test_verify_work_runs_pytest_and_ruff_through_uv_in_a_uv_project(tmp_path):
+    # A uv project may keep its venv outside the repo (UV_PROJECT_ENVIRONMENT), so a bare
+    # `pytest` never resolves there even though `uv run pytest` passes (mmex-finances).
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n[tool.pytest.ini_options]\n[tool.ruff]\n'
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    for tool in ("pytest", "ruff"):
+        shim = bindir / tool
+        shim.write_text(
+            f"#!/bin/bash\necho 'mise ERROR No version is set for shim: {tool}' >&2\nexit 1\n"
+        )
+        shim.chmod(0o755)
+    calls = tmp_path / "uv-calls"
+    fake_uv = bindir / "uv"
+    fake_uv.write_text(f"#!/bin/bash\necho \"$*\" >>'{calls}'\nexit 0\n")
+    fake_uv.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+    ran = calls.read_text().splitlines()
+    assert "run --frozen pytest" in ran
+    assert "run --frozen ruff check ." in ran
+
+
 def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
     # A conftest.py (no test_*.py at the top level) is still a real pytest-tests signal.
     init_git_repo(tmp_path)
@@ -2525,6 +2555,26 @@ def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
     assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
     assert stop_blocked(run(natural))
     assert stop_blocked(run(active))
+
+
+@requires_python3
+def test_verify_work_tells_the_mod_when_the_cap_silenced_a_failure(tmp_path):
+    # Standing down at the cap isn't a pass: the mod scores the nudge from this marker.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
+    active = json.dumps({"session_id": "vw-capmark", "stop_hook_active": True})
+    runs = [
+        run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+        for _ in range(4)
+    ]
+    assert "dev-hooks: block cap reached" not in runs[2].stderr
+    assert stop_allowed(runs[3])
+    assert "dev-hooks: block cap reached" in runs[3].stderr
+    # Claude Code itself running the hook gets no stray stderr.
+    del env["DEV_HOOKS_ORCHESTRATED"]
+    direct = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+    assert stop_allowed(direct)
+    assert direct.stderr.strip() == ""
 
 
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):

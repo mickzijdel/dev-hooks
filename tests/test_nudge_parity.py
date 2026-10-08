@@ -39,3 +39,10 @@ def test_compress_comments_needle_matches_its_hook():
     sh = (HOOKS / "compress-comments-reminder.sh").read_text()
     assert 'reminder_transcript_invoked "" compress-comments\n' in sh
     assert "invokedSince(ev.facts, n.at, ['compress-comments'])" in NUDGES_TS
+
+
+def test_block_cap_mark_matches_verify_work():
+    sh = (HOOKS / "verify-work.sh").read_text()
+    tsx = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    mark = re.search(r"export const STOP_CAPPED_MARK = '([^']+)'", tsx).group(1)
+    assert f'echo "{mark}" >&2' in sh
