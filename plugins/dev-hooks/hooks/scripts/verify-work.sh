@@ -121,9 +121,16 @@ _verify_work_has_pytest_tests() {
     grep -q .
 }
 
+# Python tools run through uv in a uv project: its venv may live outside the repo
+# (UV_PROJECT_ENVIRONMENT), where a bare `pytest` never resolves. --frozen never rewrites
+# uv.lock from a Stop hook.
+PY_RUN=()
+[ -f "uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --frozen)
+
 # Whether pytest can actually run. `command -v` alone isn't enough: a version-manager shim
 # (mise, asdf, ...) can resolve on PATH with no version selected and fail loudly on first use.
 _verify_work_pytest_runnable() {
+  [ ${#PY_RUN[@]} -gt 0 ] && return 0
   command -v pytest >/dev/null 2>&1 && pytest --version >/dev/null 2>&1
 }
 
@@ -215,7 +222,7 @@ if [ "$HAS_PYTHON" = "1" ]; then
   # ruff
   if [ -f "ruff.toml" ] || { [ -f "pyproject.toml" ] && grep -q '\[tool\.ruff\]' pyproject.toml 2>/dev/null; }; then
     TOOLS_RAN=1
-    out=$(ruff check . 2>&1)
+    out=$("${PY_RUN[@]}" ruff check . 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== ruff ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
@@ -235,9 +242,9 @@ if [ "$HAS_PYTHON" = "1" ]; then
     elif [ "$MODE" = changed ]; then
       targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing)
       # shellcheck disable=SC2086
-      [ -n "$targets" ] && run_test "pytest (changed)" pytest $targets
+      [ -n "$targets" ] && run_test "pytest (changed)" "${PY_RUN[@]}" pytest $targets
     else
-      run_test "pytest" pytest
+      run_test "pytest" "${PY_RUN[@]}" pytest
     fi
   fi
 fi
@@ -286,7 +293,11 @@ if [ -n "$MSG" ]; then
   if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
     BLOCKS=$(cat "$REPLY" 2>/dev/null)
     case "$BLOCKS" in *[!0-9]* | "") BLOCKS=0 ;; esac
-    [ "$BLOCKS" -ge 3 ] && exit 0
+    if [ "$BLOCKS" -ge 3 ]; then
+      # The failure stands; tell the mod so it doesn't score this stop as a pass.
+      [ -n "${DEV_HOOKS_ORCHESTRATED:-}" ] && echo "dev-hooks: block cap reached" >&2
+      exit 0
+    fi
     BLOCKS=$((BLOCKS + 1))
   fi
   printf '%s' "$BLOCKS" >"$REPLY" 2>/dev/null

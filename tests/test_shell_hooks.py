@@ -2443,6 +2443,36 @@ def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
     assert "not runnable" in body
 
 
+def test_verify_work_runs_pytest_and_ruff_through_uv_in_a_uv_project(tmp_path):
+    # A uv project may keep its venv outside the repo (UV_PROJECT_ENVIRONMENT), so a bare
+    # `pytest` never resolves there even though `uv run pytest` passes (mmex-finances).
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n[tool.pytest.ini_options]\n[tool.ruff]\n'
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    for tool in ("pytest", "ruff"):
+        shim = bindir / tool
+        shim.write_text(
+            f"#!/bin/bash\necho 'mise ERROR No version is set for shim: {tool}' >&2\nexit 1\n"
+        )
+        shim.chmod(0o755)
+    calls = tmp_path / "uv-calls"
+    fake_uv = bindir / "uv"
+    fake_uv.write_text(f"#!/bin/bash\necho \"$*\" >>'{calls}'\nexit 0\n")
+    fake_uv.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+    ran = calls.read_text().splitlines()
+    assert "run --frozen pytest" in ran
+    assert "run --frozen ruff check ." in ran
+
+
 def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
     # A conftest.py (no test_*.py at the top level) is still a real pytest-tests signal.
     init_git_repo(tmp_path)
@@ -2525,6 +2555,26 @@ def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
     assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
     assert stop_blocked(run(natural))
     assert stop_blocked(run(active))
+
+
+@requires_python3
+def test_verify_work_tells_the_mod_when_the_cap_silenced_a_failure(tmp_path):
+    # Standing down at the cap isn't a pass: the mod scores the nudge from this marker.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
+    active = json.dumps({"session_id": "vw-capmark", "stop_hook_active": True})
+    runs = [
+        run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+        for _ in range(4)
+    ]
+    assert "dev-hooks: block cap reached" not in runs[2].stderr
+    assert stop_allowed(runs[3])
+    assert "dev-hooks: block cap reached" in runs[3].stderr
+    # Claude Code itself running the hook gets no stray stderr.
+    del env["DEV_HOOKS_ORCHESTRATED"]
+    direct = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+    assert stop_allowed(direct)
+    assert direct.stderr.strip() == ""
 
 
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
@@ -4354,6 +4404,9 @@ def test_stop_reminder_silent_when_already_prompted(
 ISO_8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
+PROMPT_LOG_SESSION = "0d5f1c2e-7a41-4b9e-9c3d-2f6a8b1e4c70"
+
+
 def _prompt_log_path(home):
     return home / ".claude" / "automation-review" / "prompts.jsonl"
 
@@ -4361,7 +4414,7 @@ def _prompt_log_path(home):
 def run_prompt_log(tmp_path, *, prompt=None, payload=None, **env_overrides):
     """Run prompt-log.sh with HOME pointed at tmp_path so the log lands under it."""
     if payload is None:
-        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "s1"}
+        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": PROMPT_LOG_SESSION}
     stdin = payload if isinstance(payload, str) else json.dumps(payload)
     return run_hook(
         "prompt-log.sh",
@@ -4379,10 +4432,31 @@ def test_prompt_log_appends_valid_jsonl(tmp_path):
     assert len(lines) == 1
     entry = json.loads(lines[0])
     assert entry["cwd"] == "/x/y"
-    assert entry["session_id"] == "s1"
+    assert entry["session_id"] == PROMPT_LOG_SESSION
     assert entry["prompt"] == "fix the failing CI on this repo"
     assert entry["len"] == len("fix the failing CI on this repo")
     assert ISO_8601_RE.match(entry["ts"])
+
+
+@pytest.mark.parametrize(
+    "session_id, cwd",
+    [
+        ("s1", "/x/y"),  # a made-up id from a hand-run smoke test
+        (
+            PROMPT_LOG_SESSION,
+            "/tmp/claude-1000/-home-x/abc/scratchpad/probe",
+        ),  # a claude -p probe
+    ],
+)
+def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd):
+    payload = {
+        "prompt": "Reply with the single word OK.",
+        "cwd": cwd,
+        "session_id": session_id,
+    }
+    r = run_prompt_log(tmp_path, payload=payload)
+    assert r.returncode == 0
+    assert not _prompt_log_path(tmp_path).exists()
 
 
 def test_prompt_log_appends_second_line(tmp_path):

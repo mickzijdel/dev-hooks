@@ -75,6 +75,8 @@ export type NudgeEvidence = {
   facts: Facts
   // Hooks whose reason the resolving Stop returned again.
   refired: string[]
+  // Hooks that stood down at their block cap at the resolving Stop, failure still standing.
+  capped?: string[]
   // The resolving Stop's last assistant message; undefined when resolved at session end.
   lastMessage?: string
   // false when resolved at session end or a later sweep: no Stop ran after the nudge.
@@ -126,9 +128,10 @@ export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
       // Stop and blocks again while the failure stands.
       if (!n.summary.startsWith('Verification failed')) return { outcome: 'unknown', evidence: 'advisory, nothing to re-check' }
       if (!ev.atStop) return { outcome: 'unknown', evidence: 'session ended before verify-work ran again' }
-      return ev.refired.includes('verify-work')
-        ? { outcome: 'ignored', evidence: 'still failing at the next Stop' }
-        : acted('passed at the next Stop')
+      if (ev.refired.includes('verify-work')) return { outcome: 'ignored', evidence: 'still failing at the next Stop' }
+      if (ev.capped?.includes('verify-work'))
+        return { outcome: 'ignored', evidence: 'still failing at the next Stop; block cap reached' }
+      return acted('passed at the next Stop')
     }
     default:
       return { outcome: 'unknown', evidence: 'no remedy the session facts can show' }

@@ -249,6 +249,8 @@ that logged rejection to tell the append path from the prompt path.
   command hook.
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
+  `reminder_is_probe_session` (a made-up session id or a `/tmp/claude-*` scratchpad cwd: the
+  fire log and prompt log skip these; `_voice_log_fire` mirrors it),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
   on purpose, so a secret pasted with no space before it still matches),

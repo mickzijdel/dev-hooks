@@ -90,10 +90,11 @@ test('debug-leftover-reminder is acted on by an edit to a listed file', async ()
   expect(resolveNudge(n, atStop(facts({ lastEdit: { '/repo/app/x.js': T - 1 } }))).outcome).toBe('ignored')
 })
 
-test('verify-work: a failure that clears is acted on, one that refires is ignored, an advisory is unknown', async () => {
+test('verify-work: a failure that clears is acted on, one that refires or hits the cap is ignored, an advisory is unknown', async () => {
   const failed = nudge('verify-work', 'Verification failed. Fix these before finishing:')
   expect(resolveNudge(failed, atStop(facts())).outcome).toBe('acted')
   expect(resolveNudge(failed, atStop(facts(), { refired: ['verify-work'] })).outcome).toBe('ignored')
+  expect(resolveNudge(failed, { ...atStop(facts()), capped: ['verify-work'] }).outcome).toBe('ignored')
   expect(resolveNudge(nudge('verify-work', 'No test suite or linter was auto-detected'), atStop(facts())).outcome).toBe(
     'unknown',
   )
