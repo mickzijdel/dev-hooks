@@ -15,14 +15,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
-def _clean_fire_log_env(monkeypatch):
-    """Several tests invoke hook scripts as subprocesses that inherit the ambient
-    environment (os.environ.copy()). If DEV_HOOKS_FIRE_LOG is enabled machine-wide for real
-    usage telemetry, that ambient value would otherwise leak into every test run here,
-    flipping "opted out" test cases to "opted in" and, without the tests' own HOME
-    overrides, writing into this developer's real ~/.claude/automation-review/hook-fires.jsonl.
-    Strip it by default; tests that exercise the opt-in path set it back explicitly."""
-    monkeypatch.delenv("DEV_HOOKS_FIRE_LOG", raising=False)
+def _clean_dev_hooks_env(monkeypatch):
+    """Hook subprocesses inherit the ambient environment (os.environ.copy()), and so does a
+    suite run by verify-work from a live session. Every DEV_HOOKS_* there is the real
+    session's: DEV_HOOKS_FIRE_LOG writes into the real hook-fires.jsonl, an opt-out flips a
+    test, and the mod's DEV_HOOKS_FACTS_FILE hands every hook that session's facts (a memory
+    written there silences memory-reminder's tests). Strip them all; tests set what they need."""
+    for var in [v for v in os.environ if v.startswith("DEV_HOOKS_")]:
+        monkeypatch.delenv(var)
 
 
 @pytest.fixture(autouse=True)
