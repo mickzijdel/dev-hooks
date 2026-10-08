@@ -306,8 +306,18 @@ reminder_fire_once() {
 # review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
 # no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
 # fails the hook. $1 = firing hook's basename.
+# A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
+# a made-up id (a hand-run smoke test) or a `claude -p` probe run from Claude Code's
+# scratchpad. Mirrored by _voice_log_fire in the writing plugin, which can't source this.
+reminder_is_probe_session() {
+  [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
+  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-*) return 0 ;; esac
+  return 1
+}
+
 _reminder_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
+  reminder_is_probe_session && return 0
   local dir="$HOME/.claude/automation-review"
   [ -d "$dir" ] || return 0
   printf '{"hook":"%s","session":"%s","ts":%s}\n' \

@@ -4404,6 +4404,9 @@ def test_stop_reminder_silent_when_already_prompted(
 ISO_8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
+PROMPT_LOG_SESSION = "0d5f1c2e-7a41-4b9e-9c3d-2f6a8b1e4c70"
+
+
 def _prompt_log_path(home):
     return home / ".claude" / "automation-review" / "prompts.jsonl"
 
@@ -4411,7 +4414,7 @@ def _prompt_log_path(home):
 def run_prompt_log(tmp_path, *, prompt=None, payload=None, **env_overrides):
     """Run prompt-log.sh with HOME pointed at tmp_path so the log lands under it."""
     if payload is None:
-        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "s1"}
+        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": PROMPT_LOG_SESSION}
     stdin = payload if isinstance(payload, str) else json.dumps(payload)
     return run_hook(
         "prompt-log.sh",
@@ -4429,10 +4432,31 @@ def test_prompt_log_appends_valid_jsonl(tmp_path):
     assert len(lines) == 1
     entry = json.loads(lines[0])
     assert entry["cwd"] == "/x/y"
-    assert entry["session_id"] == "s1"
+    assert entry["session_id"] == PROMPT_LOG_SESSION
     assert entry["prompt"] == "fix the failing CI on this repo"
     assert entry["len"] == len("fix the failing CI on this repo")
     assert ISO_8601_RE.match(entry["ts"])
+
+
+@pytest.mark.parametrize(
+    "session_id, cwd",
+    [
+        ("s1", "/x/y"),  # a made-up id from a hand-run smoke test
+        (
+            PROMPT_LOG_SESSION,
+            "/tmp/claude-1000/-home-x/abc/scratchpad/probe",
+        ),  # a claude -p probe
+    ],
+)
+def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd):
+    payload = {
+        "prompt": "Reply with the single word OK.",
+        "cwd": cwd,
+        "session_id": session_id,
+    }
+    r = run_prompt_log(tmp_path, payload=payload)
+    assert r.returncode == 0
+    assert not _prompt_log_path(tmp_path).exists()
 
 
 def test_prompt_log_appends_second_line(tmp_path):

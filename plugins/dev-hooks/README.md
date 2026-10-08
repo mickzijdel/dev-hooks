@@ -136,10 +136,12 @@ $ claude
   capped at ~2×10 MiB (it rotates to `prompts.jsonl.1` past the cap, default 10 MiB,
   `DEV_HOOKS_PROMPT_LOG_MAX_BYTES`). Disable logging entirely with `DEV_HOOKS_PROMPT_LOG=false`
   (in `.claude/settings.local.json` `"env"`); delete the `~/.claude/automation-review/` directory
-  to purge history.
+  to purge history. Probe sessions aren't logged: a made-up session id (a hand-run smoke test)
+  or a cwd in Claude Code's `/tmp/claude-*` scratchpad (a `claude -p` probe).
 - **Fire telemetry (opt-in).** Set `DEV_HOOKS_FIRE_LOG=1` (in `"env"`) to have every advisory
   reminder append one JSONL line (`hook`, `session`, `ts`) to
-  `~/.claude/automation-review/hook-fires.jsonl`. Off by default. It feeds
+  `~/.claude/automation-review/hook-fires.jsonl`. Off by default; probe sessions are skipped as in
+  the prompt log. It feeds
   `thinking-tools:weekly-automation-review`'s **Retire** pass: which hooks actually fire (and
   which never do) is the evidence for pruning scaffolding whose capability bet the model has
   outgrown — see each hook's `# bet:`/`# sunset:` header for the bet it's making.
