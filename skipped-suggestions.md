@@ -8,6 +8,33 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-13 (Run 35)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 58 commits 2026-10-05 to 2026-10-13 (`25da729` to `3f9de8b`).
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-04 to 2026-10-13.
+- RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.290 to 2.1.296.
+- Unreachable (proxy 403): https://upliftai.substack.com/feed, https://claude.dev/rss.xml, https://ai-automations-db.vercel.app/database.
+
+PRs opened this run: [dev-hooks#39 guard fails closed via `onFailure: block`](https://github.com/mickzijdel/dev-hooks/pull/39).
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| `onFailure: "block"` on hooks that must fail closed | changelog 2.1.295 | **Implement** | Applied to `dangerous-command-guard.sh` only; PR #39 (opened for judgement). |
+| Dotfiles bootstrap/E2E/Homebrew/mise/Spinel/Herdr/OmniWM/Cua/Pi/Meridian/agent-stuff/dependency-updater work | dotfiles commits `25da729`..`3f9de8b` (Oct 9-13) | Out of scope | Personal macOS/Pi dotfiles infrastructure. |
+| Matt Pocock `retro`, `pr`, `writing-for-agents` skills | dotfiles commit `7602996` | Duplicate | Retro/PR workflows overlap the user's superpowers toolkit; `agent-brief` covers writing for agents. |
+| Log every agent mistake in shared config/tests; runnable "done" checks; explain architecture of changes; manager-style briefs | feed items 2026-10-11, 10-06, 10-05 | Duplicate | `verify-work.sh`, `change-summary-reminder.sh`, `agent-brief`, memory-reminder. |
+| Plan human review capacity before scaling agent tasks (kanban piles up in review) | feed item 2026-10-11 | Duplicate | `review-queue` skill. |
+| Ask the LLM to build deterministic helper tools (parsers, evaluators) | feed item 2026-10-12 | Duplicate | `script-library` / `save-script-reminder.sh`. |
+| Judge agent must agree with human labels on a held-out set | feed item 2026-10-08 | Deferred | Useful for eval work; no hook surface in this plugin. |
+| Persona agents, agent inboxes, daily digests, Notion skill library, Excalidraw slides, keynote recaps, prompt stash and other personal-agent items | feed items 2026-10-04 to 10-13 | Out of scope | Personal productivity; no dev-workflow surface. |
+| Subagent `autoCompactWindow`, `allow_large` Read option, mod `$.ui.notify`, Button children, hook-name collision note | changelog 2.1.292-2.1.296 | Out of scope | Harness features with nothing to adopt in current hooks/skills. |
+| Sources unreachable | substack feed, claude.dev RSS, ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
+
+---
+
 ## 2026-10-05 (Run 34)
 
 Sources scanned:
