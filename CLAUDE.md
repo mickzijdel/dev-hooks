@@ -137,9 +137,9 @@ next request, starting no turn) for a pass, and `$.prompt.submit` (queued until 
 of its own, even under `claude -p`) for a failure. `session.start` sets
 `DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
 down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.
-In `claude plugin test` a test hook never sees a plugin's own `$.session.append` and the call
-rejects with "no implementation for session.append"; `tests/ci-watch-hook.test.ts` asserts on
-that logged rejection to tell the append path from the prompt path.
+In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the plugin's own
+`$.session.append` calls; `tests/ci-watch-hook.test.ts` reads them back with `.appended()` to tell
+the append path from the prompt path.
 
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
