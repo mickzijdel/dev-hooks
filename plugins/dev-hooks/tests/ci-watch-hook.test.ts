@@ -60,9 +60,9 @@ function world(on: On, options: { env?: Record<string, string>; workflows?: stri
     w.prompts.push(e.text)
     return { text: e.text }
   })
-  // The kit has nothing beneath a plugin's own $.session.append (a test hook never sees
-  // it), so the call rejects and the module logs that: proof the note went that way.
-  const appended = () => w.logs.some(l => l.includes('no implementation for session.append'))
+  // mock.session records what the module appends, proof the note went that way.
+  const session = mock.session(on)
+  const appended = () => session.appended().length > 0
   return Object.assign(w, { appended })
 }
 
