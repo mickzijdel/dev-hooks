@@ -172,6 +172,10 @@ $ claude
   In a uv project (`uv.lock`), ruff and pytest run as `uv run --no-sync …`, so a venv kept
   outside the repo (`UV_PROJECT_ENVIRONMENT`) is found, and the hook never installs packages or
   rewrites `uv.lock`.
+  When the repo root has no pytest config of its own, pytest runs inside each subproject that
+  does (e.g. `backend/` with `[tool.pytest.ini_options]`), through that subproject's `uv.lock`
+  when it has one: pytest only loads the config of the directory it starts in, so a run from
+  the root would skip settings like `asyncio_mode` and fail wholesale.
 - `dev-env-reminder.sh` only nudges on repos it judges **yours** and only when the standard
   applies but isn't met; it's advisory and never edits anything. Ownership = origin remote
   owner listed in `DEV_HOOKS_DEVENV_OWNERS` **or** ≥80% of the last month's commits authored by

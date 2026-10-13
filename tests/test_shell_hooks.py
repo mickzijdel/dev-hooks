@@ -2509,6 +2509,99 @@ def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
     assert_json_with(r.stdout, "Verification failed")
 
 
+def _verify_work_backend_subproject(tmp_path, uv=False):
+    # fringe-chat's shape: no pytest config at the root, the suite and its settings
+    # (asyncio_mode, pythonpath, ...) in backend/pyproject.toml, which only loads when
+    # pytest starts in backend/.
+    init_git_repo(tmp_path)
+    backend = tmp_path / "backend"
+    (backend / "tests").mkdir(parents=True)
+    (backend / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+    )
+    if uv:
+        (backend / "uv.lock").write_text("version = 1\n")
+    (backend / "tests" / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    return backend
+
+
+def _run_verify_work_recording(tmp_path, tool="pytest", **env_extra):
+    """Run verify-work with `tool` replaced by a shim that logs "<cwd> | <args>" and
+    succeeds; return the result and the logged calls, minus --version probes."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    calls = tmp_path / f"{tool}-calls"
+    shim = bindir / tool
+    shim.write_text(f"#!/bin/bash\necho \"$PWD | $*\" >>'{calls}'\nexit 0\n")
+    shim.chmod(0o755)
+    env = base_env(
+        PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path), **env_extra
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    logged = calls.read_text().splitlines() if calls.exists() else []
+    return r, [c for c in logged if "--version" not in c]
+
+
+def test_verify_work_runs_pytest_inside_a_subproject_with_its_own_config(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path)
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | "]
+
+
+def test_verify_work_uses_the_subprojects_own_uv_lock(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path, uv=True)
+    r, runs = _run_verify_work_recording(tmp_path, tool="uv")
+    assert stop_allowed(r)
+    assert f"{backend} | run --no-sync pytest" in runs
+
+
+def test_verify_work_names_the_subproject_whose_tests_failed(tmp_path):
+    _verify_work_backend_subproject(tmp_path)
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    # --version must succeed, or the hook reports pytest as unrunnable instead.
+    (bindir / "pytest").write_text(
+        "#!/bin/bash\n[ \"$1\" = --version ] && exit 0\necho '1 failed'\nexit 1\n"
+    )
+    (bindir / "pytest").chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "pytest (backend)")
+
+
+def test_verify_work_changed_mode_targets_tests_relative_to_their_subproject(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path)
+    r, runs = _run_verify_work_recording(tmp_path, DEV_HOOKS_VERIFY_TESTS="changed")
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | tests/test_x.py"]
+
+
+def test_verify_work_runs_each_outermost_subproject_once(tmp_path):
+    # Sibling subprojects each run; one nested inside another is the outer one's to run.
+    backend = _verify_work_backend_subproject(tmp_path)
+    nested = backend / "plugins" / "extra"
+    nested.mkdir(parents=True)
+    (nested / "pytest.ini").write_text("[pytest]\n")
+    worker = tmp_path / "worker"
+    worker.mkdir()
+    (worker / "pytest.ini").write_text("[pytest]\n")
+    (worker / "test_w.py").write_text("def test_ok():\n    assert True\n")
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | ", f"{worker} | "]
+
+
+def test_verify_work_runs_at_the_root_when_the_root_has_pytest_config(tmp_path):
+    # A root pytest.ini decides the rootdir for the whole repo; don't second-guess it.
+    _verify_work_backend_subproject(tmp_path)
+    (tmp_path / "pytest.ini").write_text("[pytest]\ntestpaths = backend/tests\n")
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{tmp_path} | "]
+
+
 @requires_python3
 def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
     # The "no tooling detected" nudge is a judgment guess (absence of known configs), so it
