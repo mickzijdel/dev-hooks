@@ -5375,6 +5375,17 @@ def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
         assert "reminder_stop_init" in script.read_text(), script.name
 
 
+def test_guard_fails_closed():
+    # Claude Code 2.1.295+: a guard that can't start, times out or exits oddly blocks
+    # the command instead of letting it through unchecked. Only the safety guard gets this;
+    # a reminder that crashes must never block work.
+    hooks = json.loads((DEV_HOOKS / "hooks" / "hooks.json").read_text())["hooks"]
+    guard = [h for g in hooks["PreToolUse"] for h in g["hooks"] if "dangerous-command-guard" in h["command"]]
+    assert guard and all(h.get("onFailure") == "block" for h in guard)
+    others = [h for ev, gs in hooks.items() for g in gs for h in g["hooks"] if h not in guard]
+    assert not [h for h in others if h.get("onFailure")]
+
+
 def test_rearm_baseline_is_per_repo(tmp_path):
     # An empty worktree must not reset main's baseline in the same session
     main, wt = tmp_path / "main", tmp_path / "wt"

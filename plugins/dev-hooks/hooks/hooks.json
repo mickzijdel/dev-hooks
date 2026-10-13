@@ -50,6 +50,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dangerous-command-guard.sh\"",
+            "onFailure": "block",
             "statusMessage": "Checking command safety..."
           }
         ]
