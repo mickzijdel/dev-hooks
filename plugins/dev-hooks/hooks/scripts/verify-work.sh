@@ -123,18 +123,55 @@ _verify_work_has_pytest_tests() {
 
 # Python tools run through uv in a uv project: its venv may live outside the repo
 # (UV_PROJECT_ENVIRONMENT), where a bare `pytest` never resolves. --no-sync: a Stop hook
-# never installs packages or rewrites uv.lock.
-PY_RUN=()
-[ -f "uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --no-sync)
+# never installs packages or rewrites uv.lock. $1 = the project dir (default: the root).
+_verify_work_py_run() {
+  PY_RUN=()
+  [ -f "${1:-.}/uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --no-sync)
+}
+_verify_work_py_run
 
-# Whether pytest can actually run. `command -v` alone isn't enough: a version-manager shim
-# (mise, asdf, ...) can resolve on PATH with no version selected and fail loudly on first use.
+# Whether a directory carries pytest configuration of its own.
+_verify_work_has_pytest_config() {
+  [ -f "$1/pytest.ini" ] ||
+    grep -qs '^\[tool\.pytest' "$1/pyproject.toml" ||
+    grep -qs '^\[tool:pytest\]' "$1/setup.cfg" ||
+    grep -qs '^\[pytest\]' "$1/tox.ini"
+}
+
+# Directories to run pytest in, one per line. pytest only loads the config of the directory
+# it starts in (or above), so in a repo whose suite lives in a subproject (backend/ with its
+# own pyproject.toml: asyncio_mode, pythonpath, ...) a run from the root ignores all of it
+# and fails wholesale. The root wins when it has config or a conftest.py of its own;
+# otherwise each outermost subproject that does, falling back to the root.
+_verify_work_pytest_dirs() {
+  if _verify_work_has_pytest_config . || [ -f conftest.py ]; then
+    echo .
+    return
+  fi
+  local dirs
+  dirs=$(git ls-files -co --exclude-standard 2>/dev/null |
+    grep -E '(^|/)(pytest\.ini|pyproject\.toml|setup\.cfg|tox\.ini)$' |
+    while read -r f; do
+      d=$(dirname "$f")
+      [ "$d" != . ] && _verify_work_has_pytest_config "$d" && echo "$d"
+    done | sort -u | awk 'NR == 1 || index($0, kept "/") != 1 { print; kept = $0 }')
+  if [ -n "$dirs" ]; then echo "$dirs"; else echo .; fi
+}
+
+# Prefix that runs a command from another directory: `"${IN_DIR[@]}" <dir> <cmd...>`. Not a
+# shell function, because run_test hands its command to `timeout`, which can't run one.
+# shellcheck disable=SC2016
+IN_DIR=(bash -c 'cd "$1" && shift && exec "$@"' in-dir)
+
+# Whether pytest can actually run in dir $1 (default: the root), under the current PY_RUN. `command -v` alone
+# isn't enough: a version-manager shim (mise, asdf, ...) can resolve on PATH with no
+# version selected and fail loudly on first use.
 _verify_work_pytest_runnable() {
   [ ${#PY_RUN[@]} -gt 0 ] && {
-    "${PY_RUN[@]}" pytest --version >/dev/null 2>&1
+    "${IN_DIR[@]}" "${1:-.}" "${PY_RUN[@]}" pytest --version >/dev/null 2>&1
     return
   }
-  command -v pytest >/dev/null 2>&1 && pytest --version >/dev/null 2>&1
+  command -v pytest >/dev/null 2>&1 && "${IN_DIR[@]}" "${1:-.}" pytest --version >/dev/null 2>&1
 }
 
 # ── Ruby ──────────────────────────────────────────────────────────────────────
@@ -236,19 +273,29 @@ if [ "$HAS_PYTHON" = "1" ]; then
   # bash *.test.sh scripts plus a Python helper script — server-setup is exactly this shape).
   if [ "$MODE" != off ] && _verify_work_has_pytest_tests; then
     TOOLS_RAN=1
-    if ! _verify_work_pytest_runnable; then
-      # pytest resolved on PATH but doesn't actually run (not installed, or a version manager
-      # shim like mise/asdf has no version selected) — report one clear line instead of letting
-      # `pytest` dump its raw (and possibly unrelated-looking, e.g. "mise ERROR ...") failure.
-      printf '=== pytest ===\n%s\n\n' \
-        "pytest tests were detected but pytest is not runnable (not installed, or a version manager has no version selected for this project). Fix the pytest toolchain, then rerun." >>"$TMPFILE"
-    elif [ "$MODE" = changed ]; then
-      targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing)
-      # shellcheck disable=SC2086
-      [ -n "$targets" ] && run_test "pytest (changed)" "${PY_RUN[@]}" pytest $targets
-    else
-      run_test "pytest" "${PY_RUN[@]}" pytest
-    fi
+    while read -r dir; do
+      label=pytest
+      [ "$dir" != . ] && label="pytest ($dir)"
+      _verify_work_py_run "$dir"
+      if ! _verify_work_pytest_runnable "$dir"; then
+        # pytest resolved on PATH but doesn't actually run (not installed, or a version
+        # manager shim like mise/asdf has no version selected) — report one clear line
+        # instead of letting `pytest` dump its raw (and possibly unrelated-looking, e.g.
+        # "mise ERROR ...") failure.
+        printf '=== %s ===\n%s\n\n' "$label" \
+          "pytest tests were detected but pytest is not runnable (not installed, or a version manager has no version selected for this project). Fix the pytest toolchain, then rerun." >>"$TMPFILE"
+      elif [ "$MODE" = changed ]; then
+        # Changed test files under this dir, relative to it.
+        prefix=""
+        [ "$dir" != . ] && prefix="$dir/"
+        targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing |
+          while read -r f; do case "$f" in "$prefix"*) echo "${f#"$prefix"}" ;; esac done)
+        # shellcheck disable=SC2086
+        [ -n "$targets" ] && run_test "$label (changed)" "${IN_DIR[@]}" "$dir" "${PY_RUN[@]}" pytest $targets
+      else
+        run_test "$label" "${IN_DIR[@]}" "$dir" "${PY_RUN[@]}" pytest
+      fi
+    done < <(_verify_work_pytest_dirs)
   fi
 fi
 
