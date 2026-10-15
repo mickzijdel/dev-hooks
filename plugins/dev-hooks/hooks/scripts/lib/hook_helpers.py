@@ -348,11 +348,12 @@ def git_target_dir(command, cwd, words):
     return cwd
 
 
-def facts_invoked(facts_path, needles):
+def facts_invoked(facts_path, needles, since=None):
     """True when the dev-hooks mod's session facts (DEV_HOOKS_FACTS_FILE) show one of
     `needles` ran: a skill or subagent type naming it, or — for `agent:<word>` — a
     subagent described as doing that job. Unlike the transcript, the facts include
-    skills run *inside* subagents. A missing or unreadable file is no evidence."""
+    skills run *inside* subagents. A missing or unreadable file is no evidence.
+    `since` (epoch seconds) counts only runs at or after it."""
     try:
         with open(facts_path, encoding="utf-8") as f:
             facts = json.load(f)
@@ -361,11 +362,19 @@ def facts_invoked(facts_path, needles):
     if not isinstance(facts, dict):
         return False
     names, agent_res = _split_needles(needles)
+
+    def recent(entry):
+        at = entry.get("at")
+        return since is None or (isinstance(at, (int, float)) and at >= since * 1000)
+
     for skill in facts.get("skills") or []:
-        if any(n in str((skill or {}).get("skill", "")) for n in names):
+        skill = skill or {}
+        if recent(skill) and any(n in str(skill.get("skill", "")) for n in names):
             return True
     for agent in facts.get("agents") or []:
         agent = agent or {}
+        if not recent(agent):
+            continue
         if any(n in str(agent.get("subagentType", "")) for n in names):
             return True
         desc = str(agent.get("description") or "")
@@ -374,14 +383,24 @@ def facts_invoked(facts_path, needles):
     return False
 
 
-def transcript_invoked(transcript_path, needles, sentinel=None):
+def _line_epoch(line):
+    """Epoch seconds of a transcript line's `timestamp`; None when absent or unparseable."""
+    try:
+        rec = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return session_start_epoch(rec.get("timestamp")) if isinstance(rec, dict) else None
+
+
+def transcript_invoked(transcript_path, needles, sentinel=None, since=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
     slash-command line — or when `sentinel` appears verbatim on any line (a hook's own
     prior reminder). Deliberately ignores plain-text mentions: the transcript records a
     skill_listing attachment naming every installed skill, so a bare grep for a skill name
     matches in EVERY session and would permanently suppress the caller. Shared by the
-    review-reminder and compress-comments-reminder Stop hooks."""
+    review-reminder and compress-comments-reminder Stop hooks. `since` (epoch seconds)
+    skips lines stamped before it."""
 
     # agent:<word> matches an Agent/Task description naming <word> as its job; subagent
     # reviews run as general-purpose agents with no review skill or type
@@ -393,6 +412,8 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     for line in _transcript_lines(transcript_path):
         if sentinel and sentinel in line:
             return True
+        if since is not None and (_line_epoch(line) or 0) < since:
+            continue
         # Slash-command marker: the needle must sit INSIDE <command-name>…</command-name>,
         # not merely somewhere on the same line. A transcript line is often a whole API
         # request: the Skill tool's own schema documents "<command-name> block" and the

@@ -2265,16 +2265,71 @@ def test_compress_comments_silent_when_skill_already_ran(tmp_path):
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
-def test_compress_comments_second_stop_without_new_comments_is_silent(tmp_path):
-    # The reminder must not loop: an unchanged comment count stays silent on later stops.
+def _skill_line(skill="compress-comments", ts="2999-01-01T00:00:00.000Z"):
+    """A transcript Skill call; the far-future timestamp places it after any fire."""
+    return json.dumps(
+        {
+            "timestamp": ts,
+            "message": {"content": [{"type": "tool_use", "input": {"skill": skill}}]},
+        }
+    )
+
+
+def test_compress_comments_repeats_once_when_skill_never_ran(tmp_path):
+    # A hand review isn't the skill: the next stop repeats the reminder once, then the
+    # reminder must not loop on an unchanged comment count.
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
-    first = _run_cc(tmp_path, payload)
-    assert stop_blocked(first)
+    assert stop_blocked(_run_cc(tmp_path, payload))
     second = _run_cc(tmp_path, payload)
-    assert stop_allowed(second)
-    assert second.stdout.strip() == ""
+    assert stop_blocked(second)
+    assert "hasn't run" in json.loads(second.stdout)["reason"]
+    third = _run_cc(tmp_path, payload)
+    assert stop_allowed(third)
+    assert third.stdout.strip() == ""
+
+
+def test_compress_comments_silent_after_skill_runs_post_fire(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    assert stop_blocked(_run_cc(tmp_path, _stop_payload(tmp_path)))
+    r = _run_cc(tmp_path, _stop_payload(tmp_path, extra_lines=[_skill_line()]))
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_skill_run_before_fire_does_not_count(tmp_path):
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    old = _skill_line(ts="2001-01-01T00:00:00.000Z")
+    payload = _stop_payload(tmp_path, extra_lines=[old])
+    assert stop_allowed(_run_cc(tmp_path, payload))  # seeded by the earlier run
+    _comment_heavy_file(tmp_path / "more.py")
+    assert stop_blocked(_run_cc(tmp_path, payload))
+    assert stop_blocked(_run_cc(tmp_path, payload))  # the old run predates this fire
+
+
+def test_compress_comments_subagent_skill_run_counts(tmp_path):
+    # The mod's facts see a skill a subagent loaded, which the transcript never records.
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    payload = _stop_payload(tmp_path)
+    assert stop_blocked(_run_cc(tmp_path, payload))
+    facts = tmp_path / "facts.json"
+    facts.write_text(
+        json.dumps(
+            {"skills": [{"skill": "dev-hooks:compress-comments", "at": 32503680000000}]}
+        )
+    )
+    r = run_hook(
+        "compress-comments-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_FACTS_FILE=str(facts)),
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
 
 
 def test_compress_comments_refires_when_comment_total_grows(tmp_path):
@@ -2295,25 +2350,35 @@ def test_compress_comments_refires_when_comment_total_grows(tmp_path):
 def test_compress_comments_no_refire_for_small_growth(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
-    payload = _stop_payload(tmp_path)
-    assert stop_blocked(_run_cc(tmp_path, payload))
+    assert stop_blocked(_run_cc(tmp_path, _stop_payload(tmp_path)))
     (tmp_path / "small.py").write_text("# just one more comment\ny = 2\n")
-    r = _run_cc(tmp_path, payload)
+    r = _run_cc(tmp_path, _stop_payload(tmp_path, extra_lines=[_skill_line()]))
     assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
 def test_compress_comments_rebases_after_cleanup(tmp_path):
-    # Cleaning comments up (count drops) rebases the baseline instead of re-firing.
+    # Cleaning comments up through the skill (count drops) rebases the baseline instead
+    # of re-firing.
+    init_git_repo(tmp_path)
+    f = tmp_path / "new.py"
+    _comment_heavy_file(f)
+    assert stop_blocked(_run_cc(tmp_path, _stop_payload(tmp_path)))
+    f.write_text("x = 0\nfor i in range(3):\n    x += i\n")  # comments compressed away
+    r = _run_cc(tmp_path, _stop_payload(tmp_path, extra_lines=[_skill_line()]))
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_compress_comments_hand_cleanup_still_repeats(tmp_path):
+    # Trimming by hand drops the count but skips the skill's checks: still one repeat.
     init_git_repo(tmp_path)
     f = tmp_path / "new.py"
     _comment_heavy_file(f)
     payload = _stop_payload(tmp_path)
     assert stop_blocked(_run_cc(tmp_path, payload))
-    f.write_text("x = 0\nfor i in range(3):\n    x += i\n")  # comments compressed away
-    r = _run_cc(tmp_path, payload)
-    assert stop_allowed(r)
-    assert r.stdout.strip() == ""
+    f.write_text("x = 0\nfor i in range(3):\n    x += i\n")
+    assert stop_blocked(_run_cc(tmp_path, payload))
 
 
 def test_compress_comments_fires_on_comments_committed_this_session(tmp_path):
@@ -3536,6 +3601,59 @@ def test_reminder_fires_once_per_session(
     second = run_hook(script, stdin=payload, env=env)
     assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+# ── comment-brief-guard.sh (PreToolUse Agent|SendMessage) ───────────────────────────
+def _brief(tool, text, **env):
+    key = "prompt" if tool == "Agent" else "message"
+    payload = {"tool_name": tool, "tool_input": {key: text}, "session_id": "b1"}
+    return run_hook(
+        "comment-brief-guard.sh",
+        stdin=json.dumps(payload),
+        env=base_env(**{"DEV_HOOKS_COMMENT_BRIEF_GUARD": None, **env}),
+    )
+
+
+@pytest.mark.parametrize(
+    "tool,text",
+    [
+        (
+            "SendMessage",
+            "Also do a comment pass over the whole branch diff (main..disk-encryption): "
+            "delete comments that restate the code. Separate commit.",
+        ),
+        ("Agent", "Fix the findings, then trim the comments you added."),
+        ("Agent", "Compress comments on the App branch before the merge."),
+        ("Agent", "Clean up the code comments in roles/ and tests/."),
+    ],
+)
+def test_comment_brief_guard_denies_a_restated_pass(tool, text):
+    r = _brief(tool, text)
+    assert r.returncode == 0
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+    assert "compress-comments" in out["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize(
+    "tool,text",
+    [
+        ("Agent", "Run the dev-hooks `compress-comments` skill on the branch diff."),
+        ("SendMessage", "Load dev-hooks:compress-comments and trim the comments."),
+        ("Agent", "Address the review comments on PR #12."),
+        ("Agent", "Add a one-line comment above the init task."),
+        ("SendMessage", "Correct the fnox.toml comment wording."),
+    ],
+)
+def test_comment_brief_guard_silent_otherwise(tool, text):
+    r = _brief(tool, text)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_comment_brief_guard_opt_out():
+    r = _brief("Agent", "trim the comments", DEV_HOOKS_COMMENT_BRIEF_GUARD="false")
+    assert r.stdout.strip() == ""
 
 
 # ── dangerous-command-guard.sh (PreToolUse Bash) ─────────────────────────────────────
@@ -5389,7 +5507,9 @@ def test_rearm_baseline_is_per_repo(tmp_path):
     )
     assert stop_blocked(run(main))
     assert stop_allowed(run(wt))
-    assert stop_allowed(run(main))
+    after_skill = _stop_payload(tmp_path, extra_lines=[_skill_line()])
+    r = run_hook("compress-comments-reminder.sh", cwd=main, stdin=after_skill, env=env)
+    assert stop_allowed(r)
 
 
 def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
@@ -5497,7 +5617,8 @@ def test_compress_comments_rewriting_comments_is_not_growth(tmp_path):
     # Compress every comment and commit: fewer comment lines than before, not more
     f.write_text("".join(f"# step {i}\nx{i} = {i}\n" for i in range(30)))
     _commit_dated(tmp_path, run, "2025-06-02T00:00:00", "compress comments")
-    assert stop_allowed(_run_cc(tmp_path, payload))
+    skill_run = _stop_payload(tmp_path, extra_lines=[_skill_line()])
+    assert stop_allowed(_run_cc(tmp_path, skill_run))
 
 
 def test_review_reminder_rewrite_after_review_is_not_growth(tmp_path):

@@ -234,10 +234,11 @@ PYEOF
 #   SESSION  — .session_id (or "nosession")
 # Exits 0 (silent → normal permission flow) on opt-out or when there's no command.
 # COMMAND is read on its own (not via mapfile) so a multi-line command isn't truncated.
+# An optional jq filter ($2) reads another tool's text into COMMAND (an Agent prompt, say).
 reminder_pre_init() {
   reminder_opt_out "$1"
   INPUT=$(cat 2>/dev/null)
-  COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
+  COMMAND=$(printf '%s' "$INPUT" | jq -r "${2:-.tool_input.command} // \"\"" 2>/dev/null)
   [ -z "$COMMAND" ] && exit 0
   reminder_cwd_session
 }
@@ -643,7 +644,13 @@ PYEOF
   [ -n "$REPLY" ] || REPLY=${CWD:-$PWD}
 }
 
+# reminder_transcript_invoked [--since <epoch>] <sentinel> <needles…> — $REPLY 0|1.
 reminder_transcript_invoked() {
+  local since=""
+  if [ "$1" = "--since" ]; then
+    since=$2
+    shift 2
+  fi
   local sentinel=$1
   shift
   REPLY=0
@@ -652,18 +659,19 @@ reminder_transcript_invoked() {
   { [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; } || [ -f "${DEV_HOOKS_FACTS_FILE:-}" ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   REPLY=$(
-    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" "$@" <<'PYEOF'
+    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" "$since" "$@" <<'PYEOF'
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
 from hook_helpers import facts_invoked, transcript_invoked
 
-needles = tuple(sys.argv[5:])
+needles = tuple(sys.argv[6:])
+since = float(sys.argv[5]) if sys.argv[5] else None
 print(
     1
-    if (sys.argv[4] and facts_invoked(sys.argv[4], needles))
-    or transcript_invoked(sys.argv[1], needles, sentinel=sys.argv[2] or None)
+    if (sys.argv[4] and facts_invoked(sys.argv[4], needles, since=since))
+    or transcript_invoked(sys.argv[1], needles, sentinel=sys.argv[2] or None, since=since)
     else 0
 )
 PYEOF

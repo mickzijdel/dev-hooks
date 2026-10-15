@@ -185,8 +185,9 @@ the append path from the prompt path.
   hooks gate differently from one another — a plain env var, a CLAUDE.md marker, an ownership
   heuristic — so each calls `reminder_opt_out` itself) and `reminder_emit_session <msg>`
   (additionalContext injected into Claude's context + exit 0).
-  PreToolUse(Bash): `reminder_pre_init <OPT_VAR>` (opt-out + COMMAND/CWD/SESSION;
-  reads `.tool_input.command` on its own so a multi-line command isn't truncated) and
+  PreToolUse(Bash): `reminder_pre_init <OPT_VAR> [jq-filter]` (opt-out + COMMAND/CWD/SESSION;
+  reads `.tool_input.command` on its own so a multi-line command isn't truncated; the filter
+  reads another tool's text instead, as `comment-brief-guard.sh` does for Agent/SendMessage) and
   `reminder_emit_decision <deny|ask> <reason>` (emit the `permissionDecision` JSON + exit 0 —
   never emit `allow`, which would bypass the user's own allowlist; stay silent for safe commands
   so the normal permission flow proceeds). UserPromptSubmit: `reminder_prompt_init <OPT_VAR>`
@@ -214,7 +215,7 @@ the append path from the prompt path.
   and the shared half of compress-comments-reminder's comment count),
   `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (the one
   code-extension list — a hand-rolled copy drifts),
-  `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
+  `reminder_transcript_invoked [--since <epoch>] <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
   `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
   `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
   `reminder_git_target_dir <words…>` (the directory the first `git <words…>` in $COMMAND runs
