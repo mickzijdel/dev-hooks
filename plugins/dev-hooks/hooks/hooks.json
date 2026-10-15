@@ -53,6 +53,15 @@
             "statusMessage": "Checking command safety..."
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/comment-brief-guard.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -21,6 +21,10 @@
 # detected via a tool_use scan — never a bare-name transcript grep, which would match the
 # skill_listing attachment naming every installed skill and permanently suppress the hook.
 #
+# Only the skill counts: a hand review, or a subagent brief that restates its rules, skips
+# its checks. So when the skill hasn't run since the last reminder (main session or, via
+# the mod's facts, a subagent), the next stop repeats the reminder once, growth or not.
+#
 # Opt out with DEV_HOOKS_COMPRESS_COMMENTS=false in settings env.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -60,13 +64,27 @@ if [ -z "$REPLY" ]; then
   fi
 fi
 
+# "<epoch of the last reminder> pending|done"; done once the skill ran or the repeat fired.
+_reminder_repo_key
+reminder_state_file compress-comments-fired "$REPLY"
+FIRED_FILE=$REPLY
+read -r FIRED_AT FIRED_STATE <"$FIRED_FILE" 2>/dev/null
+
 reminder_rearm compress-comments "$COUNT" 3
 case "$REPLY" in
-  silent) exit 0 ;;
+  silent)
+    [ "$FIRED_STATE" = pending ] || exit 0
+    printf '%s done' "$FIRED_AT" >"$FIRED_FILE"
+    reminder_transcript_invoked --since "$FIRED_AT" "" compress-comments
+    [ "$REPLY" = "1" ] && exit 0
+    REPEAT=1
+    MSG="${SENTINEL} The compress-comments skill hasn't run since the last reminder (session total ${COUNT} comment lines). A hand review doesn't count."
+    ;;
   first) MSG="${SENTINEL} This session added ${COUNT} comment lines." ;;
   *) MSG="${SENTINEL} ${REMINDER_REARM_DELTA} more comment lines since the last reminder (session total ${COUNT})." ;;
 esac
+[ -n "${REPEAT:-}" ] || printf '%s pending' "$(date +%s)" >"$FIRED_FILE"
 
-MSG="${MSG} Before finishing, review the comments you wrote: run the dev-hooks compress-comments skill on this session's diff. Delete comments that restate the code (code-echo, change narration, planning forensics, reviewer justification); compress the rest. A comment survives only if it states something the code cannot show."
+MSG="${MSG} Before finishing, load the dev-hooks compress-comments skill with the Skill tool and run it on this session's diff; if a subagent does the pass, tell it to load the skill rather than restating its rules. Delete comments that restate the code (code-echo, change narration, planning forensics, reviewer justification); compress the rest. A comment survives only if it states something the code cannot show."
 
 reminder_emit_stop "$MSG"

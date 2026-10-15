@@ -121,3 +121,6 @@ Full details and the reproduction method:
    or formatter that watches comments (docstring linters, `shfmt`) still passes.
 5. Report a compact summary: counts deleted/compressed, one or two representative examples,
    plus anything flagged (suspect directives, dropped TODOs).
+
+Delegating the pass: tell the subagent to load this skill with the Skill tool. A brief that
+restates the rules skips step 4.
