@@ -15,15 +15,15 @@
 #
 # Re-arm instead of once-per-session: the session's comment-line total is stored in a
 # reminder_state_file at each fire, and the hook fires again whenever the total has grown
-# by ≥3 since — one large commit, three small ones, or purely uncommitted edits alike.
+# by ≥10 since — one large commit, several small ones, or purely uncommitted edits alike.
 # An unchanged total stays silent (no Stop loop); a total that DROPPED (comments were
 # cleaned up) rebases the baseline; a skill run before any reminder seeds the baseline,
 # detected via a tool_use scan — never a bare-name transcript grep, which would match the
 # skill_listing attachment naming every installed skill and permanently suppress the hook.
 #
-# Only the skill counts: a hand review, or a subagent brief that restates its rules, skips
-# its checks. So when the skill hasn't run since the last reminder (main session or, via
-# the mod's facts, a subagent), the next stop repeats the reminder once, growth or not.
+# A skill run after a reminder (main session or, via the mod's facts, a subagent) absorbs
+# the growth since: comments merged in from compressed work don't re-fire. Re-arming needs
+# 10 more lines; the first reminder needs 3.
 #
 # Opt out with DEV_HOOKS_COMPRESS_COMMENTS=false in settings env.
 
@@ -54,7 +54,9 @@ COUNT=${COUNT:-0}
 SENTINEL="[compress-comments-reminder]"
 
 reminder_rearm_baseline compress-comments
+THRESHOLD=10
 if [ -z "$REPLY" ]; then
+  THRESHOLD=3
   # No reminder yet this session. A skill run that already happened seeds the baseline:
   # the current comments count as handled, and only growth beyond them re-arms.
   reminder_transcript_invoked "" compress-comments
@@ -64,26 +66,27 @@ if [ -z "$REPLY" ]; then
   fi
 fi
 
-# "<epoch of the last reminder> pending|done"; done once the skill ran or the repeat fired.
+# Epoch of the last reminder; emptied once a skill run after it has been absorbed.
 _reminder_repo_key
 reminder_state_file compress-comments-fired "$REPLY"
 FIRED_FILE=$REPLY
-read -r FIRED_AT FIRED_STATE <"$FIRED_FILE" 2>/dev/null
+FIRED_AT=$(cat "$FIRED_FILE" 2>/dev/null)
+if [ -n "$FIRED_AT" ]; then
+  reminder_transcript_invoked --since "$FIRED_AT" "" compress-comments
+  if [ "$REPLY" = "1" ]; then
+    reminder_rearm_seed compress-comments "$COUNT"
+    : >"$FIRED_FILE"
+    exit 0
+  fi
+fi
 
-reminder_rearm compress-comments "$COUNT" 3
+reminder_rearm compress-comments "$COUNT" "$THRESHOLD"
 case "$REPLY" in
-  silent)
-    [ "$FIRED_STATE" = pending ] || exit 0
-    printf '%s done' "$FIRED_AT" >"$FIRED_FILE"
-    reminder_transcript_invoked --since "$FIRED_AT" "" compress-comments
-    [ "$REPLY" = "1" ] && exit 0
-    REPEAT=1
-    MSG="${SENTINEL} The compress-comments skill hasn't run since the last reminder (session total ${COUNT} comment lines). A hand review doesn't count."
-    ;;
+  silent) exit 0 ;;
   first) MSG="${SENTINEL} This session added ${COUNT} comment lines." ;;
   *) MSG="${SENTINEL} ${REMINDER_REARM_DELTA} more comment lines since the last reminder (session total ${COUNT})." ;;
 esac
-[ -n "${REPEAT:-}" ] || printf '%s pending' "$(date +%s)" >"$FIRED_FILE"
+date +%s >"$FIRED_FILE"
 
 MSG="${MSG} Before finishing, load the dev-hooks compress-comments skill with the Skill tool and run it on this session's diff; if a subagent does the pass, tell it to load the skill rather than restating its rules. Delete comments that restate the code (code-echo, change narration, planning forensics, reviewer justification); compress the rest. A comment survives only if it states something the code cannot show."
 
