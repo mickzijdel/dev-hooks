@@ -8,6 +8,33 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-17 (Run 36)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 10 commits 2026-10-13 to 2026-10-16 (`ab1aa46` to `50478d9`).
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-14 to 2026-10-17.
+- RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.299 to 2.1.302.
+- Unreachable (proxy 403): https://upliftai.substack.com/feed, https://claude.dev/rss.xml, https://ai-automations-db.vercel.app/database.
+
+PRs opened this run: none.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Mod `$.env.set` now resolves `{ deny }` when the write is not made | changelog 2.1.301 | Rejected | Already safe: `classic.Stop` orchestrates only when `DEV_HOOKS_MOD_SESSION` reads back as the session id, so a denied set leaves the command hooks running directly and the module standing down. |
+| Mod hook `.catch` runs only when the hook throws or times out; `agent.spawn` can rewrite workflow-agent prompts; `prompt.change` hook; `$.ui.view({ agentId })`; `$.session.identity()` | changelog 2.1.299-2.1.301 | Out of scope | New mod surfaces with no current need; the module has no `.catch` handlers that depend on the old behaviour. |
+| Idle compaction, `CLAUDE_CODE_AUTO_MODE_MODEL`, fork subagents on by default, OTel `classifier_verdict`/`permission_mode`, cache-write TTL split, `CLAUDE_CODE_DISABLE_FILE_MENTIONS` | changelog 2.1.299-2.1.302 | Out of scope | Harness settings and telemetry; nothing to adopt in hooks or skills. |
+| Dotfiles: return Meridian/pi-scrub to upstream, managed dependency refresh, mise-orchestrated agent-stuff refresh, retire extracted agent resources, Bundler wrapper keeps mise available, mise executable dir, retire Pi SDK overrides, updater runtime env | dotfiles commits `ab1aa46`..`50478d9` (Oct 13-16) | Out of scope | Personal macOS/Pi dotfiles infrastructure. |
+| Give agents a tool to log friction points, review the log later | feed item 2026-10-15 | Duplicate | `weekly-automation-review` mines the prompt log and memory for recurring friction; the end-of-session memory reminder covers capture. |
+| `/brainstorm` skill: work through fuzzy ideas one question at a time | feed item 2026-10-17 | Duplicate | Overlaps `grill` and the user's superpowers brainstorming skill. |
+| Steer agents via interim outputs and tests now that chain-of-thought is less useful | feed item 2026-10-15 | Duplicate | `agent-brief` (PROVE-IT, DONE-WHEN) and `verify-work.sh`. |
+| Multiple agents editing a shared memory file with full version history | feed item 2026-10-16 | Deferred | Interesting for audit trails, but memory is git-tracked per repo here and there is no concrete multi-agent surface to change. |
+| Tutor agent with prewritten walkthrough.md; agent email progress updates; Grok Bot phone calls; office-computer agent steered from phone; ChatGPT Site intake form and Spaces; agent email address; conference-transcript skimming | feed items 2026-10-14 to 10-17 | Out of scope | Personal productivity or non-Claude-Code tooling; no dev-workflow surface. |
+| Sources unreachable | substack feed, claude.dev RSS, ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
+
+---
+
 ## 2026-10-13 (Run 35)
 
 Sources scanned:
