@@ -180,6 +180,9 @@ voice_fire_once() {
 # OFF by default; best-effort, never fails the hook.
 _voice_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
+  # Skip throwaway sessions (mirrors dev-hooks' reminder_is_probe_session).
+  [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
+  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-*) return 0 ;; esac
   local dir="$HOME/.claude/automation-review"
   [ -d "$dir" ] || return 0
   printf '{"hook":"%s","session":"%s","ts":%s}\n' \
@@ -196,11 +199,10 @@ voice_emit() {
   exit 0
 }
 
-# Stop-hook feedback: continue:false + exit 2, so Claude acts before the turn ends rather
-# than after the user has already read the draft.
+# decision:block, so Claude revises before the user reads the draft. Never continue:false,
+# which halts Claude.
 voice_emit_stop() {
   _voice_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" \
-    '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-  exit 2
+  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  exit 0
 }

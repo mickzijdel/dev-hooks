@@ -37,31 +37,31 @@ A repo is **compliant at v27** when it has all of:
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
   `ignore` — never `ignorePattern`, inert in jscpd v5).
-- **`scripts/run-jscpd.sh`** (added in v14) — the shared jscpd runner holding the
+- **`scripts/run-jscpd.sh`** — the shared jscpd runner holding the
   version-cooldown policy; both the hk step and CI's audit job call it (CI with `--require`)
   so the two gates can't drift. Copied verbatim from the template (repo formatters may re-indent it; never hand-edit the logic).
-- **`scripts/check_version_sync.sh`** (added in v23) — the shared version-pin agreement gate:
+- **`scripts/check_version_sync.sh`** — the shared version-pin agreement gate:
   every file naming a toolchain or service version (`mise.toml`, the `.<lang>-version` files, the
   Dockerfile `ARG`s, `package.json`'s `packageManager`, and the compose/deploy/CI `image:` tags)
   must name the same one. Both the hk `versions` step and CI's `versions` job run it. It checks
   only the files that exist and prints what it skipped, reports rather than auto-fixes, and
   mandates no Dockerfile style. **Every** Dockerfile in the repo root is compared, not just the
-  first one found (v24) — `Dockerfile.dev` beside a production `Dockerfile` is the common shape,
-  and it went unchecked under v23. A floating `mise.toml` spec (`latest`) is compared through
-  the exact release in `mise.lock`, and **every CI setup step must read the pin** (v26): a
-  version file, or `jdx/mise-action` installing the tool from `mise.toml` in the same job — a
-  floating (`lts/*`), hardcoded-and-different, matrix, or missing version fails. See "Version
-  pins must agree across files" in `references/standard.md`. From v27 a pin CI reads must
-  name a full release (`3.12.12`, not `3.12`), and `mise.lock` always joins the comparison.
+  first one found — `Dockerfile.dev` beside a production `Dockerfile` is the common shape.
+  `mise.lock` always joins the comparison, so a floating `mise.toml` spec (`latest`) is compared
+  through the exact release it locked. **Every CI setup step must read the pin**: a version
+  file, or `jdx/mise-action` installing the tool from `mise.toml` in the same job — a floating
+  (`lts/*`), hardcoded-and-different, matrix, or missing version fails — and a pin CI reads
+  must name a full release (`3.12.12`, not `3.12`). See "Version pins must agree across files"
+  in `references/standard.md`.
 - **`hk.pkl`** — per-stack linters **plus** the dead-code + duplication audits, the
   `exec-bit-scripts` gate, the `versions` gate, the `actionlint` + `zizmor` GitHub Actions checks, `gitleaks`, and
   `check-added-large-files`, in one `linters` mapping shared by the `pre-commit`/`fix`/`check`
-  hooks. Where a hand-rolled step exactly matched an hk built-in it's now the built-in
+  hooks. Use the hk built-in wherever one matches the step exactly
   (`gitleaks`, `check_added_large_files`, `zizmor`, `actionlint`, and — in the shell stack, where
   `ruff` is a mise tool — `ruff`/`ruff_format`); stacks that run a tool through their package
   manager (`uv run ruff`, `npx prettier`, `bundle exec rubocop`, `golangci-lint`) keep custom
   steps, as the bare-command built-ins would bypass the project-pinned version.
-- **Executable-bit gate** (added in v15) — the hk `exec-bit-scripts` step + a CI lint-job
+- **Executable-bit gate** — the hk `exec-bit-scripts` step + a CI lint-job
   mirror fail when any tracked shebang file is index mode `100644` (a fresh clone/plugin
   install would get a script that dies with exit 126). Fix:
   `git update-index --chmod=+x <file>`. See "Executable bits on shipped scripts" in
@@ -72,7 +72,7 @@ A repo is **compliant at v27** when it has all of:
 - **`.github/workflows/ci.yml`** — mirrors the hk checks plus an `audit` job; gitleaks runs as
   the MIT-licensed **CLI via mise** (never `gitleaks/gitleaks-action`, which needs a paid
   license on org repos).
-- **SHA-pinned actions + read-only token** (added in v16) — in **every file under
+- **SHA-pinned actions + read-only token** — in **every file under
   `.github/workflows/`** (not just `ci.yml`), every `uses:` pins a full commit SHA with the
   release tag in a trailing comment (`owner/repo@<sha> # vX.Y.Z`; tags are mutable and a
   takeover repoints them — tj-actions, Trivy), and each workflow declares
@@ -80,7 +80,7 @@ A repo is **compliant at v27** when it has all of:
   `pages`/`id-token: write` keeps its own wider block). Checker-enforced across all workflow
   files (`has_sha_pinned_ci`). See "Keeping GitHub Actions current" and the
   **[[github-actions]]** skill's security checklist.
-- **GitHub Actions checks: actionlint + zizmor** (added in v18) — hk steps (`Builtins.actionlint`
+- **GitHub Actions checks: actionlint + zizmor** — hk steps (`Builtins.actionlint`
   and `Builtins.zizmor`, glob-gated to workflow/`action.yml` files) plus one CI `actions-lint` job
   run both over every workflow. **[actionlint](https://github.com/rhysd/actionlint)** catches
   *correctness* — schema/typo errors, bad `${{ }}` expressions, undefined `needs:` (run with
@@ -96,7 +96,7 @@ A repo is **compliant at v27** when it has all of:
   stacks get the same window via their package manager (recommended). See "Dependency cooldown
   (supply-chain)".
 
-**Recommended, advisory (added v19):** a **mise-driven dev container**. Having a `.devcontainer/`
+**Recommended, advisory:** a **mise-driven dev container**. Having a `.devcontainer/`
 is optional and never gates compliance — but *if* a repo ships one, it must be mise-driven (the
 image installs only mise + OS libs; `mise install` in the postCreate `setup.sh` provisions the
 toolchain from the bind-mounted `mise.toml`/`mise.lock` — no hardcoded `ruby:`/`node:` base, no
@@ -148,7 +148,7 @@ proposing additions.
    `run-jscpd.sh` → `scripts/run-jscpd.sh` and `check_version_sync.sh` →
    `scripts/check_version_sync.sh` (`chmod +x` both — and if the repo has
    `core.fileMode = false`, `git update-index --chmod=+x scripts/*.sh` after staging,
-   or the v15 exec-bit gate will flag them; these are the shared jscpd runner and version-sync
+   or the exec-bit gate will flag them; these are the shared jscpd runner and version-sync
    gate that both the hk steps and CI call — run `shfmt -w` on both copies afterwards, since a
    repo without an `.editorconfig` defaults shfmt to tabs and would fail its own lint job on the
    2-space template), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
@@ -159,11 +159,11 @@ proposing additions.
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless
    note in `references/standard.md`). The templates
    already include `DEV_ENV_VERSION`, gitleaks, and the audit checks. **Add the audit deps**
-   the templates assume: `vulture` to the Python dev group; for **Ruby** (v17) the dev-group gems
+   the templates assume: `vulture` to the Python dev group; for **Ruby** the dev-group gems
    `flay`, `debride`, `herb`, `brakeman`, `bundler-audit`, `fasterer`, `database_consistency`
    (all `require: false`) plus a rubocop testing plugin `rubocop-minitest` (or `rubocop-rspec`)
    and the house-cops gem `rubocop-mick` (`github: "mickzijdel/rubocop-mick"`, `require: false`),
-   both enabled via `.rubocop.yml`'s `plugins:` key (v22 adds `rubocop-mick` to **every** Ruby repo;
+   both enabled via `.rubocop.yml`'s `plugins:` key (`rubocop-mick` goes in **every** Ruby repo;
    the `plugins:` line alone activates its cops — the gem ships their defaults, no `inherit_gem:`) —
    omakase repos stop there (omakase already
    bundles+disables rails/performance, so re-adding them is inert); a plain-rubocop repo also adds
@@ -204,7 +204,7 @@ proposing additions.
    audits per the v0 → v1 section.) **Also audit the existing workflow's Actions** and bump any
    that are behind latest (same recipe below).
 
-5. **Ensure project docs (README.md + CLAUDE.md)** — required from v3. The checker reports
+5. **Ensure project docs (README.md + CLAUDE.md)** — required. The checker reports
    `has_readme` / `has_claude`. If either is missing (or, on a substantive setup/upgrade, looks
    stale), **dispatch a subagent** (via `Task`) to write it rather than doing it inline — see
    "Project docs (README + CLAUDE.md)" below for the exact brief. The docs must record the
@@ -275,8 +275,8 @@ cadence, with the dev-env twists below:
    without touching the repo itself, add its basename to
    `references/fleet-ignore.txt` — the roster skips listed names.
 2. **Ask disposition up front,** before upgrading anything: (a) which repos to **exclude**
-   entirely; (b) what to do with **dirty repos** — the rule has varied round to round
-   (upgrade-but-don't-commit-and-report one time, skip-entirely another), so ask, don't assume.
+   entirely; (b) what to do with **dirty repos** — upgrade but leave uncommitted and report, or
+   skip entirely — ask, don't assume.
    And if the bump has plausible companion tooling (the actionlint-next-to-zizmor kind),
    **propose it now** — folding a second tool in after the fleet has been swept means a second
    sweep.
@@ -293,7 +293,7 @@ cadence, with the dev-env twists below:
 
 ## Project docs (README + CLAUDE.md)
 
-From v3, a compliant repo has both a **README.md** and a **CLAUDE.md** at its root, and both
+A compliant repo has both a **README.md** and a **CLAUDE.md** at its root, and both
 record the **current versions of the project's key packages** (main framework, Tailwind,
 Bootstrap, etc.). Humans read the README; Claude reads CLAUDE.md — and both drift from the
 manifests fast, so the version numbers are the point.
@@ -321,7 +321,7 @@ subsequent manifest edits, so this skill only bootstraps them.
 
 ## Keeping GitHub Actions current
 
-From v16 every `uses:` is **pinned to a full commit SHA with the release tag in a trailing
+Every `uses:` is **pinned to a full commit SHA with the release tag in a trailing
 comment** — `owner/repo@<40-hex-sha> # vX.Y.Z`. Tags are mutable, so an action takeover can
 repoint `@v4` to malicious code that every downstream run picks up silently (tj-actions, Trivy);
 a SHA can't be moved. The pins in `references/templates/ci.*.yml` are a snapshot and drift, so
@@ -356,7 +356,7 @@ bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh" .gi
 
 ## Caching npm in CI
 
-Node comes from `mise.toml` via `jdx/mise-action` (v26), so there is no `setup-node` step and
+Node comes from `mise.toml` via `jdx/mise-action`, so there is no `setup-node` step and
 none of its built-in npm cache — every `npm ci` would do a cold, network-bound install. Add an
 explicit cache, keyed on the lockfile, to **each job that runs `npm ci`**; `ci.js.yml` carries
 one in its lint job:
@@ -410,7 +410,7 @@ versions. **Commit `mise.lock`** alongside `mise.toml`.
 tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note in
 `references/standard.md`). Project deps lock separately via `uv.lock` / `Gemfile.lock`.
 
-**Tool-upgrade cooldown (v13):** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
+**Tool-upgrade cooldown:** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
 supply-chain window to `mise upgrade`. When re-resolving `"latest"`, mise only considers tool
 versions published at least 4 days ago, giving the community time to catch and yank a malicious
 release before it lands here. `mise install` is unaffected — it always reproduces the exact
@@ -495,8 +495,7 @@ use without a `fnox.toml`, it emits `suggests_fnox=1` and the setup/upgrade repo
 
 - The version stamp is the single source of truth in `references/../VERSION`; the reminder hook
   reads the same file, so a repo on an older stamp gets flagged automatically.
-- Never auto-run this from a hook — it's invoked by the user (or offered by the reminder), and it
-  writes commit-tracked config, so confirm before committing.
+- Never auto-run this from a hook — it's invoked by the user (or offered by the reminder).
 - The standard ships **no `.gitignore` template** — Claude's defaults are usually right, but
   check the gotchas in [`references/standard.md`](references/standard.md) (".gitignore
   gotchas"): keep `.env` ignored AND allowlisted in `.gitleaks.toml`, commit lockfiles and

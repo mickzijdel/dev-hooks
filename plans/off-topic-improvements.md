@@ -84,3 +84,76 @@ Noticed 2026-09-22 while shipping the `deslop` skill:
   The pytest pass here (durations → parallel-safety check → xdist → shared expensive
   fixtures → chunk the one long sweep) generalises to parallel_tests / vitest threads and
   would fit dev-hooks next to dependency-upgrade.
+- **Stop-hook state lives in `/tmp`, which a reboot wipes, but sessions resume across
+  reboots.** `reminder_state_file` writes under `${TMPDIR:-/tmp}/dev-hooks-*`. After a crash
+  or reboot, a resumed long session loses every re-arm baseline and nudge counter, so
+  review-reminder spends a fresh 3-nudge budget each day. The server-setup orchestrator
+  session (09-24 → 10-01) showed this. Candidate: `${XDG_STATE_HOME:-~/.local/state}/dev-hooks`
+  with a prune of files older than ~30 days, keeping the `TMPDIR` override for tests.
+- **review-reminder's `review-nudges` counter is per session, not per repo.** Since 2.50.1
+  the re-arm baselines are per repo, but the main checkout and its worktrees still share one
+  nudge budget. It stays bounded, so this is a consistency fix, not a loop risk.
+- **Save the "did the Stop nudge get acted on?" transcript walker as a script.** The
+  2026-10-01 weekly review measured it ad hoc (a `hook_stopped_continuation` attachment, then
+  check whether the next non-hook row is `assistant`). Once the hooks block, the walker has to
+  look for `Stop hook feedback` user rows followed by the matching skill or agent action. Fire
+  counts alone hid that the Stop hooks did nothing for three months.
+
+Noticed 2026-10-03 while spiking a Claude Code mod (session-facts):
+
+- **data-before-design-reminder fired on "we can install the CLI there of course / Let's try it"**
+  — a prompt about running a live mod test, with no UI, card or data view anywhere in the
+  conversation. Worth a replay of its trigger terms against recent prompts to see what matched.
+
+Noticed 2026-10-03 while adding Stop-nudge outcome tracking to the mod:
+
+- **`/session-facts` "Stops" shows only the merged block's first line**, which is whichever
+  hook ran first (usually verify-work's advisory), hiding the other reasons in that block. The
+  new "Stop nudges" section lists them per hook; the Stops section could drop its reason line.
+- **`stop-nudges.json` is written 0664** while `prompts.jsonl`/`hook-fires.jsonl` are 0600.
+  It holds no prompt text (hook names, session ids, agent descriptions, file basenames), but
+  `$.fs.write` can't set a mode; if that matters, create it from a shell hook first.
+- **The vischeck PostToolUse reminder fires on `hooks/register.tsx`** (a mod module with no UI
+  route) — `.tsx` alone isn't a view.
+
+Noticed 2026-10-03 while building the guard dialog:
+
+- **ci-watch-reminder fires on any command whose *text* contains `git push`.** Its
+  `grep -E '…git(…)*push…'` runs over the whole command string, so a heredoc, a commit message
+  or a `python3 - <<EOF` body that merely mentions `git push` triggers "You just pushed" (seen
+  several times in one session). The mod's CI watch avoids this by reading the push's own
+  output; the shell reminder (still used where mods are off) should parse segments like the
+  guard's `seg_parse`/`seg_git_sub` instead of grepping the raw text.
+- **worktree-provision-reminder's "missing gitignored state" list looks wrong here.** After
+  `git worktree add .worktrees/x` in this repo it reported ", plans, plugins/ (2 missing),
+  .ruby-lsp/ (5 missing), tests" — an empty first entry, and `plans`/`tests` as if gitignored.
+  Probably its top-level grouping of `git ls-files --others --ignored --directory` output
+  (e.g. `tests/__pycache__/` grouped as `tests`, a root-level entry as ""). Worth a test with a
+  nested ignored dir and a root-level ignored file.
+
+Noticed 2026-10-03 while adding credential probes to the guard:
+
+- **lib/shell-segments.awk could serve the other Bash hooks.** ci-watch-reminder (above) and any
+  hook that greps the raw command for a subcommand could read the awk's segments instead, which
+  already honour quoting and heredocs.
+- **The guard doesn't follow commands into other runners.** `docker exec c …`, `incus exec vm --
+  …`, `kubectl exec … --`, `watch …` and `script -c '…'` run a command the guard never judges;
+  `ssh host …`, `bash -c`, `eval` and a heredoc fed to a shell are covered. Same for other
+  token printers: `glab auth status -t`, `az account get-access-token`,
+  `gcloud auth print-access-token`, `docker-credential-* get`, `~/.docker/config.json`.
+- **A secret manager piped into a projecting jq is now blocked.** `bws secret list -o json
+  2>/dev/null | jq -r '.[].key'` slipped through before only because of the `2>/dev/null` hole;
+  the producer's stdout goes to jq, and judging a jq filter is out of scope. If it bites, the
+  non-printing route is `bws secret list -o json > "$tmp"; jq -r '.[].key' "$tmp"`.
+- **`ruff format --check` wants to reformat `skills/api-scraping/scripts/har_scan.py`** with the
+  local ruff (`latest`), so `hk check --all` stops at ruff-format; CI is green, so this is a ruff
+  version drift between the laptop and CI.
+
+- **Probe-session check vs a sandboxed `TMPDIR`** (`reminder_is_probe_session`, 2026-10-08 review):
+  if a session sets `TMPDIR` under `/tmp/claude-<uid>`, pytest's `tmp_path` lands there and
+  `test_session_start_hook_logs_a_fire` (payload cwd under `tmp_path`) stops logging. Give that
+  test a fixed fake cwd string, or match the scratchpad shape more narrowly.
+- **verify-work's cap marker on a timeout-only message**: the marker also prints when the only
+  message is the slow-suite advisory. Harmless today (that nudge resolves `unknown`), but gate it on
+  `$TMPFILE` being non-empty if the advisory ever gets a remedy. The ruff call also bypasses
+  `_capped`, so a slow ruff can still hit the 120 s hard kill.

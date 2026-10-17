@@ -5,9 +5,9 @@
 # and feeds failures back to Claude so it can fix them before finishing.
 #
 # Opt out entirely with DEV_HOOKS_VERIFY=false (per-repo/user, in a .claude/settings.json
-# "env" block). Real linter/test failures re-block on every stop until fixed; the "no tooling
-# detected" advisory fires at most once per session so a repo with no recognised tooling is
-# never trapped in a Stop loop.
+# "env" block). Real linter/test failures re-block on every stop until fixed, forced
+# continuations included (max 3 blocks in a row); the "no tooling detected" advisory fires at
+# most once per session so a repo with no recognised tooling is never trapped in a Stop loop.
 #
 # Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
 #   full     run the whole test suite when code changed (the default; unchanged behaviour)
@@ -29,7 +29,8 @@ reminder_opt_out DEV_HOOKS_VERIFY
 # Consume the hook payload and populate SESSION for the once-per-session no-tools nudge below.
 # Pass "" so no sentinel is imposed on the dynamic failure path (real failures must re-fire
 # every stop until fixed — that's ground truth, not a one-shot reminder).
-reminder_stop_init ""
+# --when-active: a forced continuation is where Claude edits code, so verify it too.
+reminder_stop_init "" --when-active
 
 # Must be in a git repo
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
@@ -96,6 +97,81 @@ _capped() {
   else
     "$@"
   fi
+}
+
+# Whether the project actually has pytest tests, not just generic Python-project markers — a
+# bare pyproject.toml or tests/ dir also matches repos whose tests aren't pytest at all (e.g.
+# a tests/ full of bash *.test.sh scripts plus a Python helper script). Search is pruned to
+# skip heavy/vendor dirs and stay cheap.
+_verify_work_has_pytest_tests() {
+  [ -f "pytest.ini" ] && return 0
+  [ -f "conftest.py" ] && return 0
+  if [ -f "pyproject.toml" ] && grep -q '^\[tool\.pytest' pyproject.toml 2>/dev/null; then
+    return 0
+  fi
+  # In a git repo, only files git tracks or would track count: gitignored dirs hold vendored
+  # code with its own test_*.py (e.g. Ansible collections under .ansible/).
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git ls-files -co --exclude-standard 2>/dev/null |
+      grep -qE '(^|/)(conftest\.py|test_[^/]*\.py|[^/]*_test\.py)$'
+    return
+  fi
+  find . \( -path ./.venv -o -path ./node_modules -o -path ./.git \) -prune -o \
+    \( -name conftest.py -o -name 'test_*.py' -o -name '*_test.py' \) -print 2>/dev/null |
+    grep -q .
+}
+
+# Python tools run through uv in a uv project: its venv may live outside the repo
+# (UV_PROJECT_ENVIRONMENT), where a bare `pytest` never resolves. --no-sync: a Stop hook
+# never installs packages or rewrites uv.lock. $1 = the project dir (default: the root).
+_verify_work_py_run() {
+  PY_RUN=()
+  [ -f "${1:-.}/uv.lock" ] && command -v uv >/dev/null 2>&1 && PY_RUN=(uv run --no-sync)
+}
+_verify_work_py_run
+
+# Whether a directory carries pytest configuration of its own.
+_verify_work_has_pytest_config() {
+  [ -f "$1/pytest.ini" ] ||
+    grep -qs '^\[tool\.pytest' "$1/pyproject.toml" ||
+    grep -qs '^\[tool:pytest\]' "$1/setup.cfg" ||
+    grep -qs '^\[pytest\]' "$1/tox.ini"
+}
+
+# Directories to run pytest in, one per line. pytest only loads the config of the directory
+# it starts in (or above), so in a repo whose suite lives in a subproject (backend/ with its
+# own pyproject.toml: asyncio_mode, pythonpath, ...) a run from the root ignores all of it
+# and fails wholesale. The root wins when it has config or a conftest.py of its own;
+# otherwise each outermost subproject that does, falling back to the root.
+_verify_work_pytest_dirs() {
+  if _verify_work_has_pytest_config . || [ -f conftest.py ]; then
+    echo .
+    return
+  fi
+  local dirs
+  dirs=$(git ls-files -co --exclude-standard 2>/dev/null |
+    grep -E '(^|/)(pytest\.ini|pyproject\.toml|setup\.cfg|tox\.ini)$' |
+    while read -r f; do
+      d=$(dirname "$f")
+      [ "$d" != . ] && _verify_work_has_pytest_config "$d" && echo "$d"
+    done | sort -u | awk 'NR == 1 || index($0, kept "/") != 1 { print; kept = $0 }')
+  if [ -n "$dirs" ]; then echo "$dirs"; else echo .; fi
+}
+
+# Prefix that runs a command from another directory: `"${IN_DIR[@]}" <dir> <cmd...>`. Not a
+# shell function, because run_test hands its command to `timeout`, which can't run one.
+# shellcheck disable=SC2016
+IN_DIR=(bash -c 'cd "$1" && shift && exec "$@"' in-dir)
+
+# Whether pytest can actually run in dir $1 (default: the root), under the current PY_RUN. `command -v` alone
+# isn't enough: a version-manager shim (mise, asdf, ...) can resolve on PATH with no
+# version selected and fail loudly on first use.
+_verify_work_pytest_runnable() {
+  [ ${#PY_RUN[@]} -gt 0 ] && {
+    "${IN_DIR[@]}" "${1:-.}" "${PY_RUN[@]}" pytest --version >/dev/null 2>&1
+    return
+  }
+  command -v pytest >/dev/null 2>&1 && "${IN_DIR[@]}" "${1:-.}" pytest --version >/dev/null 2>&1
 }
 
 # ── Ruby ──────────────────────────────────────────────────────────────────────
@@ -186,23 +262,40 @@ if [ "$HAS_PYTHON" = "1" ]; then
   # ruff
   if [ -f "ruff.toml" ] || { [ -f "pyproject.toml" ] && grep -q '\[tool\.ruff\]' pyproject.toml 2>/dev/null; }; then
     TOOLS_RAN=1
-    out=$(ruff check . 2>&1)
+    out=$("${PY_RUN[@]}" ruff check . 2>&1)
     if [ $? -ne 0 ]; then
       printf '=== ruff ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
     fi
   fi
 
-  # pytest
-  if [ "$MODE" != off ] && command -v pytest >/dev/null 2>&1 &&
-    { [ -f "pytest.ini" ] || [ -f "pyproject.toml" ] || [ -d "tests" ] || [ -d "test" ]; }; then
+  # pytest — gated on actual pytest-tests evidence, not just generic Python-project markers
+  # (a bare pyproject.toml or tests/ dir also matches non-pytest repos, e.g. a tests/ full of
+  # bash *.test.sh scripts plus a Python helper script — server-setup is exactly this shape).
+  if [ "$MODE" != off ] && _verify_work_has_pytest_tests; then
     TOOLS_RAN=1
-    if [ "$MODE" = changed ]; then
-      targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing)
-      # shellcheck disable=SC2086
-      [ -n "$targets" ] && run_test "pytest (changed)" pytest $targets
-    else
-      run_test "pytest" pytest
-    fi
+    while read -r dir; do
+      label=pytest
+      [ "$dir" != . ] && label="pytest ($dir)"
+      _verify_work_py_run "$dir"
+      if ! _verify_work_pytest_runnable "$dir"; then
+        # pytest resolved on PATH but doesn't actually run (not installed, or a version
+        # manager shim like mise/asdf has no version selected) — report one clear line
+        # instead of letting `pytest` dump its raw (and possibly unrelated-looking, e.g.
+        # "mise ERROR ...") failure.
+        printf '=== %s ===\n%s\n\n' "$label" \
+          "pytest tests were detected but pytest is not runnable (not installed, or a version manager has no version selected for this project). Fix the pytest toolchain, then rerun." >>"$TMPFILE"
+      elif [ "$MODE" = changed ]; then
+        # Changed test files under this dir, relative to it.
+        prefix=""
+        [ "$dir" != . ] && prefix="$dir/"
+        targets=$(changed_matching '(^|/)(test_[^/]*|[^/]*_test)\.py$' | existing |
+          while read -r f; do case "$f" in "$prefix"*) echo "${f#"$prefix"}" ;; esac done)
+        # shellcheck disable=SC2086
+        [ -n "$targets" ] && run_test "$label (changed)" "${IN_DIR[@]}" "$dir" "${PY_RUN[@]}" pytest $targets
+      else
+        run_test "$label" "${IN_DIR[@]}" "$dir" "${PY_RUN[@]}" pytest
+      fi
+    done < <(_verify_work_pytest_dirs)
   fi
 fi
 
@@ -244,6 +337,20 @@ fi
 
 if [ -n "$MSG" ]; then
   # Real failures re-fire on every stop attempt until fixed — correct for ground truth.
+  # Capped within a forced-continuation chain so an unfixable failure still stops.
+  reminder_state_file verify-work-active-blocks
+  BLOCKS=0
+  if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+    BLOCKS=$(cat "$REPLY" 2>/dev/null)
+    case "$BLOCKS" in *[!0-9]* | "") BLOCKS=0 ;; esac
+    if [ "$BLOCKS" -ge 3 ]; then
+      # The failure stands; tell the mod so it doesn't score this stop as a pass.
+      [ -n "${DEV_HOOKS_ORCHESTRATED:-}" ] && echo "dev-hooks: block cap reached" >&2
+      exit 0
+    fi
+    BLOCKS=$((BLOCKS + 1))
+  fi
+  printf '%s' "$BLOCKS" >"$REPLY" 2>/dev/null
   reminder_emit_stop "$MSG"
 elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ] && reminder_fire_once verify-work-notools; then
   # No tools detected — nudge Claude to check manually, but only ONCE per session (suppressed

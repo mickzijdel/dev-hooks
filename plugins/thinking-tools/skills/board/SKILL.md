@@ -7,7 +7,7 @@ description: Use when you want hard, independent, adversarial critique of an ide
 
 Convene a panel of independent advisors who each attack the work from a different angle, then a chairman synthesizes. The point is to defeat agreement bias: real, separate critics surface problems a single agreeable pass glosses over.
 
-**Engine:** spawn the advisors as **real parallel subagents** so their views are genuinely independent, not one context rationalizing with itself. **REQUIRED:** use [[dispatching-parallel-agents]] for the dispatch mechanics.
+**Engine:** spawn the advisors as **real parallel subagents** so their views are genuinely independent, not one context rationalizing with itself. Dispatch mechanics: [[dispatching-parallel-agents]].
 
 ## When to use
 

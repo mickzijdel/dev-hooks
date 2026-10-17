@@ -78,12 +78,10 @@ handled Claude Code — nice") and fast-forward to what's still missing instead 
 those steps.
 
 **If the audit shows everything already `installed`** (a returning user, or someone whose
-machine was set up elsewhere), don't end the turn with "you're all set!" — there's nothing to
-install, but the user still came here to *do* something. There's nothing to install, but still
-do **step 2** (calibrate) and then **step 9** — make sure their `~/.claude/CLAUDE.md` has the
-`How to explain things to me` section matching the level they just gave (they may not have it yet,
-or it may be stale); seed or refresh it, showing the diff first. Then go straight to **step 12**,
-which runs in every case.
+machine was set up elsewhere), skip the install steps. Do **step 2** (calibrate), then **step 9**
+— make sure their `~/.claude/CLAUDE.md` has the `How to explain things to me` section matching
+the level they just gave (they may not have it yet, or it may be stale); seed or refresh it,
+showing the diff first. Then go to **step 12**.
 
 ### 2. Calibrate — "how should I pitch this?"  *(runs in every case)*
 
@@ -283,12 +281,10 @@ Confirm each line that was `missing` is now `installed`, `gh_auth=yes`, `git_ide
 `playwright_browsers=installed`. List anything still outstanding (e.g. a GUI install the user
 declined, or a `sudo` step they need to run themselves) and what's left for them to do.
 
-### 12. Always end here — "so, what do you want to do?"  *(never skip)*
+### 12. End here — "so, what do you want to do?"  *(runs in every case)*
 
-**This step runs every time, no matter what the audit showed.** Setup is the means, not the
-point — someone whose machine was already perfect still came here wanting to *do something*.
-So when nothing needed installing (everything `installed` on the first audit), don't stop with
-"you're all set!" and end the turn — go straight here.
+Setup is the means, not the point: someone whose machine was already set up still came here
+wanting to *do something*, so don't end the turn with "you're all set!".
 
 Ask the user — use **AskUserQuestion** so it's a real choice, not a wall of text — what they're
 here to do, and route to the skill that owns it:

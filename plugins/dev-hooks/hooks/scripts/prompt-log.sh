@@ -25,6 +25,7 @@ source "$SELF_DIR/lib/reminder-common.sh"
 # Shared UserPromptSubmit preamble: opt-out (DEV_HOOKS_PROMPT_LOG), read stdin, require a
 # non-empty .prompt, and set INPUT/PROMPT/CWD/SESSION. Silent no-op on drift/empty.
 reminder_prompt_init DEV_HOOKS_PROMPT_LOG
+reminder_is_probe_session && exit 0
 
 # Strip credential-shaped values before anything is written. Redact first, truncate after,
 # so a token near the 500-char boundary can't survive as a fragment.

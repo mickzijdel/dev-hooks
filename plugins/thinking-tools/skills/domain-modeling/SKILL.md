@@ -67,12 +67,6 @@ When a term is resolved, update `CONTEXT.md` right there. Don't batch these up �
 
 `CONTEXT.md` should be totally devoid of implementation details. Do not treat `CONTEXT.md` as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
 
-### Offer ADRs sparingly
+### Hand decisions to adr
 
-Decisions go in ADRs, not the glossary. Only offer to create one when all three are true:
-
-1. **Hard to reverse** — the cost of changing your mind later is meaningful
-2. **Surprising without context** — a future reader will wonder "why did they do it this way?"
-3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
-
-If any of the three is missing, skip the ADR. When all three hold, record it with [[adr]] (Nygard format, `docs/decisions/`).
+Decisions go in ADRs, not the glossary. When one surfaces, use [[adr]]'s criteria to decide whether it earns an ADR, and record it there (Nygard format, `docs/decisions/`).

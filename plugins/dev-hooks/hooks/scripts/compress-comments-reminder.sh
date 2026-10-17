@@ -6,10 +6,10 @@
 # that restate the code (narration, code-echo, planning forensics) get deleted and the
 # rest compressed.
 #
-# Signal: added comment lines in (a) `git diff HEAD` (uncommitted work), (b) untracked
-# code files (all their lines are new), and (c) commits made since the session started —
-# the transcript's first-line timestamp — so commit-as-you-go sessions with a clean tree
-# still trigger. Shebangs and directive comments (shellcheck/eslint/noqa/...) don't count;
+# Signal: added comment lines in one diff from the last commit before the session started
+# (the transcript's first-line timestamp) to the working tree, plus untracked code files —
+# so commit-as-you-go sessions with a clean tree still trigger, and rewriting a comment
+# this session wrote is not growth. Shebangs and directive comments (shellcheck/eslint/noqa/...) don't count;
 # docstrings aren't counted either — the skill still reviews them; this hook only needs a
 # cheap "wrote comments" signal, not full coverage.
 #
@@ -35,9 +35,8 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 reminder_stop_init ""
 
 # ── Count comment lines this session added ──────────────────────────────────────
-# reminder_session_added_lines supplies the shared half (added lines in the working tree,
-# in commits since the session started, and every line of an untracked code file, over the
-# lib's one code-extension list); this hook only filters them down to comments.
+# reminder_session_added_lines supplies the session's net added lines over the lib's one
+# code-extension list; this hook only filters them down to comments.
 # `*` needs trailing space/EOL: a bare `^\s*\*` would count Python's `*args,` lines.
 COMMENT_RE='^[[:space:]]*(#|//|/\*|\*([[:space:]]|$))'
 NOISE_RE='^[[:space:]]*#!|shellcheck|eslint|noqa|biome-ignore|jscpd:|rubocop:|type:[[:space:]]*ignore|frozen_string_literal'

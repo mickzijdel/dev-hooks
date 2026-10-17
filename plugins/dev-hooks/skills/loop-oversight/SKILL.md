@@ -1,6 +1,6 @@
 ---
 name: loop-oversight
-description: Use before launching a loop that runs many iterations — a `/loop`, a `/schedule` routine, or a Workflow fan-out — or when a running loop is drifting, unbounded, or leaving no reviewable trail. Triggers on "loop over every X", "go through all the Y and track status", "automate this repetitive sweep", "run this on a schedule", or an Osman-style "make a canonical tracker and work through every item". Sets up the ledger, the bound, and the independent verify pass a loop needs to stay reviewable. NOT for a one-off task (just do it) or one-shot parallel fan-out with no iteration (that's dispatching-parallel-agents).
+description: Use before launching a loop that runs many iterations — a `/loop`, a `/schedule` routine, or a Workflow fan-out — or when a running loop is drifting, unbounded, or leaving no reviewable trail. Triggers on "loop over every X", "go through all the Y and track status", "automate this repetitive sweep", "run this on a schedule", or "make a canonical tracker and work through every item". Sets up the ledger, the bound, and the independent verify pass a loop needs to stay reviewable. NOT for a one-off task (just do it) or one-shot parallel fan-out with no iteration (that's dispatching-parallel-agents).
 ---
 
 # Running loops with oversight

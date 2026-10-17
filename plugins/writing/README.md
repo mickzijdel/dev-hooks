@@ -15,9 +15,10 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `readability` | Making web copy scannable — inverted pyramid, plain language, plus Flesch-Kincaid/vocabulary audit scripts. |
 | `voice-profile` | Matching a person's writing voice — apply a profile of their own rules (Do/Don't/banned words/before-after), build one from their samples, or fall back to baseline expository discipline. Bundles a `voice_audit.py` banned-word scanner. |
 
-> `github-readme`, `humanizer`, and `readability` are adapted **verbatim** from
-> [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles) (credit to Nate; each
-> `SKILL.md` links back to its source). `humanizer` is additionally based on
+> `github-readme` and `readability` are adapted **verbatim** from
+> [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles), and `humanizer` is
+> adapted from the same source (credit to Nate; each `SKILL.md` links back to its source).
+> `humanizer`'s examples are reworked to add no facts the input lacks, and it is based on
 > [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
 > (WikiProject AI Cleanup). `voice-profile` is original to this plugin.
 
@@ -29,7 +30,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `voice-intent-reminder` | A `UserPromptSubmit` whose prompt reads as a writing/copy task **when a voice profile is discoverable** — nudges Claude to apply the `voice-profile` skill *before* drafting, so your voice is baked into the first draft. Fires once per session; silent without a profile. | `WRITING_VOICE=false` |
 | `voice-prewrite-reminder` | A `PreToolUse` on `Write`/`Edit`/`MultiEdit` of a prose file **when a voice profile is discoverable** — injects the profile's location *before the write lands*, so the voice is in the first draft instead of being patched in afterwards. This is the hook that catches prose work the prompt never announced. Advisory: no permission decision, so the write proceeds normally. Fires once per session. | `WRITING_VOICE=false` |
 | `voice-reminder` | A `Write`/`Edit`/`MultiEdit` of a prose file **when a voice profile is discoverable** — scans it with `voice_audit.py` and nudges toward the `voice-profile` skill if banned words appear. A narrow signal (prose can be badly off-voice without tripping one), hence the other three. Silent without a profile or on clean prose; never blocks. | `WRITING_VOICE=false` |
-| `voice-stop-reminder` | A `Stop` after the session wrote prose files but never invoked the `voice-profile` skill — blocks the turn (exit 2) and sends Claude back to apply the profile. The only voice hook that *checks* rather than suggests, and the last point before you read the draft. Both signals come from walking the transcript's tool-use blocks, so it works outside git. Re-asks when more prose is written, capped at 3 nudges so it cannot loop. | `WRITING_VOICE=false` |
+| `voice-stop-reminder` | A `Stop` after the session wrote prose files but never invoked the `voice-profile` skill — blocks the stop and sends Claude back to apply the profile. The only voice hook that *checks* rather than suggests, and the last point before you read the draft. Both signals come from walking the transcript's tool-use blocks, so it works outside git. Re-asks when more prose is written, capped at 3 nudges so it cannot loop. | `WRITING_VOICE=false` |
 
 ## Install
 

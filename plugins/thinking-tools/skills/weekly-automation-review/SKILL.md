@@ -49,6 +49,16 @@ firing rarely) and check the bet against the **current** model:
   `DEV_HOOKS_FIRE_LOG=1`), see how often the hook actually fires. A hook that never fires is
   either dead or its trigger is stale; a hook that fires constantly and is always ignored is
   noise.
+- **Effect, for Stop hooks.** A fire count says nothing about whether the nudge worked. If
+  `~/.claude/automation-review/stop-nudges.json` exists (written by the `dev-hooks` mod), read
+  its `last7Days` / `last30Days`: per hook, `fired` and how many were `acted` on, `ignored`,
+  `declined` (memory-reminder's "nothing worth saving") or `unknown` (no detectable remedy, or
+  the session ended first). Acted-on rate = `acted / (acted + ignored + declined)`; `records`
+  holds each nudge (`hook`, `session`, `at` in epoch ms, `outcome`, `evidence`) for 90 days.
+  A hook with a high fire count and a low acted-on rate is the noise case above. Remedies see
+  only Edit/Write and skill/agent runs, so one done through Bash counts as ignored — sample a
+  session or two before retiring on this number alone. Missing file: fall back to
+  transcripts.
 - **The sunset test.** Read the `# sunset:` line — it names the observable that means "delete
   me." Judge whether the current model now does that thing unprompted (sample a few recent
   transcripts, or run a quick with/without probe on a representative case).

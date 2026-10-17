@@ -139,14 +139,6 @@ Grep the markup or stylesheet for the colour values, not the rendered screenshot
 | Building one option because it was described first | The person cannot choose what they were never shown |
 | Picking colours and labels card by card | The same blue means two things on one page, and the reader draws a link that isn't there |
 
-## Real-world impact
-
-In one session, profiling first would have pre-empted four rebuilds: a field NULL on all 30,293
-rows still had a badge designed for it; a "summarise the notes" feature was specified for notes
-averaging 52 characters; a prominent count turned out to be true of every record; and 8% of a
-text field was silently truncated upstream with nothing in the UI saying so. Each was found
-mid-build, after the card existed.
-
 ## Where the non-obvious parts come from
 
 - Decision-first, and prominence by decision weight — Stephen Few, *Information Dashboard Design*

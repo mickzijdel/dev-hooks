@@ -28,8 +28,14 @@ printf '%s' "$COMMAND" |
 
 reminder_cwd_session
 
+# The dev-hooks mod watches the run itself and marks its session; matched on the
+# session id, since a nested claude inherits the marker but not the id.
+[ -n "${DEV_HOOKS_CI_WATCH_SESSION:-}" ] && [ "$DEV_HOOKS_CI_WATCH_SESSION" = "$SESSION" ] && exit 0
+
 # Only nudge when there's actually a GitHub Actions run to watch.
-ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
+# Judged in the pushed repo, not the session's (`cd other && git push`, `git -C other push`).
+reminder_git_target_dir push
+ROOT=$(git -C "$REPLY" rev-parse --show-toplevel 2>/dev/null) || exit 0
 shopt -s nullglob
 workflows=("$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml)
 [ ${#workflows[@]} -gt 0 ] || exit 0

@@ -1,14 +1,10 @@
 ---
 name: dependency-upgrade
 description: |
-  Bring a repo's dependencies up to the latest versions across JavaScript (npm/pnpm/yarn),
-  Ruby (bundler), Python (uv/poetry/pip), and GitHub Actions — reading changelogs/migration
-  guides for major bumps, applying the needed code changes, and landing each step as its own
-  verified commit. Use when the user wants to "update my packages", "upgrade dependencies",
-  "bump deps to latest", "check for outdated packages", or do this across all their repos
-  (fleet mode). Gates every commit on a green test suite; defers any major it can't get green
-  to a written report. Pairs with the github-actions skill (Actions pins) and respects
-  dev-env-setup's 4-day dependency cooldown.
+  Bring a repo's dependencies (JavaScript, Ruby, Python, GitHub Actions) up to their latest
+  versions. Use when the user wants to "update my packages", "upgrade dependencies", "bump
+  deps to latest", "check for outdated packages", or do this across all their repos (fleet
+  mode), or when the latest-deps-reminder hook flags stale versions.
 allowed-tools:
   - Read
   - Write
@@ -73,7 +69,10 @@ ecosystem**.
    package manager** (never hand-edit it — see references/ecosystems.md for the exact commands).
    Run the tests. Green → **one commit per ecosystem** (`chore(deps): bump JS patch/minor deps`).
    Red → bisect the offending package out (pin it back), commit the rest, and note the held-back
-   one in the report.
+   one in the report. **Ruby: bump Bundler itself before the gems**
+   (`bundle update --bundler=<version>`, version picked as in references/ecosystems.md). A plain
+   `bundle update` never moves `BUNDLED WITH`, and a Bundler older than 4.0.13 ignores the
+   cooldown.
 
 5. **Major pass — one major at a time.** Majors carry breaking changes, so handle them singly:
    - `WebFetch` the changelog / release notes / migration guide (npm package "Changelog",
@@ -106,13 +105,13 @@ ecosystem**.
 
 ## Fleet mode ("update all my repos")
 
-To sweep every repo, mirror the cadence in the [[dev-env-bump-backfill-fleet]] memory and the
-[[github-actions]] fleet bump — but **one isolated agent per repo** so they never share state:
+To sweep every repo, follow the [[github-actions]] fleet bump's cadence (the whole fleet in one
+session) — but **one isolated agent per repo** so they never share state:
 
 1. **Enumerate + confirm.** Start from the dev-env fleet — [[dev-env-setup]]'s
-   `scripts/fleet_roster.sh` discovers every repo carrying `DEV_ENV_VERSION` in `mise.toml`
-   live (any fleet memory holds per-repo quirks, not the roster) — and cross-check with the
-   remote list:
+   `scripts/fleet_roster.sh` discovers every local repo carrying `DEV_ENV_VERSION` in
+   `mise.toml` (one line per repo with its path, version, checked-out branch, and a dirty
+   flag) — and cross-check with the remote list:
    ```bash
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"
    gh repo list "$(gh api user -q .login)" --source --no-archived --limit 200 --json nameWithOwner -q '.[].nameWithOwner'
@@ -135,9 +134,7 @@ To sweep every repo, mirror the cadence in the [[dev-env-bump-backfill-fleet]] m
    - **No deploy** (library / CLI / plugin): just merge + push.
 4. **Dispatch one agent per repo**, each in its **own worktree/branch** (the Task tool's
    `isolation: "worktree"`, or [[dispatching-parallel-agents]]), each running the per-repo workflow
-   above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3, and a stable,
-   **correct agent↔repo mapping** — if you later message an agent mid-run (e.g. to change the deploy
-   plan), triple-check the agent id matches the repo, or the instruction lands on the wrong repo.
+   above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3.
 5. **Report** a one-line summary per repo at the end — upgraded / deferred, push state (pushed /
    PR #), and deploy state (deployed / not).
 
@@ -149,10 +146,3 @@ To sweep every repo, mirror the cadence in the [[dev-env-bump-backfill-fleet]] m
 - Never disable the cooldown or commit a red tree to "make progress" — defer instead.
 - Don't auto-run from a hook; this writes commit-tracked changes. It's invoked by the user (the
   `latest-deps-reminder` hook only nudges that deps may be stale).
-
-## How this skill is reached
-
-- The `latest-deps-reminder` hook flags that a manifest's versions may be stale → run this skill
-  to actually move them forward.
-- The user asks to "update packages" / "upgrade dependencies" / "bump deps" / do it across all
-  their repos → this skill's description triggers directly.

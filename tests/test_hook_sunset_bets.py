@@ -12,18 +12,30 @@ always has something concrete to check against the current model.
 import os
 import subprocess
 
-from conftest import HOOKS
+import pytest
+from conftest import HOOKS, WRITING_HOOKS
 
 LIB = HOOKS / "lib" / "reminder-common.sh"
+VOICE_LIB = WRITING_HOOKS / "lib" / "voice-common.sh"
 
 
-def _fire(home, **env):
-    """Source the lib and invoke the fire-logger once, under a controlled HOME."""
+FIRE_SESSION = "0d5f1c2e-7a41-4b9e-9c3d-2f6a8b1e4c70"
+
+
+def _fire(
+    home, session=FIRE_SESSION, cwd="/x/y", lib=LIB, logger="_reminder_log_fire", **env
+):
+    """Source the lib and invoke the fire-logger once, under a controlled HOME. `cwd` is the
+    hook's $CWD (the payload's cwd), never a directory this test creates."""
     e = os.environ.copy()
     e["HOME"] = str(home)
     e.update(env)
     subprocess.run(
-        ["bash", "-c", f'SESSION=s1; source "{LIB}"; _reminder_log_fire probe.sh'],
+        [
+            "bash",
+            "-c",
+            f'SESSION={session}; CWD="{cwd}"; source "{lib}"; {logger} probe.sh',
+        ],
         env=e,
         check=True,
     )
@@ -39,7 +51,23 @@ def test_fire_log_writes_only_when_opted_in(tmp_path):
     _fire(tmp_path, DEV_HOOKS_FIRE_LOG="1")
     assert log.exists()
     body = log.read_text()
-    assert '"hook":"probe.sh"' in body and '"session":"s1"' in body
+    assert '"hook":"probe.sh"' in body and f'"session":"{FIRE_SESSION}"' in body
+
+
+@pytest.mark.parametrize(
+    "lib, logger", [(LIB, "_reminder_log_fire"), (VOICE_LIB, "_voice_log_fire")]
+)
+def test_fire_log_skips_probe_sessions(tmp_path, lib, logger):
+    # Made-up test ids and `claude -p` probes run from Claude's scratchpad skew the weekly
+    # review's fire counts; neither is logged.
+    log = tmp_path / ".claude" / "automation-review" / "hook-fires.jsonl"
+    log.parent.mkdir(parents=True)
+    _fire(tmp_path, session="smoke1", lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
+    pad = "/tmp/claude-1000/-home-x/abc/scratchpad/probe"
+    _fire(tmp_path, cwd=pad, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
+    assert not log.exists()
+    _fire(tmp_path, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
+    assert log.exists()
 
 
 def test_fire_log_silent_without_dir(tmp_path):
@@ -147,7 +175,7 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     e.update(HOME=str(home), DEV_HOOKS_FIRE_LOG="1")
     r = subprocess.run(
         ["bash", str(HOOKS / "docs-context.sh")],
-        input=f'{{"cwd":"{proj}","session_id":"sess-abc"}}',
+        input=f'{{"cwd":"{proj}","session_id":"{FIRE_SESSION}"}}',
         env=e,
         capture_output=True,
         text=True,
@@ -159,7 +187,9 @@ def test_session_start_hook_logs_a_fire(tmp_path):
     assert log.exists(), "SessionStart hook emitted but logged no fire"
     body = log.read_text()
     assert '"hook":"docs-context.sh"' in body
-    assert '"session":"sess-abc"' in body, "session_id not carried into the fire log"
+    assert f'"session":"{FIRE_SESSION}"' in body, (
+        "session_id not carried into the fire log"
+    )
 
 
 # Helpers that leave SESSION set in the caller's scope. reminder_post_bash_init is

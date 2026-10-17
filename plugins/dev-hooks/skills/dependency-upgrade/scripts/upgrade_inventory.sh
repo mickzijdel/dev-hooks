@@ -18,6 +18,10 @@
 #   has_actions     1 if any .github/workflows/*.y{a,}ml present
 #   js_manager      pnpm | yarn | npm | none   (by lockfile; npm is the fallback)
 #   ruby_manager    bundler | none
+#   ruby_bundled_with  the Bundler version Gemfile.lock records (BUNDLED WITH) | none
+#   ruby_cooldown_enforced  1 if that Bundler honours `cooldown` (>= 4.0.13), 0 if not,
+#                   unknown without a lockfile. An older Bundler ignores the Gemfile's
+#                   cooldown and BUNDLE_COOLDOWN silently.
 #   python_manager  uv | poetry | pip | none   (by lockfile/manifest table)
 #   actions_count   number of workflow files
 #   ecosystems      space-separated list of the present ecosystems (js ruby python actions)
@@ -69,6 +73,22 @@ fi
 ruby_manager="none"
 [ "$has_ruby" = 1 ] && ruby_manager="bundler"
 
+# Bundler runs as the version Gemfile.lock records, so that is the one that resolves.
+BUNDLER_COOLDOWN_MIN="4.0.13"
+ruby_bundled_with="none"
+ruby_cooldown_enforced="unknown"
+if [ "$has_ruby" = 1 ] && [ -f "$DIR/Gemfile.lock" ]; then
+  ruby_bundled_with="$(awk '/^BUNDLED WITH/{getline; gsub(/[[:space:]]/, ""); print; exit}' "$DIR/Gemfile.lock")"
+  [ -z "$ruby_bundled_with" ] && ruby_bundled_with="none"
+fi
+if [ "$ruby_bundled_with" != none ]; then
+  # Numeric, segment-wise compare (portable: no `sort -V`).
+  ruby_cooldown_enforced="$(awk -v a="$ruby_bundled_with" -v b="$BUNDLER_COOLDOWN_MIN" 'BEGIN {
+    n = split(a, x, "."); m = split(b, y, "."); k = (n > m ? n : m)
+    for (i = 1; i <= k; i++) { if (x[i] + 0 > y[i] + 0) { print 1; exit } if (x[i] + 0 < y[i] + 0) { print 0; exit } }
+    print 1 }')"
+fi
+
 python_manager="none"
 if [ "$has_python" = 1 ]; then
   if [ -f "$DIR/uv.lock" ] || { [ -f "$DIR/pyproject.toml" ] && grep -q '^\[tool\.uv\]' "$DIR/pyproject.toml" 2>/dev/null; }; then
@@ -114,6 +134,8 @@ has_actions=$has_actions
 js_manager=$js_manager
 ruby_manager=$ruby_manager
 python_manager=$python_manager
+ruby_bundled_with=$ruby_bundled_with
+ruby_cooldown_enforced=$ruby_cooldown_enforced
 actions_count=$actions_count
 ecosystems=$ecosystems
 EOF
@@ -142,6 +164,14 @@ report_one() {
 
 [ "$has_js" = 1 ] && report_one "js/$js_manager" "$js_manager" "$js_cmd"
 [ "$has_ruby" = 1 ] && report_one "ruby" "bundle" "$ruby_cmd"
+if [ "$ruby_bundled_with" != none ]; then
+  echo "# [ruby] Bundler itself: locked at $ruby_bundled_with; a plain bundle update never moves it."
+  echo "#   bundle update --bundler=<newest release outside the cooldown>  (see references/ecosystems.md)"
+  if [ "$ruby_cooldown_enforced" = 0 ]; then
+    echo "#   WARNING: Bundler $ruby_bundled_with ignores the cooldown (needs >= $BUNDLER_COOLDOWN_MIN) —"
+    echo "#   bump Bundler FIRST, or every gem resolves to its newest release regardless of age."
+  fi
+fi
 [ "$has_python" = 1 ] && report_one "python/$python_manager" "$python_manager" "$python_cmd"
 if [ "$has_actions" = 1 ]; then
   echo "# [actions] $actions_count workflow file(s) — bump pins via the github-actions skill (pinact run -u),"

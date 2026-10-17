@@ -66,14 +66,24 @@ reminder_old_content() {
 # once-per-session guard: the sentinel is embedded in the hook's own reminder, so
 # finding it means we already prompted, and a re-fire would loop the Stop hook.
 # Pass "" as the sentinel to skip the guard (a hook managing its own re-arm state).
+# Exits on stop_hook_active unless $2 is --when-active, for a ground-truth hook that caps
+# its own blocks: verify-work.
 reminder_stop_init() {
   INPUT=$(cat 2>/dev/null)
   local _si
   mapfile -t _si < <(printf '%s' "$INPUT" |
-    jq -r '(.transcript_path // ""), (.session_id // "nosession")' 2>/dev/null)
+    jq -r '(.transcript_path // ""), (.session_id // "nosession"), (.stop_hook_active // false)' 2>/dev/null)
   TRANSCRIPT=${_si[0]:-}
   # shellcheck disable=SC2034
   SESSION=${_si[1]:-nosession}
+  # The dev-hooks mod marks its session and runs the Stop hooks itself (setting
+  # DEV_HOOKS_ORCHESTRATED), so this direct run stands down. Matched on the session id:
+  # a nested claude inherits the marker but not the id.
+  [ -n "${DEV_HOOKS_MOD_SESSION:-}" ] && [ "$DEV_HOOKS_MOD_SESSION" = "$SESSION" ] &&
+    [ -z "${DEV_HOOKS_ORCHESTRATED:-}" ] && exit 0
+  # At most one forced continuation per natural stop
+  STOP_HOOK_ACTIVE=${_si[2]:-false}
+  [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "${2:-}" != "--when-active" ] && exit 0
   if [ -n "$1" ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     grep -qF "$1" "$TRANSCRIPT" 2>/dev/null && exit 0
   fi
@@ -296,8 +306,18 @@ reminder_fire_once() {
 # review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
 # no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
 # fails the hook. $1 = firing hook's basename.
+# A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
+# a made-up id (a hand-run smoke test) or a `claude -p` probe run from Claude Code's
+# scratchpad. Mirrored by _voice_log_fire in the writing plugin, which can't source this.
+reminder_is_probe_session() {
+  [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
+  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-*) return 0 ;; esac
+  return 1
+}
+
 _reminder_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
+  reminder_is_probe_session && return 0
   local dir="$HOME/.claude/automation-review"
   [ -d "$dir" ] || return 0
   printf '{"hook":"%s","session":"%s","ts":%s}\n' \
@@ -375,12 +395,12 @@ reminder_emit_note() {
   exit 0
 }
 
-# Emit Stop-hook feedback (continue:false + additionalContext) and exit 2, feeding the
-# message back to Claude so it acts before finishing.
+# decision:block keeps Claude working on the reason. Never continue:false: it halts Claude,
+# and the reminder then waits for the user's next prompt.
 reminder_emit_stop() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{continue: false, hookSpecificOutput: {hookEventName: "Stop", additionalContext: $msg}}'
-  exit 2
+  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  exit 0
 }
 
 # Changed files (staged + unstaged + untracked) from porcelain status, one per line,
@@ -562,10 +582,12 @@ reminder_session_files() {
     grep -v '^$' | sort -u)
 }
 
-# Lines of code this session added — added lines in `git diff HEAD`, in commits since the
-# session started, and every line of an untracked code file — into $REPLY. The growth
-# signal reminder_rearm compares against, and the shared half of compress-comments-
-# reminder's comment count (which filters these lines further).
+# Lines of code this session added, into $REPLY: the added side of one diff from the last
+# commit before the session started to the working tree, plus every line of an untracked
+# code file. One cumulative diff, not a sum of per-commit patches: summing counted a line
+# again each time a later commit rewrote it, so compressing comments read as growth.
+# The growth signal reminder_rearm compares against, and the shared half of
+# compress-comments-reminder's comment count (which filters these lines further).
 # Pass pathspecs to widen beyond code (big-change-reminder counts every file); with no
 # arguments it uses REMINDER_CODE_EXTS.
 reminder_session_added_lines() {
@@ -574,15 +596,24 @@ reminder_session_added_lines() {
   else
     reminder_code_globs
   fi
-  local since
+  local since base=HEAD
   reminder_session_since
   since=$REPLY
+  if [ -n "$since" ] && git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    base=$(git rev-list -1 --before="$since" HEAD 2>/dev/null)
+    # No older commit: the repo was born this session, unless a shallow clone hid history
+    if [ -z "$base" ]; then
+      if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+        base=HEAD
+      else
+        base=$(git hash-object -t tree /dev/null)
+      fi
+    fi
+  fi
   REPLY=$(
     {
-      {
-        git diff HEAD --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null
-        [ -n "$since" ] && git log -p --no-color --format= --since="$since" -- "${CODE_GLOBS[@]}" 2>/dev/null
-      } | grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
+      git diff "$base" --no-color -- "${CODE_GLOBS[@]}" 2>/dev/null |
+        grep -E '^\+' | grep -vE '^\+\+\+' | cut -c2-
       reminder_untracked_text "${CODE_GLOBS[@]}"
     } | cat
   )
@@ -594,25 +625,45 @@ reminder_session_added_lines() {
 # rather than grepping: the transcript carries a skill_listing attachment naming every
 # installed skill, so a bare-name grep matches in EVERY session and would suppress the
 # caller forever. Needs $TRANSCRIPT.
+# The directory the first `git <words…>` in $COMMAND runs in — following `cd` segments and
+# git's `-C` — in $REPLY ($CWD when none). Use it, not $CWD, for "the repo this git command
+# acts on": `cd other && git commit` from a session sitting elsewhere acts on `other`.
+reminder_git_target_dir() {
+  REPLY=$(
+    python3 - "$REMINDER_LIB_DIR" "$COMMAND" "${CWD:-$PWD}" "$@" <<'PYEOF'
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import git_target_dir
+
+print(git_target_dir(sys.argv[2], sys.argv[3], tuple(sys.argv[4:])))
+PYEOF
+  ) || REPLY=""
+  [ -n "$REPLY" ] || REPLY=${CWD:-$PWD}
+}
+
 reminder_transcript_invoked() {
   local sentinel=$1
   shift
   REPLY=0
-  [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || return 0
+  # The mod's session facts (DEV_HOOKS_FACTS_FILE, set when it runs the Stop hooks) also
+  # see skills and agents run inside subagents, which the transcript never records.
+  { [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; } || [ -f "${DEV_HOOKS_FACTS_FILE:-}" ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   REPLY=$(
-    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "$@" <<'PYEOF'
+    python3 - "$TRANSCRIPT" "$sentinel" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" "$@" <<'PYEOF'
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
-from hook_helpers import transcript_invoked
+from hook_helpers import facts_invoked, transcript_invoked
 
+needles = tuple(sys.argv[5:])
 print(
     1
-    if transcript_invoked(
-        sys.argv[1], tuple(sys.argv[4:]), sentinel=sys.argv[2] or None
-    )
+    if (sys.argv[4] and facts_invoked(sys.argv[4], needles))
+    or transcript_invoked(sys.argv[1], needles, sentinel=sys.argv[2] or None)
     else 0
 )
 PYEOF
@@ -627,16 +678,27 @@ PYEOF
 # (re-arming) averages ~3.9 fires per session it speaks in; review-reminder (sentinel)
 # averages exactly 1.0.
 #
+# Keyed per repo too: one session stops in main and in worktrees, and an empty worktree
+# would reset main's baseline to 0.
+_reminder_repo_key() {
+  if [ -z "${_REMINDER_REPO_KEY:-}" ]; then
+    _REMINDER_REPO_KEY=$(git rev-parse --show-toplevel 2>/dev/null | cksum | cut -d' ' -f1)
+  fi
+  REPLY=$_REMINDER_REPO_KEY
+}
+
 # Current baseline for $1 into $REPLY ("" when the hook has not fired yet this session).
 reminder_rearm_baseline() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   REPLY=$(cat "$REPLY" 2>/dev/null)
   case "$REPLY" in *[!0-9]* | "") REPLY="" ;; esac
 }
 
 # Record $2 as the baseline for $1 without firing — "this much is already handled".
 reminder_rearm_seed() {
-  reminder_state_file "$1"
+  _reminder_repo_key
+  reminder_state_file "$1" "$REPLY"
   printf '%s' "$2" >"$REPLY" 2>/dev/null
 }
 

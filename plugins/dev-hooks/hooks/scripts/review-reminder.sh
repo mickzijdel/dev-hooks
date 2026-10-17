@@ -20,8 +20,8 @@
 #   once one has, the session's added code lines become a baseline and the hook speaks
 #   again when they grow past it — code written *after* a review makes that review stale.
 #
-# "Already reviewed" is a tool_use walk for actual review invocations, never a bare-name
-# transcript grep, which would match the skill_listing attachment in every session.
+# "Already reviewed" is a tool_use walk for a review skill, a code-reviewer agent or an
+# agent described as a review. Never a bare-name grep: skill_listing names every skill.
 #
 # Opt out with DEV_HOOKS_REVIEW=false in settings env.
 
@@ -54,7 +54,7 @@ SUBSTANTIAL=10
 
 SENTINEL="[review-reminder]"
 
-reminder_transcript_invoked "" code-review code_review requesting-code-review code-reviewer
+reminder_transcript_invoked "" code-review code_review requesting-code-review code-reviewer agent:review
 REVIEWED=$REPLY
 
 if [ "$REVIEWED" = "1" ]; then

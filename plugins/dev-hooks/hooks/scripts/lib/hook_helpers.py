@@ -229,6 +229,151 @@ def _tool_use_blocks(line):
 _COMMAND_NAME_RE = re.compile(r"<command-name>([^<>\n]{1,100})</command-name>")
 
 
+# Opening verbs of an implementer, not a checker: "Fix final review blockers"
+_AGENT_DOER_RE = re.compile(
+    r"\s*(?:fix|fixes|implement|build|add|create|write|update|refactor|address|apply"
+    r"|predict|simulate)\b",
+    re.IGNORECASE,
+)
+
+
+def _agent_job_re(word):
+    """Match `word` as a description's job, not a modifier: "Review task 8" matches,
+    "Add product review form" does not. Calibrated on real Agent descriptions."""
+    w = re.escape(word)
+    return re.compile(
+        rf"^\s*(?:re-?)?{w}(?:ing)?\b"
+        rf"|\bre-?{w}\b"
+        rf"|^\s*(?:code|final|whole-branch|final whole-branch)[- ]{w}\b(?!\s+fix)"
+        rf"|\bwhole-branch {w}\b"
+        rf"|\b{w}(?:ing)?(?=\s*(?:$|[:,;(—–-]|\s+(?:of|for|round|pass|loop)\b))",
+        re.IGNORECASE,
+    )
+
+
+def _split_needles(needles):
+    """Plain needles (skill / subagent-type substrings) and the `agent:<word>` job regexes."""
+    jobs = [
+        _agent_job_re(n[len("agent:") :]) for n in needles if n.startswith("agent:")
+    ]
+    return tuple(n for n in needles if not n.startswith("agent:")), jobs
+
+
+# Claude Code's file-based memory: per project (~/.claude/projects/<slug>/memory/) or
+# global (~/.claude/memory/). A repo's own "memory" folder is not it.
+MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
+_WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def memory_written(transcript_path, facts_path=None):
+    """True when this session wrote a memory file: a Write/Edit tool call into a memory
+    dir in the transcript, or — via the dev-hooks mod's session facts — such an edit made
+    by a subagent, which the parent transcript never records."""
+    if facts_path:
+        try:
+            with open(facts_path, encoding="utf-8") as f:
+                repos = (json.load(f) or {}).get("repos") or []
+        except OSError, ValueError, TypeError, AttributeError:
+            repos = []
+        for repo in repos:
+            if any(
+                MEMORY_DIR_RE.search(str(p)) for p in (repo or {}).get("files") or []
+            ):
+                return True
+    for line in _transcript_lines(transcript_path):
+        for block in _tool_use_blocks(line):
+            if block.get("name") in _WRITE_TOOLS:
+                path = str((block.get("input") or {}).get("file_path") or "")
+                if MEMORY_DIR_RE.search(path):
+                    return True
+    return False
+
+
+_SEGMENT_WRAPPERS = {"sudo", "command", "nohup", "time", "env", "exec"}
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def git_target_dir(command, cwd, words):
+    """The directory the first `git <words…>` in `command` runs in: follows the `cd` segments
+    before it and git's own `-C` flags, falling back to `cwd`. Hooks that inspect "the repo
+    this git command acts on" must use this, not the session cwd — `cd other && git commit`
+    and `git -C other push` act on another repo. Unparseable quoting falls back to `cwd`."""
+    import shlex
+
+    try:
+        lexer = shlex.shlex(
+            command.replace("\n", " ; "), posix=True, punctuation_chars=";&|"
+        )
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return cwd
+
+    def resolve(base, path):
+        return os.path.normpath(
+            os.path.join(base, os.path.expandvars(os.path.expanduser(path)))
+        )
+
+    segments, current = [], []
+    for token in tokens:
+        if token and set(token) <= set(";&|"):
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    segments.append(current)
+
+    here = cwd
+    for seg in segments:
+        while seg and (_ASSIGNMENT_RE.match(seg[0]) or seg[0] in _SEGMENT_WRAPPERS):
+            seg = seg[1:]
+        if not seg:
+            continue
+        name = os.path.basename(seg[0])
+        if name in ("cd", "pushd"):
+            target = next((t for t in seg[1:] if not t.startswith("-")), "~")
+            here = resolve(here, target)
+        elif name == "git":
+            gdir, rest, i = here, seg[1:], 0
+            while i < len(rest) and rest[i].startswith("-"):
+                if rest[i] == "-C" and i + 1 < len(rest):
+                    gdir = resolve(gdir, rest[i + 1])
+                    i += 2
+                elif rest[i] in ("-c", "--git-dir", "--work-tree", "--namespace"):
+                    i += 2
+                else:
+                    i += 1
+            if tuple(rest[i : i + len(words)]) == tuple(words):
+                return gdir
+    return cwd
+
+
+def facts_invoked(facts_path, needles):
+    """True when the dev-hooks mod's session facts (DEV_HOOKS_FACTS_FILE) show one of
+    `needles` ran: a skill or subagent type naming it, or — for `agent:<word>` — a
+    subagent described as doing that job. Unlike the transcript, the facts include
+    skills run *inside* subagents. A missing or unreadable file is no evidence."""
+    try:
+        with open(facts_path, encoding="utf-8") as f:
+            facts = json.load(f)
+    except OSError, ValueError, TypeError:
+        return False
+    if not isinstance(facts, dict):
+        return False
+    names, agent_res = _split_needles(needles)
+    for skill in facts.get("skills") or []:
+        if any(n in str((skill or {}).get("skill", "")) for n in names):
+            return True
+    for agent in facts.get("agents") or []:
+        agent = agent or {}
+        if any(n in str(agent.get("subagentType", "")) for n in names):
+            return True
+        desc = str(agent.get("description") or "")
+        if not _AGENT_DOER_RE.match(desc) and any(r.search(desc) for r in agent_res):
+            return True
+    return False
+
+
 def transcript_invoked(transcript_path, needles, sentinel=None):
     """True when the session transcript shows one of `needles` was actually *invoked*: a
     tool_use block whose input `skill`/`subagent_type` names it, or a `<command-name>`
@@ -237,6 +382,10 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
     skill_listing attachment naming every installed skill, so a bare grep for a skill name
     matches in EVERY session and would permanently suppress the caller. Shared by the
     review-reminder and compress-comments-reminder Stop hooks."""
+
+    # agent:<word> matches an Agent/Task description naming <word> as its job; subagent
+    # reviews run as general-purpose agents with no review skill or type
+    needles, agent_res = _split_needles(needles)
 
     def hit(value):
         return isinstance(value, str) and any(n in value for n in needles)
@@ -256,6 +405,12 @@ def transcript_invoked(transcript_path, needles, sentinel=None):
             inp = block.get("input") or {}
             if hit(inp.get("skill")) or hit(inp.get("subagent_type")):
                 return True
+            if block.get("name") in ("Agent", "Task"):
+                desc = str(inp.get("description") or "")
+                if not _AGENT_DOER_RE.match(desc) and any(
+                    r.search(desc) for r in agent_res
+                ):
+                    return True
     return False
 
 

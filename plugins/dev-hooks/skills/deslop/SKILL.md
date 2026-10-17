@@ -31,7 +31,8 @@ the cleanup yourself — see [Why a subagent](#why-a-subagent).
    default branch, this session's commits plus the uncommitted diff. Never the whole repo
    — that is [[repo-review]].
 2. **Run the scanner** over the changed files:
-   `scripts/slop_scan.py <file>...` (`--metrics-only` for the measurement table alone).
+   `"$CLAUDE_PLUGIN_ROOT/skills/deslop/scripts/slop_scan.py" <file>...` (`--metrics-only`
+   for the measurement table alone).
    It exits 1 when it has findings. Its output goes into the brief verbatim.
 3. **Run the complexity check** for the changed files' language (see
    [Complexity](#complexity)). Its output goes into the brief too.
@@ -45,7 +46,8 @@ started, and the test command that passed before passes after.
 ## The subagent brief
 
 Dispatch with `subagent_type: "general-purpose"`. Copy this verbatim, filling the four
-bracketed slots:
+bracketed slots and replacing `<skill dir>` with this skill's absolute directory
+(`$CLAUDE_PLUGIN_ROOT/skills/deslop`, expanded — the subagent cannot resolve the variable):
 
 ```
 Remove AI-authored slop from a diff. Preserve behaviour exactly.
@@ -66,9 +68,8 @@ change nothing; an irreducible dispatch table is a fair answer, say so):
 
 VERIFY WITH: [test command]
 
-Read these first: the tier catalogue at
-plugins/dev-hooks/skills/deslop/references/patterns.md, and the measured comment
-budgets at plugins/dev-hooks/skills/deslop/references/measurements.md.
+Read these first: the tier catalogue at <skill dir>/references/patterns.md, and the
+measured comment budgets at <skill dir>/references/measurements.md.
 
 METHOD
 1. Run the verify command now and record the result. If it is already failing, stop and
@@ -110,11 +111,9 @@ REPORT BACK
 ## Complexity
 
 `slop_scan.py` measures verbosity. It does not measure the other half — complexity
-concentrating in a few functions — because a regex approximation of a cyclomatic count
-was built, measured against the reference corpora, and cut: it separated human from AI
-code about 2×, against 5× for comment density, and would have doubled the scanner's whole
-false-positive budget. The numbers are in
-[references/measurements.md](references/measurements.md).
+concentrating in a few functions — because a regex cannot separate human from AI code on
+complexity without doubling the scanner's false positives (numbers in
+[references/measurements.md](references/measurements.md)).
 
 Real AST tools do this properly, so run the one the project already has:
 

@@ -58,6 +58,23 @@ def assert_json_with(stdout, needle):
     return payload
 
 
+def stop_blocked(r):
+    """True when a Stop hook blocked the stop so Claude keeps working: exit 0 with
+    `{"decision": "block", "reason": …}`. Never `continue: false`, which halts Claude
+    entirely instead of letting it act on the reason."""
+    if r.returncode != 0 or not r.stdout.strip():
+        return False
+    out = json.loads(r.stdout)
+    assert "continue" not in out, out
+    return out.get("decision") == "block" and bool(out.get("reason"))
+
+
+def stop_allowed(r):
+    """True when a Stop hook let the stop proceed: exit 0 and no block. Unlike
+    `not stop_blocked(r)`, a crashing hook does not count as silent."""
+    return r.returncode == 0 and not stop_blocked(r)
+
+
 # ── dev-env-reminder.sh ─────────────────────────────────────────────────────────────
 def test_dev_env_reminder_silent_outside_git(tmp_path):
     r = run_hook("dev-env-reminder.sh", stdin=json.dumps({"cwd": str(tmp_path)}))
@@ -578,7 +595,7 @@ def test_voice_stop_blocks_when_prose_written_without_skill(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[voice-stop-reminder]")
 
 
@@ -588,7 +605,7 @@ def test_voice_stop_silent_when_skill_ran(tmp_path):
         tmp_path, [_voice_write_block(tmp_path / "post.md"), _VOICE_SKILL_BLOCK]
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -596,7 +613,7 @@ def test_voice_stop_silent_when_only_code_written(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "app.py")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -605,20 +622,20 @@ def test_voice_stop_does_not_loop_on_unchanged_prose(tmp_path):
     _voice_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
-    assert _run_voice_stop(payload, env).returncode == 2
-    assert _run_voice_stop(payload, env).returncode == 0
+    assert stop_blocked(_run_voice_stop(payload, env))
+    assert stop_allowed(_run_voice_stop(payload, env))
 
 
 def test_voice_stop_reasks_when_more_prose_written(tmp_path):
     _voice_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     first = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "a.md")])
-    assert _run_voice_stop(first, env).returncode == 2
+    assert stop_blocked(_run_voice_stop(first, env))
     second = _voice_stop_payload(
         tmp_path,
         [_voice_write_block(tmp_path / "a.md"), _voice_write_block(tmp_path / "b.md")],
     )
-    assert _run_voice_stop(second, env).returncode == 2
+    assert stop_blocked(_run_voice_stop(second, env))
 
 
 def test_voice_stop_nudges_are_bounded(tmp_path):
@@ -629,10 +646,9 @@ def test_voice_stop_nudges_are_bounded(tmp_path):
     for i in range(5):
         lines = [_voice_write_block(tmp_path / f"f{j}.md") for j in range(i + 1)]
         codes.append(
-            _run_voice_stop(_voice_stop_payload(tmp_path, lines), env).returncode
+            stop_blocked(_run_voice_stop(_voice_stop_payload(tmp_path, lines), env))
         )
-    assert codes[:3] == [2, 2, 2]
-    assert codes[3:] == [0, 0]
+    assert codes == [True, True, True, False, False]
 
 
 @pytest.mark.parametrize(
@@ -646,7 +662,7 @@ def test_voice_stop_ignores_repo_scaffolding(tmp_path, name):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / name)])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -660,7 +676,7 @@ def test_voice_stop_still_fires_for_real_prose_beside_scaffolding(tmp_path):
         ],
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     # Only the blog post counted.
     assert "wrote 1 prose file" in r.stdout
 
@@ -695,7 +711,7 @@ def test_voice_stop_ignores_scratch_paths(tmp_path):
         tmp_path, [_voice_write_block("/tmp/claude-1000/sess/scratchpad/msg.txt")]
     )
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -714,7 +730,7 @@ def test_voice_stop_silent_without_profile(tmp_path):
         payload,
         base_env(TMPDIR=str(tmp_path), HOME=str(tmp_path), WRITING_VOICE_PROFILE=None),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -722,7 +738,7 @@ def test_voice_stop_silent_when_opted_out(tmp_path):
     _voice_repo(tmp_path)
     payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
     r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path), WRITING_VOICE="false"))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1327,7 +1343,7 @@ def test_memory_reminder_silent_when_not_in_use(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=base_env(HOME=str(home), DEV_HOOKS_MEMORY=None),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1338,7 +1354,7 @@ def test_memory_reminder_fires_on_substantial_session(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=base_env(DEV_HOOKS_MEMORY="1"),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[memory-reminder]")
 
 
@@ -1351,8 +1367,92 @@ def test_memory_reminder_skips_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=base_env(DEV_HOOKS_MEMORY="1"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
+
+
+def _memory_write(path):
+    return json.dumps(
+        {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Write",
+                        "input": {"file_path": path, "content": "x"},
+                    }
+                ],
+            }
+        }
+    )
+
+
+def _run_memory(tmp_path, transcript, **env):
+    return run_hook(
+        "memory-reminder.sh",
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+        env=base_env(DEV_HOOKS_MEMORY="1", **env),
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/.claude/projects/-home-u-app/memory/some-fact.md",
+        "/home/u/.claude/projects/-home-u-app/memory/MEMORY.md",
+        "/home/u/.claude/memory/global-fact.md",
+    ],
+)
+def test_memory_reminder_silent_once_a_memory_was_written(tmp_path, path):
+    # Already captured this session: the reminder would only repeat what was done.
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=6, extra_lines=[_memory_write(path)]
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_memory_reminder_counts_a_memory_a_subagent_wrote(tmp_path):
+    # The parent transcript never shows a subagent's Write; the mod's facts do.
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    facts = tmp_path / "facts.json"
+    facts.write_text(
+        json.dumps(
+            {
+                "skills": [],
+                "agents": [],
+                "stops": [],
+                "repos": [
+                    {
+                        "root": None,
+                        "files": ["/home/u/.claude/projects/-x/memory/fact.md"],
+                        "added": 5,
+                        "bySubagent": 1,
+                    }
+                ],
+            }
+        )
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=str(facts))
+    assert stop_allowed(r)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/home/u/code/app/docs/memory/notes.md",  # a repo's own "memory" folder
+        "/home/u/.claude/projects/-home-u-app/notes.md",
+        "/home/u/code/app/memory.md",
+    ],
+)
+def test_memory_reminder_still_fires_for_writes_outside_memory_dirs(tmp_path, path):
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=6, extra_lines=[_memory_write(path)]
+    )
+    r = _run_memory(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_blocked(r)
 
 
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
@@ -1485,7 +1585,7 @@ def _code_lines(n, start=0):
 
 def test_review_reminder_silent_outside_git(tmp_path):
     r = run_hook("review-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1493,7 +1593,7 @@ def test_review_reminder_fires_on_unreviewed_code(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # untracked code change
     r = _run_review(tmp_path, _review_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[review-reminder]")
 
 
@@ -1502,7 +1602,7 @@ def test_review_reminder_silent_after_review(tmp_path):
     (tmp_path / "changed.py").write_text("x = 1\n")
     payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -1526,7 +1626,7 @@ def test_review_reminder_fires_on_committed_only_work(tmp_path):
         == ""
     )  # tree really is clean
     r = _run_review(tmp_path, _review_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[review-reminder]")
 
 
@@ -1536,16 +1636,16 @@ def test_review_reminder_keeps_asking_while_unreviewed(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "big.py").write_text(_code_lines(30))
     payload = _review_payload(tmp_path)
-    codes = [_run_review(tmp_path, payload).returncode for _ in range(4)]
-    assert codes == [2, 2, 2, 0]
+    blocks = [stop_blocked(_run_review(tmp_path, payload)) for _ in range(4)]
+    assert blocks == [True, True, True, False]
 
 
 def test_review_reminder_nudges_small_change_only_once(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "tiny.py").write_text("x = 1\n")
     payload = _review_payload(tmp_path)
-    assert _run_review(tmp_path, payload).returncode == 2
-    assert _run_review(tmp_path, payload).returncode == 0
+    assert stop_blocked(_run_review(tmp_path, payload))
+    assert stop_allowed(_run_review(tmp_path, payload))
 
 
 def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
@@ -1554,11 +1654,11 @@ def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
     f = tmp_path / "mod.py"
     f.write_text(_code_lines(5))
     payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
-    assert _run_review(tmp_path, payload).returncode == 0  # baseline seeded
-    assert _run_review(tmp_path, payload).returncode == 0  # nothing changed: no loop
+    assert stop_allowed(_run_review(tmp_path, payload))  # baseline seeded
+    assert stop_allowed(_run_review(tmp_path, payload))  # nothing changed: no loop
     f.write_text(_code_lines(40))
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "stale")
 
 
@@ -1579,7 +1679,7 @@ def test_review_reminder_ignores_command_name_lookalike(tmp_path):
     )
     payload = _review_payload(tmp_path, extra_lines=[lookalike])
     r = _run_review(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     # The un-reviewed wording, not the stale-review wording.
     assert "have not run a code review" in r.stdout
     assert "stale" not in r.stdout
@@ -1590,7 +1690,7 @@ def test_review_reminder_honors_a_real_slash_command(tmp_path):
     (tmp_path / "big.py").write_text(_code_lines(30))
     real = json.dumps({"text": "<command-name>code-review</command-name>"})
     r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[real]))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2072,7 +2172,7 @@ def _commit_dated(tmp_path, run, date, msg="c"):
 
 def test_compress_comments_silent_outside_git(tmp_path):
     r = run_hook("compress-comments-reminder.sh", cwd=tmp_path, stdin=json.dumps({}))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2080,7 +2180,7 @@ def test_compress_comments_fires_on_untracked_comment_heavy_file(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2092,7 +2192,7 @@ def test_compress_comments_fires_on_tracked_diff(tmp_path):
     run("commit", "-q", "-m", "init")
     _comment_heavy_file(f)  # unstaged modification: comments arrive via `git diff`
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "compress-comments")
 
 
@@ -2100,7 +2200,7 @@ def test_compress_comments_silent_below_threshold(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "new.py").write_text("# one lonely comment\nx = 1\ny = 2\n")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2109,7 +2209,7 @@ def test_compress_comments_silent_for_non_code_files(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "notes.md").write_text("# One\n# Two\n# Three\n# Four\n")
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2123,7 +2223,7 @@ def test_compress_comments_ignores_shebang_and_directives(tmp_path):
         "echo hi\n"
     )
     r = _run_cc(tmp_path, _stop_payload(tmp_path))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2136,7 +2236,7 @@ def test_compress_comments_silent_when_opted_out(tmp_path):
         stdin=_stop_payload(tmp_path),
         env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_COMPRESS_COMMENTS="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2156,12 +2256,12 @@ def test_compress_comments_silent_when_skill_already_ran(tmp_path):
     )
     payload = _stop_payload(tmp_path, extra_lines=[skill_line])
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
     # ...but three MORE comment lines after that skill run warrant a fresh reminder.
     _comment_heavy_file(tmp_path / "more.py")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2171,9 +2271,9 @@ def test_compress_comments_second_stop_without_new_comments_is_silent(tmp_path):
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
     first = _run_cc(tmp_path, payload)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     second = _run_cc(tmp_path, payload)
-    assert second.returncode == 0
+    assert stop_allowed(second)
     assert second.stdout.strip() == ""
 
 
@@ -2183,11 +2283,11 @@ def test_compress_comments_refires_when_comment_total_grows(tmp_path):
     run = init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     _comment_heavy_file(tmp_path / "big.py")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one large commit")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     payload_json = assert_json_with(r.stdout, "[compress-comments-reminder]")
     assert "since the last reminder" in json.dumps(payload_json)
 
@@ -2196,10 +2296,10 @@ def test_compress_comments_no_refire_for_small_growth(tmp_path):
     init_git_repo(tmp_path)
     _comment_heavy_file(tmp_path / "new.py")
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     (tmp_path / "small.py").write_text("# just one more comment\ny = 2\n")
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2209,10 +2309,10 @@ def test_compress_comments_rebases_after_cleanup(tmp_path):
     f = tmp_path / "new.py"
     _comment_heavy_file(f)
     payload = _stop_payload(tmp_path)
-    assert _run_cc(tmp_path, payload).returncode == 2
+    assert stop_blocked(_run_cc(tmp_path, payload))
     f.write_text("x = 0\nfor i in range(3):\n    x += i\n")  # comments compressed away
     r = _run_cc(tmp_path, payload)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2225,7 +2325,7 @@ def test_compress_comments_fires_on_comments_committed_this_session(tmp_path):
     _comment_heavy_file(tmp_path / "mod.py")
     _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "session work")
     r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[compress-comments-reminder]")
 
 
@@ -2235,14 +2335,14 @@ def test_compress_comments_silent_for_commits_before_session(tmp_path):
     _comment_heavy_file(tmp_path / "old.py")
     _commit_dated(tmp_path, run, "2020-01-01T00:00:00", "old work")
     r = _run_cc(tmp_path, _stop_payload(tmp_path, started="2025-01-01T00:00:00.000Z"))
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
 # ── verify-work.sh ──────────────────────────────────────────────────────────────────
 def test_verify_work_silent_outside_git(tmp_path):
     r = run_hook("verify-work.sh", cwd=tmp_path)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2250,7 +2350,7 @@ def test_verify_work_silent_when_no_code_changed(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("hello\n")  # not a code file
     r = run_hook("verify-work.sh", cwd=tmp_path)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2259,7 +2359,7 @@ def test_verify_work_fires_when_no_tools_detected(tmp_path):
     (tmp_path / "changed.py").write_text("x = 1\n")  # code changed, no test/lint config
     # Isolated TMPDIR so the once-per-session marker can't leak across tests/runs.
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
 
 
@@ -2267,6 +2367,239 @@ def _verify_work_py_repo(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
     (tmp_path / "test_x.py").write_text("def test_bad():\n    assert 7 == 42\n")
+
+
+def _verify_work_bash_tests_repo(tmp_path):
+    # server-setup-like repo: bash *.test.sh tests plus a Python helper script that is NOT a
+    # pytest test (no test_*.py / *_test.py naming), and a pyproject.toml with no
+    # [tool.pytest...] section. Nothing here is a pytest test.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "base.test.sh").write_text("#!/bin/bash\necho ok\n")
+    (tmp_path / "tests" / "ntfy-listener.py").write_text(
+        "# helper script, not a pytest test\n"
+    )
+
+
+def _assert_verify_work_skips_pytest(tmp_path, why):
+    # Puts a fake pytest on PATH that leaves a marker if run, then checks the hook never ran it.
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    marker = tmp_path / "pytest-ran"
+    fake_pytest = bindir / "pytest"
+    fake_pytest.write_text(f"#!/bin/bash\ntouch '{marker}'\nexit 1\n")
+    fake_pytest.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert not marker.exists(), why
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "No test suite")
+
+
+def test_verify_work_skips_pytest_when_no_pytest_tests_exist(tmp_path):
+    # A repo whose tests/ holds bash *.test.sh scripts plus a Python helper, with pytest and
+    # pyproject.toml both present, must NOT run pytest just because pyproject.toml + tests/
+    # exist — that's a false positive (e.g. server-setup, whose tests aren't pytest at all).
+    _verify_work_bash_tests_repo(tmp_path)
+    _assert_verify_work_skips_pytest(
+        tmp_path, "pytest must not be invoked for a non-pytest test suite"
+    )
+
+
+def test_verify_work_ignores_pytest_files_in_gitignored_dirs(tmp_path):
+    # Vendored third-party code in a gitignored dir (server-setup's .ansible/collections holds
+    # Ansible's own test_*.py files) is not the project's test suite.
+    _verify_work_bash_tests_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".ansible/\n")
+    vendored = tmp_path / ".ansible" / "collections" / "community" / "tests" / "unit"
+    vendored.mkdir(parents=True)
+    (vendored / "test_inventory_filter.py").write_text(
+        "def test_x():\n    assert True\n"
+    )
+    (vendored / "conftest.py").write_text("")
+    _assert_verify_work_skips_pytest(
+        tmp_path, "pytest must not run for test files only in gitignored dirs"
+    )
+
+
+def test_verify_work_reports_unrunnable_pytest_cleanly(tmp_path):
+    # Real pytest tests exist, but the `pytest` on PATH is a broken version-manager shim (e.g.
+    # mise with no version selected). verify-work must not try to run it and dump the raw
+    # mise error; it should report one clear line instead.
+    _verify_work_py_repo(tmp_path)  # real pytest tests (test_x.py)
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    fake_pytest = bindir / "pytest"
+    fake_pytest.write_text(
+        "#!/bin/bash\necho 'mise ERROR No version is set for shim: pytest' >&2\nexit 1\n"
+    )
+    fake_pytest.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    body = json.dumps(assert_json_with(r.stdout, "pytest"))
+    assert "mise ERROR" not in body
+    assert "not runnable" in body
+
+
+def test_verify_work_runs_pytest_and_ruff_through_uv_in_a_uv_project(tmp_path):
+    # A uv project may keep its venv outside the repo (UV_PROJECT_ENVIRONMENT), so a bare
+    # `pytest` never resolves there even though `uv run pytest` passes.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n[tool.pytest.ini_options]\n[tool.ruff]\n'
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    for tool in ("pytest", "ruff"):
+        shim = bindir / tool
+        shim.write_text(
+            f"#!/bin/bash\necho 'mise ERROR No version is set for shim: {tool}' >&2\nexit 1\n"
+        )
+        shim.chmod(0o755)
+    calls = tmp_path / "uv-calls"
+    fake_uv = bindir / "uv"
+    fake_uv.write_text(f"#!/bin/bash\necho \"$*\" >>'{calls}'\nexit 0\n")
+    fake_uv.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+    ran = calls.read_text().splitlines()
+    assert "run --no-sync pytest" in ran
+    assert "run --no-sync ruff check ." in ran
+
+
+def test_verify_work_reports_unrunnable_pytest_cleanly_under_uv(tmp_path):
+    # uv falls back to PATH, so a uv project without pytest still gets the one clear line,
+    # not uv's raw "Failed to spawn" error.
+    init_git_repo(tmp_path)
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    (tmp_path / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    fake_uv = bindir / "uv"
+    fake_uv.write_text(
+        "#!/bin/bash\necho 'error: Failed to spawn: `pytest`' >&2\nexit 2\n"
+    )
+    fake_uv.chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    body = json.dumps(assert_json_with(r.stdout, "pytest"))
+    assert "Failed to spawn" not in body
+    assert "not runnable" in body
+
+
+def test_verify_work_runs_pytest_via_conftest_detection(tmp_path):
+    # A conftest.py (no test_*.py at the top level) is still a real pytest-tests signal.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "conftest.py").write_text("# fixtures live here\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_thing.py").write_text(
+        "def test_bad():\n    assert 1 == 2\n"
+    )
+    env = base_env(TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "Verification failed")
+
+
+def _verify_work_backend_subproject(tmp_path, uv=False):
+    # fringe-chat's shape: no pytest config at the root, the suite and its settings
+    # (asyncio_mode, pythonpath, ...) in backend/pyproject.toml, which only loads when
+    # pytest starts in backend/.
+    init_git_repo(tmp_path)
+    backend = tmp_path / "backend"
+    (backend / "tests").mkdir(parents=True)
+    (backend / "pyproject.toml").write_text(
+        '[project]\nname = "x"\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+    )
+    if uv:
+        (backend / "uv.lock").write_text("version = 1\n")
+    (backend / "tests" / "test_x.py").write_text("def test_ok():\n    assert True\n")
+    return backend
+
+
+def _run_verify_work_recording(tmp_path, tool="pytest", **env_extra):
+    """Run verify-work with `tool` replaced by a shim that logs "<cwd> | <args>" and
+    succeeds; return the result and the logged calls, minus --version probes."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    calls = tmp_path / f"{tool}-calls"
+    shim = bindir / tool
+    shim.write_text(f"#!/bin/bash\necho \"$PWD | $*\" >>'{calls}'\nexit 0\n")
+    shim.chmod(0o755)
+    env = base_env(
+        PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path), **env_extra
+    )
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    logged = calls.read_text().splitlines() if calls.exists() else []
+    return r, [c for c in logged if "--version" not in c]
+
+
+def test_verify_work_runs_pytest_inside_a_subproject_with_its_own_config(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path)
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | "]
+
+
+def test_verify_work_uses_the_subprojects_own_uv_lock(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path, uv=True)
+    r, runs = _run_verify_work_recording(tmp_path, tool="uv")
+    assert stop_allowed(r)
+    assert f"{backend} | run --no-sync pytest" in runs
+
+
+def test_verify_work_names_the_subproject_whose_tests_failed(tmp_path):
+    _verify_work_backend_subproject(tmp_path)
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    # --version must succeed, or the hook reports pytest as unrunnable instead.
+    (bindir / "pytest").write_text(
+        "#!/bin/bash\n[ \"$1\" = --version ] && exit 0\necho '1 failed'\nexit 1\n"
+    )
+    (bindir / "pytest").chmod(0o755)
+    env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "pytest (backend)")
+
+
+def test_verify_work_changed_mode_targets_tests_relative_to_their_subproject(tmp_path):
+    backend = _verify_work_backend_subproject(tmp_path)
+    r, runs = _run_verify_work_recording(tmp_path, DEV_HOOKS_VERIFY_TESTS="changed")
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | tests/test_x.py"]
+
+
+def test_verify_work_runs_each_outermost_subproject_once(tmp_path):
+    # Sibling subprojects each run; one nested inside another is the outer one's to run.
+    backend = _verify_work_backend_subproject(tmp_path)
+    nested = backend / "plugins" / "extra"
+    nested.mkdir(parents=True)
+    (nested / "pytest.ini").write_text("[pytest]\n")
+    worker = tmp_path / "worker"
+    worker.mkdir()
+    (worker / "pytest.ini").write_text("[pytest]\n")
+    (worker / "test_w.py").write_text("def test_ok():\n    assert True\n")
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{backend} | ", f"{worker} | "]
+
+
+def test_verify_work_runs_at_the_root_when_the_root_has_pytest_config(tmp_path):
+    # A root pytest.ini decides the rootdir for the whole repo; don't second-guess it.
+    _verify_work_backend_subproject(tmp_path)
+    (tmp_path / "pytest.ini").write_text("[pytest]\ntestpaths = backend/tests\n")
+    r, runs = _run_verify_work_recording(tmp_path)
+    assert stop_allowed(r)
+    assert runs == [f"{tmp_path} | "]
 
 
 @requires_python3
@@ -2278,11 +2611,11 @@ def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
     env = base_env(TMPDIR=str(tmp_path))
     stdin = json.dumps({"session_id": "vw1"})
     first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     assert_json_with(first.stdout, "No test suite")
     # Same session + TMPDIR → the marker suppresses the second stop; Claude may finish.
     second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert second.returncode == 0
+    assert stop_allowed(second)
     assert second.stdout.strip() == ""
 
 
@@ -2292,7 +2625,7 @@ def test_verify_work_blanket_opt_out_silences(tmp_path):
     _verify_work_py_repo(tmp_path)  # failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY="false")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2304,11 +2637,58 @@ def test_verify_work_real_failure_refires_every_stop(tmp_path):
     env = base_env(TMPDIR=str(tmp_path))
     stdin = json.dumps({"session_id": "vw2"})
     first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert first.returncode == 2
+    assert stop_blocked(first)
     assert_json_with(first.stdout, "Verification failed")
     second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
-    assert second.returncode == 2  # still blocks — real failures don't fire once
+    assert stop_blocked(second)  # still blocks — real failures don't fire once
     assert_json_with(second.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
+    # The forced continuation is where Claude edits code, so verify-work keeps running
+    _verify_work_py_repo(tmp_path)  # failing test_x.py
+    env = base_env(TMPDIR=str(tmp_path))
+    stdin = json.dumps({"session_id": "vw-active", "stop_hook_active": True})
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "Verification failed")
+
+
+@requires_python3
+def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
+    # Max 3 blocks per chain; a natural stop resets the count
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    natural = json.dumps({"session_id": "vw-cap"})
+    active = json.dumps({"session_id": "vw-cap", "stop_hook_active": True})
+    run = lambda stdin: run_hook(  # noqa: E731
+        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
+    )
+    assert stop_blocked(run(natural))
+    assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
+    assert stop_blocked(run(natural))
+    assert stop_blocked(run(active))
+
+
+@requires_python3
+def test_verify_work_tells_the_mod_when_the_cap_silenced_a_failure(tmp_path):
+    # Standing down at the cap isn't a pass: the mod scores the nudge from this marker.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
+    active = json.dumps({"session_id": "vw-capmark", "stop_hook_active": True})
+    runs = [
+        run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+        for _ in range(4)
+    ]
+    assert "dev-hooks: block cap reached" not in runs[2].stderr
+    assert stop_allowed(runs[3])
+    assert "dev-hooks: block cap reached" in runs[3].stderr
+    # Claude Code itself running the hook gets no stray stderr.
+    del env["DEV_HOOKS_ORCHESTRATED"]
+    direct = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active)
+    assert stop_allowed(direct)
+    assert direct.stderr.strip() == ""
 
 
 def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
@@ -2327,7 +2707,7 @@ def test_verify_work_surfaces_herb_failure_for_erb(tmp_path):
     )
     env = base_env(PATH=f"{bindir}:{os.environ['PATH']}", TMPDIR=str(tmp_path))
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "herb (ERB)" in body
 
@@ -2338,7 +2718,7 @@ def test_verify_work_skips_herb_when_not_bundled(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "x.html.erb").write_text("<div>\n")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
 
 
@@ -2354,7 +2734,7 @@ def test_verify_work_off_mode_skips_the_test_run(tmp_path):
     _verify_work_py_repo(tmp_path)  # untracked, failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="off")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2364,7 +2744,7 @@ def test_verify_work_changed_mode_runs_changed_test_file(tmp_path):
     _verify_work_py_repo(tmp_path)  # untracked (i.e. changed) failing test_x.py
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "Verification failed")
 
 
@@ -2380,7 +2760,7 @@ def test_verify_work_changed_mode_skips_unchanged_tests(tmp_path):
     (tmp_path / "src.py").write_text("x = 1\n")  # unrelated change, no mapped test
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_VERIFY_TESTS="changed")
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2408,7 +2788,7 @@ def test_verify_work_changed_mode_maps_source_to_minitest(tmp_path):
         DEV_HOOKS_VERIFY_TESTS="changed",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "RAILS-TEST-ARGS: test/models/user_test.rb" in body
 
@@ -2428,7 +2808,7 @@ def test_verify_work_slow_suite_recommends_changed(tmp_path):
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="1",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "too slow"))
     assert "DEV_HOOKS_VERIFY_TESTS=changed" in body
     assert "smoke-test" in body
@@ -2457,7 +2837,7 @@ def test_verify_work_changed_mode_maps_lib_to_flat_gem_spec(tmp_path):
         DEV_HOOKS_VERIFY_TESTS="changed",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert "RSPEC-ARGS: spec/foo_spec.rb" in body
 
@@ -2472,7 +2852,7 @@ def test_verify_work_non_numeric_timeout_falls_back(tmp_path):
         DEV_HOOKS_VERIFY_TEST_TIMEOUT="abc",
     )
     r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
-    assert r.returncode == 2
+    assert stop_blocked(r)
     body = json.dumps(assert_json_with(r.stdout, "Verification failed"))
     assert (
         "pytest" in body
@@ -2493,7 +2873,7 @@ def test_debug_leftover_fires_on_new_debug_lines(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     payload = assert_json_with(r.stdout, "[debug-leftover]")
     body = json.dumps(payload)
     assert "foo.py" in body and "bar.rb" in body
@@ -2510,7 +2890,7 @@ def test_debug_leftover_silent_for_preexisting_committed(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2522,7 +2902,7 @@ def test_debug_leftover_ignores_test_files(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2610,7 +2990,7 @@ def test_missing_test_fires_for_untested_new_file(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[missing-test]")
 
 
@@ -2623,7 +3003,7 @@ def test_missing_test_silent_when_test_present(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2643,7 +3023,7 @@ def test_missing_test_silent_for_vendored_dirs(tmp_path, path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2657,7 +3037,7 @@ def test_missing_test_silent_for_minified_file(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2679,7 +3059,7 @@ def test_missing_test_reads_jscpd_ignore_at_runtime(tmp_path, jscpd_key):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert "bar.py" in r.stdout
     assert "thirdparty" not in r.stdout
 
@@ -2698,7 +3078,7 @@ def test_missing_test_fires_for_file_added_in_session_commit(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert "widget.py" in r.stdout
 
 
@@ -2712,7 +3092,7 @@ def test_missing_test_silent_for_file_committed_before_session(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2728,7 +3108,7 @@ def test_missing_test_silent_when_session_commit_added_its_test(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -2747,7 +3127,7 @@ def test_missing_test_silent_for_session_file_added_then_deleted(tmp_path):
         cwd=tmp_path,
         stdin=_stop_payload(tmp_path, started="2010-01-01T00:00:00.000Z"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3657,6 +4037,235 @@ def test_catastrophic_check_still_wins_over_secrets(secret_tree):
     assert _decision(r) == "deny"
 
 
+# ── dangerous-command-guard.sh: quote-aware segments ─────────────────────────────────
+# The segmenter used to split on ; & | and newlines without honouring quotes, so a
+# separator *inside* a quoted string started a new "command": `rg -n "fnox get|bws
+# secret get"` became a segment `bws secret get"` and was blocked as a secret read.
+# Segments now follow shell quoting: single quotes and quoted heredoc bodies are data,
+# while `$(…)` and backticks run even inside double quotes and unquoted heredocs.
+QUOTED_MENTIONS = [
+    'rg -n "fnox get"',
+    'rg -n "fnox get|bws secret get" plugins/',
+    "rg -n 'fnox get; gh auth token' .",
+    'grep -rn "bws secret list\\|op read" docs/',
+    'git commit -m "guard: block fnox get; gh auth token; git credential fill"',
+    "git commit -m \"$(printf 'docs\\n\\nexplain why fnox get | head leaks')\"",
+    "echo 'never run gh auth token here'",
+    'echo "a | fnox get X"',
+    # a heredoc body is data, not commands, unless a shell reads it
+    "cat > tests/probe.test.sh <<'EOF'\nfnox get X\ngh auth token\ngit credential fill\nEOF",
+    "cat > notes.md <<EOF\nfnox get X\nbws secret get abc\nEOF",
+    "cat <<-'EOF' > x.sh\n\tgit credential fill\n\tEOF\necho done",
+    "python3 - <<'PY'\nprint('gh auth token')\nPY",
+    # a comment is not a command
+    "ls  # then fnox get X",
+]
+
+
+@pytest.mark.parametrize("command", QUOTED_MENTIONS)
+def test_guard_silent_on_quoted_mentions(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == "", r.stdout
+
+
+# ...while the same reads still block wherever they actually run.
+REAL_INVOCATIONS = [
+    "fnox get X",
+    "cd x && fnox get X",
+    "echo $(fnox get X)",
+    'echo "token: $(fnox get X)"',
+    "echo `fnox get X`",
+    'curl -H "Authorization: Bearer $(gh auth token)" https://api.github.com',
+    "env A=1 fnox get X",
+    "A=1 fnox get X",
+    "sudo fnox get X",
+    "(fnox get X)",
+    "{ fnox get X; }",
+    "true && fnox get X || true",
+    "fnox get X | cat",
+    # 2>/dev/null hides stderr only; the value goes to stdout
+    "fnox get X 2>/dev/null",
+    "cat .env 2>/dev/null",
+    "cat < .env",
+    "bws secret list -o json 2>/dev/null | jq -r '.[].key'",
+    # stderr and the terminal still reach the transcript
+    "fnox get X >&2",
+    "fnox get X > /dev/stderr",
+    # capturing is fine; printing the capture is not
+    "TOKEN=$(gh auth token) && echo $TOKEN",
+    # wrappers with options of their own
+    "sudo -u mick gh auth token",
+    "timeout 5 git credential fill",
+    "ssh agent-vm gh auth token",
+    "ssh -i ~/.ssh/key agent-vm 'git credential fill'",
+    # a shell given the command as a string or on stdin runs it
+    "bash -c 'fnox get X'",
+    'sh -c "gh auth token"',
+    "bash -lc 'cd /tmp && bws secret get abc'",
+    "eval 'fnox get X'",
+    "bash <<'EOF'\nfnox get X\nEOF",
+    "ssh host <<EOF\ngh auth token\nEOF",
+    # an unquoted heredoc expands $(…) in its body
+    "cat <<EOF\ntoken=$(gh auth token)\nEOF",
+    # an unbalanced quote falls back to splitting everything
+    "fnox get X 'oops",
+]
+
+
+@pytest.mark.parametrize("command", REAL_INVOCATIONS)
+def test_guard_denies_real_invocations(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat .env > /dev/null",
+        "cat .env >/dev/null 2>&1",
+        "cat .env &>/dev/null",
+        "cat .env 1>/dev/null",
+        "fnox get X >> /dev/null",
+        # into a file: the value never reaches the screen
+        "bws secret list -o json > /tmp/s.json",
+        "fnox get X > .secret-out",
+        # captured into a variable — the non-printing forms the block message points to
+        "X=$(fnox get X)",
+        "TOKEN=$(gh auth token)",
+        "export GH_TOKEN=$(gh auth token)",
+        'v=$(fnox get K 2>/dev/null); echo "${v:+resolves} (${#v} chars)"',
+        'RAILS_MASTER_KEY="$(cat config/master.key)" bin/rails runner "p 1" >/dev/null',
+        # compared by a test, never printed (replayed from a real session)
+        'if [ "$(fnox get RAILS_MASTER_KEY 2>/dev/null)" = "$(cat config/master.key)" ]; then echo same; fi',
+        '[[ -n "$(gh auth token)" ]] && echo logged-in',
+        'test -n "$(git credential fill </tmp/req)" && echo ok',
+    ],
+)
+def test_guard_silent_when_stdout_stays_off_screen(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.stdout.strip() == "", r.stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['bash -c "rm -rf /"', "sh -c 'cd /tmp; rm -rf ~'", "bash <<'EOF'\nrm -rf /\nEOF"],
+)
+def test_guard_denies_catastrophic_inside_a_shell_string(command):
+    assert _decision(_guard(command)) == "deny"
+
+
+# ── dangerous-command-guard.sh: credential probes ────────────────────────────────────
+# On 2026-10-02 a review subagent ran `git credential fill` with PATH=/usr/bin:/bin to
+# test a "gh missing" case. /usr/bin/gh, logged in, was the credential helper, so a live
+# gho_ token printed into the transcript and had to be revoked. A credential helper's
+# `get` and gh's token commands print the password; these are blocked like `bws secret
+# get`. Commands here are only ever fed to the guard as hook input, never run.
+CREDENTIAL_PROBES = [
+    "git credential fill",
+    "printf 'protocol=https\\nhost=github.com\\n\\n' | PATH=/usr/bin:/bin git credential fill",
+    "echo url=https://github.com | git credential fill",
+    "git -c credential.helper= credential fill",
+    "git -C repo credential fill </tmp/req",
+    "cd repo && git credential fill <<<'url=https://github.com'",
+    "git credential-manager get",
+    "git credential-store --file ~/.git-credentials get",
+    "git credential-cache get",
+    "git-credential-agent-github get",
+    "/usr/local/bin/git-credential-agent-github get </tmp/req",
+    "gh auth token",
+    "gh auth token --hostname github.com",
+    "gh auth token -h github.com -u mick",
+    "GH_HOST=github.com gh auth token",
+    "gh auth status -t",
+    "gh auth status --show-token",
+    "gh auth status --hostname github.com -t",
+    "gh auth git-credential get",
+    "echo 'host=github.com' | gh auth git-credential get",
+    "secret-tool lookup service github",
+    "secret-tool search --all service github",
+    "security find-generic-password -s github -w",
+    "security find-internet-password -s github.com -g",
+    "cat ~/.git-credentials",
+    "cat $HOME/.git-credentials",
+    "cat ~/.config/gh/hosts.yml",
+    "head -5 $HOME/.config/gh/hosts.yml",
+    'bash -c "git credential fill"',
+    # inline isolation is not trusted: a repo's own .git/config, an absolute-path
+    # helper, and the desktop keyring all survive these variables.
+    "HOME=$(mktemp -d) GH_CONFIG_DIR=/tmp/x GIT_CONFIG_GLOBAL=/dev/null "
+    "GIT_CONFIG_NOSYSTEM=1 GH_TOKEN= git credential fill",
+]
+
+
+@pytest.fixture
+def credential_tree(secret_tree):
+    repo, home = secret_tree
+    for rel in [".git-credentials", ".config/gh/hosts.yml", ".config/gh/config.yml"]:
+        f = home / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x\n")
+    return repo, home
+
+
+@pytest.mark.parametrize("command", CREDENTIAL_PROBES)
+def test_guard_denies_credential_probes(command, credential_tree):
+    r = _guard_in(credential_tree, command)
+    assert r.returncode == 0
+    assert _decision(r) == "deny", r.stdout
+    reason = json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert reason.startswith("BLOCKED: dev-hooks guard — ")
+    assert "transcript" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["git credential fill", "gh auth token", "git-credential-agent-github get"],
+)
+def test_guard_credential_block_names_the_isolated_route(command, credential_tree):
+    reason = json.loads(_guard_in(credential_tree, command).stdout)[
+        "hookSpecificOutput"
+    ]["permissionDecisionReason"]
+    for needle in ["GIT_CONFIG_GLOBAL=/dev/null", "GH_CONFIG_DIR", "fake `gh`"]:
+        assert needle in reason
+
+
+CREDENTIAL_SILENT = [
+    # approve/reject/store/erase read a credential from stdin and print nothing
+    "git credential approve",
+    "git credential reject </tmp/cred",
+    "git credential-store store",
+    "git credential-cache exit",
+    "gh auth git-credential store",
+    "gh auth git-credential erase",
+    "secret-tool store --label x service y",
+    "secret-tool clear service y",
+    # public key listings and masked status
+    "ssh-add -l",
+    "ssh-add -L",
+    "gh auth status",
+    "gh auth status --hostname github.com",
+    "gh auth login --web",
+    "gh auth setup-git",
+    # configuration, not credentials
+    "git config --global credential.helper",
+    "git config --get-all credential.https://github.com.helper",
+    "cat ~/.config/gh/config.yml",
+    # talking about it
+    'rg -n "git credential fill|gh auth token" .',
+    "git log --grep 'credential fill'",
+    'git commit -m "guard: block git credential fill"',
+    # stdout discarded
+    "gh auth token >/dev/null",
+]
+
+
+@pytest.mark.parametrize("command", CREDENTIAL_SILENT)
+def test_guard_silent_on_credential_neighbours(command, credential_tree):
+    r = _guard_in(credential_tree, command)
+    assert r.returncode == 0
+    assert r.stdout.strip() == "", r.stdout
+
+
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
 BIG_CHANGE_SENTINEL = "[big-change] large unreviewed change this session"
 
@@ -3674,7 +4283,7 @@ def test_big_change_silent_outside_git(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3686,7 +4295,7 @@ def test_big_change_silent_under_threshold(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3699,7 +4308,7 @@ def test_big_change_fires_over_threshold(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[big-change]")
 
 
@@ -3719,7 +4328,7 @@ def test_big_change_counts_files_inside_untracked_dirs(tmp_path):
             DEV_HOOKS_BIG_CHANGE_FILES="3", DEV_HOOKS_BIG_CHANGE_LINES="9999"
         ),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[big-change]")
 
 
@@ -3735,7 +4344,7 @@ def test_big_change_silent_with_plan_in_progress(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3748,7 +4357,7 @@ def test_big_change_silent_when_opted_out(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_big_change_env(DEV_HOOKS_BIG_CHANGE="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3764,7 +4373,7 @@ def test_big_change_silent_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=_big_change_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3787,7 +4396,7 @@ def test_change_summary_silent_outside_git(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3799,7 +4408,7 @@ def test_change_summary_silent_under_threshold(tmp_path):
         cwd=tmp_path,
         stdin=json.dumps({"transcript_path": "/nope"}),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3812,7 +4421,7 @@ def test_change_summary_fires_over_threshold(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_change_summary_env(),
     )
-    assert r.returncode == 2
+    assert stop_blocked(r)
     assert_json_with(r.stdout, "[change-summary]")
 
 
@@ -3825,7 +4434,7 @@ def test_change_summary_silent_when_opted_out(tmp_path):
         stdin=json.dumps({"transcript_path": "/nope"}),
         env=_change_summary_env(DEV_HOOKS_CHANGE_SUMMARY="false"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3841,7 +4450,7 @@ def test_change_summary_silent_when_already_prompted(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript)}),
         env=_change_summary_env(),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -3909,6 +4518,9 @@ def test_stop_reminder_silent_when_already_prompted(
 ISO_8601_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
+PROMPT_LOG_SESSION = "0d5f1c2e-7a41-4b9e-9c3d-2f6a8b1e4c70"
+
+
 def _prompt_log_path(home):
     return home / ".claude" / "automation-review" / "prompts.jsonl"
 
@@ -3916,7 +4528,7 @@ def _prompt_log_path(home):
 def run_prompt_log(tmp_path, *, prompt=None, payload=None, **env_overrides):
     """Run prompt-log.sh with HOME pointed at tmp_path so the log lands under it."""
     if payload is None:
-        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "s1"}
+        payload = {"prompt": prompt, "cwd": "/x/y", "session_id": PROMPT_LOG_SESSION}
     stdin = payload if isinstance(payload, str) else json.dumps(payload)
     return run_hook(
         "prompt-log.sh",
@@ -3934,10 +4546,31 @@ def test_prompt_log_appends_valid_jsonl(tmp_path):
     assert len(lines) == 1
     entry = json.loads(lines[0])
     assert entry["cwd"] == "/x/y"
-    assert entry["session_id"] == "s1"
+    assert entry["session_id"] == PROMPT_LOG_SESSION
     assert entry["prompt"] == "fix the failing CI on this repo"
     assert entry["len"] == len("fix the failing CI on this repo")
     assert ISO_8601_RE.match(entry["ts"])
+
+
+@pytest.mark.parametrize(
+    "session_id, cwd",
+    [
+        ("s1", "/x/y"),  # a made-up id from a hand-run smoke test
+        (
+            PROMPT_LOG_SESSION,
+            "/tmp/claude-1000/-home-x/abc/scratchpad/probe",
+        ),  # a claude -p probe
+    ],
+)
+def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd):
+    payload = {
+        "prompt": "Reply with the single word OK.",
+        "cwd": cwd,
+        "session_id": session_id,
+    }
+    r = run_prompt_log(tmp_path, payload=payload)
+    assert r.returncode == 0
+    assert not _prompt_log_path(tmp_path).exists()
 
 
 def test_prompt_log_appends_second_line(tmp_path):
@@ -4364,8 +4997,8 @@ def test_save_script_fires_for_ephemeral(tmp_path):
         extra_lines=[_write_block(scratch / "one_off.py", SHEBANG_PY)],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
-    assert r.returncode == 2
-    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert stop_blocked(r)
+    ctx = json.loads(r.stdout)["reason"]
     assert "[save-script-reminder]" in ctx
     assert "one_off.py" in ctx
 
@@ -4384,8 +5017,8 @@ def test_save_script_flags_in_repo_scripts_too(tmp_path):
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=proj)
-    assert r.returncode == 2
-    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert stop_blocked(r)
+    ctx = json.loads(r.stdout)["reason"]
     assert "in_repo_tool.py" in ctx
     assert "saved_lib_tool" not in ctx
 
@@ -4403,7 +5036,7 @@ def test_save_script_excludes_all_library_roots(tmp_path):
         stdin=json.dumps({"transcript_path": str(transcript), "cwd": str(proj)}),
         env=base_env(DEV_HOOKS_SCRIPT_DIR=f"{bin_dir}:{repo}"),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4411,7 +5044,7 @@ def test_save_script_excludes_all_library_roots(tmp_path):
 def test_save_script_silent_no_scripts(tmp_path):
     transcript = make_transcript(tmp_path / "t.jsonl", human_turns=2)
     r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4428,7 +5061,7 @@ def test_save_script_opt_out(tmp_path):
         cwd=tmp_path / "proj",
         DEV_HOOKS_SAVE_SCRIPT="false",
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4444,7 +5077,7 @@ def test_save_script_fire_once(tmp_path):
         ],
     )
     r = run_save_script(tmp_path, transcript=transcript, cwd=tmp_path / "proj")
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4454,7 +5087,7 @@ def test_save_script_silent_without_transcript(tmp_path):
         stdin=json.dumps({"cwd": str(tmp_path)}),
         env=base_env(DEV_HOOKS_SCRIPT_DIR=str(tmp_path / "bin")),
     )
-    assert r.returncode == 0
+    assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
@@ -4471,6 +5104,7 @@ def _ci_repo(path, *, workflows=True):
 
 def _ci_watch(command, *, cwd, **env_overrides):
     env_overrides.setdefault("DEV_HOOKS_CI_WATCH", None)
+    env_overrides.setdefault("DEV_HOOKS_CI_WATCH_SESSION", None)
     payload = {"tool_input": {"command": command}, "cwd": str(cwd), "session_id": "c1"}
     return run_hook(
         "ci-watch-reminder.sh",
@@ -4492,6 +5126,7 @@ PUSH_COMMANDS = [
 @pytest.mark.parametrize("command", PUSH_COMMANDS)
 def test_ci_watch_fires_on_push_with_workflows(command, tmp_path):
     repo = _ci_repo(tmp_path)
+    (repo / "sub").mkdir()  # `git -C sub push` runs in a real sub-directory of the repo
     r = _ci_watch(command, cwd=repo)
     assert r.returncode == 0
     assert_json_with(r.stdout, "watch")
@@ -4534,3 +5169,503 @@ def test_ci_watch_opt_out(tmp_path):
     r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH="false")
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+# The dev-hooks mod watches the run itself and marks its session with its id.
+def test_ci_watch_stands_down_when_the_mod_watches_this_session(tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch("git push", cwd=repo, DEV_HOOKS_CI_WATCH_SESSION="c1")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# A nested claude inherits the marker but runs under its own session id, where no mod
+# may be watching: it still nudges.
+def test_ci_watch_nudges_when_the_marker_names_another_session(tmp_path):
+    repo = _ci_repo(tmp_path)
+    r = _ci_watch(
+        "git push", cwd=repo, DEV_HOOKS_CI_WATCH_SESSION="some-parent-session"
+    )
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "watch")
+
+
+# ── Stop decision: block, never halt ────────────────────────────────────────────────
+def _with_stop_hook_active(payload):
+    data = json.loads(payload)
+    data["stop_hook_active"] = True
+    return json.dumps(data)
+
+
+def test_stop_hooks_block_rather_than_halt(tmp_path):
+    # continue:false halts Claude; only decision:block makes it act in-turn
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review(tmp_path, _review_payload(tmp_path))
+    assert r.returncode == 0
+    out = json.loads(r.stdout)
+    assert out == {"decision": "block", "reason": out["reason"]}
+    assert out["reason"].startswith("[review-reminder]")
+
+
+def test_voice_stop_blocks_rather_than_halts(tmp_path):
+    _voice_repo(tmp_path)
+    payload = _voice_stop_payload(tmp_path, [_voice_write_block(tmp_path / "post.md")])
+    r = _run_voice_stop(payload, base_env(TMPDIR=str(tmp_path)))
+    assert r.returncode == 0
+    out = json.loads(r.stdout)
+    assert out == {"decision": "block", "reason": out["reason"]}
+
+
+def test_stop_hooks_stand_down_once_a_stop_hook_is_active(tmp_path):
+    # One forced continuation per natural stop; blocking again would chain
+    init_git_repo(tmp_path)
+    _comment_heavy_file(tmp_path / "new.py")
+    active = _with_stop_hook_active(_review_payload(tmp_path))
+    assert stop_allowed(_run_review(tmp_path, active))
+    assert stop_allowed(
+        _run_cc(tmp_path, _with_stop_hook_active(_stop_payload(tmp_path)))
+    )
+    voice = tmp_path / "voice"
+    voice.mkdir()
+    _voice_repo(voice)
+    vpayload = _voice_stop_payload(voice, [_voice_write_block(voice / "post.md")])
+    vr = _run_voice_stop(
+        _with_stop_hook_active(vpayload), base_env(TMPDIR=str(tmp_path))
+    )
+    assert stop_allowed(vr)
+
+
+def _run_review_env(tmp_path, payload, **env):
+    return run_hook(
+        "review-reminder.sh",
+        cwd=tmp_path,
+        stdin=payload,
+        env=base_env(TMPDIR=str(tmp_path), **env),
+    )
+
+
+def test_stop_hooks_stand_down_when_the_mod_runs_them(tmp_path):
+    # The dev-hooks mod sets DEV_HOOKS_MOD_SESSION to its session id and runs the Stop
+    # hooks itself; the copies Claude Code runs directly must then stay silent.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    session = json.loads(payload)["session_id"]
+    r = _run_review_env(
+        tmp_path, payload, DEV_HOOKS_MOD_SESSION=session, DEV_HOOKS_ORCHESTRATED=None
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_stop_hooks_run_when_the_mod_orchestrates_them(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    payload = _review_payload(tmp_path)
+    session = json.loads(payload)["session_id"]
+    r = _run_review_env(
+        tmp_path, payload, DEV_HOOKS_MOD_SESSION=session, DEV_HOOKS_ORCHESTRATED="1"
+    )
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "[review-reminder]")
+
+
+def test_stop_hooks_ignore_a_mod_marker_from_another_session(tmp_path):
+    # A nested `claude` started from Bash inherits its parent's marker but has its own
+    # session id; its Stop hooks must still run if its own mod isn't there to run them.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_MOD_SESSION="some-parent-session",
+        DEV_HOOKS_ORCHESTRATED=None,
+    )
+    assert stop_blocked(r)
+
+
+def _facts_file(tmp_path, skills=(), agents=()):
+    path = tmp_path / "facts.json"
+    path.write_text(
+        json.dumps(
+            {
+                "updatedAt": 0,
+                "skills": [{"skill": s, "at": 0} for s in skills],
+                "agents": [
+                    {"description": d, "subagentType": t, "at": 0} for d, t in agents
+                ],
+                "repos": [],
+                "stops": [],
+            }
+        )
+    )
+    return str(path)
+
+
+def test_review_reminder_counts_a_review_skill_run_inside_a_subagent(tmp_path):
+    # The transcript only has the parent's tool calls; a subagent that ran /code-review
+    # is visible in the mod's session facts alone.
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=_facts_file(tmp_path, skills=["code-review"]),
+    )
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_review_reminder_counts_a_review_agent_from_the_facts(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path, agents=[("Review the session diff", "general-purpose")]
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_allowed(r)
+
+
+def test_review_reminder_still_fires_when_the_facts_show_no_review(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    facts = _facts_file(
+        tmp_path,
+        skills=["thinking-tools:self-rate"],
+        agents=[("Fix the review findings", "general-purpose")],  # a doer, not a review
+    )
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=facts,
+    )
+    assert stop_blocked(r)
+
+
+def test_review_reminder_ignores_an_unreadable_facts_file(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text("x = 1\n")
+    bad = tmp_path / "facts.json"
+    bad.write_text("{not json")
+    r = _run_review_env(
+        tmp_path,
+        _review_payload(tmp_path),
+        DEV_HOOKS_ORCHESTRATED="1",
+        DEV_HOOKS_FACTS_FILE=str(bad),
+    )
+    assert stop_blocked(r)
+
+
+def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
+    # The stand-down lives in reminder_stop_init; a Stop hook that skipped it would run
+    # twice once the mod orchestrates — once directly, once from the mod.
+    hooks = json.loads((DEV_HOOKS / "hooks" / "hooks.json").read_text())
+    commands = [h["command"] for g in hooks["hooks"]["Stop"] for h in g["hooks"]]
+    assert commands
+    for command in commands:
+        script = HOOKS / command.split("/hooks/scripts/")[1].rstrip('"')
+        assert "reminder_stop_init" in script.read_text(), script.name
+
+
+def test_rearm_baseline_is_per_repo(tmp_path):
+    # An empty worktree must not reset main's baseline in the same session
+    main, wt = tmp_path / "main", tmp_path / "wt"
+    for repo in (main, wt):
+        repo.mkdir()
+        init_git_repo(repo)
+    _comment_heavy_file(main / "new.py")
+    payload = _stop_payload(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    run = lambda cwd: run_hook(  # noqa: E731
+        "compress-comments-reminder.sh", cwd=cwd, stdin=payload, env=env
+    )
+    assert stop_blocked(run(main))
+    assert stop_allowed(run(wt))
+    assert stop_allowed(run(main))
+
+
+def test_review_reminder_counts_a_dispatched_review_agent(tmp_path):
+    # Subagent reviews use general-purpose agents, not the code-review skill
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Review Task 8 implementation",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Review the diff for task 8.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_allowed(r)
+
+
+@pytest.mark.parametrize(
+    "description,reviewed",
+    [
+        ("Re-review task 5 fixes", True),
+        ("Final whole-branch review phase 0a", True),
+        ("Adversarial review of item 1", True),
+        ("Add product review form", False),
+        ("Fix final review blockers", False),
+        ("Final review fix wave", False),
+    ],
+)
+def test_review_reminder_agent_description_names_the_job(
+    tmp_path, description, reviewed
+):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {"description": description, "prompt": "…"},
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r) is not reviewed
+    assert r.returncode == 0
+
+
+def test_review_reminder_ignores_non_review_agent(tmp_path):
+    init_git_repo(tmp_path)
+    (tmp_path / "changed.py").write_text(_code_lines(30))
+    dispatch = json.dumps(
+        {
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Agent",
+                        "input": {
+                            "description": "Implement Task 9",
+                            "subagent_type": "general-purpose",
+                            "prompt": "Implement task 9; a reviewer will check it later.",
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    r = _run_review(tmp_path, _review_payload(tmp_path, extra_lines=[dispatch]))
+    assert stop_blocked(r)
+
+
+# ── Session growth is a net diff, not a sum of commits ──────────────────────────────
+def _long_comment_file(path):
+    path.write_text(
+        "".join(
+            f"# this comment explains step {i} at some length\nx{i} = {i}\n"
+            for i in range(30)
+        )
+    )
+
+
+def test_compress_comments_rewriting_comments_is_not_growth(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "base.txt").write_text("base\n")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    f = tmp_path / "mod.py"
+    _long_comment_file(f)
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "add commented code")
+    payload = _stop_payload(tmp_path)
+    assert stop_blocked(_run_cc(tmp_path, payload))
+    # Compress every comment and commit: fewer comment lines than before, not more
+    f.write_text("".join(f"# step {i}\nx{i} = {i}\n" for i in range(30)))
+    _commit_dated(tmp_path, run, "2025-06-02T00:00:00", "compress comments")
+    assert stop_allowed(_run_cc(tmp_path, payload))
+
+
+def test_review_reminder_rewrite_after_review_is_not_growth(tmp_path):
+    run = init_git_repo(tmp_path)
+    (tmp_path / "base.txt").write_text("base\n")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    f = tmp_path / "mod.py"
+    _long_comment_file(f)
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "add code")
+    payload = _review_payload(tmp_path, extra_lines=[REVIEW_LINE])
+    assert stop_allowed(_run_review(tmp_path, payload))  # review ran: baseline seeded
+    f.write_text("".join(f"# step {i}\nx{i} = {i}\n" for i in range(30)))
+    _commit_dated(tmp_path, run, "2025-06-02T00:00:00", "comment-only rewrite")
+    assert stop_allowed(_run_review(tmp_path, payload))
+
+
+def test_session_growth_excludes_lines_committed_before_the_session(tmp_path):
+    # Lines that predate the session never count, even if the file changes later
+    run = init_git_repo(tmp_path)
+    _long_comment_file(tmp_path / "old.py")
+    _commit_dated(tmp_path, run, "1999-01-01T00:00:00", "before the session")
+    (tmp_path / "old.py").write_text((tmp_path / "old.py").read_text() + "y = 1\n")
+    _commit_dated(tmp_path, run, "2025-06-01T00:00:00", "one code line")
+    assert stop_allowed(_run_cc(tmp_path, _stop_payload(tmp_path)))
+
+
+def test_session_growth_shallow_clone_does_not_count_the_whole_repo(tmp_path):
+    # A shallow clone can hide every pre-session commit; that must not make the whole
+    # tree count as added
+    src = tmp_path / "src"
+    src.mkdir()
+    run = init_git_repo(src)
+    _long_comment_file(src / "old.py")
+    _commit_dated(src, run, "1999-01-01T00:00:00", "old")
+    (src / "other.py").write_text("z = 1\n")
+    _commit_dated(src, run, "2025-06-01T00:00:00", "in session")
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{src}", str(clone)], check=True
+    )
+    assert stop_allowed(_run_cc(clone, _stop_payload(clone)))
+
+
+# The dev-hooks mod recognises the guard's questions by this prefix and puts them to the
+# person in a dialog (register.tsx GUARD_PREFIX); an ask without it would fall through to
+# the normal permission flow, which auto mode answers.
+GUARD_PREFIX = "dev-hooks guard — "
+
+
+def _guard_reason(r):
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_every_guard_ask_carries_the_mod_prefix(tmp_path, secret_tree):
+    init_git_repo(tmp_path)
+    asks = [
+        _guard("rm -rf /", DEV_HOOKS_GUARD_DENY="ask"),
+        _guard("git commit -m wip", cwd=tmp_path, DEV_HOOKS_GUARD_MAIN="1"),
+        # Claude's per-command dialog wait (read by the mod) must not hide the commit.
+        _guard(
+            "DEV_HOOKS_GUARD_DIALOG_TIMEOUT=600 git commit -m wip",
+            cwd=tmp_path,
+            DEV_HOOKS_GUARD_MAIN="1",
+        ),
+        _guard_in(
+            secret_tree,
+            'echo "${BWS_ACCESS_TOKEN:-UNSET}"',
+            DEV_HOOKS_GUARD_SECRETS="ask",
+        ),
+    ]
+    for r in asks:
+        assert _decision(r) == "ask"
+        assert _guard_reason(r).startswith(GUARD_PREFIX), _guard_reason(r)
+
+
+def test_guard_prefix_matches_the_mod():
+    source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    assert f"export const GUARD_PREFIX = '{GUARD_PREFIX}'" in source
+
+
+# ── The directory a git command actually runs in ─────────────────────────────────────
+# Three hooks used to judge the session's cwd instead of the repo the command targets
+# (`cd other-repo && git commit`, `git -C other-repo push`).
+@pytest.mark.parametrize(
+    "command, words, expected",
+    [
+        ("git commit -m x", ("commit",), "/s"),
+        ("cd /r && git commit -m x", ("commit",), "/r"),
+        ("cd sub && git -c user.name=t commit -m x", ("commit",), "/s/sub"),
+        ("git -C /r push", ("push",), "/r"),
+        ("cd /a; git -C ../b push origin main", ("push",), "/b"),
+        ("FOO=1 sudo git -C /r commit -m 'cd /x && git commit'", ("commit",), "/r"),
+        (
+            "cd /r && git status && git worktree add ../wt -b x",
+            ("worktree", "add"),
+            "/r",
+        ),
+        ("echo git commit", ("commit",), "/s"),
+        ("cd '/r w' && git commit", ("commit",), "/r w"),
+        ("cd /r && git commit 'unbalanced", ("commit",), "/s"),
+    ],
+)
+def test_git_target_dir(command, words, expected):
+    sys.path.insert(0, str(HOOKS / "lib"))
+    from hook_helpers import git_target_dir
+
+    assert git_target_dir(command, "/s", words) == expected
+
+
+def _branch_repo(path, branch):
+    path.mkdir(parents=True)
+    run = init_git_repo(path)
+    run("commit", "-q", "--allow-empty", "-m", "init")
+    if branch != "main":
+        run("checkout", "-q", "-b", branch)
+    return path
+
+
+def test_guard_main_check_follows_cd_into_a_repo_on_main(tmp_path):
+    main_repo = _branch_repo(tmp_path / "on-main", "main")
+    feature = _branch_repo(tmp_path / "on-feature", "feature")
+    r = _guard(
+        f"cd {main_repo} && git commit -m wip", cwd=feature, DEV_HOOKS_GUARD_MAIN="1"
+    )
+    assert _decision(r) == "ask"
+    r = _guard(f"git -C {main_repo} push", cwd=feature, DEV_HOOKS_GUARD_MAIN="1")
+    assert _decision(r) == "ask"
+
+
+def test_guard_main_check_ignores_the_session_repo_when_cd_leaves_it(tmp_path):
+    main_repo = _branch_repo(tmp_path / "on-main", "main")
+    feature = _branch_repo(tmp_path / "on-feature", "feature")
+    r = _guard(
+        f"cd {feature} && git commit -m wip", cwd=main_repo, DEV_HOOKS_GUARD_MAIN="1"
+    )
+    assert r.stdout.strip() == ""
+
+
+def test_ci_watch_follows_cd_into_the_pushed_repo(tmp_path):
+    (tmp_path / "pushed").mkdir()
+    (tmp_path / "session").mkdir()
+    pushed = _ci_repo(tmp_path / "pushed")
+    session = _ci_repo(tmp_path / "session", workflows=False)
+    r = _ci_watch(f"cd {pushed} && git push", cwd=session)
+    assert_json_with(r.stdout, "You just pushed")
+    r = _ci_watch(f"cd {session} && git push", cwd=pushed)
+    assert r.stdout.strip() == ""
+
+
+def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    run = init_git_repo(main_repo)
+    (main_repo / ".gitignore").write_text("local.env\n")
+    (main_repo / "local.env").write_text("X=1\n")
+    run("add", ".gitignore")
+    run("commit", "-q", "-m", "init")
+    run("worktree", "add", "-q", str(tmp_path / "wt"), "-b", "wt")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    payload = {
+        "tool_input": {"command": f"cd {main_repo} && git worktree add ../wt -b wt"},
+        "cwd": str(elsewhere),
+        "session_id": "w1",
+    }
+    r = run_hook(
+        "worktree-provision-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None, TMPDIR=str(tmp_path)),
+    )
+    assert "local.env" in r.stdout

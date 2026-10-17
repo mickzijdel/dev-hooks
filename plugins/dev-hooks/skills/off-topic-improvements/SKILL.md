@@ -30,7 +30,7 @@ dropped — and the file reflects only what's genuinely still open.
    addressed item is its own logical change, its own commit (follow the repo's commit and
    version-bump conventions).
 5. **Get each change under test and verify it** before committing — tests green, and the actual
-   behaviour exercised, not just eyeballed (evidence before "done"; use [[verify]] where there's
+   behaviour exercised, not just eyeballed (evidence before "done"; use vischeck:verify where there's
    a runtime surface). If an item can't be tested yet, say so rather than claiming it works.
 6. **Keep the backlog file live.** As each item lands, **remove it** from
    `plans/off-topic-improvements.md` in that item's commit (a drained backlog is a short live

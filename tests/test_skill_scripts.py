@@ -503,6 +503,46 @@ def test_inventory_python_manager_pip_fallback(tmp_path):
     assert out["python_manager"] == "pip"
 
 
+def _gemfile_lock(tmp_path, bundled_with):
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org", cooldown: 4\n')
+    (tmp_path / "Gemfile.lock").write_text(
+        f"GEM\n  remote: https://rubygems.org/\n  specs:\n\nBUNDLED WITH\n  {bundled_with}\n"
+    )
+
+
+@pytest.mark.parametrize("version", ["4.0.6", "2.5.23", "4.0.21"])
+def test_inventory_reports_the_locked_bundler(tmp_path, version):
+    _gemfile_lock(tmp_path, version)
+    out, stdout = run_inventory(tmp_path)
+    assert out["ruby_bundled_with"] == version
+    assert "bundle update --bundler=" in stdout, (
+        "every Ruby repo is told to bump Bundler itself"
+    )
+
+
+@pytest.mark.parametrize("version", ["4.0.6", "4.0.12", "2.7.2"])
+def test_inventory_warns_when_bundler_ignores_the_cooldown(tmp_path, version):
+    _gemfile_lock(tmp_path, version)
+    out, stdout = run_inventory(tmp_path)
+    assert out["ruby_cooldown_enforced"] == "0"
+    assert "ignores the cooldown" in stdout
+
+
+@pytest.mark.parametrize("version", ["4.0.13", "4.0.21", "4.1.0", "10.0.0"])
+def test_inventory_does_not_warn_from_bundler_4_0_13(tmp_path, version):
+    _gemfile_lock(tmp_path, version)
+    out, stdout = run_inventory(tmp_path)
+    assert out["ruby_cooldown_enforced"] == "1"
+    assert "ignores the cooldown" not in stdout
+
+
+def test_inventory_bundler_keys_without_a_lockfile(tmp_path):
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
+    out, _ = run_inventory(tmp_path)
+    assert out["ruby_bundled_with"] == "none"
+    assert out["ruby_cooldown_enforced"] == "unknown"
+
+
 # ── detect_stack.sh (repo-review skill preflight) ────────────────────────────────────
 def run_detect(target, *args):
     """Run the repo-review preflight (read-only) and parse its key=value block."""

@@ -2,7 +2,7 @@
 # bet: model won't pause on a huge uncommitted diff to suggest smaller commits / a review
 # sunset: model proactively proposes splitting large changes
 # Stop: when the session ends with a very large uncommitted change in the working tree,
-# nudge Claude (exit 2) to slow down — commit in smaller pieces, get a review, and consider
+# nudge Claude (blocks the stop) to slow down — commit in smaller pieces, get a review, and consider
 # plan mode for the next chunk. Aimed at people new to coding, for whom a 2000-line
 # uncommitted diff is hard to review and easy to lose. (It measures the whole tree, so
 # pre-existing uncommitted work counts too — that diff is just as unreviewed.)

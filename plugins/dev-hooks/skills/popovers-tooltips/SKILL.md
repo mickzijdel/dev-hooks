@@ -108,7 +108,7 @@ export default class extends Controller {
 |--------|----------|
 | [Tippy.js](https://atomiks.github.io/tippyjs/) (built on Popper) | Plain tooltips/popovers — the fastest drop-in; less code than wiring Floating UI yourself. |
 | [Flowbite](https://flowbite.com) / [Preline](https://preline.co) / [daisyUI](https://daisyui.com) | You already use that Tailwind component kit — use its popover/dropdown/tooltip rather than hand-rolling. |
-| Native [Popover API](https://developer.mozilla.org/docs/Web/API/Popover_API) (`popover` attr + `popovertarget`) | You want top-layer + light-dismiss for free (Baseline 2024). Pair with CSS anchor positioning for placement — but **anchor positioning is Chromium-only as of 2026**, so add a Floating UI fallback for cross-browser placement. |
+| Native [Popover API](https://developer.mozilla.org/docs/Web/API/Popover_API) (`popover` attr + `popovertarget`) | You want top-layer + light-dismiss for free (Baseline 2024). Pair with CSS anchor positioning for placement — check its current support (caniuse: `css-anchor-positioning`) and keep a Floating UI fallback for browsers without it. |
 | React: [Radix](https://www.radix-ui.com), [Headless UI](https://headlessui.com), [shadcn/ui](https://ui.shadcn.com) | It's a **React** app (these wrap Floating UI internally). They do **not** apply to a Hotwire/Stimulus app. |
 
 ## Common mistakes

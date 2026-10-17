@@ -1,6 +1,6 @@
 ---
 name: tailwind
-description: Use when writing or fixing Tailwind CSS — in HTML, ERB/ViewComponent, JSX, Vue, or any template that carries utility classes. Covers design tokens, taming class soup, component-first extraction, dark mode, responsive layout, and accessibility. Triggers on "tailwind", "css", "styling", "dark mode", "responsive", "class soup", "@apply", "design system", or any "make this look right / fix this layout" request — even when styling isn't named explicitly, since templates almost always contain Tailwind classes.
+description: Use when writing or fixing Tailwind utility classes in any template (HTML, ERB/ViewComponent, JSX, Vue), or restyling a Tailwind UI.
 ---
 
 # Tailwind CSS
@@ -19,7 +19,7 @@ that must stay on-screen, see the companion [popovers-tooltips](../popovers-tool
 2. **No inline styles.** Never use the `style` attribute. If Tailwind lacks a utility, extend the config.
 3. **Reuse components first.** Before adding classes to a new element, check whether an existing partial, component, or shared pattern already handles it.
 4. **Design tokens over magic numbers.** Use the colors, spacing, and sizes from your config — not arbitrary values like `bg-[#3b82f6]` or `p-[13px]`.
-5. **Every UI works in light and dark mode.** No exceptions.
+5. **Every UI works in light and dark mode**, unless the brief pins otherwise.
 6. **Every UI is responsive.** No exceptions.
 
 ---
@@ -190,7 +190,7 @@ Mobile-first: start with the mobile layout, then add larger breakpoints.
 Common patterns: `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3`, `hidden lg:block`,
 `text-2xl md:text-3xl lg:text-4xl`, `px-4 md:px-8 lg:px-16`.
 
-**Touch targets** need adequate size on mobile — minimum 44×44px: `class="min-h-[44px] min-w-[44px] px-4 py-2"`.
+**Touch targets** are ≥ 24×24px (WCAG 2.2 AA); aim for 44px on primary touch controls: `class="min-h-[44px] min-w-[44px] px-4 py-2"`.
 
 ---
 
@@ -218,7 +218,7 @@ Styling affects accessibility directly.
 | Copy-paste 15 classes | Extract a component | Components are the reuse mechanism |
 | Raw CSS in `.css` files | Tailwind utilities, or `@apply` in `@layer` | Plain CSS diverges from the system |
 | `p-[13px]` | `p-3` (or extend the config) | Arbitrary spacing breaks visual rhythm |
-| Forget `dark:` variants | Pair light and dark always | Half your users see a broken UI |
+| Forget `dark:` variants | Pair light and dark, unless the brief pins one | Half your users see a broken UI |
 | Forget breakpoints | Mobile-first, add `md:`/`lg:` | Mobile users are the majority |
 | `focus:` for focus rings | `focus-visible:` | Avoids focus rings on mouse clicks |
 | Remove outline, no replacement | `focus:outline-none focus-visible:ring-2` | Keyboard users must see focus |
@@ -231,7 +231,7 @@ Styling affects accessibility directly.
 2. **Design tokens** — colors, spacing, sizes from the theme, not arbitrary values.
 3. **Lean classes** — shorthand, drop defaults, consistent order (Prettier plugin).
 4. **Dark mode** — every color class has a `dark:` pair, contrast holds.
-5. **Responsive** — works from mobile up; touch targets ≥ 44px.
+5. **Responsive** — works from mobile up; touch targets ≥ 24×24px (WCAG 2.2 AA), 44px on primary touch controls.
 6. **Accessibility** — `focus-visible` states, semantic HTML, `sr-only` labels for icon-only buttons.
 7. **No plain CSS, no inline styles** — utilities or `@apply` in `@layer components` only.
 

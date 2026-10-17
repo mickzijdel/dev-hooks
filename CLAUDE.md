@@ -1,7 +1,7 @@
 This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
 root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
-each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks and
-writing also ship `hooks/` — dev-hooks the main suite, writing a single `readme-reminder`).
+each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks,
+writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below).
 Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
@@ -43,10 +43,103 @@ changed). A plugin's version lives **only** in its `plugins/<name>/.claude-plugi
 marketplace.json deliberately carries no per-plugin versions (Claude Code uses plugin.json's
 when both exist) and only stable one-line descriptions; don't re-add either. The hk
 `plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
-plugin when plugin files are staged; it is the one hk step CI doesn't mirror (CI has no Claude
-CLI).
+plugin when plugin files are staged; CI runs the same validation through `tests/test_mods.py`
+on the dev-hooks plugin.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
+
+## The dev-hooks mod (`plugins/dev-hooks/hooks/register.tsx`)
+
+`hooks.json` names one function-hook module under `modules`, beside the command hooks; its
+state contract is `plugins/dev-hooks/types/index.d.ts` (named as `types` in plugin.json) and
+its tests are `plugins/dev-hooks/tests/*.test.ts(x)`, run by `claude plugin test
+plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI; CI's `test`
+job installs a pinned one, needing no login). tsc can't run in CI — only a logged-in session
+load writes `.claude-plugin/types/` — so type-check locally after a session has loaded the
+plugin (`npx -p typescript tsc -p plugins/dev-hooks`; the engine writes that `tsconfig.json`). Load the `plugin-authoring` skill before editing it. A Claude Code
+that predates mods, or has them switched off, skips the module and still runs every command
+hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
+bundled examples use; call `$.state.get`/`$.state.set` directly.
+
+The module also records **session facts** (`facts:<session id>` in `$.store`, typed as `Facts` in
+`types/index.d.ts`): skills, subagent dispatches, per-repo edits with net growth (`root: null`
+outside any repo), and the `classic.Stop` verdict. Rules learned building it:
+- `$` is followed only into functions declared in `register.tsx`, never across an import — shared
+  code in another file must be pure. One unmatched `on(event)` per event per module: add to the
+  existing `session.start` hook rather than registering a second.
+- Persist facts in `$.store`, not `$.state` (which a reboot or resume loses). The store has no
+  compare-and-set and tool calls run in parallel, so every read-modify-write goes through the
+  module's `changeFacts` queue.
+- A `classic.Stop` hook sees the command hooks' verdict folded **last-write-wins**: with several
+  blocking, only the last reason reaches the module (Claude still gets them all). A mod can't
+  merge the shell Stop nudges from outside; that logic has to move into the module.
+- In `claude plugin test`, the test's own `$` has no `store`/`state` noun and `$.classic` is
+  undefined: answer `session.id`/`store.*`/`process.run` from a Map via the test's `on`
+  (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
+  wrong call shape such as `$.process.run({ argv })`.
+
+The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_SESSION` to the
+session id (`$.env.set` reaches every command hook started afterwards), which makes
+`reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
+command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
+answer the way Claude Code does (`stopReason`) and returns one merged `block`. It writes the
+session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the path as
+`DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
+`reminder_transcript_invoked` and gets subagent-aware answers for free. If orchestration throws, the
+module unsets the marker (the command hooks take Stop back from the next turn) and records the
+plugin version under `stopOrchestrationFailed` in `$.store`; `session.start` won't mark a
+session on that version again, so only a version bump re-enables it. Every `--plugin-dir`
+copy named `dev-hooks` shares one inline store (`dev-hooks_inline-*.json`), separate from the
+marketplace install's — clear that key after fault-injection tests. So a new dev-hooks
+Stop hook must go through `reminder_stop_init` (`test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init`
+enforces it) — one that doesn't would run twice. Don't stand hooks down by skipping `next` in
+`classic.Stop`: that silences every Stop hook beneath the module, other plugins' and the user's too.
+
+The module also routes **the guard's questions to the person**: its `classic.PreToolUse` hook
+takes a decision whose `ask` starts with `GUARD_PREFIX` (`dev-hooks guard — `, pinned on both
+sides by `test_guard_prefix_matches_the_mod`) and asks via `$.ui.ask`, which reaches the person
+even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by the classifier).
+Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
+rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
+leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
+refuses), else the session env, else 120 s.
+A `$.ui.ask` can't be closed from the mod, so a timed-out dialog lingers, and the VS Code extension
+doesn't draw it through `ui.render` (the `guardTimedOut` redraw only helps surfaces that do). What
+works everywhere is the late answer: the abandoned `ask` promise still resolves, and
+`lateGuardAnswer` submits it to Claude, a late Allow also granting that exact command one
+ask-free run within 10 minutes (`lateAllowed`, module memory — a reload drops it). Note that
+`$.env.set` reaches *every* process Claude Code starts afterwards, nested `claude -p` runs
+included — only ever set variables that are inert outside this session or keyed to its id.
+
+The module also tracks **Stop-nudge outcomes** (`hooks/nudge-outcomes.ts`, pure; `$` stays in
+`register.tsx`'s `trackNudges`/`closeNudges`/`sweepNudges`/`logNudges`). Each reason the
+orchestration returns is a `Nudge` in the session's facts, named by its script (`hookName`), not
+its tag. The next orchestrated Stop — normally the continuation the block forced — resolves the
+pending ones with `resolveNudge`, one remedy per hook from facts recorded after the fire
+(`lastEdit` gives per-file edit times); `session.end` and, for sessions idle 6h+, the next
+`session.start` resolve leftovers as `unknown` unless evidence says acted. Resolved nudges go to
+`nudgeOutcomes` in `$.store` (union by session+hook+time, 90 days, 3,000 max) and are exported
+to `~/.claude/automation-review/stop-nudges.json` when that directory exists — the file the
+weekly-automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
+`resolveNudge`; give it one only for a remedy the facts can show. The review needles and the
+memory-dir regex are mirrors of `review-reminder.sh` and `hook_helpers.MEMORY_DIR_RE`, pinned
+by `tests/test_nudge_parity.py`.
+
+The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
+push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported
+and unit-tested directly). A `tool.call` hook on `{ tool: 'Bash' }` runs after `next(e)`, reads
+the pushed commits from git's push output in the tool result's `text` (stderr is in it), adds a
+`context` note to that result, and chains `$.clock.after` polls of `gh run list --commit <sha>`
+outside the dispatch (a timer's closure keeps using the hook's `$`). Elapsed time comes from
+`$.clock.now()`, not `Date.now()`, so `mock.clock` drives it in tests. The outcome reaches Claude
+two ways, both verified live: `$.session.append` (a user-role note, read at the running turn's
+next request, starting no turn) for a pass, and `$.prompt.submit` (queued until idle, then a turn
+of its own, even under `claude -p`) for a failure. `session.start` sets
+`DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
+down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.
+In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the plugin's own
+`$.session.append` calls; `tests/ci-watch-hook.test.ts` reads them back with `.appended()` to tell
+the append path from the prompt path.
 
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
@@ -75,8 +168,7 @@ Do not include changelog or detective-work where it does not belong, such as in 
   (`voice_opt_out [VAR]`, `voice_payload`/`voice_field`, `voice_profile`,
   `VOICE_PROSE_EXTS` + `voice_is_prose_file`, `voice_transcript_scan`,
   `voice_state_file`/`voice_fire_once`, `voice_emit <event> <msg>`, `voice_emit_stop`, and
-  the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). That lib replaced the
-  `# jscpd:ignore`-wrapped copies the hooks used to carry. `VOICE_PROSE_EXTS` is passed into
+  the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). `VOICE_PROSE_EXTS` is passed into
   `voice_transcript_scan`'s python heredoc by argv rather than re-listed there — a drifted
   copy of an extension list doesn't error, it just silently stops seeing files.
   `thinking-tools`' two hooks have no sibling to share with, so their small reimplemented
@@ -109,21 +201,25 @@ Do not include changelog or detective-work where it does not belong, such as in 
   pass). The split is deliberate: these hooks run on *every* Bash tool call, so the second jq
   spawn isn't paid by a command the hook is about to ignore. **`reminder_cwd_session` is not
   optional** — SESSION is what makes a fire attributable to a repo (a session id resolves to
-  `~/.claude/projects/<dir>/<session>.jsonl`), and three hooks silently logged `"nosession"`
-  for five weekly reviews before `test_every_emitting_hook_establishes_a_session` in
-  `tests/test_hook_sunset_bets.py` started failing any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
+  `~/.claude/projects/<dir>/<session>.jsonl`), and `test_every_emitting_hook_establishes_a_session`
+  in `tests/test_hook_sunset_bets.py` fails any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
   (INPUT/TRANSCRIPT/SESSION + the once-per-session sentinel guard; pass "" to skip the
   guard when the hook manages its own re-arm state), **`reminder_session_files`** (SESSION_FILES
   = porcelain + files committed since the session started — the gate any "did Claude work this
-  session?" Stop hook wants, and the default over `reminder_changed_files`; review-reminder,
-  verify-work, big-change and change-summary all used porcelain alone and so went silent on
-  exactly the commit-as-you-go sessions that did the most work), `reminder_session_added_lines`
-  (this session's added code lines in `$REPLY`, over `REMINDER_CODE_EXTS` — the growth signal,
+  session?" Stop hook wants, and the default over `reminder_changed_files`, because porcelain
+  alone goes silent on exactly the commit-as-you-go sessions that do the most work), `reminder_session_added_lines`
+  (this session's net added code lines in `$REPLY`: one diff from the last pre-session commit
+  to the working tree, never a sum of per-commit patches, which counted every rewrite as
+  growth; over `REMINDER_CODE_EXTS` — the growth signal,
   and the shared half of compress-comments-reminder's comment count),
-  `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (ONE code-extension
-  list; the two hand-rolled copies had already drifted over `*.sh`),
+  `reminder_code_globs`/`reminder_is_code_file`/`reminder_has_code_file` (the one
+  code-extension list — a hand-rolled copy drifts),
   `reminder_transcript_invoked <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
-  `transcript_invoked`, which two hooks used to embed as duplicate heredocs),
+  `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
+  `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
+  `reminder_git_target_dir <words…>` (the directory the first `git <words…>` in $COMMAND runs
+  in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
+  git command acts on", since `cd other && git commit` acts on `other`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
   the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
   rather than threading the value through — and pass that value to python rather than
@@ -133,7 +229,15 @@ Do not include changelog or detective-work where it does not belong, such as in 
   hooks), the re-arm trio
   `reminder_rearm_baseline`/`reminder_rearm_seed`/`reminder_rearm <name> <count> <threshold>`
   ($REPLY `first`/`growth`/`silent`, growth in `REMINDER_REARM_DELTA`), and
-  `reminder_emit_stop <msg>` (continue:false + exit 2).
+  `reminder_emit_stop <msg>` (`{"decision":"block","reason":…}` + exit 0 — Claude keeps working
+  and acts on the reason in the same turn). **Never `continue: false` on Stop**: it halts Claude
+  outright, and one halting hook overrides every blocking one; across every transcript since June
+  only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
+  payload's `stop_hook_active` is true, capping each natural stop at one forced continuation
+  (`--when-active` opts out, for verify-work: the continuation is where Claude edits code, so it
+  keeps verifying there, bounding its own blocks), and
+  the re-arm baselines are keyed per session **and per repo** (an orchestrator's Stop fires from
+  the main checkout and from worktrees alike).
   **Prefer a re-arming baseline over a once-per-session sentinel** for any "do this before you
   finish" hook. A sentinel fires once and then goes quiet however little that nudge got done;
   the fire log shows re-arming compress-comments-reminder averaging ~3.9 fires per session it
@@ -145,21 +249,22 @@ Do not include changelog or detective-work where it does not belong, such as in 
   command hook.
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
+  `reminder_is_probe_session` (a made-up session id or a `/tmp/claude-*` scratchpad cwd: the
+  fire log and prompt log skip these; `_voice_log_fire` mirrors it),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
-  on purpose, because a real leak was typed glued to the previous word),
+  on purpose, so a secret pasted with no space before it still matches),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
-  `scan_script_dirs()` for the recursive script-index inventory, `authored_scripts()` for the
+  `scan_script_dirs()` for the recursive script-index inventory, `memory_written()` for "did this
+  session write a memory file?" (transcript Write/Edit into a memory dir, plus the facts file), `authored_scripts()` for the
   save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
   actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
   skill_listing attachment names every installed skill, so a plain grep for a skill name
   matches in every session and permanently suppresses the hook. Its `<command-name>` branch
   must match INSIDE the tag (`[^<>\n]{1,100}`), not "both substrings on the same line": a
   transcript line is often a whole API request, in which the Skill tool's schema documents
-  the "`<command-name>` block" while the skill listing separately names the needle — that
-  lookalike made `code-review` and `compress-comments` report invoked in every session in
-  this repo. An unbounded `.*?` is no better; it spans the docstring that documents the tag) live in `lib/hook_helpers.py` — import them by
+  the "`<command-name>` block" while the skill listing separately names the needle. An unbounded `.*?` is no better; it spans the docstring that documents the tag) live in `lib/hook_helpers.py` — import them by
   passing `"$SELF_DIR/lib"` as an argv:
   `sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[N]); from hook_helpers import git`.
   Extend the lib rather than copying a jq expression or helper into a hook; a hook whose
@@ -171,7 +276,7 @@ Do not include changelog or detective-work where it does not belong, such as in 
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
   weekly-automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
   exit 0, shown to the user) < `reminder_emit`/`_session`/`_prompt` (additionalContext) <
-  `reminder_emit_correction`/`_stop` (exit 2, fed back to Claude). `reminder_emit_decision`
+  `reminder_emit_correction` (exit 2, fed back to Claude) and `reminder_emit_stop` (blocks the stop). `reminder_emit_decision`
   is its own thing (PreToolUse permission). `tests/test_hook_sunset_bets.py` gates all of it:
   every emit function in the lib must call `_reminder_log_fire`; every hook must call some
   `reminder_emit_*` or sit in that test's `SILENT_HOOKS` allowlist with a reason (only
