@@ -4966,6 +4966,9 @@ def test_script_index_lists_described(tmp_path):
     assert payload["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     ctx = payload["hookSpecificOutput"]["additionalContext"]
     assert "resize-imgs — Resize images in a folder." in ctx
+    # A script that ignores its arguments runs for real on `--help`, so the index must
+    # say to check argument handling first, not "run --help" unconditionally.
+    assert "ignores its arguments" in ctx
 
 
 @requires_python3
@@ -4977,6 +4980,7 @@ def test_script_index_undescribed_placeholder(tmp_path):
     ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "dfv" in ctx
     assert "short-description" in ctx  # the placeholder/ask-the-user note
+    assert "read its source" in ctx  # not "run --help" on an unknown script
 
 
 @requires_python3
