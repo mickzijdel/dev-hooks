@@ -74,10 +74,14 @@ A copy-paste starter lives at [references/template.py](references/template.py). 
    # short-description: Fetch a PR's diff by number and print it to stdout.
    ```
 4. **`argparse` with real `--help`** — the index points future sessions to `<script> --help` for
-   detail beyond the one-liner, so make `--help` explain usage and the arguments.
+   detail beyond the one-liner, so make `--help` explain usage and the arguments. Parse
+   arguments before doing any work: `-h`/`--help` prints usage and exits 0, and an unknown
+   argument exits non-zero. A script that ignores its arguments runs for real when an agent
+   asks it for help.
 
 A **shell** script follows the same rules minus PEP 723: `#!/usr/bin/env bash`, a
-`# short-description:` line, and a usage message printed for `-h`/`--help`.
+`# short-description:` line, and a `case "${1:-}"` near the top that prints usage for
+`-h`/`--help` and rejects unknown arguments before anything else runs.
 
 ## Genericize before saving
 
@@ -113,6 +117,7 @@ shared repo, commit (and push) so teammates get it.
 
 ## Adding a description to an existing tool
 
-When the index reports a script with **no `# short-description:`**, and you're using it: run
-`<path> --help` to learn what it does, then tell the user — and offer to add a
+When the index reports a script with **no `# short-description:`**, and you're using it: read
+its source to learn what it does (run `<path> --help` only once you've seen it parse its
+arguments), then tell the user — and offer to add a
 `# short-description:` line near the top so it's described from then on.

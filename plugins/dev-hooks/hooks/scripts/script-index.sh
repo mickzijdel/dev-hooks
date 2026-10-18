@@ -5,7 +5,7 @@
 # custom tools already exist — a lightweight skill-style index. Lists each executable
 # shebang script (recursively, so a script repo organised into subdirectories works) with
 # its `# short-description:` line. Scripts lacking that marker are listed under a placeholder
-# telling Claude to run `<path> --help` for detail and ask the user to add a description
+# telling Claude to read the script for detail and ask the user to add a description
 # (see the script-library skill).
 #
 # The library is one or more roots in DEV_HOOKS_SCRIPT_DIR — a colon-separated list like
@@ -14,7 +14,8 @@
 #
 # The hook never EXECUTES any script — running every tool's --help at session start would
 # be slow and could have side effects. It only reads the first lines for the description
-# and tells Claude it may run --help itself when it decides to use one.
+# and tells Claude it may run --help itself when it decides to use one — after checking the
+# script parses its arguments, because one that ignores them runs for real.
 #
 # Hide scripts you don't want indexed (installed/third-party tools, app launchers) with
 # DEV_HOOKS_SCRIPT_IGNORE — a colon-separated list of globs matched against each script's
@@ -57,7 +58,9 @@ def show(path):
 
 out = [
     "Custom CLI tools in the user's saved script library. Reach for one before re-solving a "
-    "problem it already handles; run `<path> --help` for usage first. A script in a PATH "
+    "problem it already handles. To learn one, check it handles `-h`/`--help` (argparse, or a "
+    "case ahead of any work) and only then run `<path> --help`: a script that ignores its "
+    "arguments runs for real, so read its source instead. A script in a PATH "
     "directory (e.g. ~/.local/bin) also runs by bare name; others run by their full path or "
     "via `uv run <path>`."
 ]
@@ -67,7 +70,8 @@ if undescribed:
     out.append(
         "No `# short-description:` line, so no summary for: "
         + ", ".join(show(p) for p in undescribed)
-        + ". If you use one of these, run `<path> --help` for detail and tell the user to add "
+        + ". If you use one of these, read its source for detail (run `--help` only once you "
+        "have seen it parse arguments) and tell the user to add "
         "a `# short-description:` line so it is described next time (see the script-library skill)."
     )
 print("\n".join(out))
