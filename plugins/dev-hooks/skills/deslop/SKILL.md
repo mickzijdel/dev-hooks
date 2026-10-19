@@ -4,7 +4,7 @@ description: |
   Use before declaring a coding task done, before a commit, or before merging — and when
   asked to "deslop", "de-LLMify", "remove the AI slop", "make this look human-written", or
   "clean up your code". Also when a diff grew a file, added fallbacks or defensive checks,
-  piled on comments, or duplicated logic the repo already has. Behaviour-preserving
+  piled on comments, duplicated logic the repo already has, or repeated tests. Behaviour-preserving
   cleanup of AI-authored slop in the current diff, run by a fresh-context subagent. NOT
   for new features, redesigns, or comment-only cleanup (use compress-comments).
 allowed-tools:
@@ -152,6 +152,7 @@ cleanup.
 | "The scanner flagged it, so it's slop" | It is a regex. Judge each finding; report the ones it got wrong. |
 | "I'll extract a helper while I'm in here" | Not during cleanup. Deletion-first; propose extraction as Tier C. |
 | "Tests pass, it's clean" | SlopCodeBench: agent code passes its tests and still erodes structurally in 80% of trajectories. |
+| "Each test checks something" | Five tests of one behaviour are one test with five inputs. Count behaviours, not tests. |
 | "It's only 20 lines, not worth a pass" | Then the pass costs nothing. Run it. |
 | "The diff got longer because the fix needed it" | Then it was not a cleanup. Separate the fix from the pass and say so. |
 
