@@ -27,6 +27,8 @@ No report, no permission, no discussion. Deleting these is the job.
 | A12 | Duplicated state check | The same predicate literal in two or more places (`status === "paid"`) | Use the existing enum or helper. If none exists, that is C2 |
 | A13 | Style drift | Naming, error handling, logging or import style unlike the rest of the file; emoji; prose in code | Match the file |
 | A14 | Session residue | Debug prints, `console.log("HERE")`, `binding.pry`, empty or content-free TODOs, "temporary" markers | Resolve or delete. Flag any dropped TODO so intent is not lost silently |
+| A15 | Reinvented platform | Hand-rolled code the standard library, the framework's own default, or an installed dependency already does: a manual loop building a dict, a renderer built by hand from config the framework reads anyway, a migration restating `add_reference` defaults | Replace it with the existing one and name it. Only when it behaves the same on every input; otherwise propose it as C3 |
+| A16 | Redundant test | Two tests with the same setup asserting the same thing; tests differing only in input; a test restating a constant, a column limit or template text; a guard that passed before the change it guards | One test per behaviour: fold inputs into one test, delete the repeats and the tests that could never fail. Every behaviour a deleted test pinned must still be pinned |
 
 ## Tier B — fix, and report each
 
