@@ -32,7 +32,8 @@ Automation is a one-way ratchet unless something also **removes** it. So each ru
 3. Identify repeated workflows — favor ones that are **high-volume, well-defined, low blast-radius, and measurable**.
 4. Pick the top **1–2** and, for each, specify: what it is, whether it's best as a **skill / hook / tool**, a rough effort estimate, and the first concrete step.
 5. **Retire pass** (below) — pick 1–2 scaffolds to propose removing.
-6. Write the dated report (below) and post a one-paragraph summary to the user.
+6. **Separate sub-reviews** (below) — run any that are installed.
+7. Write the dated report (below) and post a one-paragraph summary to the user.
 
 ## Retire pass — prune scaffolding the model outgrew
 
@@ -67,6 +68,14 @@ firing rarely) and check the bet against the **current** model:
 
 Run this pass **explicitly on every major model release**, not only weekly — a capability jump
 is exactly when standing bets go stale in bulk.
+
+## Separate sub-reviews
+
+Other projects can register their own weekly review by dropping a Markdown file in
+`~/.claude/automation-review/subreviews/*.md`. For each file there (none is fine; skip
+silently), follow it as its own review and report it under **its own heading**, after the
+automation report. Its findings never count toward the 1–2 automation picks, the retire pass
+or the prior-suggestions list, and nothing from it is folded into them.
 
 ## Output
 
