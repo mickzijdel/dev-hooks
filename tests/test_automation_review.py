@@ -112,3 +112,12 @@ def test_naive_jq_reader_is_blinded_by_the_corruption(tmp_path):
     naive_got = set(_prompts(_run(naive, tmp_path).stdout))
     tolerant_got = set(_prompts(_run(_documented_reader(), tmp_path).stdout))
     assert naive_got < tolerant_got  # naive misses records the tolerant reader keeps
+
+
+def test_skill_has_separate_subreviews_step():
+    """Sub-reviews are read from a fixed directory and must never feed the automation picks."""
+    text = SKILL.read_text()
+    assert "~/.claude/automation-review/subreviews/*.md" in text
+    section = text.split("## Separate sub-reviews")[1].split("\n## ")[0]
+    assert "own heading" in section
+    assert "never count toward the 1–2 automation picks" in section
