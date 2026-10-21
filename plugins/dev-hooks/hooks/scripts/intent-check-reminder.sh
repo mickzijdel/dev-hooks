@@ -1,14 +1,16 @@
 #!/bin/bash
-# bet: model won't restate its assumed goal/non-goals (or ask) when handed a thin task brief
-# sunset: model reliably surfaces assumptions and asks clarifying questions on ambiguous briefs unprompted
-# UserPromptSubmit hook: when a prompt is a *task* (an imperative change request) but
-# states neither WHY (intent) nor NON-GOALS (what's out of scope), inject one advisory
-# nudging Claude to restate its assumed goal + out-of-scope before substantial work — and
-# to ask when the task is ambiguous or high-stakes. A thin brief is the trigger; the echo
-# is the payload. It never blocks: on a match it emits additionalContext and exits 0.
+# bet: model won't play a thin task brief back (goal, non-goals, depth, done, what it needs) or ask
+# sunset: model reliably opens delegated tasks with a brief-back and asks on ambiguous briefs unprompted
+# UserPromptSubmit hook: when a prompt is a *task* (an imperative change, research or writing
+# request) but states neither WHY (intent) nor NON-GOALS (what's out of scope), inject one
+# advisory nudging Claude to play the brief back before substantial work (the thinking-tools
+# brief-back skill's contract) — and to ask when the task is ambiguous or high-stakes. A thin
+# brief is the trigger; the brief-back is the payload. It never blocks: on a match it emits
+# additionalContext and exits 0.
 #
 # Deliberately conservative — it fires only when ALL hold, so "qualifying" stays rare:
-#   • task-shaped   — opens with an imperative change-verb (add/fix/build/refactor/…)
+#   • task-shaped   — opens with an imperative change, research or writing verb
+#                     (add/fix/refactor/…, research/find/compare/…, draft/plan/…)
 #   • no WHY        — no intent marker (because / so that / the goal is / …)
 #   • no NON-GOALS  — no scope marker (don't / without / out of scope / leave … alone / …)
 #   • not a follow-up (also/now/next/…) — those inherit intent from earlier in the session
@@ -54,11 +56,15 @@ first_word="${p_trim%%[[:space:]]*}"
 first_word="${first_word%%[[:punct:]]}"
 VERBS="add fix build implement create make change update remove delete rename refactor \
 migrate write wire integrate generate convert replace extract split combine rework redo \
-port configure enable disable support improve optimize scaffold setup set install upgrade bump"
+port configure enable disable support improve optimize scaffold setup set install upgrade bump \
+research find investigate compare explore review analyse analyze summarise summarize \
+recommend choose pick draft outline plan prepare organise organize design look"
 case " $VERBS " in
   *" $first_word "*) ;; # task-shaped — keep going
   *) exit 0 ;;
 esac
+# "look" is a task only as "look into"/"look for"; "look at this" and "look up X" aren't briefs.
+[[ $first_word == look && ! $p_trim =~ ^look[[:space:]]+(into|for)[[:space:]] ]] && exit 0
 
 # Has a WHY (intent) marker → not a thin brief, stay silent.
 WHY_RE='because|so that|so we|so it|so i |so you |so the |so users|in order to|the point is|the goal is|the idea is|the reason|reason:|rationale|motivation|why:|context:|this is for|to avoid|to prevent|to stop|to fix|to reduce|to ensure|to keep|to speed up|to make it|to support'
@@ -69,7 +75,9 @@ NG_RE="don't|do not|dont|don’t|without|out of scope|out-of-scope|non-?goal|avo
 [[ $p =~ ($NG_RE) ]] && exit 0
 
 reminder_emit_prompt "The user's request says what to do but not why or what's out of scope. \
-Before substantial work, briefly restate the goal as you understand it and the thing(s) you'll \
-treat as out of scope, then proceed on those assumptions unless corrected. When the task is \
-ambiguous or high-stakes/irreversible (auth, migrations, deletions, schema, anything \
-outward-facing), ask clarifying questions first — as many as you genuinely need — instead of guessing."
+Before substantial work, play the brief back in a few lines: the outcome and who it's for, what \
+you'll treat as out of scope, the depth you'll work to and where you'll stop to check in, what \
+done looks like, and what you need from them (or 'nothing'). The thinking-tools brief-back skill \
+has the format. Then proceed on those assumptions unless corrected. When the task is ambiguous \
+or high-stakes/irreversible (auth, migrations, deletions, schema, anything outward-facing), ask \
+the blocking questions first, each with your recommended answer, instead of guessing."

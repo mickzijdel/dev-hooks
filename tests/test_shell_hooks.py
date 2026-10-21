@@ -4880,6 +4880,30 @@ def test_intent_check_fires_on_polite_thin_task():
     assert_json_with(r.stdout, "out of scope")
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "research gyms near the office with good showers",
+        "can you find me a dentist near bethnal green",
+        "draft an email to the landlord about the boiler",
+        "look into CRMs for a small nonprofit",
+    ],
+)
+def test_intent_check_fires_on_research_and_writing_asks(prompt):
+    r = _run_intent_check(prompt)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "brief-back")
+
+
+@pytest.mark.parametrize(
+    "prompt", ["look at this error", "look up the capital of Uzbekistan"]
+)
+def test_intent_check_silent_on_look_at_and_look_up(prompt):
+    r = _run_intent_check(prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_intent_check_silent_when_why_present():
     r = _run_intent_check("add a logout button because users keep getting stuck")
     assert r.returncode == 0
