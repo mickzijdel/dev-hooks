@@ -8,6 +8,36 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-21 (Run 37)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 16 commits 2026-10-15 to 2026-10-21 (`9edc528` to `966571d`); Oct 17 onward is new.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-17 to 2026-10-21.
+- RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.303 to 2.1.306.
+- Unreachable (proxy 403): https://upliftai.substack.com/feed, https://claude.dev/rss.xml, https://ai-automations-db.vercel.app/database.
+
+PRs opened this run: none.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Lint GitHub Actions workflows in hk/CI (jactionlint) | dotfiles commit `966571d` | Duplicate | The dev-env standard already runs actionlint via hk and CI (`github-actions` skill, `hk.pkl`). |
+| Mod `tool.check` answers `decider: "person"` and `e.isReadOnly` | changelog 2.1.304 | Deferred | The guard routes its questions through `classic.PreToolUse` + `$.ui.ask`; `decider: "person"` could replace that, but it needs a live-session probe (auto mode, VS Code, timeouts) before the module's guard path changes. Revisit when the guard next needs work. |
+| Mod `settings.read` hooks, `plugin skipped your hook` transcript line, docked pane width cap, VS Code mod drawing on gateways | changelog 2.1.304-2.1.305 | Out of scope | New mod surfaces with no current need in the module. |
+| `sandbox.allowNestedUserNamespaces`, `/auto-mode-setup`, `/claude-api managed-agents-secure`, Code Review levels, retry-watchdog recheck, `claude -p` login fix in cloud sessions, tool search behind a custom base URL | changelog 2.1.304-2.1.306 | Out of scope | Harness settings, admin features and fixes; nothing to adopt in hooks or skills. |
+| Dotfiles: replace dependency factory with an `update-dependencies` repo skill, Bundler 4.0.23, pinned dependency refresh, mise update for bundled certificate fix, patched system CA bundle for Node TLS and eMudhra CA workaround, aube shim loop guard, skip managed-policy VS Code extensions, Herdr named sessions, agent-stuff guidance, Meridian/pi-scrub | dotfiles commits `9edc528`..`966571d` (Oct 15-21) | Out of scope | Personal macOS/Pi dotfiles infrastructure; the CA workaround is a one-off incident response, and the dependency refresh is covered by `dependency-upgrade`. |
+| `/show-me` skill: short, token-efficient overview of what an agent changed | feed item 2026-10-18 | Duplicate | `review-queue` and the Stop-time review reminder already summarise a session's changes for review. |
+| Trim CLAUDE.md bloat with a preview-before-edit plugin | feed item 2026-10-19 | Duplicate | `dev-env-setup` project-docs guidance and `compress-comments` cover pruning; the user's installed plugins cover the rest. |
+| Forbid AI disk cleanups from deleting before a keep/delete plan with sizes is approved | feed item 2026-10-18 | Duplicate | The command guard already asks before destructive commands. |
+| One pinned coordinator session dispatching subagents; long agent loops over big migrations with periodic check-ins; coordinator + agent threads in Claude Projects | feed items 2026-10-19, 2026-10-20 | Duplicate | `loop-oversight`, `board` and `agent-brief` cover the pattern, and superpowers covers orchestration. |
+| Read traces of failing tests before trusting a public benchmark | feed item 2026-10-21 | Out of scope | Evaluation methodology; no hook or skill surface here. |
+| Reusable skills and logged lessons as self-improvement (Harness²) | feed item 2026-10-19 | Duplicate | `weekly-automation-review` and the memory reminder already log and mine lessons. |
+| Screenshot-to-agent scheduling; browser-history book lists; home-network scan; video retention analysis; voice annual review; paper summaries into agent memory | feed items 2026-10-17 to 2026-10-21 | Out of scope | Personal productivity; no dev-workflow surface. |
+| Sources unreachable | substack feed, claude.dev RSS, ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
+
+---
+
 ## 2026-10-17 (Run 36)
 
 Sources scanned:
