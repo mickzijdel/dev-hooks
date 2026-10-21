@@ -157,3 +157,13 @@ Noticed 2026-10-03 while adding credential probes to the guard:
   message is the slow-suite advisory. Harmless today (that nudge resolves `unknown`), but gate it on
   `$TMPFILE` being non-empty if the advisory ever gets a remedy. The ruff call also bypasses
   `_capped`, so a slow ruff can still hit the 120 s hard kill.
+
+Noticed 2026-10-21 while adding brief-back:
+
+- **data-before-design-reminder fires on pasted articles.** A claude.ai message that pasted a
+  ~3,000-character blog post about delegation tripped it: the verb cue matched incidental words
+  ("created", "makes sense"), and some noun cue matched somewhere in the paste. The hook has no
+  long-prompt guard and matches substrings, so any long paste is a coin flip. Options: skip prompts
+  over a length cap (intent-check skips >1,200 chars), or require the verb and noun within a few
+  words of each other. Now that the plugins sync to claude.ai, its hooks see far more pasted prose
+  than they did in Claude Code.

@@ -829,6 +829,7 @@ def test_thinking_reminder_fires(tmp_path):
     )
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:premortem")
+    assert_json_with(r.stdout, "thinking-tools:brief-back")
 
 
 def test_thinking_reminder_silent_when_opted_out(tmp_path):
@@ -874,6 +875,20 @@ def test_thinking_nudge_fires_for_grill_cue():
     r = _run_thinking_nudge("Grill me on this feature idea until it's fully specified.")
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:grill")
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "look into CRMs for us, be thorough",
+        "Can you do a deep dive on gym options near the office?",
+        "just a quick look at the pricing please",
+    ],
+)
+def test_thinking_nudge_fires_for_brief_back_depth_cue(prompt):
+    r = _run_thinking_nudge(prompt)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:brief-back")
 
 
 def test_thinking_nudge_silent_without_cue():
@@ -4863,6 +4878,30 @@ def test_intent_check_fires_on_polite_thin_task():
     r = _run_intent_check("can you add a search box to the navbar")
     assert r.returncode == 0
     assert_json_with(r.stdout, "out of scope")
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "research gyms near the office with good showers",
+        "can you find me a dentist near bethnal green",
+        "draft an email to the landlord about the boiler",
+        "look into CRMs for a small nonprofit",
+    ],
+)
+def test_intent_check_fires_on_research_and_writing_asks(prompt):
+    r = _run_intent_check(prompt)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "brief-back")
+
+
+@pytest.mark.parametrize(
+    "prompt", ["look at this error", "look up the capital of Uzbekistan"]
+)
+def test_intent_check_silent_on_look_at_and_look_up(prompt):
+    r = _run_intent_check(prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
 
 
 def test_intent_check_silent_when_why_present():
