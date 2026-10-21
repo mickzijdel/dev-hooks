@@ -829,6 +829,7 @@ def test_thinking_reminder_fires(tmp_path):
     )
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:premortem")
+    assert_json_with(r.stdout, "thinking-tools:brief-back")
 
 
 def test_thinking_reminder_silent_when_opted_out(tmp_path):
@@ -874,6 +875,20 @@ def test_thinking_nudge_fires_for_grill_cue():
     r = _run_thinking_nudge("Grill me on this feature idea until it's fully specified.")
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:grill")
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "look into CRMs for us, be thorough",
+        "Can you do a deep dive on gym options near the office?",
+        "just a quick look at the pricing please",
+    ],
+)
+def test_thinking_nudge_fires_for_brief_back_depth_cue(prompt):
+    r = _run_thinking_nudge(prompt)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "thinking-tools:brief-back")
 
 
 def test_thinking_nudge_silent_without_cue():
