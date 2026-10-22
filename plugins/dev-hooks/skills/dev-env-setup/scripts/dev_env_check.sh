@@ -42,6 +42,10 @@
 #                    mirrors has_gitleaks's hk.pkl probe).
 #   has_actionlint   1 if hk.pkl references the actionlint step (required from standard v18 — the
 #                    GitHub Actions workflow correctness linter; mirrors has_zizmor's hk.pkl probe).
+#   has_session_url_off  1 if .claude/settings.json sets attribution.sessionUrl (or attribution)
+#                    to false and isn't gitignored (required from standard v28 — a cloud session
+#                    reads only the repo's committed settings, and otherwise links its transcript
+#                    from every commit and PR).
 #   suggests_fnox    1 if the repo has plaintext secrets in use (a non-empty .env/.env.local
 #                    with KEY=value lines, a config/credentials/*.key, or source references to
 #                    Rails credentials / ENV[…] / Settings.) AND no fnox.toml yet. Advisory only —
@@ -156,6 +160,15 @@ has_jscpd_runner=0
 has_version_sync=0
 [ -f "$DIR/scripts/check_version_sync.sh" ] && has_version_sync=1
 
+# Session link off (v28): a cloud session reads only the repo's committed .claude/settings.json.
+# check-ignore exits 128 outside a git repo, which counts as not ignored.
+has_session_url_off=0
+if [ -f "$DIR/.claude/settings.json" ] &&
+  grep -qE '"(sessionUrl|attribution)"[[:space:]]*:[[:space:]]*false' "$DIR/.claude/settings.json" &&
+  ! git -C "$DIR" check-ignore -q .claude/settings.json 2>/dev/null; then
+  has_session_url_off=1
+fi
+
 # Exec-bit gate (v15): hk.pkl carries the exec-bit-scripts step (CI mirrors it), so a
 # tracked shebang script can't ship at index mode 100644.
 has_exec_bit=0
@@ -251,7 +264,7 @@ if [ "$applicable" = 0 ]; then
   status="not-applicable"
 elif [ "$has_hk" = 0 ] || [ "$has_mise" = 0 ] || [ "$has_ci" = 0 ]; then
   status="needs-setup"
-elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; } || { [ "$current_version" -ge 23 ] && [ "$has_version_sync" = 0 ]; }; then
+elif [ "$has_gitleaks" = 0 ] || [ "$repo_version" -lt "$current_version" ] || { [ "$current_version" -ge 2 ] && [ "$has_lockfile" = 0 ]; } || { [ "$current_version" -ge 3 ] && { [ "$has_readme" = 0 ] || [ "$has_claude" = 0 ]; }; } || { [ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ]; } || { [ "$current_version" -ge 10 ] && [ "$has_gitleaks_config" = 0 ]; } || { [ "$current_version" -ge 14 ] && [ "$has_jscpd_runner" = 0 ]; } || { [ "$current_version" -ge 15 ] && [ "$has_exec_bit" = 0 ]; } || { [ "$current_version" -ge 16 ] && [ "$has_sha_pinned_ci" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_zizmor" = 0 ]; } || { [ "$current_version" -ge 18 ] && [ "$has_actionlint" = 0 ]; } || { [ "$current_version" -ge 23 ] && [ "$has_version_sync" = 0 ]; } || { [ "$current_version" -ge 28 ] && [ "$has_session_url_off" = 0 ]; }; then
   status="needs-upgrade"
 else
   status="compliant"
@@ -275,6 +288,7 @@ has_exec_bit=$has_exec_bit
 has_sha_pinned_ci=$has_sha_pinned_ci
 has_zizmor=$has_zizmor
 has_actionlint=$has_actionlint
+has_session_url_off=$has_session_url_off
 suggests_fnox=$suggests_fnox
 has_devcontainer=$has_devcontainer
 devcontainer_mise_driven=$devcontainer_mise_driven
@@ -287,7 +301,7 @@ EOF
 case "$status" in
   not-applicable) echo "# Not applicable: no recognized stack or scripts in $DIR." ;;
   needs-setup) echo "# Needs setup ($stack): missing mise=$((1 - has_mise)) hk=$((1 - has_hk)) ci=$((1 - has_ci)). Run the dev-hooks:dev-env-setup skill." ;;
-  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or scripts/check_version_sync.sh missing (has_version_sync=$has_version_sync), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint). See references/upgrade-guide.md." ;;
+  needs-upgrade) echo "# Needs upgrade ($stack): repo v$repo_version < standard v$current_version, or gitleaks missing (has_gitleaks=$has_gitleaks), or .gitleaks.toml missing (has_gitleaks_config=$has_gitleaks_config), or mise.lock missing (has_lockfile=$has_lockfile), or project docs missing (has_readme=$has_readme has_claude=$has_claude), or uv cooldown missing (has_cooldown=$has_cooldown), or scripts/run-jscpd.sh missing (has_jscpd_runner=$has_jscpd_runner), or scripts/check_version_sync.sh missing (has_version_sync=$has_version_sync), or exec-bit gate missing (has_exec_bit=$has_exec_bit), or actions not SHA-pinned (has_sha_pinned_ci=$has_sha_pinned_ci), or zizmor missing (has_zizmor=$has_zizmor), or actionlint missing (has_actionlint=$has_actionlint), or .claude/settings.json missing, gitignored or keeping the session link (has_session_url_off=$has_session_url_off). See references/upgrade-guide.md." ;;
   compliant) echo "# Compliant ($stack) at v$repo_version." ;;
 esac
 

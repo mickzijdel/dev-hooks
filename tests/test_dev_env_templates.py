@@ -149,6 +149,14 @@ def test_version_sync_template_script_is_shipped():
     assert script.read_text().startswith("#!/usr/bin/env bash\n")
 
 
+def test_claude_settings_template_turns_session_link_off():
+    """v28: the committed .claude/settings.json is the only settings a cloud session reads, so
+    the template must keep the claude.ai session link out of commits and PRs, and nothing more
+    (the commit/pr attribution text stays Claude Code's default)."""
+    data = json.loads((TEMPLATES_DIR / "claude-settings.json").read_text())
+    assert data == {"attribution": {"sessionUrl": False}}
+
+
 @pytest.mark.parametrize("name", CI_TEMPLATES)
 def test_ci_actions_are_sha_pinned_with_version_comment(name):
     """v16: every remote `uses: owner/repo@ref` in a CI template pins a full 40-hex commit SHA

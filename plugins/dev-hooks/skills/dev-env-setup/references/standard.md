@@ -1,4 +1,4 @@
-# The standard (v27) — full specification
+# The standard (v28) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v27** when it has all of:
+A repo is **compliant at v28** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v27** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "27"`.
+  stamp `DEV_ENV_VERSION = "28"`.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
@@ -116,6 +116,17 @@ A repo is **compliant at v27** when it has all of:
   `latest-deps-reminder` hook nudges Claude to update them on every manifest edit). If either
   doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
   "Project docs (README + CLAUDE.md)" in `../SKILL.md`.
+- **`.claude/settings.json`** (added in v28) — committed, with `attribution.sessionUrl` set to
+  `false` (copied from `templates/claude-settings.json`; into an existing file, merge only that
+  key). By default Claude Code ends every commit and PR a web or Remote Control session makes
+  with a link to that session. A private session stays private, but once it is set to Public,
+  any signed-in claude.ai account (free ones included) can read the whole transcript through
+  the link already in the git history: every command it ran and every secret it printed. A
+  cloud session reads no user settings, only this file, so the user-level setting can't cover
+  it. The Co-Authored-By line stays; `"attribution": false` also passes but hides that too. The
+  checker (`has_session_url_off`) also fails a gitignored `.claude/` — the file must reach the
+  clone a cloud session works in. Remote Control sessions read the user's
+  `~/.claude/settings.json`, so set the same key there.
 - **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
   `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until
   they've been public long enough for a malicious release to be caught and yanked. The checker
