@@ -19,6 +19,22 @@ command -v jq >/dev/null 2>&1 || exit 0
 PAYLOAD=$(cat 2>/dev/null)
 PROMPT=$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)
 [ -z "$PROMPT" ] && exit 0
+
+# Only the words the person typed: a copy of dev-hooks' reminder_prompt_typed filter, pinned
+# equal by test_typed_prompt_filters_match (an injected prompt, IDE context, a paste or a
+# forwarded side-agent note's quoted lines would otherwise pick a tip).
+TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
+  | sub("\\A\\s+"; "")
+  | if test("\\A(<task-notification>|\\[dev-hooks CI watch\\]|<agent-message[^>]*>\\s*\\[Subagent hand-back\\])")
+    then ""
+    else gsub("<pasted_content(?<a>[^>]*)>[\\s\\S]*?</pasted_content\\k<a>>"; "")
+      | if startswith("Here is a note offered by a side agent:")
+        then split("\n")[1:] | map(select(test("\\A\\s*>") | not)) | join("\n")
+        else . end
+    end
+  | sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'
+TYPED=$(jq -rn --arg p "$PROMPT" "\$p | $TYPED_JQ" 2>/dev/null) && PROMPT=$TYPED
+[ -z "$PROMPT" ] && exit 0
 # jscpd:ignore-end
 
 # First matching cue wins; keep the tip to a single skill so the nudge stays tiny.

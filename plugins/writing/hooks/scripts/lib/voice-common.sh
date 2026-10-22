@@ -32,6 +32,26 @@ voice_field() {
   printf '%s' "$INPUT" | jq -r "$1 // empty" 2>/dev/null
 }
 
+# The words the person typed, in REPLY (needs PROMPT): a copy of dev-hooks'
+# reminder_prompt_typed filter, pinned equal by test_typed_prompt_filters_match. Empty for an
+# injected prompt (a task notification, a subagent's report, the CI watch); IDE context, pasted
+# blocks and a forwarded side-agent note's quoted lines are stripped.
+# jscpd:ignore-start
+VOICE_TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
+  | sub("\\A\\s+"; "")
+  | if test("\\A(<task-notification>|\\[dev-hooks CI watch\\]|<agent-message[^>]*>\\s*\\[Subagent hand-back\\])")
+    then ""
+    else gsub("<pasted_content(?<a>[^>]*)>[\\s\\S]*?</pasted_content\\k<a>>"; "")
+      | if startswith("Here is a note offered by a side agent:")
+        then split("\n")[1:] | map(select(test("\\A\\s*>") | not)) | join("\n")
+        else . end
+    end
+  | sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'
+# jscpd:ignore-end
+voice_prompt_typed() {
+  REPLY=$(jq -rn --arg p "$PROMPT" "\$p | $VOICE_TYPED_JQ" 2>/dev/null) || REPLY=$PROMPT
+}
+
 # Resolve a voice profile into PROFILE; exits 0 (silent) when none is discoverable, which
 # is what keeps installs without a profile from seeing anything at all. First hit wins:
 # $WRITING_VOICE_PROFILE, <cwd>/.claude/voice_profile.md, ~/.claude/voice_profile.md.
