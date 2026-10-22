@@ -124,12 +124,14 @@ def make_compliant_repo(
     sha_pinned=True,
     zizmor=True,
     actionlint=True,
+    session_url_off=True,
 ):
     """Build a repo that satisfies everything the checker enforces at the current standard
     except optionally the README/CLAUDE.md docs, the uv cooldown, the .gitleaks.toml
     allowlist, the shared jscpd runner (v14), the exec-bit hk step (v15), SHA-pinned CI
-    actions (v16), the zizmor / actionlint hk steps (v18), or the shared version-sync gate
-    (v23). Stamped at the current version (read from VERSION) so it stays compliant as the
+    actions (v16), the zizmor / actionlint hk steps (v18), the shared version-sync gate
+    (v23), or the .claude/settings.json that keeps the session link out of commits (v28).
+    Stamped at the current version (read from VERSION) so it stays compliant as the
     standard advances."""
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
@@ -169,6 +171,11 @@ def make_compliant_repo(
     if version_sync:
         (path / "scripts").mkdir(exist_ok=True)
         (path / "scripts" / "check_version_sync.sh").write_text("#!/usr/bin/env bash\n")
+    if session_url_off:
+        (path / ".claude").mkdir(exist_ok=True)
+        (path / ".claude" / "settings.json").write_text(
+            '{\n  "attribution": {\n    "sessionUrl": false\n  }\n}\n'
+        )
 
 
 def make_transcript(path: Path, *, human_turns=0, extra_lines=None):

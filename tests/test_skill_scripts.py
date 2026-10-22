@@ -211,6 +211,47 @@ def test_checker_needs_upgrade_without_version_sync(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_needs_upgrade_without_claude_settings(tmp_path):
+    # v28: cloud sessions read only the repo's .claude/settings.json, so it must turn the
+    # session link off for commits made there.
+    make_compliant_repo(tmp_path, session_url_off=False)
+    out = run_checker(tmp_path)
+    assert out["has_session_url_off"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
+def test_checker_needs_upgrade_when_claude_settings_lacks_session_url(tmp_path):
+    make_compliant_repo(tmp_path, session_url_off=False)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        '{"permissions": {"allow": ["Bash(ls)"]}, "attribution": {"commit": ""}}\n'
+    )
+    out = run_checker(tmp_path)
+    assert out["has_session_url_off"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
+def test_checker_accepts_attribution_false(tmp_path):
+    # `"attribution": false` hides every attribution, the session link included.
+    make_compliant_repo(tmp_path, session_url_off=False)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text('{"attribution":false}\n')
+    out = run_checker(tmp_path)
+    assert out["has_session_url_off"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_needs_upgrade_when_claude_settings_gitignored(tmp_path):
+    # A gitignored .claude/ keeps the file on this machine only; a cloud session's clone
+    # never sees it.
+    make_compliant_repo(tmp_path)
+    init_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".claude/\n")
+    out = run_checker(tmp_path)
+    assert out["has_session_url_off"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_needs_upgrade_without_exec_bit_step(tmp_path):
     # v15: a current-version repo whose hk.pkl lacks the exec-bit-scripts step is flagged.
     make_compliant_repo(tmp_path, exec_bit=False)
@@ -289,6 +330,10 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "run-jscpd.sh").write_text("#!/usr/bin/env bash\n")
     (tmp_path / "scripts" / "check_version_sync.sh").write_text("#!/usr/bin/env bash\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        '{"attribution":{"sessionUrl":false}}\n'
+    )
     out = run_checker(tmp_path)
     assert out["stack"] == "ruby"
     assert out["has_cooldown"] == "1"

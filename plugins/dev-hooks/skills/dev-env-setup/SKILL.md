@@ -26,13 +26,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v27)
+## The standard (v28)
 
-A repo is **compliant at v27** when it has all of:
+A repo is **compliant at v28** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "27"`.
+  `[env]` version stamp `DEV_ENV_VERSION = "28"`.
 - **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
   supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
@@ -92,6 +92,11 @@ A repo is **compliant at v27** when it has all of:
   (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]** skill.
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
+- **`.claude/settings.json`** (committed, never gitignored) — sets `attribution.sessionUrl` to
+  `false`. A cloud session (claude.ai/code, a scheduled routine) reads only this file, and
+  otherwise links its transcript from every commit and PR it makes; once that session is set
+  to Public, any signed-in claude.ai account can read it. The Co-Authored-By line stays.
+  Checker-enforced (`has_session_url_off`).
 - **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
   stacks get the same window via their package manager (recommended). See "Dependency cooldown
   (supply-chain)".
@@ -151,9 +156,10 @@ proposing additions.
    or the exec-bit gate will flag them; these are the shared jscpd runner and version-sync
    gate that both the hk steps and CI call — run `shfmt -w` on both copies afterwards, since a
    repo without an `.editorconfig` defaults shfmt to tabs and would fail its own lint job on the
-   2-space template), **and `.gitleaks.toml`** → repo root (the latter keeps `gitleaks dir`'s
+   2-space template), **`.gitleaks.toml`** → repo root (keeps `gitleaks dir`'s
    whole-tree scan from failing on gitignored `.env`/`log/`/`*.key` — see "gitleaks
-   whole-tree allowlist").
+   whole-tree allowlist"), **and `claude-settings.json`** → `.claude/settings.json` (into an
+   existing one, merge only `attribution.sessionUrl: false`).
    Adjust specifics (default branch name, Python version). Extensionless CLIs like `bin/foo`
    are covered automatically by the shell template's shebang companion steps — no hk-glob
    surgery; just point `[tool.ruff] extend-include` at the Python ones (see the extensionless

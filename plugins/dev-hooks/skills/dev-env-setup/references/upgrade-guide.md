@@ -1139,6 +1139,29 @@ Steps:
 
 ---
 
+## v27 → v28 (commits never link the claude.ai session)
+
+**Every stack.** A commit or PR made from a cloud or Remote Control session ends with a link to
+that session. Once the session is set to Public, any signed-in claude.ai account can read its
+whole transcript through the link already in the git history. A cloud session reads only the
+repo's committed `.claude/settings.json`, so the setting has to live there.
+
+Steps:
+
+1. **Add the setting.** No `.claude/settings.json` yet: copy
+   `references/templates/claude-settings.json` there. One exists: merge in only the key, keeping
+   everything else (`jq '.attribution = ((.attribution | objects) // {}) + {sessionUrl: false}'`,
+   or leave an existing `"attribution": false` alone, which already hides the link).
+2. **Make sure git tracks it.** `git check-ignore -v .claude/settings.json` must print nothing.
+   If a `.claude/` (or `.claude/*`) rule matches, add `!.claude/settings.json` after it — or
+   narrow the rule to `.claude/settings.local.json`, which is the file meant to stay local.
+3. **Bump the stamp.** Set `DEV_ENV_VERSION = "28"` in `mise.toml`.
+4. **Verify — including the negative test.** The checker reports `has_session_url_off=1` and
+   `status=compliant`. Then flip the value to `true` and confirm it reports
+   `has_session_url_off=0` / `needs-upgrade`. Restore.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
