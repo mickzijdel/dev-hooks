@@ -1153,8 +1153,9 @@ Steps:
    everything else (`jq '.attribution = ((.attribution | objects) // {}) + {sessionUrl: false}'`,
    or leave an existing `"attribution": false` alone, which already hides the link).
 2. **Make sure git tracks it.** `git check-ignore -v .claude/settings.json` must print nothing.
-   If a `.claude/` (or `.claude/*`) rule matches, add `!.claude/settings.json` after it — or
-   narrow the rule to `.claude/settings.local.json`, which is the file meant to stay local.
+   If a rule matches, rewrite it as `.claude/*` followed by `!.claude/settings.json`. A
+   `.claude` or `.claude/` rule excludes the directory itself, and git never re-includes a file
+   inside an excluded directory, so a `!` line after either one does nothing.
 3. **Bump the stamp.** Set `DEV_ENV_VERSION = "28"` in `mise.toml`.
 4. **Verify — including the negative test.** The checker reports `has_session_url_off=1` and
    `status=compliant`. Then flip the value to `true` and confirm it reports
