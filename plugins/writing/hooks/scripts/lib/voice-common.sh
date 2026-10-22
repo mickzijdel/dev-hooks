@@ -182,7 +182,8 @@ _voice_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
   # Skip throwaway sessions (mirrors dev-hooks' reminder_is_probe_session).
   [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
-  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-*) return 0 ;; esac
+  case "${DEV_HOOKS_PROBE:-}" in 1 | true | yes | on) return 0 ;; esac
+  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-* | "$HOME"/.cache/*) return 0 ;; esac
   local dir="$HOME/.claude/automation-review"
   [ -d "$dir" ] || return 0
   printf '{"hook":"%s","session":"%s","ts":%s}\n' \

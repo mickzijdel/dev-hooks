@@ -121,9 +121,14 @@ pending ones with `resolveNudge`, one remedy per hook from facts recorded after 
 `nudgeOutcomes` in `$.store` (union by session+hook+time, 90 days, 3,000 max) and are exported
 to `~/.claude/automation-review/stop-nudges.json` when that directory exists — the file the
 weekly-automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
-`resolveNudge`; give it one only for a remedy the facts can show. The review needles and the
-memory-dir regex are mirrors of `review-reminder.sh` and `hook_helpers.MEMORY_DIR_RE`, pinned
-by `tests/test_nudge_parity.py`.
+`resolveNudge`; give it one only for a remedy the facts can show. A probe session
+(`isProbeSession`) adds no nudges at all, so its facts give session end and the sweep nothing
+to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
+live `claude -p --plugin-dir` run. Note that such a run's mod writes `stop-nudges.json` from the
+inline store, replacing the marketplace export until the next real nudge resolves: back the
+file up first. The review needles, the memory-dir regex and the probe rule are mirrors of
+`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE` and `reminder_is_probe_session`, pinned by
+`tests/test_nudge_parity.py`.
 
 The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
 push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported
@@ -250,8 +255,9 @@ the append path from the prompt path.
   command hook.
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
-  `reminder_is_probe_session` (a made-up session id or a `/tmp/claude-*` scratchpad cwd: the
-  fire log and prompt log skip these; `_voice_log_fire` mirrors it),
+  `reminder_is_probe_session` (a made-up session id, a `/tmp/claude-*` scratchpad or
+  `~/.cache/` cwd, or `DEV_HOOKS_PROBE` set: the fire log and prompt log skip these;
+  `_voice_log_fire` and the mod's `isProbeSession` mirror it),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
   on purpose, so a secret pasted with no space before it still matches),

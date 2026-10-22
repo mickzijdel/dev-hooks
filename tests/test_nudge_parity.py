@@ -41,6 +41,21 @@ def test_compress_comments_needle_matches_its_hook():
     assert "invokedSince(ev.facts, n.at, ['compress-comments'])" in NUDGES_TS
 
 
+def test_probe_session_rule_matches_reminder_is_probe_session():
+    sh = (HOOKS / "lib" / "reminder-common.sh").read_text()
+    body = re.search(r"^reminder_is_probe_session\(\) \{\n(.+?)\n\}", sh, re.M | re.S)
+    lines = body.group(1)
+    on = re.search(r'case "\$\{DEV_HOOKS_PROBE:-\}" in (.+?)\)', lines).group(1)
+    cwds = re.search(r'case "\$\{CWD:-\$PWD\}" in (.+?)\)', lines).group(1)
+    sh_cwds = [p.strip().replace('"$HOME"', "~").rstrip("*") for p in cwds.split("|")]
+    ts_on = re.search(r"export const PROBE_ON = \[(.+)\]", NUDGES_TS).group(1)
+    ts_cwds = re.search(r"export const PROBE_CWDS = \[(.+)\]", NUDGES_TS).group(1)
+    assert re.findall(r"'([^']+)'", ts_on) == [v.strip() for v in on.split("|")]
+    assert re.findall(r"'([^']+)'", ts_cwds) == sh_cwds
+    assert "[[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0" in lines
+    assert "/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(p.session)" in NUDGES_TS
+
+
 def test_block_cap_mark_matches_verify_work():
     sh = (HOOKS / "verify-work.sh").read_text()
     tsx = (DEV_HOOKS / "hooks" / "register.tsx").read_text()

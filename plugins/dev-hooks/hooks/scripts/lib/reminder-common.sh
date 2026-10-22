@@ -308,11 +308,14 @@ reminder_fire_once() {
 # no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
 # fails the hook. $1 = firing hook's basename.
 # A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
-# a made-up id (a hand-run smoke test) or a `claude -p` probe run from Claude Code's
-# scratchpad. Mirrored by _voice_log_fire in the writing plugin, which can't source this.
+# a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
+# scratchpad, or a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
+# ~/.cache). Mirrored by _voice_log_fire in the writing plugin, which can't source this, and
+# by isProbeSession in the mod (hooks/nudge-outcomes.ts), pinned by test_nudge_parity.py.
 reminder_is_probe_session() {
   [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
-  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-*) return 0 ;; esac
+  case "${DEV_HOOKS_PROBE:-}" in 1 | true | yes | on) return 0 ;; esac
+  case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-* | "$HOME"/.cache/*) return 0 ;; esac
   return 1
 }
 

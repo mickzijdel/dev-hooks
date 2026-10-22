@@ -29,6 +29,7 @@ def _fire(
     hook's $CWD (the payload's cwd), never a directory this test creates."""
     e = os.environ.copy()
     e["HOME"] = str(home)
+    e.pop("DEV_HOOKS_PROBE", None)
     e.update(env)
     subprocess.run(
         [
@@ -58,13 +59,17 @@ def test_fire_log_writes_only_when_opted_in(tmp_path):
     "lib, logger", [(LIB, "_reminder_log_fire"), (VOICE_LIB, "_voice_log_fire")]
 )
 def test_fire_log_skips_probe_sessions(tmp_path, lib, logger):
-    # Made-up test ids and `claude -p` probes run from Claude's scratchpad skew the weekly
-    # review's fire counts; neither is logged.
+    # Made-up test ids, `claude -p` probes run from Claude's scratchpad, and replay harnesses
+    # (a disposable clone under ~/.cache, or DEV_HOOKS_PROBE=1) skew the weekly review's fire
+    # counts; none is logged.
     log = tmp_path / ".claude" / "automation-review" / "hook-fires.jsonl"
     log.parent.mkdir(parents=True)
     _fire(tmp_path, session="smoke1", lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
     pad = "/tmp/claude-1000/-home-x/abc/scratchpad/probe"
     _fire(tmp_path, cwd=pad, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
+    clone = f"{tmp_path}/.cache/replay/runs/a"
+    _fire(tmp_path, cwd=clone, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
+    _fire(tmp_path, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1", DEV_HOOKS_PROBE="1")
     assert not log.exists()
     _fire(tmp_path, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1")
     assert log.exists()
