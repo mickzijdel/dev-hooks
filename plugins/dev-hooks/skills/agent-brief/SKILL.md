@@ -24,8 +24,10 @@ Fill these in order. `METHOD` is usually the smallest box — often empty.
 |-------|-------------------------|
 | **GOAL** | What end-state, in observable terms? (Not "improve X" — "X does Y when Z".) |
 | **WHY** | What problem does this solve / who's hurting? The agent generalizes from intent when reality deviates from the plan. |
+| **CONTEXT** | What do you know that it can't find? Sources already checked, where to look, access it'll need, an example of good. |
 | **DONE WHEN** | How will *you* check it? Concrete inputs → expected results. If you can't state the check, the agent can't aim at it. |
 | **DON'T** | Non-goals, out-of-scope, hard constraints. The negative space is where most misfires live. |
+| **BUDGET** | How hard to try: rough effort in tool calls, sources or minutes, and the point where it stops and reports instead of pushing on. A cap on output length doesn't cap effort. |
 | **AUTONOMY** | Proceed freely, but stop and ask if: … (calibrate to reversibility — tighter fences on auth, migrations, deletions, anything outward-facing). |
 | **PROVE IT** | What evidence back? "Ran it against the three broken inputs, pasted the output" — not "should work". |
 | **METHOD** | Usually empty. If you must constrain the route, say *why*, so the reason travels to cases the rule doesn't cover. |
@@ -42,6 +44,7 @@ Fill these in order. `METHOD` is usually the smallest box — often empty.
 > should be able to self-diagnose.
 > **DONE WHEN:** Feed it three broken inputs → three specific errors; existing tests still pass.
 > **DON'T:** Touch the upload flow; add a dependency; change the v1 API.
+> **BUDGET:** If the fix reaches beyond the parser, or past ~30 tool calls, stop and report.
 > **PROVE IT:** Paste the three error outputs and the test run.
 
 Note the strong version says nothing about *how* — but it's checkable, and the agent can
@@ -52,7 +55,8 @@ self-correct against it before handing back.
 When an agent does the wrong thing, patch the **brief**, not that one instance — the missing
 non-goal, the vague done-criterion. Reused briefs get monotonically better; hand-corrections
 don't. Before dispatching a big one, have the agent echo back its assumed goal + non-goals in
-one line (contract-first) — it catches a misread for the price of a sentence.
+one line (contract-first) — it catches a misread for the price of a sentence. The receiving
+side of this, for when *you* are handed a task, is thinking-tools' `brief-back`.
 
 ## When NOT to use
 

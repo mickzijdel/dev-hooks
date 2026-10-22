@@ -23,6 +23,8 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+| `brief-back` | Someone hands you a task — plays the brief back as a contract sized to it (Doing, Not doing, Depth with a check-in point, Done when, Need from you, Assuming), works to that depth, and ends with a Status against Done when. Quick/Solid/Deep make "how thorough" one word. The receiving side of dev-hooks' `agent-brief`. |
+| `thinking-toolbox` | Choosing what to work on, deciding, stuck, overcommitted, or reviewing how you work — flags the one of [Adam Jones's 38 thinking tools](https://adamjones.me/blog/thinking-tools-to-be-more-effective-at-anything/) that fits, then guides you through its steps one at a time. |
 
 `grill`, `domain-modeling`, and `codebase-design` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill's frontmatter
@@ -36,8 +38,8 @@ hooks push it to reach for them on its own. Both inject context only; neither bl
 
 | Hook | Fires on | Opt out |
 |------|----------|---------|
-| `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
-| `thinking-tools-nudge` | `UserPromptSubmit` whose prompt matches a situational cue — injects a one-line nudge toward the single matching tool (e.g. "poke holes" → `board`, "is this fixed for real" → `but-for-real`). Silent otherwise. | `THINKING_TOOLS=false` |
+| `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (handed a task → `brief-back`; before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
+| `thinking-tools-nudge` | `UserPromptSubmit` whose prompt matches a situational cue — injects a one-line nudge toward the single matching tool (e.g. "poke holes" → `board`, "is this fixed for real" → `but-for-real`, "be thorough" → `brief-back`). Silent otherwise. | `THINKING_TOOLS=false` |
 
 ## Install
 

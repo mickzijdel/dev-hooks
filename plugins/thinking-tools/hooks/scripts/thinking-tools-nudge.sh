@@ -31,6 +31,8 @@ elif printf '%s' "$PROMPT" | grep -qiE 'what could go wrong|premortem|before (we
   TIP="thinking-tools:premortem"
 elif printf '%s' "$PROMPT" | grep -qiE 'grill me|interview me|ask me questions|help me (fully )?specify'; then
   TIP="thinking-tools:grill"
+elif printf '%s' "$PROMPT" | grep -qiE 'be (really |very )?thorough|go deep|deep[ -]dive|quick (look|pass|and dirty)|(don.t|do not) go overboard'; then
+  TIP="thinking-tools:brief-back"
 fi
 [ -z "$TIP" ] && exit 0
 
