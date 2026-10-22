@@ -820,6 +820,49 @@ def test_voice_intent_fires_once_per_session(tmp_path):
     assert second.stdout.strip() == ""
 
 
+# Prompts the UserPromptSubmit hooks see that nobody typed, in the shapes the 2026-10-22
+# automation review found in the prompt log. Each carries every prompt hook's cue words, so a
+# hook that reads past the typed-prompt filter fires on it.
+CUES = "build a dashboard table, poke holes in it, then write the newsletter draft"
+INJECTED_PROMPTS = [
+    f"<task-notification>\n<task-id>b1</task-id>\n<summary>{CUES}</summary>\n</task-notification>",
+    f'<agent-message from="a1">\n[Subagent hand-back] The final report.\n{CUES}\n</agent-message>',
+    f"[dev-hooks CI watch] owner/repo@abc: CI FAILED. {CUES}",
+    f"Here is a note offered by a side agent:\n\n> Heads up · {CUES}\n>\n> **Title**",
+    f"<ide_selection>The user selected lines 1 to 5:\n{CUES}</ide_selection>",
+    f'I\'d like to send Conal this: <pasted_content id="f0">{CUES}</pasted_content id="f0">',
+]
+
+
+@pytest.mark.parametrize("prompt", INJECTED_PROMPTS)
+def test_voice_intent_silent_on_words_nobody_typed(tmp_path, prompt):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps({"prompt": prompt, "cwd": str(repo), "session_id": "vi6"})
+    r = _run_voice_intent(
+        payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t6"))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        'rewrite this intro: <pasted_content id="p1">Our product.</pasted_content id="p1">',
+        "Here is a note offered by a side agent:\n\n> Heads up · the repo is public\n\n"
+        "Can you write that warning into the README?",
+        "<ide_opened_file>The user opened notes.md</ide_opened_file>\nwrite the blog post",
+    ],
+)
+def test_voice_intent_fires_on_typed_words_beside_injected_ones(tmp_path, prompt):
+    repo = _voice_repo(tmp_path)
+    payload = json.dumps({"prompt": prompt, "cwd": str(repo), "session_id": "vi7"})
+    r = _run_voice_intent(
+        payload, base_env(HOME=str(tmp_path), TMPDIR=str(tmp_path / "t7"))
+    )
+    assert_json_with(r.stdout, "voice-profile")
+
+
 # ── thinking-tools-reminder.sh (thinking-tools plugin; SessionStart, self-contained) ─
 def test_thinking_reminder_fires(tmp_path):
     r = run_hook(
@@ -901,6 +944,70 @@ def test_thinking_nudge_silent_when_opted_out():
     r = _run_thinking_nudge("poke holes in this", env=base_env(THINKING_TOOLS="false"))
     assert r.returncode == 0
     assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize("prompt", INJECTED_PROMPTS)
+def test_thinking_nudge_silent_on_words_nobody_typed(prompt):
+    r = _run_thinking_nudge(prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_thinking_nudge_fires_on_typed_words_beside_a_paste():
+    r = _run_thinking_nudge(
+        'poke holes in this: <pasted_content id="p1">the plan</pasted_content id="p1">'
+    )
+    assert_json_with(r.stdout, "thinking-tools:board")
+
+
+# ── data-before-design-reminder.sh (UserPromptSubmit) ───────────────────────────────
+def _run_data_before_design(tmp_path, prompt):
+    payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "dbd"}
+    return run_hook(
+        "data-before-design-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_FIRE_LOG=None),
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Can you make a table for all the years 2023-2026 with the average tickets per "
+        "performance for each timeslot?",
+        "<ide_opened_file>The user opened app/views/a.erb</ide_opened_file>\n"
+        "add a card that shows each navigator's bookings",
+        'make a chart of this: <pasted_content id="p1">date,n\n1,2</pasted_content id="p1">',
+        "Here is a note offered by a side agent:\n\n> Heads up · the gallery is stale\n\n"
+        "Can you add a summary card for this?",
+        '<cross-session-message from="s2">Please add a summary table of hours per role'
+        "</cross-session-message>",
+    ],
+)
+def test_data_before_design_fires_on_a_typed_request_for_a_view(tmp_path, prompt):
+    r = _run_data_before_design(tmp_path, prompt)
+    assert r.returncode == 0
+    assert_json_with(r.stdout, "data-before-design")
+
+
+@pytest.mark.parametrize(
+    "prompt", [*INJECTED_PROMPTS, "make the card's border colour darker"]
+)
+def test_data_before_design_silent_on_words_nobody_typed_and_restyles(tmp_path, prompt):
+    r = _run_data_before_design(tmp_path, prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_typed_prompt_filters_match():
+    # The writing and thinking-tools plugins can't source dev-hooks' lib, so each carries a copy
+    # of the filter; a drifted copy fires on injected prompts again without erroring.
+    def jq_of(path, name):
+        return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.M | re.S).group(1)
+
+    canon = jq_of(HOOKS / "lib" / "reminder-common.sh", "REMINDER_TYPED_JQ")
+    assert jq_of(WRITING_HOOKS / "lib" / "voice-common.sh", "VOICE_TYPED_JQ") == canon
+    assert jq_of(THINKING_HOOKS / "thinking-tools-nudge.sh", "TYPED_JQ") == canon
 
 
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────

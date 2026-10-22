@@ -20,9 +20,11 @@ voice_payload
 
 PROMPT=$(voice_field '.prompt')
 [ -z "$PROMPT" ] && exit 0
+voice_prompt_typed # what the person typed, in REPLY
+[ -z "$REPLY" ] && exit 0
 
 # Writing/copy intent only — stay silent for code and other tasks.
-printf '%s' "$PROMPT" | grep -qiE '(writ(e|ing)|draft|re-?writ|re-?word|webcopy|web copy|\bcopy\b|blog|newsletter|essay|headline|tagline|landing page|marketing|announce|prose|readme|changelog|release notes)' || exit 0
+printf '%s' "$REPLY" | grep -qiE '(writ(e|ing)|draft|re-?writ|re-?word|webcopy|web copy|\bcopy\b|blog|newsletter|essay|headline|tagline|landing page|marketing|announce|prose|readme|changelog|release notes)' || exit 0
 
 voice_profile # sets PROFILE, exits when none
 

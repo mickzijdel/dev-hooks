@@ -11,6 +11,8 @@
 #   • build-shaped   — an imperative build verb (add/build/make/create/design/show/render/…)
 #   • view-shaped    — names a display surface (card/view/panel/dashboard/table/chart/…)
 #   • not a tweak    — no restyle-only marker (colour/padding/font/spacing/align/…)
+#   • typed          — matched on the person's own words, not on an injected prompt (a
+#                      subagent's report, a task notification) or pasted/quoted text
 #   • once per session
 # A missed prompt costs nothing; a false nudge costs one sentence.
 #
@@ -22,8 +24,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
 reminder_prompt_init DEV_HOOKS_DATA_BEFORE_DESIGN # sets PROMPT; exits silently if empty/opted-out
+reminder_prompt_typed                             # what the person typed, in REPLY
+[ -n "$REPLY" ] || exit 0
 
-p="${PROMPT,,}"
+p="${REPLY,,}"
 
 # Must be asking to build something.
 [[ $p =~ (add|build|make|create|design|implement|render|show|display|lay[[:space:]]?out|redesign) ]] || exit 0

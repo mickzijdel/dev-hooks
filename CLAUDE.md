@@ -170,7 +170,7 @@ the append path from the prompt path.
   those plugins install without `dev-hooks`, and a cross-plugin `source` would break that
   standalone install. Sharing *within* a plugin is fine and preferred — the writing hooks
   ship together, so they share `plugins/writing/hooks/scripts/lib/voice-common.sh`
-  (`voice_opt_out [VAR]`, `voice_payload`/`voice_field`, `voice_profile`,
+  (`voice_opt_out [VAR]`, `voice_payload`/`voice_field`, `voice_prompt_typed`, `voice_profile`,
   `VOICE_PROSE_EXTS` + `voice_is_prose_file`, `voice_transcript_scan`,
   `voice_state_file`/`voice_fire_once`, `voice_emit <event> <msg>`, `voice_emit_stop`, and
   the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). `VOICE_PROSE_EXTS` is passed into
@@ -199,7 +199,13 @@ the append path from the prompt path.
   (opt-out + INPUT/PROMPT/CWD/SESSION; reads `.prompt` on its own so a multi-line prompt isn't
   truncated — shares the `reminder_cwd_session` tail with `reminder_pre_init`) and
   `reminder_emit_prompt <msg>` (advisory additionalContext + exit 0), used by both `prompt-log.sh`
-  and `intent-check-reminder.sh`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
+  and `intent-check-reminder.sh`. A hook keyed on what was asked reads `reminder_prompt_typed`
+  (`$REPLY`: the words the person typed, empty for a task notification, subagent hand-back or
+  CI-watch prompt, with IDE context, pasted blocks and a forwarded side-agent note's quoted lines
+  stripped; cross-session messages stay, as they relay briefs), as `data-before-design-reminder`
+  does: a subagent's report matched its cues 48 times in one week, and a false fire also spends
+  the once-per-session nudge. The filter is copied into `voice-common.sh` and
+  `thinking-tools-nudge.sh`, pinned by `test_typed_prompt_filters_match`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
   into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must print only
   the structured additionalContext JSON (via `reminder_emit_prompt`) or nothing at all. PostToolUse(Bash): `reminder_post_bash_init <OPT_VAR>` (opt-out + INPUT/COMMAND;
   reads `.tool_input.command` on its own so a multi-line command isn't truncated), followed —

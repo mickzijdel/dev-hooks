@@ -373,6 +373,28 @@ reminder_prompt_init() {
   reminder_cwd_session
 }
 
+# The words the person typed, in $REPLY (needs PROMPT): empty for a prompt Claude Code or an
+# agent injected (a finished background task, a subagent's report, the mod's CI watch), and
+# without IDE context, pasted blocks or a forwarded side-agent note's quoted lines, so a hook
+# keyed on what was asked doesn't fire on someone else's words. Cross-session messages stay:
+# they relay briefs. The writing and thinking-tools plugins carry copies of the filter (they
+# can't source this lib), pinned equal by test_typed_prompt_filters_match.
+# jscpd:ignore-start
+REMINDER_TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
+  | sub("\\A\\s+"; "")
+  | if test("\\A(<task-notification>|\\[dev-hooks CI watch\\]|<agent-message[^>]*>\\s*\\[Subagent hand-back\\])")
+    then ""
+    else gsub("<pasted_content(?<a>[^>]*)>[\\s\\S]*?</pasted_content\\k<a>>"; "")
+      | if startswith("Here is a note offered by a side agent:")
+        then split("\n")[1:] | map(select(test("\\A\\s*>") | not)) | join("\n")
+        else . end
+    end
+  | sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'
+# jscpd:ignore-end
+reminder_prompt_typed() {
+  REPLY=$(jq -rn --arg p "$PROMPT" "\$p | $REMINDER_TYPED_JQ" 2>/dev/null) || REPLY=$PROMPT
+}
+
 # Emit a UserPromptSubmit advisory (additionalContext is injected into Claude's context
 # before it acts on the prompt) and exit 0 — never blocks.
 reminder_emit_prompt() {
