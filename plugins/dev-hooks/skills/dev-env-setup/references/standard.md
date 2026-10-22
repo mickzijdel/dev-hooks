@@ -116,7 +116,7 @@ A repo is **compliant at v28** when it has all of:
   `latest-deps-reminder` hook nudges Claude to update them on every manifest edit). If either
   doc is missing, the setup/upgrade flow **dispatches a subagent to create it** — see
   "Project docs (README + CLAUDE.md)" in `../SKILL.md`.
-- **`.claude/settings.json`** (added in v28) — committed, with `attribution.sessionUrl` set to
+- **`.claude/settings.json`** (added in v28): committed, with `attribution.sessionUrl` set to
   `false` (copied from `templates/claude-settings.json`; into an existing file, merge only that
   key). By default Claude Code ends every commit and PR a web or Remote Control session makes
   with a link to that session. A private session stays private, but once it is set to Public,
@@ -124,8 +124,8 @@ A repo is **compliant at v28** when it has all of:
   the link already in the git history: every command it ran and every secret it printed. A
   cloud session reads no user settings, only this file, so the user-level setting can't cover
   it. The Co-Authored-By line stays; `"attribution": false` also passes but hides that too. The
-  checker (`has_session_url_off`) also fails a gitignored `.claude/` — the file must reach the
-  clone a cloud session works in. Remote Control sessions read the user's
+  checker (`has_session_url_off`) also fails a gitignored `.claude/`, since the file has to reach
+  the clone a cloud session works in. Remote Control sessions read the user's
   `~/.claude/settings.json`, so set the same key there.
 - **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
   `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until

@@ -92,7 +92,7 @@ A repo is **compliant at v28** when it has all of:
   (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]** skill.
 - **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
   See "Project docs (README + CLAUDE.md)".
-- **`.claude/settings.json`** (committed, never gitignored) — sets `attribution.sessionUrl` to
+- **`.claude/settings.json`** (committed, never gitignored): sets `attribution.sessionUrl` to
   `false`. A cloud session (claude.ai/code, a scheduled routine) reads only this file, and
   otherwise links its transcript from every commit and PR it makes; once that session is set
   to Public, any signed-in claude.ai account can read it. The Co-Authored-By line stays.

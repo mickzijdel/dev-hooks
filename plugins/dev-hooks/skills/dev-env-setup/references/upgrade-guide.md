@@ -1157,7 +1157,7 @@ Steps:
    `.claude` or `.claude/` rule excludes the directory itself, and git never re-includes a file
    inside an excluded directory, so a `!` line after either one does nothing.
 3. **Bump the stamp.** Set `DEV_ENV_VERSION = "28"` in `mise.toml`.
-4. **Verify — including the negative test.** The checker reports `has_session_url_off=1` and
+4. **Verify, including the negative test.** The checker reports `has_session_url_off=1` and
    `status=compliant`. Then flip the value to `true` and confirm it reports
    `has_session_url_off=0` / `needs-upgrade`. Restore.
 
