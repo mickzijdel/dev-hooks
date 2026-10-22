@@ -4661,7 +4661,7 @@ def run_prompt_log(tmp_path, *, prompt=None, payload=None, **env_overrides):
     return run_hook(
         "prompt-log.sh",
         stdin=stdin,
-        env=base_env(HOME=str(tmp_path), **env_overrides),
+        env=base_env(HOME=str(tmp_path), **{"DEV_HOOKS_PROBE": None, **env_overrides}),
     )
 
 
@@ -4681,22 +4681,33 @@ def test_prompt_log_appends_valid_jsonl(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "session_id, cwd",
+    "session_id, cwd, env",
     [
-        ("s1", "/x/y"),  # a made-up id from a hand-run smoke test
+        ("s1", "/x/y", {}),  # a made-up id from a hand-run smoke test
         (
             PROMPT_LOG_SESSION,
             "/tmp/claude-1000/-home-x/abc/scratchpad/probe",
+            {},
         ),  # a claude -p probe
+        (
+            PROMPT_LOG_SESSION,
+            "{home}/.cache/replay/runs/a",
+            {},
+        ),  # a replay harness's disposable clone
+        (
+            PROMPT_LOG_SESSION,
+            "/x/y",
+            {"DEV_HOOKS_PROBE": "1"},
+        ),  # a harness that says so
     ],
 )
-def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd):
+def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd, env):
     payload = {
         "prompt": "Reply with the single word OK.",
-        "cwd": cwd,
+        "cwd": cwd.format(home=tmp_path),
         "session_id": session_id,
     }
-    r = run_prompt_log(tmp_path, payload=payload)
+    r = run_prompt_log(tmp_path, payload=payload, **env)
     assert r.returncode == 0
     assert not _prompt_log_path(tmp_path).exists()
 

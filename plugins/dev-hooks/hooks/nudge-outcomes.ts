@@ -150,6 +150,15 @@ export const resolvePending = (f: Facts, ev: NudgeEvidence, now: number): { fact
   return { facts: resolved.length > 0 ? { ...f, nudges } : f, resolved }
 }
 
+// A throwaway session whose nudges would skew the weekly review: the mirror of
+// reminder_is_probe_session in reminder-common.sh, pinned by test_nudge_parity.py.
+export const PROBE_ON = ['1', 'true', 'yes', 'on']
+export const PROBE_CWDS = ['/tmp/claude-', '/private/tmp/claude-', '~/.cache/']
+export const isProbeSession = (p: { session: string; cwd: string; home: string; probe?: string }): boolean =>
+  !/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(p.session) ||
+  PROBE_ON.includes(p.probe ?? '') ||
+  PROBE_CWDS.some(prefix => p.cwd.startsWith(prefix.replace(/^~/, p.home)))
+
 export const NUDGE_LOG_KEY = 'nudgeOutcomes'
 const LOG_DAYS = 90
 const LOG_MAX = 3000

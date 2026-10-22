@@ -4,6 +4,7 @@ import {
   actedRate,
   formatNudgeStats,
   hookName,
+  isProbeSession,
   mergeNudgeLog,
   newNudge,
   resolveNudge,
@@ -23,6 +24,17 @@ const atStop = (f: Facts, over: { refired?: string[]; lastMessage?: string } = {
   atStop: true,
 })
 const nudge = (hook: string, summary = `[${hook}] x`, files?: string[]): Nudge => ({ hook, at: T, summary, ...(files ? { files } : {}) })
+
+test('isProbeSession keeps scratchpad probes and replay harnesses out of the nudge log', async () => {
+  const real = { session: '0d5f1c2e-7a41-4b9e-9c3d-2f6a8b1e4c70', cwd: '/home/u/repo', home: '/home/u' }
+  expect(isProbeSession(real)).toBe(false)
+  expect(isProbeSession({ ...real, session: 's1' })).toBe(true)
+  expect(isProbeSession({ ...real, cwd: '/tmp/claude-1000/-home-u/abc/scratchpad' })).toBe(true)
+  expect(isProbeSession({ ...real, cwd: '/home/u/.cache/replay/runs/a' })).toBe(true)
+  expect(isProbeSession({ ...real, probe: '1' })).toBe(true)
+  expect(isProbeSession({ ...real, probe: 'false' })).toBe(false)
+  expect(isProbeSession({ ...real, cwd: '/home/u/.cachet/repo' })).toBe(false)
+})
 
 test('hookName names a Stop command by its script', async () => {
   expect(hookName('bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review-reminder.sh"')).toBe('review-reminder')

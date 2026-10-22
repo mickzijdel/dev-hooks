@@ -41,6 +41,7 @@ import type { Run, Watch } from './ci-watch'
 import {
   formatNudgeStats,
   hookName,
+  isProbeSession,
   mergeNudgeLog,
   newNudge,
   NUDGE_LOG_KEY,
@@ -416,6 +417,10 @@ async function trackNudges(
   fired: { hook: string; reason: string }[],
   capped: string[],
 ) {
+  // A probe never adds a nudge, so session end and the sweep have none to log either.
+  const home = (await $.env.get('HOME')) ?? ''
+  const probe = await $.env.get('DEV_HOOKS_PROBE')
+  if (isProbeSession({ session: e.session_id, cwd: e.cwd, home, probe })) return
   const now = Date.now()
   let resolved: Nudge[] = []
   await changeFacts($, f => {
