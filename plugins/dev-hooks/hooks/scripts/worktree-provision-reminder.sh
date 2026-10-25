@@ -24,9 +24,9 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SELF_DIR/lib/reminder-common.sh"
 reminder_post_bash_init DEV_HOOKS_WORKTREE_PROVISION
 
-# Only a real `git worktree add`: tolerate env prefixes, `git -C dir`, and `… && git worktree add`.
-printf '%s' "$COMMAND" |
-  grep -Eq '(^|[^[:alnum:]_])git([[:space:]]+[^[:space:]]+)*[[:space:]]+worktree[[:space:]]+add([^[:alnum:]_]|$)' || exit 0
+# Only a command that runs `git worktree add` (env prefixes, `git -C dir`, `… && git worktree
+# add`), read from the segments the shell would run, so text that mentions it doesn't count.
+reminder_runs_git worktree add || exit 0
 
 reminder_cwd_session
 command -v git >/dev/null 2>&1 || exit 0

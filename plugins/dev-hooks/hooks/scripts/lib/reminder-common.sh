@@ -491,15 +491,17 @@ seg_git_sub() {
   done
 }
 
-# Does $COMMAND run `git <sub>`? Read from the segments the shell would run, so text that
-# only mentions it (an echo, a commit message, a heredoc body) doesn't count.
+# Does $COMMAND run `git <sub> [first operand]` (`git push`, `git worktree add`)? Read from the
+# segments the shell would run, so text that only mentions it (an echo, a commit message, a
+# heredoc body) doesn't count.
 reminder_runs_git() {
   local seg
   while IFS= read -r seg; do
     seg_parse "$seg"
     [ "$NAME" = git ] || continue
     seg_git_sub
-    [ "$GIT_SUB" = "$1" ] && return 0
+    [ "$GIT_SUB" = "$1" ] || continue
+    if [ -z "${2:-}" ] || [ "${GIT_REST[0]:-}" = "$2" ]; then return 0; fi
   done < <(printf '%s' "$COMMAND" | awk -f "$REMINDER_LIB_DIR/shell-segments.awk")
   return 1
 }
