@@ -41,7 +41,8 @@ small fixes, minor for more substantial changes — a new skill or tool). Commit
 root tooling/tests/docs bump nothing (or only marketplace.json's own version if its structure
 changed). A plugin's version lives **only** in its `plugins/<name>/.claude-plugin/plugin.json` —
 marketplace.json deliberately carries no per-plugin versions (Claude Code uses plugin.json's
-when both exist) and only stable one-line descriptions; don't re-add either. The hk
+when both exist) and only stable one-line descriptions; don't re-add either.
+`tests/test_marketplace.py` fails a description that names its plugin's skills, which drifts. The hk
 `plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
 plugin when plugin files are staged; CI runs the same validation through `tests/test_mods.py`
 on the dev-hooks plugin.

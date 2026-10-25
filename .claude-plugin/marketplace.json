@@ -12,7 +12,7 @@
     {
       "name": "dev-hooks",
       "displayName": "Dev Hooks",
-      "description": "Polyglot dev-workflow hooks (lint-on-edit, verification and reminder hooks, dangerous-command guard) plus the companion skills they point at (dev-env-setup, github-actions, dependency-upgrade, env-to-fnox, dockerfile, popovers-tooltips, tailwind). See its plugin.json / README for the full list.",
+      "description": "Polyglot dev-workflow hooks (lint on edit, verification before stopping, a dangerous-command and secret guard, advisory reminders) plus the skills those hooks point at.",
       "source": "./plugins/dev-hooks",
       "category": "workflow",
       "author": {
@@ -26,7 +26,7 @@
     {
       "name": "coding-onboarding",
       "displayName": "Coding Onboarding",
-      "description": "Onboarding for people new to coding or AI-assisted coding: getting-started (idempotent machine setup) and starting-a-project (stack decision tree with scaffold commands and deploy targets).",
+      "description": "Onboarding for people new to coding or to AI-assisted coding: setting up the machine, choosing what to build a first project with, and putting it online.",
       "source": "./plugins/coding-onboarding",
       "category": "learning",
       "author": {
@@ -40,7 +40,7 @@
     {
       "name": "thinking-tools",
       "displayName": "Thinking Tools",
-      "description": "Adversarial critique and self-checking skills: board, premortem, but-for-real, self-rate, code-simplifier, weekly-automation-review, commit-digest.",
+      "description": "Skills for thinking a task through and checking the result: adversarial critique, planning checks, decision records, and verification before claiming done.",
       "source": "./plugins/thinking-tools",
       "category": "productivity",
       "author": {
@@ -54,7 +54,7 @@
     {
       "name": "writing",
       "displayName": "Writing",
-      "description": "Writing and content skills adapted from Nate Berkopec's dotfiles: github-readme, humanizer, readability.",
+      "description": "Writing skills: READMEs, plain readable prose, stripping AI tells, and drafting in your own voice.",
       "source": "./plugins/writing",
       "category": "writing",
       "author": {
