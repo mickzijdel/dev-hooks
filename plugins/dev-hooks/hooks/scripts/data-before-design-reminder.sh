@@ -8,8 +8,11 @@
 # additionalContext and exits 0.
 #
 # Conservative by design — fires only when ALL hold, so it stays rare:
-#   • build-shaped   — an imperative build verb (add/build/make/create/design/show/render/…)
-#   • view-shaped    — names a display surface (card/view/panel/dashboard/table/chart/…)
+#   • build-shaped   — a build verb (add/build/make/create/design/show/render/…) followed,
+#                      within six words and the same sentence, by
+#   • view-shaped      a display surface (card/view/panel/dashboard/table/chart/…), each a
+#                      whole word: as substrings, "address", "review" and "Airtable" were
+#                      85% of its fires in a replay of the prompt log
 #   • not a tweak    — no restyle-only marker (colour/padding/font/spacing/align/…)
 #   • typed          — matched on the person's own words, not on an injected prompt (a
 #                      subagent's report, a task notification) or pasted/quoted text
@@ -29,11 +32,12 @@ reminder_prompt_typed                             # what the person typed, in RE
 
 p="${REPLY,,}"
 
-# Must be asking to build something.
-[[ $p =~ (add|build|make|create|design|implement|render|show|display|lay[[:space:]]?out|redesign) ]] || exit 0
-
-# Must name a surface that displays records.
-[[ $p =~ (card|panel|view|pane|dashboard|table|grid|report|chart|graph|summary|profile|column|badge|tile|widget|list[[:space:]]view|detail[[:space:]]view) ]] || exit 0
+# Must ask to build a surface that displays records: the verb, then the noun within six
+# words (no line break or sentence end between them).
+verb='(add|build|make|create|design|implement|render|show|display|lay[[:blank:]]?out|redesign)'
+noun='(cards?|panels?|views?|panes?|dashboards?|tables?|grids?|reports?|charts?|graphs?|summary|summaries|profiles?|columns?|badges?|tiles?|widgets?)'
+gap="([[:blank:],]+[a-z0-9/&'-]+){0,6}[[:blank:],]+"
+[[ $p =~ (^|[^a-z])$verb$gap$noun([^a-z]|$) ]] || exit 0
 
 # Pure restyling has no data question — stay silent.
 [[ $p =~ (colou?r|padding|margin|font|spacing|align|border|shadow|rounded|dark[[:space:]]mode|css[[:space:]]only) ]] && exit 0

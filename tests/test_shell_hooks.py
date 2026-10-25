@@ -983,6 +983,10 @@ def _run_data_before_design(tmp_path, prompt):
         "Can you add a summary card for this?",
         '<cross-session-message from="s2">Please add a summary table of hours per role'
         "</cross-session-message>",
+        "It would be great if we can just show a table of all the expenses with filter "
+        "and searching",
+        "can you build a little dashboard I can use to track progress?",
+        "Would it be possible to add an inline view for LinkedIn that opens on a name?",
     ],
 )
 def test_data_before_design_fires_on_a_typed_request_for_a_view(tmp_path, prompt):
@@ -995,6 +999,45 @@ def test_data_before_design_fires_on_a_typed_request_for_a_view(tmp_path, prompt
     "prompt", [*INJECTED_PROMPTS, "make the card's border colour darker"]
 )
 def test_data_before_design_silent_on_words_nobody_typed_and_restyles(tmp_path, prompt):
+    r = _run_data_before_design(tmp_path, prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# Misfires replayed from the prompt log (2026-10-25: 213 fires on 6,977 prompts, 15% asking
+# for a view of stored data). A cue inside another word, or a verb and a noun sentences
+# apart, is not a request to build a view.
+DATA_BEFORE_DESIGN_MISFIRES = [
+    "Can you address this:\n\nretired tables are currently freed on the audio thread",
+    "Can you do a review of all the text on my website and make sure it is in my voice?",
+    "How many API calls do we make to Airtable a day with our new sync setup?",
+    "Yes let's implement both. Do the cropper first, then move on to turnstile",
+    "Can you make sure this error doesn't trigger a honeybadger alert?",
+    "we can install the CLI there of course\n\nLet;s try it",
+    # A pasted article with no paste tags around it, as claude.ai can send one.
+    "Thoughts on this? Delegation is hard. Most managers created their habits early, and "
+    "it makes sense that they struggle to let go. In my experience the weekly report "
+    "matters less than the trust behind it.",
+]
+
+# The ~3,000-character blog post of 2026-10-21, untagged, rebuilt from cue words that sit in
+# different sentences or far apart. The prompt log keeps 500 characters, so only a test like
+# this one can show a long paste staying quiet.
+_ARTICLE = (
+    "When you add people to a team, the first instinct is to keep every decision. "
+    "Over time that habit stops scaling, and the weekly report becomes a ritual. "
+    "Good managers build trust slowly. They make room for mistakes, and they show "
+    "their reasoning instead of their conclusions. A seat at the table matters less "
+    "than a clear brief. From my point of view, delegation is mostly about writing "
+    "down what done looks like, then getting out of the way. "
+)
+DATA_BEFORE_DESIGN_MISFIRES.append("Can you check this post?\n\n" + _ARTICLE * 8)
+
+
+@pytest.mark.parametrize("prompt", DATA_BEFORE_DESIGN_MISFIRES)
+def test_data_before_design_silent_on_cues_that_are_not_a_view_request(
+    tmp_path, prompt
+):
     r = _run_data_before_design(tmp_path, prompt)
     assert r.returncode == 0
     assert r.stdout.strip() == ""
