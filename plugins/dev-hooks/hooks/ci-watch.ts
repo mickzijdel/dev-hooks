@@ -29,8 +29,32 @@ export const pushDir = (command: string, cwd: string): string => {
   return cwd
 }
 
+// Options of `git push` that take the next word as their value.
+const VALUE_OPTIONS = new Set(['-o', '--push-option', '--receive-pack', '--exec'])
+
+// The words after each `push` subcommand, up to the end of that shell command.
+const PUSH_ARGS = /(?:^|[^A-Za-z0-9_])git(?:[ \t]+\S+)*?[ \t]+push(?=$|[\s;&|()])((?:[ \t]+[^\s;&|()]+)*)/gm
+
+// The repository each `git push` in the command names (its first word that is not an
+// option or a redirect), or null for a bare push, which goes to the branch's push remote.
+export const pushRepositories = (command: string): (string | null)[] => {
+  const repos = [...command.matchAll(PUSH_ARGS)].map(m => {
+    const words = (m[1] ?? '').split(/[ \t]+/).filter(w => w && !/^\d*[<>]/.test(w)).map(unquote)
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i] ?? ''
+      if (word === '--') return words[i + 1] ?? null
+      if (VALUE_OPTIONS.has(word)) i++
+      else if (!word.startsWith('-')) return word
+    }
+    return null
+  })
+  return repos.length > 0 ? repos : [null]
+}
+
 export type PushedRef = { src: string; dst: string; sha?: string }
-export type PushOutput = { remote?: string; refs: PushedRef[] }
+// One per `To` line. Refs printed before any `To` line (cut off, as by `| tail -1`)
+// come without a remote.
+export type PushSection = { remote?: string; refs: PushedRef[] }
 
 // git push's human output (stderr, which the Bash tool's result carries):
 //   To github.com:owner/repo.git
@@ -38,19 +62,28 @@ export type PushOutput = { remote?: string; refs: PushedRef[] }
 //    + 1111111...2222222 main -> main (forced update)
 //    * [new branch]      feat -> feat
 // A deletion (` - [deleted]`) and a rejection (` ! [rejected]`) start no run.
-export const parsePushOutput = (text: string): PushOutput => {
-  const remote = /^To (\S+)/m.exec(text)?.[1]
-  const refs: PushedRef[] = []
+export const parsePushOutput = (text: string): PushSection[] => {
+  const sections: PushSection[] = []
+  let section: PushSection | undefined
+  const add = (ref: PushedRef) => {
+    if (!section) sections.push((section = { refs: [] }))
+    section.refs.push(ref)
+  }
   for (const line of text.split('\n')) {
+    const to = /^To (\S+)/.exec(line)
+    if (to?.[1]) {
+      sections.push((section = { remote: to[1], refs: [] }))
+      continue
+    }
     const updated = /^\s*[+ ]?\s*[0-9a-f]{7,40}\.\.\.?([0-9a-f]{7,40})\s+(\S+)\s+->\s+(\S+)/.exec(line)
     if (updated?.[1] && updated[2] && updated[3]) {
-      refs.push({ sha: updated[1], src: updated[2], dst: updated[3] })
+      add({ sha: updated[1], src: updated[2], dst: updated[3] })
       continue
     }
     const created = /^\s*\*\s+\[new (?:branch|tag|reference)\]\s+(\S+)\s+->\s+(\S+)/.exec(line)
-    if (created?.[1] && created[2]) refs.push({ src: created[1], dst: created[2] })
+    if (created?.[1] && created[2]) add({ src: created[1], dst: created[2] })
   }
-  return { remote, refs }
+  return sections
 }
 
 // owner/repo of a GitHub remote URL in any spelling git accepts (scp-like, ssh://,

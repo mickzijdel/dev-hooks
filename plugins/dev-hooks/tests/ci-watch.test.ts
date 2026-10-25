@@ -10,6 +10,7 @@ import {
   isGitPush,
   parsePushOutput,
   pushDir,
+  pushRepositories,
 } from '../hooks/ci-watch'
 import type { Run } from '../hooks/ci-watch'
 
@@ -66,16 +67,48 @@ test('parsePushOutput reads the remote and every ref line git prints', async () 
     ' ! [rejected]        old -> old (non-fast-forward)',
   ].join('\n')
 
-  expect(parsePushOutput(out)).toEqual({
-    remote: 'github.com:mickzijdel/dev-hooks.git',
-    refs: [
-      { sha: '4a22bfc', src: 'HEAD', dst: 'main' },
-      { sha: 'f59cb0b', src: 'fix', dst: 'fix' },
-      { src: 'feat', dst: 'feat' },
-      { src: 'v1', dst: 'v1' },
-    ],
-  })
-  expect(parsePushOutput('Everything up-to-date\n')).toEqual({ remote: undefined, refs: [] })
+  expect(parsePushOutput(out)).toEqual([
+    {
+      remote: 'github.com:mickzijdel/dev-hooks.git',
+      refs: [
+        { sha: '4a22bfc', src: 'HEAD', dst: 'main' },
+        { sha: 'f59cb0b', src: 'fix', dst: 'fix' },
+        { src: 'feat', dst: 'feat' },
+        { src: 'v1', dst: 'v1' },
+      ],
+    },
+  ])
+  expect(parsePushOutput('Everything up-to-date\n')).toEqual([])
+})
+
+test('parsePushOutput gives each push its own remote, and none where the To line was cut', async () => {
+  const out = [
+    '   1111111..2222222  main -> main',
+    'To github.com:o/fork.git',
+    '   3333333..4444444  main -> main',
+    'To github.com:o/upstream.git',
+    '   5555555..6666666  main -> main',
+  ].join('\n')
+
+  expect(parsePushOutput(out)).toEqual([
+    { refs: [{ sha: '2222222', src: 'main', dst: 'main' }] },
+    { remote: 'github.com:o/fork.git', refs: [{ sha: '4444444', src: 'main', dst: 'main' }] },
+    { remote: 'github.com:o/upstream.git', refs: [{ sha: '6666666', src: 'main', dst: 'main' }] },
+  ])
+})
+
+test('pushRepositories reads the repository each push names, null for a bare push', async () => {
+  expect(pushRepositories('git push')).toEqual([null])
+  expect(pushRepositories('git push 2>&1 | tail -1')).toEqual([null])
+  expect(pushRepositories('git push upstream main 2>&1 | tail -1')).toEqual(['upstream'])
+  expect(pushRepositories('git push -u --force-with-lease origin feat')).toEqual(['origin'])
+  expect(pushRepositories('git push -o ci.skip upstream main')).toEqual(['upstream'])
+  expect(pushRepositories('git push -- upstream main')).toEqual(['upstream'])
+  expect(pushRepositories('git -C /repo push >/dev/null')).toEqual([null])
+  expect(pushRepositories('git log --oneline upstream/main..main | cat && git push upstream main 2>&1 | tail -1')).toEqual(['upstream'])
+  expect(pushRepositories('git push origin main && git push "upstream" main')).toEqual(['origin', 'upstream'])
+  expect(pushRepositories('git -c push.default=current push git@github.com:o/r.git')).toEqual(['git@github.com:o/r.git'])
+  expect(pushRepositories('(cd sub && git push upstream)')).toEqual(['upstream'])
 })
 
 test('githubRepo reads owner/repo from every GitHub URL spelling', async () => {

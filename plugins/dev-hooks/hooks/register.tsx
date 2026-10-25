@@ -34,10 +34,11 @@ import {
   parsePushOutput,
   parseRuns,
   pushDir,
+  pushRepositories,
   RUN_FIELDS,
   watchingNote,
 } from './ci-watch'
-import type { Run, Watch } from './ci-watch'
+import type { PushSection, Run, Watch } from './ci-watch'
 import {
   formatNudgeStats,
   hookName,
@@ -513,21 +514,47 @@ async function git($: EngineInterface, cwd: string, ...args: string[]): Promise<
   return run?.exitCode === 0 ? run.stdout.trim() : null
 }
 
-// The commits a push sent to GitHub, from its output; a quiet push (`-q`) prints no
-// ref lines, so it falls back to HEAD and the branch's default remote.
+// Where a bare `git push` goes, as git picks it: branch.<name>.pushRemote, then
+// remote.pushDefault, then the branch's upstream remote. Null when none is set (git
+// then pushes to origin).
+async function branchPushRemote($: EngineInterface, root: string): Promise<string | null> {
+  const branches = await git($, root, 'for-each-ref', '--format=%(HEAD)%(push:remotename)', 'refs/heads')
+  return branches?.split('\n').find(line => line.startsWith('*'))?.slice(1) || null
+}
+
+// The URLs the command pushed to: each remote a push names, or the branch's push remote
+// for a bare push. Never just the fetch remote, which in a fork checkout is the fork.
+async function commandRemotes($: EngineInterface, root: string, command: string): Promise<string[]> {
+  const urls = await Promise.all(
+    pushRepositories(command).map(async named => {
+      const remote = named ?? (await branchPushRemote($, root))
+      return remote ? git($, root, 'ls-remote', '--get-url', remote) : git($, root, 'ls-remote', '--get-url')
+    }),
+  )
+  return [...new Set(urls.filter((u): u is string => u !== null))]
+}
+
+// The commits a push sent to GitHub and where it sent them, from its output. Refs whose
+// `To` line was cut (`| tail -1`) go to the remotes the command names; a quiet push (`-q`)
+// prints no ref lines, so it falls back to HEAD.
 async function pushTargets($: EngineInterface, command: string, output: string): Promise<{ repo: string; sha: string }[]> {
   const root = await git($, pushDir(command, await $.session.cwd()), 'rev-parse', '--show-toplevel')
   if (root === null) return []
   const workflows = await $.fs.list(`${root}/.github/workflows`).catch(() => [])
   if (!workflows.some(w => /\.ya?ml$/.test(w.name))) return []
 
-  const pushed = parsePushOutput(output)
-  if (pushed.refs.length === 0 && /Everything up-to-date/.test(output)) return []
-  const repo = githubRepo(pushed.remote ?? (await git($, root, 'ls-remote', '--get-url')) ?? '')
-  if (repo === null) return []
-  const refs = pushed.refs.length > 0 ? pushed.refs.map(r => r.sha ?? r.src) : ['HEAD']
-  const shas = await Promise.all(refs.map(ref => git($, root, 'rev-parse', `${ref}^{commit}`)))
-  return [...new Set(shas.filter((s): s is string => s !== null))].map(sha => ({ repo, sha }))
+  const sections = parsePushOutput(output)
+  if (sections.length === 0 && /Everything up-to-date/.test(output)) return []
+  const parts: PushSection[] = sections.length > 0 ? sections : [{ refs: [] }]
+  const targets = new Map<string, { repo: string; sha: string }>()
+  for (const section of parts) {
+    const urls = section.remote ? [section.remote] : await commandRemotes($, root, command)
+    const repos = urls.map(githubRepo).filter((r): r is string => r !== null)
+    const refs = section.refs.length > 0 ? section.refs.map(r => r.sha ?? r.src) : ['HEAD']
+    const shas = await Promise.all(refs.map(ref => git($, root, 'rev-parse', `${ref}^{commit}`)))
+    for (const repo of repos) for (const sha of shas) if (sha !== null) targets.set(`${repo}@${sha}`, { repo, sha })
+  }
+  return [...targets.values()]
 }
 
 async function startCiWatch($: EngineInterface, target: { repo: string; sha: string }) {

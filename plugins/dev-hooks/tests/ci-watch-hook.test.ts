@@ -18,9 +18,15 @@ const run = (over: Partial<Run> = {}): Run => ({
   ...over,
 })
 
+// A fork checkout: main tracks the fork (origin), and CI runs on upstream.
+const REMOTES: Record<string, string> = {
+  origin: 'git@github.com:mickzijdel/dev-hooks.git',
+  upstream: 'git@github.com:o/upstream.git',
+}
+
 // The engine beneath the module: a repo at /repo with a workflow, gh answering
 // `runs`, and every status, toast, note and prompt the module produces recorded.
-function world(on: On, options: { env?: Record<string, string>; workflows?: string[] } = {}) {
+function world(on: On, options: { env?: Record<string, string>; workflows?: string[]; pushRemote?: string } = {}) {
   const w = {
     runs: [] as Run[],
     ghCalls: [] as string[][],
@@ -42,6 +48,12 @@ function world(on: On, options: { env?: Record<string, string>; workflows?: stri
     }
     if (argv.includes('--show-toplevel')) return { value: ok('/repo\n') }
     if (argv.includes('rev-parse')) return { value: String(argv.at(-1)).startsWith('762caa3') ? ok(`${SHA}\n`) : failed }
+    // Like git: no name is the branch's (fetch) remote, and an unknown name comes back as given.
+    if (argv.includes('ls-remote')) {
+      const name = argv.at(-1) === '--get-url' ? 'origin' : String(argv.at(-1))
+      return { value: ok(`${REMOTES[name] ?? name}\n`) }
+    }
+    if (argv.includes('for-each-ref')) return { value: ok(` other\n*${options.pushRemote ?? 'origin'}\n`) }
     return { value: failed }
   })
   on('ui.status', (_$, e) => {
@@ -139,6 +151,36 @@ test('no watch without a push that reached GitHub with workflows to run', async 
   text = 'Everything up-to-date\n'
   expect((await $.tool.call({ tool: 'Bash', command: 'git push' })).context).toBeUndefined()
   expect(w.statuses).toEqual([])
+})
+
+test('a push whose To line was cut is watched on the remote the command named', async ($, on) => {
+  mock.clock(on)
+  world(on)
+  push(on, '   1111111..762caa3  main -> main\n')
+
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git push upstream main 2>&1 | tail -1' })
+
+  expect(ran.context?.[0]).toContain('for o/upstream@762caa3 ')
+})
+
+test("a bare push whose To line was cut is watched on the branch's push remote", async ($, on) => {
+  mock.clock(on)
+  world(on, { pushRemote: 'upstream' })
+  push(on, '   1111111..762caa3  main -> main\n')
+
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git push 2>&1 | tail -1' })
+
+  expect(ran.context?.[0]).toContain('for o/upstream@762caa3 ')
+})
+
+test('two pushes in one command are each watched on their own remote', async ($, on) => {
+  mock.clock(on)
+  world(on)
+  push(on, `${PUSHED}To git@github.com:o/upstream.git\n   1111111..762caa3  main -> main\n`)
+
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git push origin main && git push upstream main' })
+
+  expect(ran.context?.[0]).toContain('for mickzijdel/dev-hooks@762caa3, o/upstream@762caa3 ')
 })
 
 test('a push to a non-GitHub remote is not watched', async ($, on) => {
