@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
+  answerFacts,
   capped,
   EMPTY_PANE_STATE,
   endsOnQuestion,
@@ -11,6 +12,7 @@ import {
   parseCommits,
   parseEndReport,
   sinceLabel,
+  typedFrom,
 } from '../hooks/status-pane'
 import type { BackgroundItem, EndReport, StatusPaneState, TurnRecord } from '../hooks/status-pane'
 
@@ -96,7 +98,7 @@ test('endsOnQuestion reads the last non-blank line', async () => {
 const T0 = Date.UTC(2026, 9, 25, 8, 53)
 const NOW = T0 + 10 * 60_000
 const report = (over: Partial<EndReport> = {}): EndReport => ({ ...empty, ...over })
-const turn = (over: Partial<TurnRecord> = {}): TurnRecord => ({
+const turn = ({ answer = 'ok', ...over }: Partial<TurnRecord> & { answer?: string } = {}): TurnRecord => ({
   id: 't',
   startedAt: T0,
   typed: true,
@@ -104,7 +106,7 @@ const turn = (over: Partial<TurnRecord> = {}): TurnRecord => ({
   end: 'answer',
   calls: 1,
   edits: 0,
-  answer: 'ok',
+  ...answerFacts(answer),
   report: null,
   ...over,
 })
@@ -232,4 +234,69 @@ test('Stopped names the stopped turn, even when a later turn ran', async () => {
     'Stopped: refused',
   )
   expect(view(state([turn({ end: 'error' })])).label).toBe('Stopped: API error')
+})
+
+// ── Found by the final review ────────────────────────────────────────────────────────
+test('a label, a blank line, then prose: the prose is the value', async () => {
+  const report = parseEndReport('## Status\n\nDone.\n\n## Your move\n\nMerge the branch when CI is green.')
+  expect([report?.status, report?.yourMove]).toEqual(['Done.', ['Merge the branch when CI is green.']])
+  expect(parseEndReport('**Your move:**\n\nMerge the branch.')?.yourMove).toEqual(['Merge the branch.'])
+})
+
+test('emphasis is stripped from values, but not from names', async () => {
+  expect(parseEndReport('**Your move:** **nothing**.')?.yourMove).toEqual([])
+  expect(parseEndReport('**Your move:** *nothing*')?.yourMove).toEqual([])
+  expect(parseEndReport('**Status:** **Blocked** on the key\n**Your move:** x')?.status).toBe('Blocked on the key')
+  expect(parseEndReport('**Changed:** `a_b.py` and snake_case_names\n**Your move:** x')?.changed).toEqual([
+    '`a_b.py` and snake_case_names',
+  ])
+})
+
+test('a report with no Your move line leaves it unknown, not empty', async () => {
+  expect(parseEndReport('**Status:** Done.\n**Changed:** a.py')?.yourMove).toBeUndefined()
+})
+
+test('a prompt is typed by its origin; text is the fallback when none arrived', async () => {
+  expect(['composer', 'sdk', 'bridge'].map(o => typedFrom(o, 'x'))).toEqual([true, true, true])
+  expect(['scheduled-trigger', 'task-notification', 'peer', 'auto-continuation'].map(o => typedFrom(o, 'x'))).toEqual([
+    false,
+    false,
+    false,
+    false,
+  ])
+  expect([typedFrom(undefined, 'go'), typedFrom(undefined, '')]).toEqual([true, false])
+})
+
+test('the pane keeps the first line and whether the answer ends on a question', async () => {
+  expect(answerFacts('First line.\n\nMore.\n\nShall I push?')).toEqual({ lastSaid: 'First line.', asksQuestion: true })
+  expect(answerFacts('x'.repeat(20_000)).lastSaid?.length).toBeLessThanOrEqual(300)
+})
+
+test('a question after a report that says nothing for you is still a question', async () => {
+  const v = view(state([turn({ answer: '**Your move:** nothing.\n\nWant me to push it too?', report: report() })]))
+  expect([v.state, v.yourMove]).toEqual(['waiting', ['answer the question in the chat']])
+})
+
+test('a report with no Your move line never reads as Done', async () => {
+  const partial = { ...report({ changed: ['a.py'] }), yourMove: undefined }
+  expect(view(state([turn({ report: partial })])).state).toBe('replied')
+  expect(view(state([turn({ edits: 1, report: partial })])).state).toBe('no-report')
+})
+
+test('a turn waiting on a question in the chat is waiting, not working', async () => {
+  const v = view(state([turn({ endedAt: undefined, end: undefined, asking: true })]))
+  expect([v.state, v.yourMove]).toEqual(['waiting', ['answer the question in the chat']])
+})
+
+test("a later turn's report covers an earlier turn that left none", async () => {
+  const v = view(state([turn({ edits: 1, answer: 'Saved.' }), turn({ id: 'c', typed: false, report: report() })]))
+  expect([v.state, v.canSummarize]).toEqual(['done', false])
+})
+
+test('Done when reads the verdict word, before or after the criterion', async () => {
+  const brief = { doing: 'x', doneWhen: ['a', 'b', 'c'] }
+  const ticks = (items: string[]) =>
+    view(state([turn({ report: report({ doneWhen: items }) })], { brief })).doneWhen.map(d => d.met)
+  expect(ticks(['Met: no lost counts', 'tests green: met', 'not met: c'])).toEqual([true, true, false])
+  expect(ticks(['partly met: vscode only', 'met', 'met'])).toEqual([null, null, null])
 })

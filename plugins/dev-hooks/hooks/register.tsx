@@ -52,15 +52,16 @@ import {
   toRecord,
 } from './nudge-outcomes'
 import {
+  answerFacts,
   clockTime,
   EMPTY_PANE_STATE,
   findBrief,
-  isTypedPrompt,
   noReportTurn,
   paneView,
   parseCommits,
   parseEndReport,
   sinceLabel,
+  typedFrom,
 } from './status-pane'
 
 const isShown = { plugin: 'dev-hooks', key: 'contextBarShown' } as const
@@ -633,9 +634,8 @@ async function pollCi($: EngineInterface, key: string) {
 // what it shows is derived in status-pane.ts.
 const PANE_STATE = { plugin: 'dev-hooks', key: 'statusPane' } as const
 // Change the tag when StatusPaneState changes: a value stored under another is declined.
-const PANE_SHAPE = 'status-pane-1'
+const PANE_SHAPE = 'status-pane-2'
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
-const ANSWER_CAP = 20_000
 
 async function loadPane($: EngineInterface): Promise<StatusPaneState> {
   const stored = (await $.state.get(PANE_STATE)).value
@@ -659,6 +659,14 @@ const changeOpenTurn = (s: StatusPaneState, fn: (t: TurnRecord) => TurnRecord): 
   const open = s.turns.findLast(t => t.endedAt === undefined)
   return open ? { ...s, turns: s.turns.map(t => (t === open ? fn(t) : t)) } : s
 }
+
+// The open turn is waiting on the person: an AskUserQuestion, or the guard's dialog.
+const setAsking = ($: EngineInterface, asking: boolean) =>
+  changePane($, s => changeOpenTurn(s, t => ({ ...t, asking }))).catch(() => undefined)
+
+// prompt.submit names the next turn's origin before turn.start; a Stop hook's continuation
+// has none, and reads as not typed.
+let nextOrigin: string | undefined
 
 // A repo by its main checkout's name, so a worktree's commits count for their repo.
 const repoNames = new Map<string, string | null>()
@@ -784,7 +792,6 @@ export const register: Register = on => {
       name: STATUS_PANE,
       description: 'Show where this session stands: what it needs from you, what runs, what changed',
     })
-    await openPaneUnasked($, e.surface)
     const kept = await pruneFacts($)
     await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
@@ -796,6 +803,7 @@ export const register: Register = on => {
       await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
     }
     await claimCiWatch($)
+    await openPaneUnasked($, e.surface).catch(() => undefined)
 
     return next(e)
   })
@@ -886,7 +894,10 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    const asks = e.agentId === undefined && e.tool === 'AskUserQuestion'
+    if (asks) await setAsking($, true)
     const ran = await next(e)
+    if (asks) await setAsking($, false)
     if (e.agentId === undefined) {
       const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
       await changePane($, s =>
@@ -917,7 +928,7 @@ export const register: Register = on => {
   })
 
   on('session.attach', async ($, e, next) => {
-    await openPaneUnasked($, e.surface)
+    await openPaneUnasked($, e.surface).catch(() => undefined)
 
     return next(e)
   })
@@ -939,7 +950,7 @@ export const register: Register = on => {
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>{title}</Text>
         {rows.map(row => (
-          <Text dimColor={dim}>{row}</Text>
+          <Text dimColor={dim}>{clamp(row, 2 * width)}</Text>
         ))}
       </Box>
     )
@@ -963,9 +974,9 @@ export const register: Register = on => {
               <Text dimColor>Done when</Text>
               {v.doneWhen.map(d =>
                 d.met === null ? (
-                  <Text dimColor>{`○ ${d.text}`}</Text>
+                  <Text dimColor>{`○ ${clamp(d.text, 2 * width)}`}</Text>
                 ) : (
-                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${d.text}`}</Text>
+                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${clamp(d.text, 2 * width)}`}</Text>
                 ),
               )}
               {v.doneWhenNote ? <Text dimColor>{`report: ${clamp(v.doneWhenNote, 2 * width)}`}</Text> : <Text> </Text>}
@@ -978,10 +989,10 @@ export const register: Register = on => {
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Changed</Text>
               {v.changed.map(row => (
-                <Text>{row}</Text>
+                <Text>{clamp(row, 2 * width)}</Text>
               ))}
               {v.repoLines.map(row => (
-                <Text dimColor>{row}</Text>
+                <Text dimColor>{clamp(row, width)}</Text>
               ))}
             </Box>,
           ]
@@ -995,9 +1006,16 @@ export const register: Register = on => {
     return <Box flexDirection="column">{parts}</Box>
   })
 
+  on('prompt.submit', async ($, e, next) => {
+    if (e.turnId === undefined) nextOrigin = e.origin.kind
+
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
-      const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: isTypedPrompt(e.text), calls: 0, edits: 0 }
+      const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: typedFrom(nextOrigin, e.text), calls: 0, edits: 0 }
+      nextOrigin = undefined
       await changePane($, (s, now) => ({
         ...s,
         turns: [...s.turns, { ...turn, startedAt: now }].slice(-20),
@@ -1018,7 +1036,7 @@ export const register: Register = on => {
           ...t,
           endedAt: now,
           end: e.reason,
-          answer: e.answer.slice(0, ANSWER_CAP),
+          ...answerFacts(e.answer),
           report: parseEndReport(e.answer),
         })),
         brief: brief ?? s.brief,
@@ -1097,6 +1115,7 @@ export const register: Register = on => {
     }
     const seconds = await guardTimeoutSeconds($, e.command)
     const question = guardQuestion(decided.ask, e.command, seconds)
+    await setAsking($, true)
     const asked = $.ui.ask(question, {
       header: 'dev-hooks',
       options: ['Allow', 'Deny'],
@@ -1125,6 +1144,8 @@ export const register: Register = on => {
       return isInteractive
         ? { deny: 'The dev-hooks guard dialog was dismissed, so this command did not run.' }
         : decided
+    } finally {
+      await setAsking($, false)
     }
     if (answer === 'Allow') {
       const { ask: _withdrawn, ...rest } = decided

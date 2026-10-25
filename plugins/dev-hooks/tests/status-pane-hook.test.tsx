@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { answerFacts } from '../hooks/status-pane'
 import type { EndReport, StatusPaneState, TurnRecord } from '../types'
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
@@ -12,7 +13,14 @@ type Message = { role: 'user' | 'assistant'; text: string }
 // worktree of /home/m/dev-hooks, and Bash answering `bash` for every command.
 function world(
   on: On,
-  options: { pane?: unknown; read?: () => unknown; messages?: Message[]; bash?: string; env?: Record<string, string> } = {},
+  options: {
+    pane?: unknown
+    read?: () => unknown
+    messages?: Message[]
+    bash?: string
+    env?: Record<string, string>
+    ask?: Promise<void>
+  } = {},
 ) {
   const state = new Map<string, unknown>(options.pane === undefined ? [] : [['statusPane', options.pane]])
   mock.env(on, options.env ?? {})
@@ -31,7 +39,11 @@ function world(
   on('session.messages', () => ({ value: (options.messages ?? []).map(m => ({ ...m, toolUses: [] })) }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
-  on('tool.call', (_$, e) => (e.tool === 'Bash' ? { result: {}, text: options.bash ?? '' } : { result: {} }))
+  on('tool.call', async (_$, e) => {
+    if (e.tool === 'AskUserQuestion') await options.ask
+    return e.tool === 'Bash' ? { result: {}, text: options.bash ?? '' } : { result: {} }
+  })
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('process.run', (_$, e) =>
     e.argv.includes('--git-common-dir') ? { value: ok('/home/m/dev-hooks/.git\n') } : { value: ok('') },
   )
@@ -140,7 +152,7 @@ const PANE = {
   },
 } as const
 const T0 = Date.UTC(2026, 9, 25, 8, 53)
-const shaped = (value: StatusPaneState) => ({ shape: 'status-pane-1', value })
+const shaped = (value: StatusPaneState) => ({ shape: 'status-pane-2', value })
 const base = (over: Partial<StatusPaneState> = {}): StatusPaneState => ({
   turns: [],
   turnsTotal: 0,
@@ -159,7 +171,7 @@ const ended = (over: Partial<TurnRecord> = {}): TurnRecord => ({
   end: 'answer',
   calls: 3,
   edits: 1,
-  answer: 'Done.',
+  ...answerFacts('Done.'),
   report: null,
   ...over,
 })
@@ -169,7 +181,7 @@ test('the pane draws each state on the terminal and in VS Code', async ($, on) =
   const cases: [StatusPaneState, RegExp][] = [
     [base({ turns: [ended({ report: rep({ yourMove: ['push', 'merge'] }) })], turnsTotal: 1 }), /● Waiting on you/],
     [base({ turns: [ended({ endedAt: undefined, end: undefined })], turnsTotal: 1 }), /● Working/],
-    [base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 }), /● Turn ended, no end report/],
+    [base({ turns: [ended(answerFacts('I fixed it.'))], turnsTotal: 1 }), /● Turn ended, no end report/],
     [base({ turns: [ended({ report: rep() })], turnsTotal: 1 }), /● Done/],
     [base(), /● No turns yet/],
   ]
@@ -197,7 +209,7 @@ test('Your move numbers its items, and the Summarize button shows only without a
     expect(await ui.find({ key: 'summarize' })).toBeUndefined()
     await ui.unmount()
   }
-  current = base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 })
+  current = base({ turns: [ended(answerFacts('I fixed it.'))], turnsTotal: 1 })
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ key: 'summarize' })).toBeDefined()
@@ -257,7 +269,7 @@ test('a VS Code window attaching later opens it, and /session-status opens it an
 
 // ── Summarize and the clock ──────────────────────────────────────────────────────────
 const USAGE = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
-const unreported = () => shaped(base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 }))
+const unreported = () => shaped(base({ turns: [ended(answerFacts('I fixed it.'))], turnsTotal: 1 }))
 
 test('Summarize asks once, and its answer stands in for the missing report', async ($, on) => {
   const w = world(on, { pane: unreported() })
@@ -313,4 +325,77 @@ test('the open pane redraws each minute, and stops once it is closed', async ($,
   await w.clock.advance(60_000)
   expect(redraws).toEqual(['ui.render'])
   await ui.unmount()
+})
+
+// ── Found by the final review ────────────────────────────────────────────────────────
+const SCHEDULED = { kind: 'scheduled-trigger' as const }
+const COMPOSER = { kind: 'composer' as const }
+
+test("a scheduled wake-up's turn is not typed, so it can't clear an earlier ask", async ($, on) => {
+  const w = world(on)
+
+  await $.prompt.submit({ text: 'merge it', wait: false, origin: COMPOSER })
+  await $.turn.start({ text: 'merge it', turnId: 'u1' })
+  await $.turn.complete(complete('**Your move:** approve the migration', 'u1'))
+  await $.prompt.submit({ text: 'check the deploy', wait: false, origin: SCHEDULED })
+  await $.turn.start({ text: 'check the deploy', turnId: 'u2' })
+
+  expect(w.pane()?.turns.map(t => t.typed)).toEqual([true, false])
+})
+
+test('a turn waiting on AskUserQuestion is marked asking until it is answered', async ($, on) => {
+  let answer = () => {}
+  const w = world(on, { ask: new Promise<void>(resolve => (answer = resolve)) })
+
+  await $.turn.start({ text: 'go', turnId: 'u1' })
+  const asked = $.tool.call({ tool: 'AskUserQuestion', questions: [] })
+  await w.clock.advance(0)
+  expect(w.pane()?.turns[0]?.asking).toBe(true)
+  answer()
+  await asked
+
+  expect(w.pane()?.turns[0]?.asking).toBe(false)
+})
+
+test('the stored record keeps a line of each answer, not the answer', async ($, on) => {
+  const w = world(on)
+
+  await $.turn.start({ text: 'go', turnId: 'u1' })
+  await $.turn.complete(complete(`Start.\n${'x'.repeat(20_000)}\nShall I push?`))
+
+  expect(JSON.stringify(w.pane()).length).toBeLessThan(2_000)
+  expect(w.pane()?.turns[0]?.asksQuestion).toBe(true)
+})
+
+test('every row is clamped, not only Doing', async ($, on) => {
+  const long = `do ${'y'.repeat(749)}`
+  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: [long] }) })], turnsTotal: 1 })) })
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.find({ type: 'Text', text: /^do y+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
+  await ui.unmount()
+})
+
+test("the pane's opening can't cut session start short", async ($, on) => {
+  const marked: (string | undefined)[] = []
+  on('env.get', (_$, e) => {
+    if (e.name === 'DEV_HOOKS_STATUS_PANE') throw new Error('env unavailable')
+    return { value: undefined }
+  })
+  on('env.set', (_$, e) => {
+    if (e.name === 'DEV_HOOKS_MOD_SESSION') marked.push(e.value)
+    return { value: {} }
+  })
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.id', () => ({ value: 's1' }))
+  on('store.keys', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('state.get', () => ({ value: { value: undefined, version: 1 } }))
+  on('fs.read', (_$, e) =>
+    ({ value: String(e.path).endsWith('plugin.json') ? JSON.stringify({ version: '9.9.9' }) : JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'bash a.sh' }] }] } }) }),
+  )
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
+
+  expect(marked).toEqual(['s1'])
 })

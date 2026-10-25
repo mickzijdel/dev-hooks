@@ -42,7 +42,8 @@ export type NudgeRecord = {
 export type NudgeCounts = { fired: number } & Record<NudgeOutcome, number>
 
 // The session-status pane's record of the session, kept in $.state under `statusPane`.
-export type EndReport = { status?: string; doneWhen: string[]; changed: string[]; notChecked: string[]; yourMove: string[] }
+// yourMove: undefined when the report has no Your move line, which is not the same as "nothing".
+export type EndReport = { status?: string; doneWhen: string[]; changed: string[]; notChecked: string[]; yourMove?: string[] }
 export type Brief = { doing: string; doneWhen: string[] }
 export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
 export type TurnRecord = {
@@ -54,7 +55,11 @@ export type TurnRecord = {
   end?: TurnEnd
   calls: number
   edits: number
-  answer?: string
+  // What the pane keeps of the final message: its first line, and whether it ends on a question.
+  lastSaid?: string
+  asksQuestion?: boolean
+  // An open turn waiting on a question in the chat (AskUserQuestion, the guard dialog).
+  asking?: boolean
   report?: EndReport | null
   summary?: EndReport
   summarizing?: boolean

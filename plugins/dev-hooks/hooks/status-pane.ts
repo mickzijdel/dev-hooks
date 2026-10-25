@@ -33,7 +33,13 @@ const TAIL = String.raw`(?:\s+this\s+(?:turn|session))?`
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/
 const NOTHING = /^(?:nothing(?: yet)?|none)\.?$/i
 
-const unmark = (text: string) => text.replace(/^[*_\s]+/, '').trim()
+// Emphasis markers around words go; an underscore inside a name (snake_case, a_b.py) stays.
+const unmark = (text: string) =>
+  text
+    .replace(/\*\*|__/g, '')
+    .replace(/(^|\s)[*_](?=\S)/g, '$1')
+    .replace(/(\S)[*_](?=\s|[.,;:!?)]|$)/g, '$1')
+    .trim()
 
 type Labels = Record<string, string>
 type Sections<L extends Labels> = { [K in keyof L]?: string[] }
@@ -69,7 +75,7 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
     }
     const bullet = BULLET.exec(line)
     if (bullet) items.push(unmark(bullet[1] ?? ''))
-    else if (gap) current = null
+    else if (gap && items.length > 0) current = null
     else if (items.length > 0) items[items.length - 1] = `${items[items.length - 1]} ${line.trim()}`
     else items.push(unmark(line))
     gap = false
@@ -88,7 +94,7 @@ export const parseEndReport = (text: string): EndReport | null => {
     doneWhen: list(s.doneWhen),
     changed: list(s.changed),
     notChecked: list(s.notChecked),
-    yourMove: list(s.yourMove),
+    ...(s.yourMove ? { yourMove: list(s.yourMove) } : {}),
   }
 }
 
@@ -192,6 +198,21 @@ const NOT_TYPED = /^\s*(?:<task-notification>|<agent-message|<system-reminder>|\
 
 export const isTypedPrompt = (text: string): boolean => text.trim() !== '' && !NOT_TYPED.test(text)
 
+// The person's own message: Enter at the prompt, the Remote Control bridge, or an SDK host's
+// turn (how VS Code and claude -p send what was typed). The text is only the fallback, for a
+// turn whose prompt.submit never arrived.
+const TYPED_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
+
+export const typedFrom = (origin: string | undefined, text: string): boolean =>
+  origin !== undefined ? TYPED_ORIGINS.has(origin) : isTypedPrompt(text)
+
+const LAST_SAID_CAP = 300
+
+export const answerFacts = (answer: string): { lastSaid?: string; asksQuestion: boolean } => {
+  const first = answer.trim().split('\n')[0]?.trim() ?? ''
+  return { ...(first ? { lastSaid: first.slice(0, LAST_SAID_CAP) } : {}), asksQuestion: endsOnQuestion(answer) }
+}
+
 // end-report-reminder's rule for a turn that owes a report.
 export const isWorkTurn = (t: TurnRecord): boolean => t.edits > 0 || t.calls >= 10
 
@@ -211,32 +232,58 @@ export const clockTime = (at: number, tz?: string): string =>
 export const sinceLabel = (at: number, now: number, tz?: string): string => `since ${clockTime(at, tz)} (${age(now - at)})`
 
 const reportOf = (t: TurnRecord) => t.summary ?? t.report ?? null
+const isBlocked = (r: EndReport | null) => /^blocked/i.test(r?.status ?? '')
+// A report whose Your move line was there, even as "nothing".
+const hasMove = (r: EndReport | null): r is EndReport & { yourMove: string[] } => r?.yourMove !== undefined
 
-const classify = (t: TurnRecord): PaneStateName => {
-  if (t.endedAt === undefined) return 'working'
+// null: a later turn's report covers this one, as when a Stop hook's continuation writes it.
+const classify = (t: TurnRecord, later: TurnRecord[]): PaneStateName | null => {
+  if (t.endedAt === undefined) return t.asking ? 'waiting' : 'working'
   if (t.end === 'error' || t.end === 'refusal') return 'stopped'
   if (t.end === 'aborted') return 'interrupted'
   const r = reportOf(t)
-  if (r) return r.yourMove.length > 0 || /^blocked/i.test(r.status ?? '') ? 'waiting' : 'done'
-  if (isWorkTurn(t)) return 'no-report'
-  return endsOnQuestion(t.answer ?? '') ? 'waiting' : 'replied'
+  if (isBlocked(r)) return 'waiting'
+  if (hasMove(r)) return r.yourMove.length > 0 || t.asksQuestion ? 'waiting' : 'done'
+  if (later.some(l => hasMove(reportOf(l)))) return null
+  if (t.asksQuestion) return 'waiting'
+  return isWorkTurn(t) ? 'no-report' : 'replied'
 }
 
-const NOT_MET = /not met|\bno\b|✗/i
-const MET = /\bmet\b|\bdone\b|\byes\b|✓/i
-const verdict = (item: string): boolean | null => (NOT_MET.test(item) ? false : MET.test(item) ? true : null)
+const movesOf = (t: TurnRecord, cls: PaneStateName | null): string[] => {
+  if (cls === null) return []
+  const r = reportOf(t)
+  const own = hasMove(r) ? r.yourMove : []
+  if (own.length > 0) return own
+  if (t.asking || (t.asksQuestion && cls === 'waiting')) return [QUESTION_MOVE]
+  return isBlocked(r) && r?.status ? [r.status] : []
+}
+
+// The verdict word leads the item ("met: …") or follows its criterion ("tests green: met");
+// anything else ("partly met") ticks nothing.
+const SAYS_NOT_MET = /^(?:(?:not met|unmet|no)\b|✗)/i
+const SAYS_MET = /^(?:(?:met|done|yes)\b|✓)/i
+const leadingVerdict = (text: string): boolean | null =>
+  SAYS_NOT_MET.test(text) ? false : SAYS_MET.test(text) ? true : null
+const verdict = (item: string): boolean | null => {
+  const whole = leadingVerdict(item.trim())
+  const colon = item.indexOf(':')
+  return whole ?? (colon < 0 ? null : leadingVerdict(item.slice(colon + 1).trim()))
+}
 
 // The turns since the person last typed a prompt: what the pane reads.
 const windowOf = (s: StatusPaneState) => s.turns.slice(Math.max(s.turns.map(t => t.typed).lastIndexOf(true), 0))
 
 // The turn the Summarize button answers for: the latest that did work and left no report.
-export const noReportTurn = (s: StatusPaneState): TurnRecord | undefined =>
-  windowOf(s).findLast(t => classify(t) === 'no-report')
+export const noReportTurn = (s: StatusPaneState): TurnRecord | undefined => {
+  const window = windowOf(s)
+  return window.findLast((t, i) => classify(t, window.slice(i + 1)) === 'no-report')
+}
 
 export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now: number): PaneView => {
   const window = windowOf(s)
   const background = [...s.background, ...extraRunning]
-  const classes = window.map(classify)
+  const perTurn = window.map((t, i) => classify(t, window.slice(i + 1)))
+  const classes = perTurn.filter((c): c is PaneStateName => c !== null)
   if (background.length > 0) classes.push('running')
   const state = ORDER.find(name => classes.includes(name)) ?? 'no-turns'
   const reports = window.map(reportOf).filter((r): r is EndReport => r !== null)
@@ -244,11 +291,7 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
   const lastTurn = window.at(-1)
   const open = window.find(t => t.endedAt === undefined)
 
-  const moves = window.flatMap(t => {
-    const r = reportOf(t)
-    if (r) return r.yourMove
-    return classify(t) === 'waiting' ? [QUESTION_MOVE] : []
-  })
+  const moves = window.flatMap((t, i) => movesOf(t, perTurn[i] ?? null))
   const criteria = s.brief?.doneWhen ?? []
   const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []
   const ticked = verdicts.length > 0 && verdicts.every(v => v !== null)
@@ -260,7 +303,7 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
     label:
       state !== 'stopped'
         ? LABEL[state]
-        : window.findLast(t => classify(t) === 'stopped')?.end === 'refusal'
+        : window.findLast((_t, i) => perTurn[i] === 'stopped')?.end === 'refusal'
           ? 'Stopped: refused'
           : 'Stopped: API error',
     since: open?.startedAt ?? lastTurn?.endedAt ?? s.startedAt,
@@ -282,7 +325,7 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
         }`,
     ),
     notChecked: capped(latest?.notChecked ?? [], CAPS.notChecked),
-    ...(lastTurn?.answer && !reportOf(lastTurn) ? { lastSaid: lastTurn.answer.trim().split('\n')[0] } : {}),
+    ...(lastTurn?.lastSaid && !hasMove(reportOf(lastTurn)) ? { lastSaid: lastTurn.lastSaid } : {}),
     canSummarize: noReport !== undefined && !noReport.summarizing,
     summarizing: noReport?.summarizing === true,
     ...(noReport?.summaryError ? { summaryError: noReport.summaryError } : {}),

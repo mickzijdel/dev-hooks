@@ -156,7 +156,11 @@ main checkout's name), and the Stop input's `background_tasks` and `session_cron
 `$.state` value written through the `changePane` queue (tool calls run in parallel). The value is
 stored as `{ shape, value }`; change `PANE_SHAPE` when `StatusPaneState` changes shape, so an older
 value is declined rather than misread. The view reads every turn since the last typed prompt
-(`isTypedPrompt`), so a notification turn can't clear an earlier ask. Rules learned building it:
+(`typedFrom`: the origin `prompt.submit` names before `turn.start`, `composer`, `bridge` or `sdk`;
+the text only when no origin arrived), so a notification or scheduled turn can't clear an earlier
+ask, and a later turn's report covers an earlier one that left none (a Stop hook's continuation
+is a turn of its own). It stores a line of each answer (`answerFacts`), never the answer: the
+value is read and written on every tool call. Rules learned building it:
 the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
 `terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
 has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its

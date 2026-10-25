@@ -35,7 +35,12 @@ lives in the dev-hooks mod.
   notifications, CI prompts and wake-ups start turns of their own; a later turn ending "Your
   move: nothing" must not wipe an ask from the turn before, so Your move gathers the items of
   every ended turn since your last prompt, and the state is the worst of them. Typing a prompt
-  starts over.
+  starts over. A prompt counts as typed by its origin (`prompt.submit`: Enter at the prompt, the
+  Remote Control bridge, or an SDK host such as VS Code), not its text. A later turn's report
+  covers an earlier turn that left none, since a Stop hook's continuation is a turn of its own. A
+  turn waiting on a question in the chat (AskUserQuestion, the guard's dialog) shows Waiting on
+  you, not Working; a plain permission prompt can't be told from a long-running tool and still
+  shows Working.
 
 - Below it, in this order, each section hidden when it has nothing to show (except Your move):
   1. **Your move**: the end report's Your move items, or "nothing".
