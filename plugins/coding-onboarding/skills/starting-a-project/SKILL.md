@@ -1,6 +1,6 @@
 ---
 name: starting-a-project
-version: 1.0.0
+version: 1.1.0
 description: |
   Use when someone is starting a new project and unsure what stack or framework to build it
   with — "what should I use to build X?", "how do I start a new project?" — or asks how to
@@ -38,6 +38,30 @@ The full guide — scaffold command for each, plus styling (**Tailwind**, **shad
 databases (start with **SQLite**), auth, and every option's deploy target — is in
 [`references/starter-stacks.md`](references/starter-stacks.md). Read it before recommending one;
 don't reconstruct it from memory.
+
+## Before the first commit
+
+Once the project folder exists (the scaffold command made it, or `git init` did), add
+`.claude/settings.json` and commit it with the project's first commit:
+
+```json
+{
+  "attribution": {
+    "sessionUrl": false
+  }
+}
+```
+
+Why: when Claude works from a cloud session (claude.ai in a browser or on a phone), every commit
+it makes ends with a link back to that chat. If the chat is ever shared publicly, anyone holding
+the link can read the whole conversation, and the link stays in the project's history for good.
+This setting leaves the link out. A cloud session reads only the settings file saved in the
+project itself, so the file has to be committed, not just kept on this computer.
+
+- If `.claude/settings.json` already exists, add only the `attribution` part and keep the rest.
+- Check that git keeps it: `git check-ignore -v .claude/settings.json` must print nothing. If the
+  project's `.gitignore` ignores `.claude`, change that line to `.claude/*` and add
+  `!.claude/settings.json` right below it.
 
 ## Ship it — how to put it online
 

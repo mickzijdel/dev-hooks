@@ -196,3 +196,26 @@ def test_skill_documents_agents_md_convention():
     low = text.lower()
     assert "symlink" in low
     assert "wsl" in low  # the native-Windows privilege caveat is noted
+
+
+STARTING = ONBOARDING / "skills" / "starting-a-project" / "SKILL.md"
+SESSION_LINK_TEMPLATE = (
+    ONBOARDING.parent
+    / "dev-hooks"
+    / "skills"
+    / "dev-env-setup"
+    / "references"
+    / "templates"
+    / "claude-settings.json"
+)
+
+
+def test_new_project_commits_the_setting_that_hides_the_session_link():
+    # A cloud session reads only the repo's committed .claude/settings.json, and without it every
+    # commit links a transcript anyone can read once the session is made public. This plugin
+    # installs without dev-hooks, so it carries its own copy of dev-env-setup's template.
+    text = STARTING.read_text()
+    block = text.split("```json\n", 1)[1].split("```", 1)[0]
+    assert json.loads(block) == json.loads(SESSION_LINK_TEMPLATE.read_text())
+    assert ".claude/settings.json" in text
+    assert "git check-ignore" in text
