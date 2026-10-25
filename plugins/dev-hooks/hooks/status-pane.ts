@@ -102,6 +102,12 @@ export const parseEndReport = (text: string): EndReport | null => {
   }
 }
 
+// end-report-reminder's check: the Changed / Your move lines `text` lacks.
+export const endReportMissing = (text: string): string[] => {
+  const s = parseSections(text, REPORT_LABELS)
+  return [...(s.changed ? [] : ['Changed']), ...(s.yourMove ? [] : ['Your move'])]
+}
+
 export const findBrief = (texts: string[]): Brief | null => {
   for (const text of [...texts].reverse()) {
     const s = parseSections(text, BRIEF_LABELS)

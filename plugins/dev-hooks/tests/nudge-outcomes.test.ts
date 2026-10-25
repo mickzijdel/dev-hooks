@@ -113,7 +113,7 @@ test('verify-work: a failure that clears is acted on, one that refires or hits t
 })
 
 test('a hook with no detectable remedy is unknown, never guessed', async () => {
-  for (const hook of ['end-report-reminder', 'big-change-reminder', 'save-script-reminder']) {
+  for (const hook of ['big-change-reminder', 'save-script-reminder']) {
     expect(resolveNudge(nudge(hook), atStop(facts())).outcome).toBe('unknown')
   }
 })
@@ -173,4 +173,13 @@ test('formatNudgeStats prints one row per hook with its rate', async () => {
   const text = formatNudgeStats([rec('review-reminder', 'acted'), rec('review-reminder', 'ignored', T + 1)], T + 2)
   expect(text.split('\n')).toContain('review-reminder        2        1        1        0        0   50%')
   expect(formatNudgeStats([], T)).toBe('Stop nudges · none resolved in the last 7 days')
+})
+
+test('end-report-reminder is acted on when the next reply carries Changed and Your move', async () => {
+  const n = nudge('end-report-reminder')
+  const report = '**Status:** Done.\n**Changed:** a.py\n**Your move:** nothing'
+  expect(resolveNudge(n, atStop(facts(), { lastMessage: report })).outcome).toBe('acted')
+  const missing = resolveNudge(n, atStop(facts(), { lastMessage: '**Changed:** a.py\nAll done.' }))
+  expect([missing.outcome, missing.evidence]).toEqual(['ignored', 'the next reply still has no Your move line'])
+  expect(resolveNudge(n, { facts: facts(), refired: [], atStop: false }).outcome).toBe('unknown')
 })
