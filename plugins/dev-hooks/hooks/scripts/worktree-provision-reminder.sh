@@ -89,9 +89,20 @@ is_heavy() {
     node_modules | .venv | venv | vendor | tmp | dist | build | .next | .nuxt | target | \
       __pycache__ | .pytest_cache | .ruff_cache | .mypy_cache | coverage | .git | \
       .worktrees | .claude | .bundle | .idea | .vscode | .pnpm-store | .playwright-cli | \
-      .DS_Store | log | .sass-cache | .parcel-cache | .turbo) return 0 ;;
+      .DS_Store | log | .sass-cache | .parcel-cache | .turbo | .ruby-lsp | .cache | .superpowers) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# A cache anywhere in the path counts, not only at the top: `tests/__pycache__/` is no more
+# load-bearing than a root-level one.
+in_heavy_dir() {
+  local part parts
+  IFS=/ read -r -a parts <<<"$1"
+  for part in "${parts[@]}"; do
+    is_heavy "$part" && return 0
+  done
+  return 1
 }
 
 # Runtime state the app actually reads: uploads/blobs, secrets, env, service-account keys. These
@@ -106,16 +117,18 @@ is_load_bearing() {
 }
 
 # Count missing paths per top-level entry, so a report says `storage/ (173 missing)` rather
-# than listing 173 blob directories.
-declare -A MISS_COUNT=()
+# than listing 173 blob directories. A lone path is named whole (`plans/automation-reviews`),
+# since its top-level directory is tracked and present.
+declare -A MISS_COUNT=() MISS_PATH=()
 for entry in "${IGNORED[@]}"; do
   path=${entry%/}
   [ -n "$path" ] || continue
   top=${path%%/*}
-  is_heavy "$top" && continue
+  in_heavy_dir "$path" && continue
   [ -e "$MAIN/$path" ] || continue
   [ -e "$NEW/$path" ] && continue
   MISS_COUNT[$top]=$((${MISS_COUNT[$top]:-0} + 1))
+  MISS_PATH[$top]=$path
 done
 [ ${#MISS_COUNT[@]} -gt 0 ] || exit 0
 
@@ -123,12 +136,14 @@ PRIORITY=()
 REST=()
 for top in "${!MISS_COUNT[@]}"; do
   n=${MISS_COUNT[$top]}
-  label=$top
+  label=${MISS_PATH[$top]}
   [ "$n" -gt 1 ] && label="$top/ ($n missing)"
   if is_load_bearing "$top"; then PRIORITY+=("$label"); else REST+=("$label"); fi
 done
-mapfile -t PRIORITY < <(printf '%s\n' "${PRIORITY[@]}" | sort)
-mapfile -t REST < <(printf '%s\n' "${REST[@]}" | sort)
+# printf with no arguments still prints one empty line, which became a leading ", ".
+sorted() { [ $# -eq 0 ] || printf '%s\n' "$@" | sort; }
+mapfile -t PRIORITY < <(sorted "${PRIORITY[@]}")
+mapfile -t REST < <(sorted "${REST[@]}")
 MISSING=("${PRIORITY[@]}" "${REST[@]}")
 
 LIST=$(printf '%s, ' "${MISSING[@]:0:6}")

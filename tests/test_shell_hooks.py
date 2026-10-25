@@ -6316,6 +6316,47 @@ def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
     assert "local.env" in r.stdout
 
 
+@pytest.mark.parametrize("with_env", [True, False])
+def test_worktree_provision_lists_only_the_state_the_app_reads(tmp_path, with_env):
+    # Reported on this repo as ", plans, plugins/ (2 missing), .ruby-lsp/ (5 missing), tests":
+    # an empty entry, caches nested below a tracked dir, and a dir named for one ignored child.
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    run = init_git_repo(main_repo)
+    (main_repo / ".gitignore").write_text(
+        "__pycache__/\nplans/automation-reviews/\n.ruby-lsp/\n.env\n"
+    )
+    for rel in ["tests/test_a.py", "plans/notes.md", "plugins/x/lib/a.py"]:
+        (main_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (main_repo / rel).write_text("x\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    for rel in [
+        "tests/__pycache__/a.pyc",
+        "plugins/x/lib/__pycache__/a.pyc",
+        "plans/automation-reviews/r.md",
+        ".ruby-lsp/cache",
+        *([".env"] if with_env else []),
+    ]:
+        (main_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (main_repo / rel).write_text("x\n")
+    run("worktree", "add", "-q", str(tmp_path / "wt"), "-b", "wt")
+    payload = {
+        "tool_input": {"command": f"git worktree add {tmp_path / 'wt'} -b wt"},
+        "cwd": str(main_repo),
+        "session_id": "w3",
+    }
+    r = run_hook(
+        "worktree-provision-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None),
+    )
+    text = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    listed = text.split("main checkout has: ", 1)[1].split(". A fresh worktree", 1)[0]
+    expected = [".env"] * with_env + ["plans/automation-reviews"]
+    assert listed.split(", ") == expected, listed
+
+
 @pytest.mark.parametrize(
     "command",
     [
