@@ -112,15 +112,26 @@ asking.
 ## 6. End report: last lines of the final reply
 
 ```
-Status: Done | Done except <x> | Blocked on <x>
+Status: Done | Done except <x> | Blocked on <x> | Running: <what, and what happens when it lands>
 Done when: <each criterion: met or not, with the evidence>
+Changed: <what is different now, one line each: files (linked), commits, settings, anything sent>
 Assumed: <defaults that held; flag any the person should confirm>
 Not checked: <what you didn't verify, and any risk they must know about>
-Next: <who holds the next move, and what it is>
+Your move: <every action the person must take, or "nothing">
 ```
 
-Write "Done" only if you would put your name to the result as it stands. No recap of the steps.
-Drop a line that would be empty.
+The person often reads only this message, coming back to a session they left running, so it
+stands alone: Changed covers the whole turn, and Your move repeats any ask made in an earlier
+message. Write "Done" only if you would put your name to the result as it stands. Changed is
+the outcome, not a recap of the steps. Always include Your move, even as "nothing"; drop any
+other line that would be empty.
+
+**When a hook sends you back** after your final message (asking for a review, a memory, a
+voice pass), your reply is this end report again, updated, with nothing in front of it. Report
+the hook's work only as lines in it: what it changed under Changed, what it found that needs
+the person under Your move, what it left undone under Not checked. An ask that doesn't apply
+gets no line at all; never report a clean result, the hook's name, why it fired, or that it
+misfired.
 
 ## Example
 
@@ -142,7 +153,7 @@ Assuming: ~20 users with few paid seats; budget not a hard cap; the current mail
 - Don't ask questions instead of starting when nothing blocks.
 - Don't let the contract run past six lines; it is a header, not a plan.
 - Don't default to Deep. Don't treat "thorough" as "longer".
-- Don't end with "let me know if you want more"; end with Status.
+- Don't end with "let me know if you want more"; end with the end report.
 
 ## When not to use
 

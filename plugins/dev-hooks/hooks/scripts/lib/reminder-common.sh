@@ -421,11 +421,28 @@ reminder_emit_note() {
   exit 0
 }
 
+# Closes every Stop reason: the reply to a Stop hook is Claude's last message, so it has to
+# be the end report again. Copied into voice-common.sh and register.tsx (which adds it once
+# to its merged block), pinned by test_end_report_footers_match.
+REMINDER_END_REPORT_FOOTER='Whatever the above asks, do it without narrating it, then end with your full end report again, written for someone who reads only that message: Status (say what is still running and what happens when it lands), Done when, Changed (what is different now: files linked, commits, settings, anything sent), Assumed, Not checked, and Your move (every action the person must take, including asks from earlier in this turn, or "nothing"); drop any other line that would be empty. Report that work only as what it changed, what it found that needs the person, or what it left undone, one line each in that report: never a clean result, an ask that did not apply, a hook name, why a hook fired, or that it misfired.'
+
+# A `claude -p` or Agent SDK run (sdk-cli, sdk-py, sdk-ts): nobody reads its end report.
+reminder_is_headless() {
+  case ${CLAUDE_CODE_ENTRYPOINT:-} in
+    sdk-*) return 0 ;;
+  esac
+  return 1
+}
+
 # decision:block keeps Claude working on the reason. Never continue:false: it halts Claude,
 # and the reminder then waits for the user's next prompt.
 reminder_emit_stop() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  local msg=$1
+  if [ -z "${DEV_HOOKS_ORCHESTRATED:-}" ] && ! reminder_is_headless; then
+    msg+=$'\n\n'"$REMINDER_END_REPORT_FOOTER"
+  fi
+  jq -cn --arg msg "$msg" '{decision: "block", reason: $msg}'
   exit 0
 }
 

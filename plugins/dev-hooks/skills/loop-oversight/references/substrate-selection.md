@@ -12,8 +12,8 @@ and Ctrl-C.
 - **Bound:** state it in the prompt — `max N iterations`, or `stop after 2 consecutive turns that
   find nothing new`. `/loop` won't stop itself otherwise.
 - **Oversight for free:** the dev-hooks Stop hooks fire on every turn — `verify-work` runs
-  linters/tests, `review-reminder` nudges a review, `change-summary-reminder` forces a
-  plain-language per-file account. A well-behaved loop (commits per unit) never trips
+  linters/tests, `review-reminder` nudges a review, `end-report-reminder` makes each
+  turn's last message say what changed and what you must do. A well-behaved loop (commits per unit) never trips
   `big-change-reminder`.
 - **Best for:** iterating over a known work-list while you're around — the Osman "document every
   feature, then test each, then fix" sweep.

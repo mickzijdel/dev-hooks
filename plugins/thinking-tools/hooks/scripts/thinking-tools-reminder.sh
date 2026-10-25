@@ -15,7 +15,7 @@ esac
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-MSG="Reach for the thinking-tools skills (Skill tool) on your own initiative, not only when asked: when the person hands you a task -> \`thinking-tools:brief-back\` (open with the contract sized to the task, end with Status); before committing to a non-trivial plan or irreversible change -> \`thinking-tools:premortem\`; before claiming something is done/fixed/working -> \`thinking-tools:but-for-real\`; when a plan or draft needs hard, independent critique -> \`thinking-tools:board\`; before returning work you're unsure about -> \`thinking-tools:self-rate\`; after modifying code -> \`thinking-tools:code-simplifier\`; when a significant architectural decision gets made -> \`thinking-tools:adr\`."
+MSG="Reach for the thinking-tools skills (Skill tool) on your own initiative, not only when asked: when the person hands you a task -> \`thinking-tools:brief-back\` (open with the contract sized to the task, end with the end report: Status, Changed, Your move); before committing to a non-trivial plan or irreversible change -> \`thinking-tools:premortem\`; before claiming something is done/fixed/working -> \`thinking-tools:but-for-real\`; when a plan or draft needs hard, independent critique -> \`thinking-tools:board\`; before returning work you're unsure about -> \`thinking-tools:self-rate\`; after modifying code -> \`thinking-tools:code-simplifier\`; when a significant architectural decision gets made -> \`thinking-tools:adr\`."
 jq -cn --arg msg "$MSG" \
   '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $msg}}'
 exit 0

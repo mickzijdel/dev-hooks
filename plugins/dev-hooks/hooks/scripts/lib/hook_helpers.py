@@ -540,3 +540,63 @@ def authored_scripts(transcript_path, exclude_dirs=()):
             seen.add(path)
             found.append(path)
     return found
+
+
+_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+
+
+def _opens_turn(rec):
+    """A prompt that starts a turn: the person's or a notification's. A tool result, a
+    meta line (Stop hook feedback, skill text) or a compaction summary continues it, and a
+    message sent mid-turn is an attachment, not a user line."""
+    if rec.get("type") != "user" or rec.get("isMeta") or rec.get("isSidechain"):
+        return False
+    if rec.get("isCompactSummary"):
+        return False
+    content = (rec.get("message") or {}).get("content")
+    if isinstance(content, list):
+        return not any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+        )
+    return isinstance(content, str)
+
+
+def turn_activity(transcript_path):
+    """(tool calls, file edits) the main thread made since the current turn opened."""
+    calls = edits = 0
+    for line in _transcript_lines(transcript_path):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rec, dict):
+            continue
+        if _opens_turn(rec):
+            calls = edits = 0
+        elif rec.get("type") == "assistant" and not rec.get("isSidechain"):
+            for block in _tool_use_blocks(line):
+                calls += 1
+                edits += block.get("name") in _EDIT_TOOLS
+    return calls, edits
+
+
+_END_REPORT_LINES = {
+    "Changed": r"(?:what\s+(?:i\s+)?)?changed",
+    "Your move": r"your\s+move",
+}
+
+
+def end_report_missing(text):
+    """The end report's Changed / Your move lines `text` lacks. A line counts as a label
+    ("**Changed:**", "Your move:", "What I changed this session:") or a heading
+    ("## Changed"); a sentence that opens with the word doesn't."""
+    tail = r"(?:\s+this\s+(?:turn|session))?"
+    return [
+        name
+        for name, word in _END_REPORT_LINES.items()
+        if not re.search(
+            rf"^[\s>*_|-]*{word}{tail}[*_\s]*:|^\s*#+\s*{word}{tail}\s*$",
+            text,
+            re.I | re.M,
+        )
+    ]

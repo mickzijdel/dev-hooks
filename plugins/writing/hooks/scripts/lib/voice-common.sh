@@ -222,8 +222,17 @@ voice_emit() {
 
 # decision:block, so Claude revises before the user reads the draft. Never continue:false,
 # which halts Claude.
+# dev-hooks' REMINDER_END_REPORT_FOOTER, pinned by test_end_report_footers_match; left off a
+# `claude -p` or Agent SDK run, whose end report nobody reads.
+VOICE_END_REPORT_FOOTER='Whatever the above asks, do it without narrating it, then end with your full end report again, written for someone who reads only that message: Status (say what is still running and what happens when it lands), Done when, Changed (what is different now: files linked, commits, settings, anything sent), Assumed, Not checked, and Your move (every action the person must take, including asks from earlier in this turn, or "nothing"); drop any other line that would be empty. Report that work only as what it changed, what it found that needs the person, or what it left undone, one line each in that report: never a clean result, an ask that did not apply, a hook name, why a hook fired, or that it misfired.'
+
 voice_emit_stop() {
   _voice_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{decision: "block", reason: $msg}'
+  local msg=$1
+  case ${CLAUDE_CODE_ENTRYPOINT:-} in
+    sdk-*) ;;
+    *) msg+=$'\n\n'"$VOICE_END_REPORT_FOOTER" ;;
+  esac
+  jq -cn --arg msg "$msg" '{decision: "block", reason: $msg}'
   exit 0
 }

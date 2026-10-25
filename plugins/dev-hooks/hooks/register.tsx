@@ -252,10 +252,20 @@ export const stopReason = (run: StopRun): string | null => {
   }
 }
 
-export const mergeBlocks = (below: string | undefined, reasons: string[]): string | undefined => {
-  const all = [...(below ? [below] : []), ...reasons]
-  return all.length > 0 ? all.join('\n\n') : undefined
+// reminder-common.sh's REMINDER_END_REPORT_FOOTER, which the orchestrated hooks leave to the
+// merged block; pinned by test_end_report_footers_match.
+export const END_REPORT_FOOTER =
+  'Whatever the above asks, do it without narrating it, then end with your full end report again, written for someone who reads only that message: Status (say what is still running and what happens when it lands), Done when, Changed (what is different now: files linked, commits, settings, anything sent), Assumed, Not checked, and Your move (every action the person must take, including asks from earlier in this turn, or "nothing"); drop any other line that would be empty. Report that work only as what it changed, what it found that needs the person, or what it left undone, one line each in that report: never a clean result, an ask that did not apply, a hook name, why a hook fired, or that it misfired.'
+
+// A footer the writing plugin's Stop hook gave `below` moves to the end, once.
+export const mergeBlocks = (below: string | undefined, reasons: string[], footer = true): string | undefined => {
+  if (reasons.length === 0) return below
+  const parts = [...(below ? [below.replace(END_REPORT_FOOTER, '').trim()] : []), ...reasons].filter(Boolean)
+  return [...parts, ...(footer ? [END_REPORT_FOOTER] : [])].join('\n\n')
 }
+
+// A `claude -p` or Agent SDK run: nobody reads its end report (reminder_is_headless).
+const isHeadless = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? '').startsWith('sdk-')
 
 async function ownStopHooks($: EngineInterface): Promise<StopHook[]> {
   return stopHooks(JSON.parse(await $.fs.read(`${$.plugin.root}/hooks/hooks.json`)))
@@ -304,6 +314,7 @@ async function orchestrateStop(
   const block = mergeBlocks(
     below,
     runs.flatMap(r => (r.reason !== null ? [r.reason] : [])),
+    !(await isHeadless($)),
   )
   const stop = { at: Date.now(), block: block ?? null }
   await changeFacts($, f => ({ ...f, stops: [...f.stops, stop].slice(-20) })).catch(() => undefined)

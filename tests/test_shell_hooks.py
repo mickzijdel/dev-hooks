@@ -2156,7 +2156,6 @@ def test_jq_stamp_mirror_agrees_with_python(tmp_path):
 # ── session-start cache ─────────────────────────────────────────────────────────────
 STOP_HOOKS_USING_SINCE = [
     "review-reminder.sh",
-    "change-summary-reminder.sh",
     "compress-comments-reminder.sh",
     "big-change-reminder.sh",
     "missing-test-reminder.sh",
@@ -4612,81 +4611,223 @@ def test_big_change_silent_when_already_prompted(tmp_path):
     assert r.stdout.strip() == ""
 
 
-# ── change-summary-reminder.sh (Stop) ────────────────────────────────────────────────
-CHANGE_SUMMARY_SENTINEL = (
-    "[change-summary] per-file change summary not yet given this session"
-)
+# ── end-report-reminder.sh (Stop) + the end-report footer ───────────────────────────
+REPORT = "Status: Done.\n**Changed:** the hook.\n**Your move:** nothing."
 
 
-def _change_summary_env(**overrides):
-    # Force the threshold to 1 so a single tiny untracked file trips it deterministically.
-    base = {"DEV_HOOKS_CHANGE_SUMMARY_FILES": "1"}
-    base.update(overrides)
-    return base_env(**base)
+def _turn(tools=(), prompt="do the thing"):
+    """A human prompt, then one assistant tool call (and its result) per name in `tools`."""
+    lines = [{"type": "user", "message": {"role": "user", "content": prompt}}]
+    for i, name in enumerate(tools):
+        lines.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": f"t{i}", "name": name, "input": {}}
+                    ],
+                },
+            }
+        )
+        lines.append(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": f"t{i}", "content": "ok"}
+                    ],
+                },
+            }
+        )
+    return lines
 
 
-def test_change_summary_silent_outside_git(tmp_path):
-    r = run_hook(
-        "change-summary-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
+STOP_FEEDBACK = {
+    "type": "user",
+    "isMeta": True,
+    "message": {"role": "user", "content": "Stop hook feedback:\n[x] do y"},
+}
+
+
+def _end_report(tmp_path, lines, last, *, active=False, session="er", **env):
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    payload = {"transcript_path": str(transcript), "session_id": session}
+    if last is not None:
+        payload["last_assistant_message"] = last
+    if active:
+        payload["stop_hook_active"] = True
+    overrides = {
+        "TMPDIR": str(tmp_path),
+        "CLAUDE_CODE_ENTRYPOINT": None,
+        "DEV_HOOKS_ORCHESTRATED": None,
+    }
+    overrides.update(env)
+    return run_hook(
+        "end-report-reminder.sh", stdin=json.dumps(payload), env=base_env(**overrides)
     )
+
+
+def _reason(r):
+    return json.loads(r.stdout)["reason"]
+
+
+def test_end_report_silent_on_a_turn_without_work(tmp_path):
+    r = _end_report(tmp_path, _turn(["Bash"] * 3), "Here's the answer.")
     assert stop_allowed(r)
     assert r.stdout.strip() == ""
 
 
-def test_change_summary_silent_under_threshold(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "a.txt").write_text("one file, default threshold of 3\n")
-    r = run_hook(
-        "change-summary-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-    )
-    assert stop_allowed(r)
-    assert r.stdout.strip() == ""
+def test_end_report_fires_on_an_editing_turn_without_the_report(tmp_path):
+    r = _end_report(tmp_path, _turn(["Read", "Edit"]), "I fixed it.")
+    assert stop_blocked(r)
+    first = _reason(r).splitlines()[0]
+    assert first.startswith("[end-report]")
+    assert "no Changed or Your move line" in first
 
 
-def test_change_summary_fires_over_threshold(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "a.txt").write_text("x\n")
-    r = run_hook(
-        "change-summary-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=_change_summary_env(),
+def test_end_report_fires_on_a_long_turn_without_edits(tmp_path):
+    r = _end_report(tmp_path, _turn(["Bash"] * 10), "Research done.")
+    assert stop_blocked(r)
+
+
+def test_end_report_threshold_is_tunable(tmp_path):
+    r = _end_report(
+        tmp_path, _turn(["Bash"] * 3), "Done.", DEV_HOOKS_END_REPORT_TOOLS="3"
     )
     assert stop_blocked(r)
-    assert_json_with(r.stdout, "[change-summary]")
 
 
-def test_change_summary_silent_when_opted_out(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "a.txt").write_text("x\n")
-    r = run_hook(
-        "change-summary-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": "/nope"}),
-        env=_change_summary_env(DEV_HOOKS_CHANGE_SUMMARY="false"),
-    )
-    assert stop_allowed(r)
+def test_end_report_counts_only_this_turn(tmp_path):
+    lines = _turn(["Edit"] * 4, prompt="earlier") + _turn(["Bash"], prompt="now")
+    r = _end_report(tmp_path, lines, "Here's the answer.")
     assert r.stdout.strip() == ""
 
 
-def test_change_summary_silent_when_already_prompted(tmp_path):
-    init_git_repo(tmp_path)
-    (tmp_path / "a.txt").write_text("x\n")
-    transcript = make_transcript(
-        tmp_path / "t.jsonl", human_turns=1, extra_lines=[CHANGE_SUMMARY_SENTINEL]
-    )
-    r = run_hook(
-        "change-summary-reminder.sh",
-        cwd=tmp_path,
-        stdin=json.dumps({"transcript_path": str(transcript)}),
-        env=_change_summary_env(),
-    )
-    assert stop_allowed(r)
+def test_end_report_stop_feedback_continues_the_turn(tmp_path):
+    lines = _turn(["Edit"]) + [STOP_FEEDBACK] + _turn([], prompt="")[1:]
+    r = _end_report(tmp_path, lines, "Saved one memory.")
+    assert stop_blocked(r)
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        REPORT,
+        "Changed: a.py\nYour move: nothing",
+        "**Changed this turn:**\n- a.py\n\n**Your move**: answer the question",
+        "## Changed\n- a.py\n\n## Your move\nmerge it",
+        "**What I changed this session:**\n| a | b |\n- **Your move:** nothing",
+    ],
+)
+def test_end_report_accepts_the_report_forms(tmp_path, last):
+    r = _end_report(tmp_path, _turn(["Edit"]), last)
     assert r.stdout.strip() == ""
+
+
+def test_end_report_names_only_the_missing_line(tmp_path):
+    r = _end_report(tmp_path, _turn(["Edit"]), "**Changed:** a.py\nAll done.")
+    assert stop_blocked(r)
+    assert "no Your move line" in _reason(r).splitlines()[0]
+
+
+def test_end_report_a_sentence_is_not_the_line(tmp_path):
+    r = _end_report(
+        tmp_path, _turn(["Edit"]), "Changed the hook so it fires.\nYour move is easy."
+    )
+    assert stop_blocked(r)
+
+
+def test_end_report_checks_a_forced_continuation_once(tmp_path):
+    turn = _turn(["Edit"])
+    assert stop_blocked(_end_report(tmp_path, turn, "Saved a memory.", active=True))
+    assert _end_report(tmp_path, turn, "Still no report.", active=True).stdout == ""
+    # The next natural stop re-arms it.
+    assert stop_blocked(_end_report(tmp_path, turn, "No report."))
+
+
+def test_end_report_silent_when_headless(tmp_path):
+    for entrypoint in ("sdk-cli", "sdk-py", "sdk-ts"):
+        r = _end_report(
+            tmp_path, _turn(["Edit"]), "Done.", CLAUDE_CODE_ENTRYPOINT=entrypoint
+        )
+        assert r.stdout.strip() == "", entrypoint
+
+
+def test_end_report_fires_in_the_editor_and_terminal(tmp_path):
+    for entrypoint in ("claude-vscode", "cli", "claude-desktop"):
+        r = _end_report(
+            tmp_path,
+            _turn(["Edit"]),
+            "Done.",
+            session=entrypoint,
+            CLAUDE_CODE_ENTRYPOINT=entrypoint,
+        )
+        assert stop_blocked(r), entrypoint
+
+
+def test_end_report_silent_when_opted_out(tmp_path):
+    r = _end_report(tmp_path, _turn(["Edit"]), "Done.", DEV_HOOKS_END_REPORT="false")
+    assert r.stdout.strip() == ""
+
+
+def test_end_report_silent_without_a_last_message(tmp_path):
+    r = _end_report(tmp_path, _turn(["Edit"]), None)
+    assert r.stdout.strip() == ""
+
+
+def _footer(path, name):
+    return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.M).group(1)
+
+
+def _canon_footer():
+    return _footer(HOOKS / "lib" / "reminder-common.sh", "REMINDER_END_REPORT_FOOTER")
+
+
+def test_end_report_footers_match():
+    # The writing plugin can't source dev-hooks' lib, and the mod adds the footer once to
+    # its merged block; a drifted copy asks for a different report without erroring.
+    voice = _footer(
+        WRITING_HOOKS / "lib" / "voice-common.sh", "VOICE_END_REPORT_FOOTER"
+    )
+    assert voice == _canon_footer()
+    mod = re.search(
+        r"export const END_REPORT_FOOTER =\s*'(.+?)'$",
+        (DEV_HOOKS / "hooks" / "register.tsx").read_text(),
+        re.M,
+    ).group(1)
+    assert mod == _canon_footer()
+
+
+def _emit_stop(lib, fn, **env):
+    overrides = {"CLAUDE_CODE_ENTRYPOINT": None, "DEV_HOOKS_ORCHESTRATED": None}
+    overrides.update(env)
+    r = subprocess.run(
+        ["bash", "-c", f'source "$1"; {fn} "do x"', "_", str(lib)],
+        env=base_env(**overrides),
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(r.stdout)["reason"]
+
+
+@pytest.mark.parametrize(
+    "lib, fn",
+    [
+        (HOOKS / "lib" / "reminder-common.sh", "reminder_emit_stop"),
+        (WRITING_HOOKS / "lib" / "voice-common.sh", "voice_emit_stop"),
+    ],
+)
+def test_stop_reasons_end_with_the_footer(lib, fn):
+    assert _emit_stop(lib, fn) == f"do x\n\n{_canon_footer()}"
+    assert _emit_stop(lib, fn, CLAUDE_CODE_ENTRYPOINT="sdk-cli") == "do x"
+
+
+def test_orchestrated_stop_reasons_leave_the_footer_to_the_mod():
+    lib = HOOKS / "lib" / "reminder-common.sh"
+    assert _emit_stop(lib, "reminder_emit_stop", DEV_HOOKS_ORCHESTRATED="1") == "do x"
 
 
 # Stop hooks: same opt-out and once-per-session (transcript sentinel) contracts.

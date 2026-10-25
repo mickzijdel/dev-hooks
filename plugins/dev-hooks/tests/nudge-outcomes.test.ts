@@ -113,7 +113,7 @@ test('verify-work: a failure that clears is acted on, one that refires or hits t
 })
 
 test('a hook with no detectable remedy is unknown, never guessed', async () => {
-  for (const hook of ['change-summary-reminder', 'big-change-reminder', 'save-script-reminder']) {
+  for (const hook of ['end-report-reminder', 'big-change-reminder', 'save-script-reminder']) {
     expect(resolveNudge(nudge(hook), atStop(facts())).outcome).toBe('unknown')
   }
 })

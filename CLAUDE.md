@@ -82,7 +82,8 @@ The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_
 session id (`$.env.set` reaches every command hook started afterwards), which makes
 `reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
 command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
-answer the way Claude Code does (`stopReason`) and returns one merged `block`. It writes the
+answer the way Claude Code does (`stopReason`) and returns one merged `block`, closed once by
+the end-report footer (`mergeBlocks`; none when headless). It writes the
 session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the path as
 `DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
 `reminder_transcript_invoked` and gets subagent-aware answers for free. If orchestration throws, the
@@ -242,7 +243,12 @@ the append path from the prompt path.
   `reminder_rearm_baseline`/`reminder_rearm_seed`/`reminder_rearm <name> <count> <threshold>`
   ($REPLY `first`/`growth`/`silent`, growth in `REMINDER_REARM_DELTA`), and
   `reminder_emit_stop <msg>` (`{"decision":"block","reason":…}` + exit 0 — Claude keeps working
-  and acts on the reason in the same turn). **Never `continue: false` on Stop**: it halts Claude
+  and acts on the reason in the same turn). It appends `REMINDER_END_REPORT_FOOTER`: the reply
+  to a Stop hook becomes the last message the person reads, so the footer asks for the end
+  report again, with the hook's own work as lines in it. Left off under orchestration (the mod
+  adds it once) and in a headless run (`reminder_is_headless`: `CLAUDE_CODE_ENTRYPOINT`
+  `sdk-*`, i.e. `claude -p` or the Agent SDK); copied into `voice-common.sh` and
+  `register.tsx`, pinned by `test_end_report_footers_match`. **Never `continue: false` on Stop**: it halts Claude
   outright, and one halting hook overrides every blocking one; across every transcript since June
   only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
   payload's `stop_hook_active` is true, capping each natural stop at one forced continuation

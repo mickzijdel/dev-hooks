@@ -63,7 +63,9 @@ $ claude
   about writing); `voice-reminder` scans what landed for banned words; and
   `voice-stop-reminder` refuses to end the turn if the session wrote prose and never invoked
   the skill. The first three are advisory — they inject context and nothing checks afterwards
-  — which is why the last one exists.
+  — which is why the last one exists. Its message ends by asking Claude to close with its full
+  end report again (what changed, what you must do), since that reply is the last thing you
+  read; dev-hooks' Stop hooks carry the same footer, and a `claude -p` run gets none.
 - All four share one profile discovery order (`$WRITING_VOICE_PROFILE`, then
   `<repo>/.claude/voice_profile.md`, then `~/.claude/voice_profile.md`; first hit wins), one
   prose-file list, and one `WRITING_VOICE=false` switch, out of
