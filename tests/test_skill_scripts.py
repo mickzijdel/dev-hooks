@@ -11,6 +11,7 @@ Plus subprocess tests for the dev-env-setup skill's dev_env_check.sh compliance 
 """
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,7 @@ import sys
 import pytest
 
 from conftest import (
+    CHECKER,
     DEV_HOOKS,
     FIXTURES,
     GOLDEN,
@@ -170,6 +172,33 @@ def test_checker_needs_upgrade_without_readme(tmp_path):
     out = run_checker(tmp_path)
     assert out["has_readme"] == "0"
     assert out["status"] == "needs-upgrade"
+
+
+def _needs_upgrade_line(target):
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(target)], capture_output=True, text=True
+    )
+    return next(ln for ln in r.stdout.splitlines() if ln.startswith("# Needs upgrade"))
+
+
+def test_checker_needs_upgrade_line_names_only_the_gaps(tmp_path):
+    # It listed every possible cause with its value, so a repo missing one file read
+    # "repo v28 < standard v28, or gitleaks missing (has_gitleaks=1), …".
+    make_compliant_repo(tmp_path, readme=False)
+    line = _needs_upgrade_line(tmp_path)
+    assert line.endswith(": README.md missing. See references/upgrade-guide.md."), line
+    assert "=1" not in line and "<" not in line
+
+
+def test_checker_needs_upgrade_line_names_the_version_only_when_behind(tmp_path):
+    make_compliant_repo(tmp_path)
+    mise = tmp_path / "mise.toml"
+    mise.write_text(
+        re.sub(r'DEV_ENV_VERSION = "\d+"', 'DEV_ENV_VERSION = "1"', mise.read_text())
+    )
+    line = _needs_upgrade_line(tmp_path)
+    assert ": repo v1 < standard v" in line, line
+    assert "missing" not in line, line
 
 
 def test_checker_needs_upgrade_without_claude(tmp_path):
