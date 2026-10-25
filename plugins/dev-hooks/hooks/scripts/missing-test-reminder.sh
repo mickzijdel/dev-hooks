@@ -131,16 +131,18 @@ def added_paths():
     """Every path this session newly added: uncommitted (porcelain) plus, when the session
     start is known, files added by commits made since. Deleted-again paths drop out via the
     exists() check, so a scratch file created and removed within the session stays quiet."""
-    for line in git(["status", "--porcelain"]).splitlines():
-        if not line:
+    # -z: unquoted paths (plain porcelain quotes one holding a space), and a rename's
+    # source as a field of its own after the new path.
+    entries = iter(git(["status", "--porcelain", "-z"]).split("\0"))
+    for entry in entries:
+        if not entry:
             continue
-        status, path = line[:2], line[3:]
+        status, path = entry[:2], entry[3:]
+        if "R" in status or "C" in status:
+            next(entries, None)
         # Untracked new file, or staged addition.
         if status != "??" and status[0] != "A":
             continue
-        # Renames show "old -> new"; take the new path.
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
         yield path
     since = sys.argv[2] if len(sys.argv) > 2 else ""
     if not since:

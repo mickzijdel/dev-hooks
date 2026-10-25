@@ -1843,6 +1843,23 @@ def _dated_transcript(tmp_path, started):
     return t
 
 
+def test_changed_files_reads_paths_with_spaces_and_renames(tmp_path):
+    # Porcelain v1 quotes a path holding a space and prints a rename as "old -> new";
+    # `awk '{print $NF}'` kept only the last word of either.
+    run = init_git_repo(tmp_path)
+    for name in ("old name.py", "keep.py"):
+        (tmp_path / name).write_text("x = 1\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    run("mv", "old name.py", "new name.py")
+    (tmp_path / "keep.py").write_text("x = 2\n")
+    (tmp_path / "a b.py").write_text("y = 1\n")
+    t = _dated_transcript(tmp_path, "2020-01-01T00:00:00.000Z")
+    out = _lib_probe(tmp_path, t, 'reminder_changed_files; printf "%s\\n" "$CHANGED"')
+    py = sorted(line for line in out.splitlines() if line.endswith(".py"))
+    assert py == ["a b.py", "keep.py", "new name.py"], out
+
+
 def test_session_files_excludes_long_standing_untracked(tmp_path):
     # An old untracked scratch dir is not this session's work; counting it tripped
     # big-change-reminder's size gate in every session.
@@ -3174,6 +3191,20 @@ def test_missing_test_fires_for_untested_new_file(tmp_path):
     )
     assert stop_blocked(r)
     assert_json_with(r.stdout, "[missing-test]")
+
+
+def test_missing_test_fires_for_a_new_file_whose_name_has_a_space(tmp_path):
+    # Porcelain v1 quotes such a path; read with its quotes it never existed on disk.
+    run = init_git_repo(tmp_path)
+    (tmp_path / "my module.py").write_text("def f():\n    return 1\n")
+    run("add", "my module.py")
+    r = run_hook(
+        "missing-test-reminder.sh",
+        cwd=tmp_path,
+        stdin=json.dumps({"transcript_path": "/nope"}),
+    )
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "my module.py")
 
 
 def test_missing_test_silent_when_test_present(tmp_path):

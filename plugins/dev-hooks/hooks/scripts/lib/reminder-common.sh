@@ -517,9 +517,20 @@ reminder_runs_git() {
 
 # Changed files (staged + unstaged + untracked) from porcelain status, one per line,
 # into CHANGED — the "did Claude touch code this session?" gate for Stop hooks.
+# -z, because plain porcelain quotes a path holding a space and prints a rename as
+# "old -> new"; under -z a path is never quoted and a rename's source follows as a field
+# of its own, skipped here.
 reminder_changed_files() {
-  # shellcheck disable=SC2034
-  CHANGED=$(git status --porcelain 2>/dev/null | awk '{print $NF}')
+  local _entry _source=""
+  CHANGED=""
+  while IFS= read -r -d '' _entry; do
+    if [ -n "$_source" ]; then
+      _source=""
+      continue
+    fi
+    case "${_entry:0:2}" in [RC]? | ?[RC]) _source=1 ;; esac
+    CHANGED="$CHANGED${CHANGED:+$'\n'}${_entry:3}"
+  done < <(git status --porcelain -z 2>/dev/null)
 }
 
 # Composable temp files: result in $REPLY (a command substitution would run the array
