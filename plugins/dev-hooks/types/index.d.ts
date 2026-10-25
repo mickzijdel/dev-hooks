@@ -62,7 +62,6 @@ export type TurnRecord = {
   asking?: boolean
   report?: EndReport | null
   summary?: EndReport
-  summarizing?: boolean
   summaryError?: string
 }
 export type RepoCommits = { repo: string; commits: number; lastCommitAt: number; lastPushAt?: number }

@@ -304,7 +304,14 @@ const sinceOf = (
   return first ? (first.endedAt ?? first.startedAt) : (window.at(-1)?.endedAt ?? startedAt)
 }
 
-export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now: number): PaneView => {
+// summarizing: the turn a Summarize press is answering now (module memory, so a reload
+// mid-fork never leaves the button stuck).
+export const paneView = (
+  s: StatusPaneState,
+  extraRunning: BackgroundItem[],
+  now: number,
+  summarizing?: string,
+): PaneView => {
   const window = windowOf(s)
   const background = [...s.background, ...extraRunning]
   const perTurn = window.map((t, i) => classify(t, window.slice(i + 1)))
@@ -351,8 +358,8 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
     ),
     notChecked: capped(latest?.notChecked ?? [], CAPS.notChecked),
     ...(lastTurn?.lastSaid && !hasMove(reportOf(lastTurn)) ? { lastSaid: lastTurn.lastSaid } : {}),
-    canSummarize: noReport !== undefined && !noReport.summarizing,
-    summarizing: noReport?.summarizing === true,
+    canSummarize: noReport !== undefined && noReport.id !== summarizing,
+    summarizing: noReport !== undefined && noReport.id === summarizing,
     ...(noReport?.summaryError ? { summaryError: noReport.summaryError } : {}),
     turnCount: s.turnsTotal,
   }

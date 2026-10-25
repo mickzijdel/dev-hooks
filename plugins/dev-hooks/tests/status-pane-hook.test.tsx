@@ -36,7 +36,11 @@ function world(
   on('store.set', () => ({ value: undefined }))
   on('session.id', () => ({ value: 's1' }))
   on('session.cwd', () => ({ value: '/home/m/dev-hooks/.worktrees/x' }))
-  on('session.messages', () => ({ value: (options.messages ?? []).map(m => ({ ...m, toolUses: [] })) }))
+  let reads = 0
+  on('session.messages', () => {
+    reads++
+    return { value: (options.messages ?? []).map(m => ({ ...m, toolUses: [] })) }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('tool.call', async (_$, e) => {
@@ -49,7 +53,7 @@ function world(
   )
   on('classic.Stop', () => ({}))
   const pane = () => (state.get('statusPane') as { shape: string; value: StatusPaneState } | undefined)?.value
-  return { clock, pane }
+  return { clock, pane, reads: () => reads }
 }
 
 const complete = (answer: string, turnId = 'u1') => ({ answer, turnId, durationMs: 5, isAborted: false, reason: 'answer' as const })
@@ -398,4 +402,63 @@ test("the pane's opening can't cut session start short", async ($, on) => {
   await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
 
   expect(marked).toEqual(['s1'])
+})
+
+// ── Backlog: the review's deferred minors ────────────────────────────────────────────
+test('a turn left open closes when the next one starts, and a late end updates only its own turn', async ($, on) => {
+  const w = world(on)
+
+  await $.turn.start({ text: 'go', turnId: 'u1' })
+  await $.turn.start({ text: 'again', turnId: 'u2' })
+  await $.turn.complete(complete('Late.', 'u1'))
+
+  expect(w.pane()?.turns.map(t => [t.id, t.end])).toEqual([
+    ['u1', 'answer'],
+    ['u2', undefined],
+  ])
+})
+
+test("only a typed turn's end reads the transcript for a brief", async ($, on) => {
+  const w = world(on)
+
+  await $.prompt.submit({ text: 'check', wait: false, origin: SCHEDULED })
+  await $.turn.start({ text: 'check', turnId: 'u1' })
+  await $.turn.complete(complete('Fine.', 'u1'))
+  expect(w.reads()).toBe(0)
+  await $.prompt.submit({ text: 'go', wait: false, origin: COMPOSER })
+  await $.turn.start({ text: 'go', turnId: 'u2' })
+  await $.turn.complete(complete('Done.', 'u2'))
+  expect(w.reads()).toBe(1)
+})
+
+test('a summary cut short by a reload leaves the button usable', async ($, on) => {
+  const stale = { ...ended(answerFacts('I fixed it.')), summarizing: true } as TurnRecord
+  world(on, { read: () => shaped(base({ turns: [stale], turnsTotal: 1 })) })
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await ui.find({ key: 'summarize' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a refused redraw does not stop the minute tick', async ($, on) => {
+  const w = world(on, { pane: shaped(base()) })
+  let failing = true
+  const redraws: string[] = []
+  on('ui.panes', () => ({
+    value: [{ id: 'session-status', title: 'Session status', isShown: true, isFocused: false, isPlaced: true }],
+  }))
+  on('ui.invalidate', (_$, e) => {
+    if (failing) throw new Error('redraw refused')
+    redraws.push(e.event)
+    return { value: undefined }
+  })
+
+  const first = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await w.clock.advance(60_000)
+  await first.unmount()
+  failing = false
+  const second = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await w.clock.advance(60_000)
+  await second.unmount()
+
+  expect(redraws).toEqual(['ui.render'])
 })

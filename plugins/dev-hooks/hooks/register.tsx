@@ -735,17 +735,23 @@ const ciBackground = (): BackgroundItem[] =>
 const SUMMARY_PROMPT =
   'Write the end report for the turn that just ended, as plain lines and nothing else: a "Status:" line, then "Your move:" with each action for the person as a "- " bullet, or "Your move: nothing".'
 
+// The turn a Summarize press is answering, if any: module memory, so a reload mid-fork
+// clears it instead of leaving the button gone for good.
+let summarizing: string | undefined
+
 // The pane's one model call, made only when the person presses Summarize.
 async function summarizeTurn($: EngineInterface) {
   const target = noReportTurn(await loadPane($))?.id
-  if (target === undefined) return
+  if (target === undefined || summarizing !== undefined) return
   const mark = (fn: (t: TurnRecord) => TurnRecord) =>
     changePane($, s => ({ ...s, turns: s.turns.map(t => (t.id === target ? fn(t) : t)) }))
-  await mark(t => ({ ...t, summarizing: true, summaryError: undefined }))
+  summarizing = target
+  await mark(t => ({ ...t, summaryError: undefined }))
   const answer = await $.model.fork({ prompt: SUMMARY_PROMPT }).catch(() => null)
+  summarizing = undefined
   const summary = answer?.isAnswered ? parseEndReport(answer.text) : null
   const failed = answer === null ? 'the call failed' : answer.isAnswered ? 'the answer held no end report' : answer.reason
-  await mark(t => ({ ...t, summarizing: false, ...(summary ? { summary } : { summaryError: failed }) }))
+  await mark(t => ({ ...t, ...(summary ? { summary } : { summaryError: failed }) }))
 }
 
 // The pane's ages ("12 min") move on their own: redraw once a minute while it is open.
@@ -945,7 +951,7 @@ export const register: Register = on => {
     tickPane($)
     const s = await loadPane($)
     const now = await $.clock.now()
-    const v = paneView(s, ciBackground(), now)
+    const v = paneView(s, ciBackground(), now, summarizing)
     const width = Math.max(20, e.props.bodyColumns)
     const section = (title: string, rows: string[], dim = false) => (
       <Box flexDirection="column" marginTop={1}>
@@ -1024,7 +1030,11 @@ export const register: Register = on => {
       nextOrigin = undefined
       await changePane($, (s, now) => ({
         ...s,
-        turns: keepTurns([...s.turns, { ...turn, startedAt: now }]),
+        turns: keepTurns([
+          // Main-loop turns don't overlap: one still open never got its end.
+          ...s.turns.map(t => (t.endedAt === undefined ? { ...t, endedAt: now, end: 'aborted' as const } : t)),
+          { ...turn, startedAt: now },
+        ]),
         turnsTotal: s.turnsTotal + 1,
       })).catch(() => undefined)
     }
@@ -1034,11 +1044,14 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
-      const messages = await $.session.messages().catch(() => [])
+      // A brief comes with a task the person typed; other turns don't read the transcript.
+      const typed = (await loadPane($)).turns.find(t => t.id === e.turnId)?.typed === true
+      const messages = typed ? await $.session.messages().catch(() => []) : []
       const texts = Array.isArray(messages) ? messages.filter(m => m.role === 'assistant').map(m => m.text) : []
       const brief = findBrief(texts)
       await changePane($, (s, now) => ({
-        ...changeOpenTurn(s, t => ({
+        ...s,
+        turns: s.turns.map(t => (t.id !== e.turnId ? t : {
           ...t,
           endedAt: now,
           end: e.reason,
