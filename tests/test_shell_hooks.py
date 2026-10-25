@@ -1730,8 +1730,8 @@ def _review_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000
 
 
 def _run_review(tmp_path, payload):
-    """TMPDIR pinned to the test dir so the per-session nudge counter and re-arm baseline
-    are hermetic — otherwise state from an earlier run leaks in through "nosession"."""
+    """Hermetic per test through conftest's XDG_STATE_HOME, where the nudge counter and
+    re-arm baseline live — otherwise state from an earlier run leaks in through "nosession"."""
     return run_hook(
         "review-reminder.sh",
         cwd=tmp_path,
@@ -2344,8 +2344,8 @@ def _stop_payload(tmp_path, extra_lines=None, started="2000-01-01T00:00:00.000Z"
 
 
 def _run_cc(tmp_path, payload):
-    """Run the hook with TMPDIR pinned to the test dir so the per-session comment-count
-    marker is hermetic per test."""
+    """Run the hook; conftest's per-test XDG_STATE_HOME keeps the comment-count marker
+    hermetic."""
     return run_hook(
         "compress-comments-reminder.sh",
         cwd=tmp_path,
@@ -2613,7 +2613,6 @@ def test_verify_work_silent_when_no_code_changed(tmp_path):
 def test_verify_work_fires_when_no_tools_detected(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "changed.py").write_text("x = 1\n")  # code changed, no test/lint config
-    # Isolated TMPDIR so the once-per-session marker can't leak across tests/runs.
     r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
     assert stop_blocked(r)
     assert_json_with(r.stdout, "No test suite")
@@ -2869,7 +2868,7 @@ def test_verify_work_notools_nudge_fires_once_per_session(tmp_path):
     first = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert stop_blocked(first)
     assert_json_with(first.stdout, "No test suite")
-    # Same session + TMPDIR → the marker suppresses the second stop; Claude may finish.
+    # Same session → the marker suppresses the second stop; Claude may finish.
     second = run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert stop_allowed(second)
     assert second.stdout.strip() == ""
