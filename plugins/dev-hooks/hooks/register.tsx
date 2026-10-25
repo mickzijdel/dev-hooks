@@ -839,12 +839,23 @@ export const register: Register = on => {
     if (e.props.hasSurvey || !(await $.state.get(isShown)).value) return next(e)
     const snap = (await $.state.get(snapshot)).value
     const { Box, Text } = $.ui.resolve(e)
+    // Stack above whatever the plugins beneath draw (another plugin's band), never replace it.
+    const below = await next(e).catch(() => undefined)
+    const stacked = (mine: JSX.Element) =>
+      below ? (
+        <Box flexDirection="column">
+          {mine}
+          {below}
+        </Box>
+      ) : (
+        mine
+      )
 
     if (!snap) {
-      return (
+      return stacked(
         <Box>
           <Text dimColor>Context bar: waiting for the first measurement…</Text>
-        </Box>
+        </Box>,
       )
     }
 
@@ -853,7 +864,7 @@ export const register: Register = on => {
     const cells = allocate(snap.segments, width)
     const glyph = (s: Segment) => (s.kind === 'free' ? '░' : s.kind === 'buffer' ? '▒' : '█')
 
-    return (
+    return stacked(
       <Box flexDirection="column">
         <Box>
           <Text>

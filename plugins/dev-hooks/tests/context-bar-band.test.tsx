@@ -1,3 +1,4 @@
+import type { SessionUsage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
 const BAND = {
@@ -32,43 +33,45 @@ const category = (
   isDeferred: false,
 })
 
+const USAGE: { value: SessionUsage } = {
+  value: {
+    startedAt: 0,
+    rateLimits: [],
+    context: {
+      tokens: 50_000,
+      window: 200_000,
+      percent: 25,
+      breakdown: {
+        categories: [
+          category('System prompt', 5_000, 'promptBorder', 'used'),
+          category('Messages', 45_000, 'permission', 'used'),
+          category('Free space', 117_000, 'inactive', 'free'),
+          category('Autocompact buffer', 33_000, 'warning', 'buffer'),
+        ],
+        totalTokens: 50_000,
+        maxTokens: 200_000,
+        rawMaxTokens: 200_000,
+        autocompactSource: 'model-default',
+        percentage: 25,
+        gridRows: [],
+        model: 'test',
+        memoryFiles: [],
+        mcpTools: [],
+        agents: [],
+        isAutoCompactEnabled: true,
+        apiUsage: null,
+      },
+    },
+  },
+}
+
 test('the bar appears only after /context-bar, with a legend per category', async ($, on) => {
   // Stands in for the engine's own (empty) band beneath the mod.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
   })
-  on('session.usage', () => ({
-    value: {
-      startedAt: 0,
-      rateLimits: [],
-      context: {
-        tokens: 50_000,
-        window: 200_000,
-        percent: 25,
-        breakdown: {
-          categories: [
-            category('System prompt', 5_000, 'promptBorder', 'used'),
-            category('Messages', 45_000, 'permission', 'used'),
-            category('Free space', 117_000, 'inactive', 'free'),
-            category('Autocompact buffer', 33_000, 'warning', 'buffer'),
-          ],
-          totalTokens: 50_000,
-          maxTokens: 200_000,
-          rawMaxTokens: 200_000,
-          autocompactSource: 'model-default',
-          percentage: 25,
-          gridRows: [],
-          model: 'test',
-          memoryFiles: [],
-          mcpTools: [],
-          agents: [],
-          isAutoCompactEnabled: true,
-          apiUsage: null,
-        },
-      },
-    },
-  }))
+  on('session.usage', () => USAGE)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const before = await $.ui.mount({ plugin: 'dev-hooks', surface, ...BAND })
@@ -88,4 +91,26 @@ test('the bar appears only after /context-bar, with a legend per category', asyn
   }
 
   expect((await $.command.run(TOGGLE)).text).toBe('Context bar off.')
+})
+
+test("the bar stacks above another plugin's band instead of hiding it", async ($, on) => {
+  // Another plugin's band beneath the mod, as ponytail's would be.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text>band beneath</Text>
+      </Box>
+    )
+  })
+
+  on('session.usage', () => USAGE)
+
+  expect((await $.command.run(TOGGLE)).text).toBe('Context bar on.')
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'dev-hooks', surface, ...BAND })
+    expect(await ui.find({ type: 'Text', text: /Messages 45\.0k/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /band beneath/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
