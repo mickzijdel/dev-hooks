@@ -121,3 +121,13 @@ def test_skill_has_separate_subreviews_step():
     section = text.split("## Separate sub-reviews")[1].split("\n## ")[0]
     assert "own heading" in section
     assert "never count toward the 1–2 automation picks" in section
+
+
+def test_retire_pass_requires_a_mechanism_probe_before_delete():
+    """Three reviews argued DELETE for a hook from fire counts, which cannot tell a redundant
+    hook from a working one (2026-09-03). A delete has to rest on what the hook does."""
+    text = SKILL.read_text()
+    section = text.split("## Retire pass")[1].split("\n## ")[0]
+    assert "Mechanism probe, before any delete" in section
+    template = text.split("## Retire this week")[1].split("\n## ")[0]
+    assert "mechanism:" in template

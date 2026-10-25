@@ -63,8 +63,15 @@ firing rarely) and check the bet against the **current** model:
 - **The sunset test.** Read the `# sunset:` line — it names the observable that means "delete
   me." Judge whether the current model now does that thing unprompted (sample a few recent
   transcripts, or run a quick with/without probe on a representative case).
-- If the bet no longer holds, propose removal (or downgrade a blocking gate to advisory) with
-  the same PR discipline as an add: one change, tests updated, the reasoning recorded.
+- **Mechanism probe, before any delete.** A count cannot tell a redundant hook from a working
+  one: "fires rarely, so delete it" and "fires alongside good behaviour, so it works" are the
+  same error. Read the script, trigger it on a representative case, and check that what its
+  message points at (a skill, script, file or setting) still exists and that nothing else
+  already does its job. Record that as the verdict's `mechanism:`; a delete without one is not
+  a verdict.
+- If the probe shows the bet no longer holds, propose removal (or downgrade a blocking gate to
+  advisory) with the same PR discipline as an add: one change, tests updated, the reasoning
+  recorded.
 
 Run this pass **explicitly on every major model release**, not only weekly — a capability jump
 is exactly when standing bets go stale in bulk.
@@ -96,7 +103,7 @@ Write to `plans/automation-reviews/YYYY-MM-DD.md`:
    - First step: <…>
 
 ## Retire this week (0–2)
-- <hook/skill> — bet: <its bet> — verdict: <still holds / model outgrew it> — <keep / delete / downgrade>
+- <hook/skill> — bet: <its bet> — mechanism: <what it did on a representative case; does its target exist?> — verdict: <still holds / model outgrew it> — <keep / delete / downgrade>
 
 ## Status of prior suggestions
 - <past idea> — shipped / dropped / still open
