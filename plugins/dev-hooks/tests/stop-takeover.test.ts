@@ -15,7 +15,7 @@ function world(on: On, store: Record<string, unknown>, version = '9.9.9') {
   }))
   on('env.set', (_$, e) => {
     if (e.name === 'DEV_HOOKS_MOD_SESSION') marked.push(e.value)
-    return { value: undefined }
+    return { value: {} }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   return marked

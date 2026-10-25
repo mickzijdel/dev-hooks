@@ -200,7 +200,7 @@ function startWorld(on: On, env: Record<string, string>) {
   on('fs.read', () => ({ value: '{}' }))
   on('env.set', (_$, e) => {
     if (e.name === 'DEV_HOOKS_CI_WATCH_SESSION') marked.push(e.value)
-    return { value: undefined }
+    return { value: {} }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   return marked
