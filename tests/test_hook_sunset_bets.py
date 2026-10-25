@@ -167,34 +167,49 @@ def test_silent_hooks_are_still_silent():
     )
 
 
-def test_session_start_hook_logs_a_fire(tmp_path):
-    """End-to-end: the SessionStart hooks predated reminder_emit_session and inlined their
-    own jq, so none of them ever reached the fire log. Prove one really does now."""
+# A fixed string, never a path under tmp_path: when a sandboxed session puts TMPDIR under
+# /tmp/claude-<uid>, tmp_path lands there too, and reminder_is_probe_session reads such a cwd
+# as a throwaway probe whose fires are not logged.
+FIRE_CWD = "/home/someone/project"
+
+
+def _session_start_fire(tmp_path, cwd):
     home = tmp_path / "home"
     (home / ".claude" / "automation-review").mkdir(parents=True)
-    proj = tmp_path / "proj"
-    (proj / "docs").mkdir(parents=True)
-    (proj / "docs" / "guide.md").write_text("# Guide\n")
-
+    tool = home / ".local" / "bin" / "greet"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\n# short-description: Say hello.\necho hi\n")
+    tool.chmod(0o755)
     e = os.environ.copy()
     e.update(HOME=str(home), DEV_HOOKS_FIRE_LOG="1")
     r = subprocess.run(
-        ["bash", str(HOOKS / "docs-context.sh")],
-        input=f'{{"cwd":"{proj}","session_id":"{FIRE_SESSION}"}}',
+        ["bash", str(HOOKS / "script-index.sh")],
+        input=f'{{"cwd":"{cwd}","session_id":"{FIRE_SESSION}"}}',
         env=e,
         capture_output=True,
         text=True,
     )
     assert r.returncode == 0, r.stderr
     assert "SessionStart" in r.stdout, r.stdout
+    return home / ".claude" / "automation-review" / "hook-fires.jsonl"
 
-    log = home / ".claude" / "automation-review" / "hook-fires.jsonl"
+
+def test_session_start_hook_logs_a_fire(tmp_path):
+    """End-to-end: the SessionStart hooks predated reminder_emit_session and inlined their
+    own jq, so none of them ever reached the fire log. Prove one really does now."""
+    log = _session_start_fire(tmp_path, FIRE_CWD)
     assert log.exists(), "SessionStart hook emitted but logged no fire"
     body = log.read_text()
-    assert '"hook":"docs-context.sh"' in body
+    assert '"hook":"script-index.sh"' in body
     assert f'"session":"{FIRE_SESSION}"' in body, (
         "session_id not carried into the fire log"
     )
+
+
+def test_session_start_fire_from_a_scratchpad_cwd_is_not_logged(tmp_path):
+    # Why FIRE_CWD is fixed: the same run from a scratchpad-shaped cwd logs nothing.
+    log = _session_start_fire(tmp_path, f"/tmp/claude-{os.getuid()}/proj")
+    assert not log.exists()
 
 
 # Helpers that leave SESSION set in the caller's scope. reminder_post_bash_init is
