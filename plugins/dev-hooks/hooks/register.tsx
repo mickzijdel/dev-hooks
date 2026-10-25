@@ -32,6 +32,7 @@ import {
   githubRepo,
   isDryRun,
   isGitPush,
+  isQuietPush,
   parsePushOutput,
   parseRuns,
   pushDir,
@@ -569,7 +570,9 @@ async function pushTargets($: EngineInterface, command: string, output: string):
   if (!workflows.some(w => /\.ya?ml$/.test(w.name))) return []
 
   const sections = parsePushOutput(output)
-  if (sections.length === 0 && /Everything up-to-date/.test(output)) return []
+  // No ref lines: up to date, or no push ran at all (the command only mentioned one), unless
+  // a quiet push hid them.
+  if (sections.length === 0 && (/Everything up-to-date/.test(output) || !isQuietPush(command))) return []
   const parts: PushSection[] = sections.length > 0 ? sections : [{ refs: [] }]
   const targets = new Map<string, { repo: string; sha: string }>()
   for (const section of parts) {

@@ -5547,14 +5547,17 @@ def test_ci_watch_fires_on_push_with_workflows(command, tmp_path):
     assert_json_with(r.stdout, "watch")
 
 
-# Not a `git push`: config with a pushurl, a switch, or a subcommand that only starts "push".
-# (The matcher can't shell-parse, so an *echoed* "git push" would false-fire — a harmless,
-# accepted edge, so it's deliberately not asserted silent here.)
+# Not a `git push`: config with a pushurl, a switch, a subcommand that only starts "push",
+# or text that merely mentions one (an echo, a commit message, a heredoc body).
 NON_PUSH_COMMANDS = [
     "git config remote.origin.pushurl x",
     "git switch main",
     "git pushall",
     "git status",
+    "echo 'git push'",
+    "git commit -m 'then git push'",
+    "python3 - <<'EOF'\nprint('git push')\nEOF",
+    "cat <<EOF\nrun git push later\nEOF",
 ]
 
 

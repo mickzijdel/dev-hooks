@@ -76,25 +76,6 @@ cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 # shell are split out as commands of their own. On a parse failure (an unbalanced quote)
 # the awk falls back to the old quote-blind split, which over-matches rather than hides.
 SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk")
-US=$'\037'
-RDM=$'\035'
-
-# Dissect one segment into NAME (the command word, any path prefix stripped), ARGS, and
-# REDIRS (its redirections, marker stripped: `>/dev/null`, `2>&1`, `<file`).
-seg_parse() {
-  local -a w
-  local x
-  IFS="$US" read -ra w <<<"$1"
-  NAME="" ARGS=() REDIRS=()
-  [ "${#w[@]}" -eq 0 ] && return
-  NAME="${w[0]##*/}"
-  for x in "${w[@]:1}"; do
-    case "$x" in
-      "$RDM"*) REDIRS+=("${x#"$RDM"}") ;;
-      *) ARGS+=("$x") ;;
-    esac
-  done
-}
 
 # Does the segment's stdout stay out of the transcript? It does when it goes to
 # /dev/null or a file, or is captured into a variable (`v=$(fnox get X)`, marked
@@ -139,28 +120,6 @@ seg_rm() {
         case "$UQ" in *r* | *R*) RM_RECUR=1 ;; esac
         ;;
       '/' | '/*' | '~' | '~/' | '~/*' | '$HOME' | '$HOME/' | '$HOME/*' | '/.' | '/..') RM_ROOT=1 ;;
-    esac
-  done
-}
-
-# git's subcommand, skipping the global options that take a separate value; GIT_REST
-# holds the subcommand's own non-flag operands.
-seg_git_sub() {
-  GIT_SUB="" GIT_REST=()
-  local skip="" a
-  for a in "${ARGS[@]}"; do
-    if [ -n "$skip" ]; then
-      skip=""
-      continue
-    fi
-    if [ -n "$GIT_SUB" ]; then
-      case "$a" in -*) ;; *) GIT_REST+=("$a") ;; esac
-      continue
-    fi
-    case "$a" in
-      -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
-      -*) ;;
-      *) GIT_SUB="$a" ;;
     esac
   done
 }

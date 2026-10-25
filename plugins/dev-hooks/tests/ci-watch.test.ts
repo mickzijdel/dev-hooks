@@ -9,6 +9,7 @@ import {
   githubRepo,
   isDryRun,
   isGitPush,
+  isQuietPush,
   parsePushOutput,
   pushDir,
   pushRepositories,
@@ -55,6 +56,11 @@ test('pushDir follows git -C and a leading cd, else the cwd', async () => {
   expect(pushDir('git -C sub push origin main', '/s/')).toBe('/s/sub')
   expect(pushDir('cd "/my repo" && git push', '/s')).toBe('/my repo')
   expect(pushDir('cd ../other; git push', '/s')).toBe('/s/../other')
+})
+
+test('isQuietPush reads -q and --quiet on the push itself', async () => {
+  expect(['git push -q', 'git push --quiet origin main', 'git -C r push -q'].map(isQuietPush)).toEqual([true, true, true])
+  expect(['git push', 'git commit -q && git push', 'git push origin quiet'].map(isQuietPush)).toEqual([false, false, false])
 })
 
 test('gitDir finds the directory of any git subcommand, the same way', async () => {

@@ -13,6 +13,10 @@ export const isGitPush = (command: string): boolean => GIT_PUSH.test(command)
 export const isDryRun = (command: string): boolean =>
   /(^|[^A-Za-z0-9_])git([ \t]+\S+)*[ \t]+push([ \t]+[^\s;&|]+)*[ \t]+(--dry-run|-n)([ \t;&|]|$)/m.test(command)
 
+// A quiet push prints no ref lines, so it is the one push watched without them.
+export const isQuietPush = (command: string): boolean =>
+  /(^|[^A-Za-z0-9_])git([ \t]+\S+)*[ \t]+push([ \t]+[^\s;&|]+)*[ \t]+(-q|--quiet)([ \t;&|]|$)/m.test(command)
+
 const unquote = (s: string) => s.replace(/^(['"])(.*)\1$/, '$2')
 
 const resolveDir = (dir: string, cwd: string) => {

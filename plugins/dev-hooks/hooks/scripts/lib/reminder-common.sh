@@ -446,6 +446,64 @@ reminder_emit_stop() {
   exit 0
 }
 
+# Simple-command segments as lib/shell-segments.awk prints them: words joined by \037, each
+# redirection a word starting with \035. Shared by dangerous-command-guard.sh and the hooks
+# that ask "does this command run git <sub>?".
+US=$'\037'
+RDM=$'\035'
+
+# Dissect one segment into NAME (the command word, any path prefix stripped), ARGS, and
+# REDIRS (its redirections, marker stripped: `>/dev/null`, `2>&1`, `<file`).
+seg_parse() {
+  local -a w
+  local x
+  IFS="$US" read -ra w <<<"$1"
+  NAME="" ARGS=() REDIRS=()
+  [ "${#w[@]}" -eq 0 ] && return
+  NAME="${w[0]##*/}"
+  for x in "${w[@]:1}"; do
+    case "$x" in
+      "$RDM"*) REDIRS+=("${x#"$RDM"}") ;;
+      *) ARGS+=("$x") ;;
+    esac
+  done
+}
+
+# git's subcommand, skipping the global options that take a separate value; GIT_REST
+# holds the subcommand's own non-flag operands.
+seg_git_sub() {
+  GIT_SUB="" GIT_REST=()
+  local skip="" a
+  for a in "${ARGS[@]}"; do
+    if [ -n "$skip" ]; then
+      skip=""
+      continue
+    fi
+    if [ -n "$GIT_SUB" ]; then
+      case "$a" in -*) ;; *) GIT_REST+=("$a") ;; esac
+      continue
+    fi
+    case "$a" in
+      -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
+      -*) ;;
+      *) GIT_SUB="$a" ;;
+    esac
+  done
+}
+
+# Does $COMMAND run `git <sub>`? Read from the segments the shell would run, so text that
+# only mentions it (an echo, a commit message, a heredoc body) doesn't count.
+reminder_runs_git() {
+  local seg
+  while IFS= read -r seg; do
+    seg_parse "$seg"
+    [ "$NAME" = git ] || continue
+    seg_git_sub
+    [ "$GIT_SUB" = "$1" ] && return 0
+  done < <(printf '%s' "$COMMAND" | awk -f "$REMINDER_LIB_DIR/shell-segments.awk")
+  return 1
+}
+
 # Changed files (staged + unstaged + untracked) from porcelain status, one per line,
 # into CHANGED — the "did Claude touch code this session?" gate for Stop hooks.
 reminder_changed_files() {

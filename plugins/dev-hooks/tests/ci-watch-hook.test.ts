@@ -47,7 +47,10 @@ function world(on: On, options: { env?: Record<string, string>; workflows?: stri
       return { value: ok(JSON.stringify(w.runs)) }
     }
     if (argv.includes('--show-toplevel')) return { value: ok('/repo\n') }
-    if (argv.includes('rev-parse')) return { value: String(argv.at(-1)).startsWith('762caa3') ? ok(`${SHA}\n`) : failed }
+    if (argv.includes('rev-parse')) {
+      const ref = String(argv.at(-1))
+      return { value: ref.startsWith('762caa3') || ref === 'HEAD^{commit}' ? ok(`${SHA}\n`) : failed }
+    }
     // Like git: no name is the branch's (fetch) remote, and an unknown name comes back as given.
     if (argv.includes('ls-remote')) {
       const name = argv.at(-1) === '--get-url' ? 'origin' : String(argv.at(-1))
@@ -222,4 +225,25 @@ test('with the opt-out set, session start leaves the session unmarked', async ($
   await $.session.start(START)
 
   expect(marked).toEqual([])
+})
+
+test('a command that only mentions git push starts no watch', async ($, on) => {
+  mock.clock(on)
+  const w = world(on)
+  push(on, '[main abc1234] then git push\n 1 file changed\n')
+
+  const ran = await $.tool.call({ tool: 'Bash', command: "git commit -m 'then git push'" })
+
+  expect(ran.context).toBeUndefined()
+  expect(w.statuses).toEqual([])
+})
+
+test('a quiet push, which prints no ref lines, is still watched at HEAD', async ($, on) => {
+  mock.clock(on)
+  world(on)
+  push(on, '')
+
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git push -q origin main' })
+
+  expect(ran.context?.[0]).toContain('mickzijdel/dev-hooks@762caa3')
 })
