@@ -147,6 +147,22 @@ In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the p
 `$.session.append` calls; `tests/ci-watch-hook.test.ts` reads them back with `.appended()` to tell
 the append path from the prompt path.
 
+The module also draws **the session-status pane** (the `Session-status pane` block of
+`register.tsx`; its pure half, the end-report and brief parsers and the state derivation, is
+`hooks/status-pane.ts`, unit-tested directly). It records each main-loop turn (`turn.start`,
+`turn.complete` with the final message's parsed end report), tool and edit counts per turn, this
+session's commits and pushes from Bash output (`gitDir` in `ci-watch.ts` finds the repo, by its
+main checkout's name), and the Stop input's `background_tasks` and `session_crons`, all in one
+`$.state` value written through the `changePane` queue (tool calls run in parallel). The value is
+stored as `{ shape, value }`; change `PANE_SHAPE` when `StatusPaneState` changes shape, so an older
+value is declined rather than misread. The view reads every turn since the last typed prompt
+(`isTypedPrompt`), so a notification turn can't clear an earlier ask. Rules learned building it:
+the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
+`terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
+has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its
+label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
+`tests/test_status_pane_parity.py`. Design and plan: `docs/superpowers/specs/2026-10-25-status-pane-design.md`.
+
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
 - **Descriptions are trigger lists, not feature dumps** — every model-invocable description
