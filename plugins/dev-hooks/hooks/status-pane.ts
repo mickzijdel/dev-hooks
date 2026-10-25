@@ -55,8 +55,12 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
   const found: Sections<L> = {}
   let current: keyof L | null = null
   let gap = false
+  let fenced = false
   for (const line of text.split('\n')) {
-    const label = matchers.flatMap(m => {
+    // A fenced block holds a template or code, and a quote holds someone else's words.
+    if (/^\s*```/.test(line)) fenced = !fenced
+    if (fenced || /^\s*```/.test(line)) continue
+    const label = /^\s*>/.test(line) ? undefined : matchers.flatMap(m => {
       const inline = m.inline.exec(line)
       if (inline) return [{ key: m.key, rest: unmark(inline[1] ?? '') }]
       return m.heading.test(line) ? [{ key: m.key, rest: '' }] : []
@@ -216,6 +220,14 @@ export const answerFacts = (answer: string): { lastSaid?: string; asksQuestion: 
 // end-report-reminder's rule for a turn that owes a report.
 export const isWorkTurn = (t: TurnRecord): boolean => t.edits > 0 || t.calls >= 10
 
+// The last `cap` turns, and every turn from the last typed one on (so an ask survives any
+// number of notification turns), up to `hardCap`.
+export const keepTurns = (turns: TurnRecord[], cap = 20, hardCap = 200): TurnRecord[] => {
+  const lastTyped = turns.map(t => t.typed).lastIndexOf(true)
+  const from = Math.min(Math.max(turns.length - cap, 0), lastTyped < 0 ? turns.length : lastTyped)
+  return turns.slice(Math.max(from, turns.length - hardCap))
+}
+
 export const capped = (items: string[], cap: number): string[] =>
   items.length <= cap ? items : [...items.slice(0, cap - 1), `+${items.length - cap + 1} more`]
 
@@ -279,6 +291,19 @@ export const noReportTurn = (s: StatusPaneState): TurnRecord | undefined => {
   return window.findLast((t, i) => classify(t, window.slice(i + 1)) === 'no-report')
 }
 
+// When the shown state began: an ask since the turn that made it, not the latest turn.
+const sinceOf = (
+  state: PaneStateName,
+  window: TurnRecord[],
+  perTurn: (PaneStateName | null)[],
+  background: BackgroundItem[],
+  startedAt: number,
+): number => {
+  if (state === 'running' && background.length > 0) return Math.min(...background.map(b => b.since))
+  const first = window.find((_t, i) => perTurn[i] === state)
+  return first ? (first.endedAt ?? first.startedAt) : (window.at(-1)?.endedAt ?? startedAt)
+}
+
 export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now: number): PaneView => {
   const window = windowOf(s)
   const background = [...s.background, ...extraRunning]
@@ -306,7 +331,7 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
         : window.findLast((_t, i) => perTurn[i] === 'stopped')?.end === 'refusal'
           ? 'Stopped: refused'
           : 'Stopped: API error',
-    since: open?.startedAt ?? lastTurn?.endedAt ?? s.startedAt,
+    since: sinceOf(state, window, perTurn, background, s.startedAt),
     yourMove: capped([...new Set(moves)], CAPS.yourMove),
     ...(s.brief ? { doing: s.brief.doing } : {}),
     doneWhen: criteria.map((text, i) => ({ text, met: ticked ? (verdicts[i] ?? null) : null })),

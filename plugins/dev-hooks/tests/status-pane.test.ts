@@ -8,6 +8,7 @@ import {
   findBrief,
   isTypedPrompt,
   isWorkTurn,
+  keepTurns,
   paneView,
   parseCommits,
   parseEndReport,
@@ -299,4 +300,22 @@ test('Done when reads the verdict word, before or after the criterion', async ()
     view(state([turn({ report: report({ doneWhen: items }) })], { brief })).doneWhen.map(d => d.met)
   expect(ticks(['Met: no lost counts', 'tests green: met', 'not met: c'])).toEqual([true, true, false])
   expect(ticks(['partly met: vscode only', 'met', 'met'])).toEqual([null, null, null])
+})
+
+// ── Backlog: the review's deferred minors ────────────────────────────────────────────
+test('a quoted or fenced label is not a report line', async () => {
+  const text = 'Template:\n```\nYour move: <every action>\n```\n**Your move:** merge it\n\n> Your move: nothing'
+  expect(parseEndReport(text)?.yourMove).toEqual(['merge it'])
+})
+
+test('Waiting reads since the ask, not since the latest turn', async () => {
+  const later = turn({ id: 'n', typed: false, endedAt: T0 + 61 * 60_000, report: report() })
+  expect(view(state([turn({ report: report({ yourMove: ['push'] }) }), later])).since).toBe(T0 + 60_000)
+})
+
+test('an ask survives however many turns follow it', async () => {
+  const notes = Array.from({ length: 25 }, (_, i) => turn({ id: `n${i}`, typed: false, report: report() }))
+  expect(view(state(keepTurns([turn({ report: report({ yourMove: ['push'] }) }), ...notes]))).yourMove).toEqual(['push'])
+  expect(keepTurns([turn({ id: 'old' }), turn({ id: 'new' }), ...notes]).map(t => t.id)[0]).toBe('new')
+  expect(keepTurns(Array.from({ length: 30 }, (_, i) => turn({ id: `t${i}` }))).length).toBe(20)
 })

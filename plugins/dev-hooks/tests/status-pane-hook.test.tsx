@@ -222,7 +222,7 @@ test('long lists end in "+N more" and a long Doing is clamped to two lines', asy
   const brief = { doing: 'x'.repeat(755), doneWhen: [] }
   world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: moves }) })], turnsTotal: 1, brief })) })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /\+3 more/ }))?.text).toBe('5. +3 more')
+  expect((await ui.find({ type: 'Text', text: /\+3 more/ }))?.text).toBe('+3 more')
   expect((await ui.find({ type: 'Text', text: /^x+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
   await ui.unmount()
 })

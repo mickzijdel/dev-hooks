@@ -56,6 +56,7 @@ import {
   clockTime,
   EMPTY_PANE_STATE,
   findBrief,
+  keepTurns,
   noReportTurn,
   paneView,
   parseCommits,
@@ -954,8 +955,13 @@ export const register: Register = on => {
         ))}
       </Box>
     )
+    // Number the actions, not the "+N more" row after them.
     const moves =
-      v.yourMove.length === 0 ? ['nothing'] : v.yourMove.length === 1 ? v.yourMove : v.yourMove.map((m, i) => `${i + 1}. ${m}`)
+      v.yourMove.length === 0
+        ? ['nothing']
+        : v.yourMove.length === 1
+          ? v.yourMove
+          : v.yourMove.map((m, i) => (/^\+\d+ more$/.test(m) ? m : `${i + 1}. ${m}`))
     const parts = [
       <Text dimColor>{`updated ${clockTime(s.updatedAt ?? s.startedAt)}`}</Text>,
       <Box>
@@ -1018,7 +1024,7 @@ export const register: Register = on => {
       nextOrigin = undefined
       await changePane($, (s, now) => ({
         ...s,
-        turns: [...s.turns, { ...turn, startedAt: now }].slice(-20),
+        turns: keepTurns([...s.turns, { ...turn, startedAt: now }]),
         turnsTotal: s.turnsTotal + 1,
       })).catch(() => undefined)
     }
