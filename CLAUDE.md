@@ -258,12 +258,13 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
   git command acts on", since `cd other && git commit` acts on `other`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
-  the transcript's first-line timestamp; cached per session in `$TMPDIR`, so call it freely
+  the transcript's first-line timestamp; cached per session in the state dir, so call it freely
   rather than threading the value through — and pass that value to python rather than
   having a heredoc re-derive it with `session_start`), `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
   state path in $REPLY — existence for `reminder_fire_once`, a stored value for re-arming
-  hooks), the re-arm trio
+  hooks; under `$XDG_STATE_HOME/dev-hooks`, never `$TMPDIR`, because a resumed session outlives
+  the reboot that empties it; conftest gives each test its own `XDG_STATE_HOME`), the re-arm trio
   `reminder_rearm_baseline`/`reminder_rearm_seed`/`reminder_rearm <name> <count> <threshold>`
   ($REPLY `first`/`growth`/`silent`, growth in `REMINDER_REARM_DELTA`), and
   `reminder_emit_stop <msg>` (`{"decision":"block","reason":…}` + exit 0 — Claude keeps working

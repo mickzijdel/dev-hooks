@@ -98,7 +98,7 @@ reminder_stop_init() {
 # `git status --porcelain` / `git diff HEAD` see nothing. Without this, such a hook
 # measures only the sessions that forgot to commit.
 #
-# Cached per session in $TMPDIR since the first line never changes. Keyed on a real session
+# Cached per session in the state dir since the first line never changes. Keyed on a real session
 # id and checked against the transcript path, so a reused id or a rewritten transcript is
 # recomputed. Empty answers are not cached.
 reminder_session_since() {
@@ -284,12 +284,21 @@ reminder_emit_decision() {
 }
 
 # Per-session state file, keyed on hook name + $SESSION (+ an optional extra key), under
-# ${TMPDIR}. Sets REPLY to the path. reminder_fire_once tracks bare existence through it;
+# $XDG_STATE_HOME/dev-hooks: not $TMPDIR, which a reboot empties while a resumed session keeps
+# its id. Sets REPLY to the path. reminder_fire_once tracks bare existence through it;
 # hooks that must re-arm (compress-comments-reminder) read/write a value there instead.
+# Once a day, files untouched for 30 days are pruned.
 reminder_state_file() {
-  local dir="${TMPDIR:-/tmp}/dev-hooks-$1"
-  mkdir -p "$dir" 2>/dev/null
-  REPLY="$dir/${SESSION:-nosession}${2:+-$2}"
+  local root="${XDG_STATE_HOME:-$HOME/.local/state}/dev-hooks" day
+  printf -v day '%(%F)T' -1
+  if [ ! -e "$root/.pruned-$day" ]; then
+    mkdir -p "$root" 2>/dev/null
+    find "$root" -mindepth 2 -type f -mtime +30 -delete 2>/dev/null
+    rm -f "$root"/.pruned-* 2>/dev/null
+    : >"$root/.pruned-$day" 2>/dev/null
+  fi
+  mkdir -p "$root/$1" 2>/dev/null
+  REPLY="$root/$1/${SESSION:-nosession}${2:+-$2}"
 }
 
 # Fire-at-most-once guard. Needs $SESSION, i.e. reminder_init/reminder_stop_init must

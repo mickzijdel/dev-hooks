@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -3717,6 +3718,55 @@ def test_reminder_fires_once_per_session(
     second = run_hook(script, stdin=payload, env=env)
     assert second.returncode == 0
     assert second.stdout.strip() == ""
+
+
+# A reboot empties $TMPDIR while a resumed session keeps its id: here, two TMPDIRs.
+FIRE_ONCE_ACROSS_PLUGINS = [
+    ("migration-safety-reminder.sh", HOOKS, _migration_payload),
+    ("voice-prewrite-reminder.sh", WRITING_HOOKS, _prewrite_payload),
+]
+
+
+@pytest.mark.parametrize(
+    "script,scripts,make_payload",
+    FIRE_ONCE_ACROSS_PLUGINS,
+    ids=[e[0] for e in FIRE_ONCE_ACROSS_PLUGINS],
+)
+def test_fire_once_marker_survives_a_reboot(tmp_path, script, scripts, make_payload):
+    _voice_repo(tmp_path)
+    payload = make_payload(tmp_path)
+    runs = [
+        run_hook(
+            script,
+            stdin=payload,
+            env=base_env(TMPDIR=str(tmp_path / boot), DEV_HOOKS_MIGRATION=None),
+            scripts=scripts,
+        )
+        for boot in ("boot1", "boot2")
+    ]
+    assert runs[0].stdout.strip() != ""
+    assert runs[1].stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "script,scripts,make_payload",
+    FIRE_ONCE_ACROSS_PLUGINS,
+    ids=[e[0] for e in FIRE_ONCE_ACROSS_PLUGINS],
+)
+def test_hook_state_older_than_30_days_is_pruned(
+    tmp_path, script, scripts, make_payload
+):
+    _voice_repo(tmp_path)
+    root = Path(os.environ["XDG_STATE_HOME"]) / scripts.parent.parent.name
+    old, fresh = root / "some-hook" / "old-session", root / "some-hook" / "fresh"
+    old.parent.mkdir(parents=True)
+    old.write_text("")
+    fresh.write_text("")
+    month_ago = time.time() - 31 * 86400
+    os.utime(old, (month_ago, month_ago))
+    run_hook(script, stdin=make_payload(tmp_path), env=base_env(), scripts=scripts)
+    assert not old.exists()
+    assert fresh.exists()
 
 
 # ── comment-brief-guard.sh (PreToolUse Agent|SendMessage) ───────────────────────────

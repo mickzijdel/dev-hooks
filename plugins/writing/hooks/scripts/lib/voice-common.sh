@@ -179,12 +179,24 @@ print(f"{len(written)}\t{skill}")
 PYEOF
 }
 
-# Per-session marker under ${TMPDIR}; path in $REPLY. Needs SESSION.
+# Per-session marker under $XDG_STATE_HOME/writing, which survives the reboot that empties
+# $TMPDIR mid-session; path in $REPLY. Needs SESSION. Prunes 30-day-old files once a day.
+# A copy of dev-hooks' reminder_state_file, which this plugin can't source; both run
+# test_fire_once_marker_survives_a_reboot and test_hook_state_older_than_30_days_is_pruned.
+# jscpd:ignore-start
 voice_state_file() {
-  local dir="${TMPDIR:-/tmp}/writing-$1"
-  mkdir -p "$dir" 2>/dev/null
-  REPLY="$dir/${SESSION:-nosession}${2:+-$2}"
+  local root="${XDG_STATE_HOME:-$HOME/.local/state}/writing" day
+  printf -v day '%(%F)T' -1
+  if [ ! -e "$root/.pruned-$day" ]; then
+    mkdir -p "$root" 2>/dev/null
+    find "$root" -mindepth 2 -type f -mtime +30 -delete 2>/dev/null
+    rm -f "$root"/.pruned-* 2>/dev/null
+    : >"$root/.pruned-$day" 2>/dev/null
+  fi
+  mkdir -p "$root/$1" 2>/dev/null
+  REPLY="$root/$1/${SESSION:-nosession}${2:+-$2}"
 }
+# jscpd:ignore-end
 
 # Fire-at-most-once guard: `voice_fire_once <name> [extra] || exit 0`.
 voice_fire_once() {

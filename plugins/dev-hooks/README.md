@@ -230,7 +230,7 @@ $ claude
   edits (python/js/ruby — not lockfiles) it additionally reminds Claude to keep README.md
   and CLAUDE.md key-package versions in sync, creating those docs if they don't exist. It
   fires at most once per session per ecosystem (python/js/ruby/lockfile), tracked via a
-  marker under `${TMPDIR:-/tmp}/dev-hooks-latest-deps/`. Silence it with
+  marker under `~/.local/state/dev-hooks/latest-deps/`. Silence it with
   `DEV_HOOKS_LATEST_DEPS=false` (in `.claude/settings.local.json` `"env"`).
 - `scaffold-reminder.sh` is reminder-only — it never blocks the write. It fires when the
   Write tool creates a project manifest or framework entrypoint that git doesn't already
@@ -242,14 +242,14 @@ $ claude
   and tells Claude to first check the framework's current stable release — and the
   generator's current flags via `--help`/docs — rather than recalling either, unless the
   user asked for a specific version. Fires once per session, tracked via a marker under
-  `${TMPDIR:-/tmp}/dev-hooks-scaffold/`. Silence it with `DEV_HOOKS_SCAFFOLD=false`
+  `~/.local/state/dev-hooks/scaffold/`. Silence it with `DEV_HOOKS_SCAFFOLD=false`
   (in `.claude/settings.local.json` `"env"`).
 - `dockerfile-reminder.sh` runs [`hadolint`](https://github.com/hadolint/hadolint) on each
   `Dockerfile`/`Containerfile` Claude writes and reports the findings (or a clean pass) back
   to Claude, plus a layer-ordering nudge pointing at the `dockerfile` skill. It's report-only:
   it surfaces results every time but never blocks the write — Claude decides whether to fix.
   If `hadolint` isn't installed it can't lint, so it falls back to a once-per-session
-  ordering/gotchas reminder (tracked via a marker under `${TMPDIR:-/tmp}/dev-hooks-dockerfile/`)
+  ordering/gotchas reminder (tracked via a marker under `~/.local/state/dev-hooks/dockerfile/`)
   and suggests installing hadolint. Silence the whole hook with `DEV_HOOKS_DOCKERFILE=false`
   (in `.claude/settings.local.json` `"env"`).
 - `popover-reminder.sh` is reminder-only — it never blocks the write. It fires when Claude
@@ -261,7 +261,7 @@ $ claude
   Claude to use a collision-aware positioner (flip + shift) rendered in the top layer/a portal —
   not hand-rolled `top`/`left` math that opens off-screen — and points at the `popovers-tooltips`
   skill (Floating UI in a Stimulus controller for Rails/Hotwire). Fires once per session, tracked
-  via a marker under `${TMPDIR:-/tmp}/dev-hooks-popover/`. Silence it with `DEV_HOOKS_POPOVER=false`
+  via a marker under `~/.local/state/dev-hooks/popover/`. Silence it with `DEV_HOOKS_POPOVER=false`
   (in `.claude/settings.local.json` `"env"`).
 - `secret-plaintext-reminder.sh` is reminder-only — it never blocks the write and never reads
   anything beyond the content Claude just wrote. Detection is deliberately conservative
@@ -270,7 +270,7 @@ $ claude
   placeholders are ignored, and `*.example`/`*.sample`/`*.template`/`fnox.toml`/lockfiles are
   skipped. It fires at write time (before `gitleaks` would at commit) and points at the
   `env-to-fnox` skill. Fires once per session, tracked via a marker under
-  `${TMPDIR:-/tmp}/dev-hooks-secrets/`. Silence it with `DEV_HOOKS_SECRETS=false` (in
+  `~/.local/state/dev-hooks/secrets/`. Silence it with `DEV_HOOKS_SECRETS=false` (in
   `.claude/settings.local.json` `"env"`).
 - `ci-action-ref-reminder.sh` is reminder-only — it never hits the network. It fires when
   Claude writes a `*.yml`/`*.yaml` that pins a remote action (`uses: owner/repo@ref`), points
@@ -282,7 +282,7 @@ $ claude
   to) / `FAIL` (missing tag, or a SHA that doesn't match its comment) / `PIN` (a SHA with no
   version comment) / `SKIP` (remote unreachable — never a failure), so offline runs don't
   false-alarm; you can also run it directly over a workflow or `.github/workflows`. Fires once
-  per session per file (marker under `${TMPDIR:-/tmp}/dev-hooks-ci-action-refs/`). Silence it
+  per session per file (marker under `~/.local/state/dev-hooks/ci-action-refs/`). Silence it
   with `DEV_HOOKS_CI_ACTION_REFS=false`
   (in `.claude/settings.local.json` `"env"`).
 - `inline-svg-reminder.sh` is the one **enforcing** PostToolUse hook: the write still lands,

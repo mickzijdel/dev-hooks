@@ -48,6 +48,14 @@ def _mise_trusts_real_home(monkeypatch):
         )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_hook_state(monkeypatch, tmp_path_factory, _mise_trusts_real_home):
+    """The hooks keep per-session state under $XDG_STATE_HOME so it survives a reboot; give
+    each test its own, outside tmp_path (a state dir inside a test's git repo would show in
+    its porcelain). Runs after the mise fixture, which reads the real XDG_STATE_HOME."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))
+
+
 DEV_HOOKS = ROOT / "plugins" / "dev-hooks"
 ONBOARDING = ROOT / "plugins" / "coding-onboarding"
 WRITING = ROOT / "plugins" / "writing"
