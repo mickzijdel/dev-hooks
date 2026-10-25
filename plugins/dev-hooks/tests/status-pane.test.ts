@@ -1,6 +1,18 @@
 import { expect, test } from 'claude-code/testing'
 
-import { endsOnQuestion, findBrief, parseCommits, parseEndReport } from '../hooks/status-pane'
+import {
+  capped,
+  EMPTY_PANE_STATE,
+  endsOnQuestion,
+  findBrief,
+  isTypedPrompt,
+  isWorkTurn,
+  paneView,
+  parseCommits,
+  parseEndReport,
+  sinceLabel,
+} from '../hooks/status-pane'
+import type { BackgroundItem, EndReport, StatusPaneState, TurnRecord } from '../hooks/status-pane'
 
 const empty = { doneWhen: [], changed: [], notChecked: [], yourMove: [] }
 
@@ -78,4 +90,146 @@ test('parseCommits reads git commit output, root commits too', async () => {
 test('endsOnQuestion reads the last non-blank line', async () => {
   expect(endsOnQuestion('Ok.\n\n**Shall I push?**\n')).toBe(true)
   expect(endsOnQuestion('Is it?\n\nDone.')).toBe(false)
+})
+
+// ── The view ─────────────────────────────────────────────────────────────────────────
+const T0 = Date.UTC(2026, 9, 25, 8, 53)
+const NOW = T0 + 10 * 60_000
+const report = (over: Partial<EndReport> = {}): EndReport => ({ ...empty, ...over })
+const turn = (over: Partial<TurnRecord> = {}): TurnRecord => ({
+  id: 't',
+  startedAt: T0,
+  typed: true,
+  endedAt: T0 + 60_000,
+  end: 'answer',
+  calls: 1,
+  edits: 0,
+  answer: 'ok',
+  report: null,
+  ...over,
+})
+const state = (turns: TurnRecord[], over: Partial<StatusPaneState> = {}): StatusPaneState => ({
+  ...EMPTY_PANE_STATE(T0),
+  turns,
+  turnsTotal: turns.length,
+  ...over,
+})
+const CI: BackgroundItem = { label: 'CI dev-hooks@6fb8925', since: T0 + 2 * 60_000 }
+const view = (s: StatusPaneState, extra: BackgroundItem[] = []) => paneView(s, extra, NOW)
+
+test('each state the spec names, with its tone', async () => {
+  const cases: [TurnRecord[], Partial<StatusPaneState>, string, string][] = [
+    [[turn({ end: 'error' })], {}, 'stopped', 'red'],
+    [[turn({ report: report({ yourMove: ['push'] }) })], {}, 'waiting', 'yellow'],
+    [[turn({ report: report({ status: 'Blocked on the API key' }) })], {}, 'waiting', 'yellow'],
+    [[turn({ answer: 'Shall I push?' })], {}, 'waiting', 'yellow'],
+    [[turn({ edits: 1, answer: 'I fixed it.' })], {}, 'no-report', 'yellow'],
+    [[turn({ endedAt: undefined, end: undefined })], {}, 'working', 'blue'],
+    [[turn({ report: report() })], { background: [CI] }, 'running', 'blue'],
+    [[turn({ report: report() })], {}, 'done', 'green'],
+    [[turn({ answer: 'Here you go.' })], {}, 'replied', 'dim'],
+    [[turn({ end: 'aborted' })], {}, 'interrupted', 'dim'],
+    [[], {}, 'no-turns', 'dim'],
+  ]
+  for (const [turns, over, name, tone] of cases) {
+    const v = view(state(turns, over))
+    expect([name, v.state, v.tone]).toEqual([name, name, tone])
+  }
+})
+
+test('a question with no report asks you to answer it', async () => {
+  expect(view(state([turn({ answer: 'Shall I push?' })])).yourMove).toEqual(['answer the question in the chat'])
+})
+
+test("a later turn's nothing keeps an earlier ask", async () => {
+  const v = view(
+    state([turn({ report: report({ yourMove: ['push'] }) }), turn({ id: 'n', typed: false, report: report() })]),
+  )
+  expect([v.state, v.yourMove]).toEqual(['waiting', ['push']])
+})
+
+test('a typed prompt starts over', async () => {
+  const v = view(state([turn({ report: report({ yourMove: ['push'] }) }), turn({ id: 'b', report: report() })]))
+  expect([v.state, v.yourMove]).toEqual(['done', []])
+})
+
+test('background work running under an ask shows the ask, with the work listed', async () => {
+  const v = view(state([turn({ report: report({ yourMove: ['push'] }) })], { background: [CI] }))
+  expect(v.state).toBe('waiting')
+  expect(v.running).toEqual(['CI dev-hooks@6fb8925 (8 min)'])
+})
+
+test('a live CI watch counts as running work', async () => {
+  expect(view(state([turn({ report: report() })]), [CI]).state).toBe('running')
+})
+
+test('a summary stands in for a missing report', async () => {
+  const t = turn({ edits: 1, answer: 'x', summary: report({ yourMove: ['merge'] }) })
+  expect(view(state([t])).yourMove).toEqual(['merge'])
+  expect(view(state([turn({ edits: 1, answer: 'x' })])).canSummarize).toBe(true)
+  expect(view(state([t])).canSummarize).toBe(false)
+})
+
+test('Changed, Not checked and the last thing said come from the latest turn', async () => {
+  const v = view(
+    state([
+      turn({ report: report({ changed: ['old'], notChecked: ['old'] }) }),
+      turn({ id: 'b', typed: false, report: report({ changed: ['a', 'b'], notChecked: ['gui'] }) }),
+    ]),
+  )
+  expect([v.changed, v.notChecked]).toEqual([['a', 'b'], ['gui']])
+  expect(view(state([turn({ edits: 1, answer: 'I fixed it.\nMore.' })])).lastSaid).toBe('I fixed it.')
+})
+
+test('repo lines say how many commits and whether they were pushed', async () => {
+  const repos = [
+    { repo: 'dev-hooks', commits: 3, lastCommitAt: T0, lastPushAt: T0 + 1 },
+    { repo: 'claude-config', commits: 1, lastCommitAt: T0 },
+  ]
+  expect(view(state([turn({ report: report() })], { repos })).repoLines).toEqual([
+    'dev-hooks: 3 commits, pushed',
+    'claude-config: 1 commit, not pushed',
+  ])
+})
+
+test('Done when ticks by position only when the counts match', async () => {
+  const brief = { doing: 'x', doneWhen: ['a', 'b', 'c'] }
+  const ticked = view(state([turn({ report: report({ doneWhen: ['met: a', 'met: b', 'not met: c'] }) })], { brief }))
+  expect(ticked.doneWhen.map(d => d.met)).toEqual([true, true, false])
+  const loose = view(state([turn({ report: report({ doneWhen: ['all met'] }) })], { brief }))
+  expect(loose.doneWhen.map(d => d.met)).toEqual([null, null, null])
+  expect(loose.doneWhenNote).toBe('all met')
+  const working = view(state([turn({ endedAt: undefined, end: undefined })], { brief }))
+  expect(working.doneWhen.map(d => d.met)).toEqual([null, null, null])
+  expect(working.doing).toBe('x')
+})
+
+test('lists are capped with a "+N more" row', async () => {
+  expect(capped(['a', 'b', 'c', 'd', 'e', 'f'], 5)).toEqual(['a', 'b', 'c', 'd', '+2 more'])
+  expect(capped(['a', 'b'], 5)).toEqual(['a', 'b'])
+  const many = view(state([turn({ report: report({ yourMove: ['1', '2', '3', '4', '5', '6', '7'] }) })]))
+  expect(many.yourMove).toEqual(['1', '2', '3', '4', '+3 more'])
+})
+
+test('since reads as a clock time and an age', async () => {
+  expect(sinceLabel(T0, T0 + 12 * 60_000, 'UTC')).toBe('since 08:53 (12 min)')
+  expect(sinceLabel(T0, T0 + 20_000, 'UTC')).toBe('since 08:53 (just now)')
+  expect(sinceLabel(T0, T0 + 65 * 60_000, 'UTC')).toBe('since 08:53 (1 h 5 min)')
+})
+
+test('a typed prompt is one the person wrote, not a notification', async () => {
+  expect(['push!', '', '<task-notification>x', '[dev-hooks CI watch] x', '<agent-message from="a">'].map(isTypedPrompt)).toEqual(
+    [true, false, false, false, false],
+  )
+})
+
+test('a work turn edited a file or made 10 tool calls', async () => {
+  expect([turn({ edits: 1 }), turn({ calls: 10 }), turn({ calls: 9 })].map(isWorkTurn)).toEqual([true, true, false])
+})
+
+test('Stopped names the stopped turn, even when a later turn ran', async () => {
+  expect(view(state([turn({ end: 'refusal' }), turn({ id: 'n', typed: false, report: report() })])).label).toBe(
+    'Stopped: refused',
+  )
+  expect(view(state([turn({ end: 'error' })])).label).toBe('Stopped: API error')
 })

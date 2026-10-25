@@ -108,3 +108,204 @@ export const endsOnQuestion = (text: string): boolean => {
   const last = text.trim().split('\n').at(-1) ?? ''
   return last.replace(/[*_`>\s]+$/, '').endsWith('?')
 }
+
+// ── The view ─────────────────────────────────────────────────────────────────────────
+
+export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
+export type TurnRecord = {
+  id: string
+  startedAt: number
+  // Started by a prompt the person typed: it opens the window of turns the pane reads.
+  typed: boolean
+  endedAt?: number
+  end?: TurnEnd
+  calls: number
+  edits: number
+  answer?: string
+  report?: EndReport | null
+  summary?: EndReport
+  summarizing?: boolean
+  summaryError?: string
+}
+export type RepoCommits = { repo: string; commits: number; lastCommitAt: number; lastPushAt?: number }
+export type BackgroundItem = { label: string; since: number }
+export type StatusPaneState = {
+  turns: TurnRecord[]
+  turnsTotal: number
+  brief: Brief | null
+  repos: RepoCommits[]
+  background: BackgroundItem[]
+  startedAt: number
+}
+
+export const EMPTY_PANE_STATE = (now: number): StatusPaneState => ({
+  turns: [],
+  turnsTotal: 0,
+  brief: null,
+  repos: [],
+  background: [],
+  startedAt: now,
+})
+
+export type PaneStateName =
+  | 'stopped'
+  | 'waiting'
+  | 'no-report'
+  | 'working'
+  | 'running'
+  | 'done'
+  | 'replied'
+  | 'interrupted'
+  | 'no-turns'
+export type PaneTone = 'red' | 'yellow' | 'blue' | 'green' | 'dim'
+export type PaneView = {
+  state: PaneStateName
+  tone: PaneTone
+  label: string
+  since: number
+  yourMove: string[]
+  doing?: string
+  doneWhen: { text: string; met: boolean | null }[]
+  doneWhenNote?: string
+  running: string[]
+  changed: string[]
+  repoLines: string[]
+  notChecked: string[]
+  lastSaid?: string
+  canSummarize: boolean
+  summarizing: boolean
+  summaryError?: string
+  turnCount: number
+}
+
+// Highest first: the pane shows the worst state any turn since the last typed prompt is in.
+const ORDER: PaneStateName[] = [
+  'stopped',
+  'waiting',
+  'no-report',
+  'working',
+  'running',
+  'done',
+  'replied',
+  'interrupted',
+  'no-turns',
+]
+const TONE: Record<PaneStateName, PaneTone> = {
+  stopped: 'red',
+  waiting: 'yellow',
+  'no-report': 'yellow',
+  working: 'blue',
+  running: 'blue',
+  done: 'green',
+  replied: 'dim',
+  interrupted: 'dim',
+  'no-turns': 'dim',
+}
+const LABEL: Record<PaneStateName, string> = {
+  stopped: 'Stopped',
+  waiting: 'Waiting on you',
+  'no-report': 'Turn ended, no end report',
+  working: 'Working',
+  running: 'Running',
+  done: 'Done',
+  replied: 'Replied',
+  interrupted: 'Interrupted',
+  'no-turns': 'No turns yet',
+}
+const CAPS = { yourMove: 5, changed: 4, running: 4, notChecked: 2 }
+const QUESTION_MOVE = 'answer the question in the chat'
+const NOT_TYPED = /^\s*(?:<task-notification>|<agent-message|<system-reminder>|\[dev-hooks CI watch\])/
+
+export const isTypedPrompt = (text: string): boolean => text.trim() !== '' && !NOT_TYPED.test(text)
+
+// end-report-reminder's rule for a turn that owes a report.
+export const isWorkTurn = (t: TurnRecord): boolean => t.edits > 0 || t.calls >= 10
+
+export const capped = (items: string[], cap: number): string[] =>
+  items.length <= cap ? items : [...items.slice(0, cap - 1), `+${items.length - cap + 1} more`]
+
+const age = (ms: number): string => {
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+export const clockTime = (at: number, tz?: string): string =>
+  new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).format(at)
+
+export const sinceLabel = (at: number, now: number, tz?: string): string => `since ${clockTime(at, tz)} (${age(now - at)})`
+
+const reportOf = (t: TurnRecord) => t.summary ?? t.report ?? null
+
+const classify = (t: TurnRecord): PaneStateName => {
+  if (t.endedAt === undefined) return 'working'
+  if (t.end === 'error' || t.end === 'refusal') return 'stopped'
+  if (t.end === 'aborted') return 'interrupted'
+  const r = reportOf(t)
+  if (r) return r.yourMove.length > 0 || /^blocked/i.test(r.status ?? '') ? 'waiting' : 'done'
+  if (isWorkTurn(t)) return 'no-report'
+  return endsOnQuestion(t.answer ?? '') ? 'waiting' : 'replied'
+}
+
+const NOT_MET = /not met|\bno\b|✗/i
+const MET = /\bmet\b|\bdone\b|\byes\b|✓/i
+const verdict = (item: string): boolean | null => (NOT_MET.test(item) ? false : MET.test(item) ? true : null)
+
+export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now: number): PaneView => {
+  const lastTyped = s.turns.map(t => t.typed).lastIndexOf(true)
+  const window = s.turns.slice(Math.max(lastTyped, 0))
+  const background = [...s.background, ...extraRunning]
+  const classes = window.map(classify)
+  if (background.length > 0) classes.push('running')
+  const state = ORDER.find(name => classes.includes(name)) ?? 'no-turns'
+  const reports = window.map(reportOf).filter((r): r is EndReport => r !== null)
+  const latest = reports.at(-1)
+  const lastTurn = window.at(-1)
+  const open = window.find(t => t.endedAt === undefined)
+
+  const moves = window.flatMap(t => {
+    const r = reportOf(t)
+    if (r) return r.yourMove
+    return classify(t) === 'waiting' ? [QUESTION_MOVE] : []
+  })
+  const criteria = s.brief?.doneWhen ?? []
+  const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []
+  const ticked = verdicts.length > 0 && verdicts.every(v => v !== null)
+  const noReport = window.findLast(t => classify(t) === 'no-report')
+
+  return {
+    state,
+    tone: TONE[state],
+    label:
+      state !== 'stopped'
+        ? LABEL[state]
+        : window.findLast(t => classify(t) === 'stopped')?.end === 'refusal'
+          ? 'Stopped: refused'
+          : 'Stopped: API error',
+    since: open?.startedAt ?? lastTurn?.endedAt ?? s.startedAt,
+    yourMove: capped([...new Set(moves)], CAPS.yourMove),
+    ...(s.brief ? { doing: s.brief.doing } : {}),
+    doneWhen: criteria.map((text, i) => ({ text, met: ticked ? (verdicts[i] ?? null) : null })),
+    ...(!open && !ticked && latest && latest.doneWhen.length > 0 && criteria.length > 0
+      ? { doneWhenNote: latest.doneWhen.join('; ') }
+      : {}),
+    running: capped(
+      background.map(b => `${b.label} (${age(now - b.since)})`),
+      CAPS.running,
+    ),
+    changed: capped(latest?.changed ?? [], CAPS.changed),
+    repoLines: s.repos.map(
+      r =>
+        `${r.repo}: ${r.commits} commit${r.commits === 1 ? '' : 's'}, ${
+          (r.lastPushAt ?? 0) >= r.lastCommitAt ? 'pushed' : 'not pushed'
+        }`,
+    ),
+    notChecked: capped(latest?.notChecked ?? [], CAPS.notChecked),
+    ...(lastTurn?.answer && !reportOf(lastTurn) ? { lastSaid: lastTurn.answer.trim().split('\n')[0] } : {}),
+    canSummarize: noReport !== undefined && !noReport.summarizing,
+    summarizing: noReport?.summarizing === true,
+    ...(noReport?.summaryError ? { summaryError: noReport.summaryError } : {}),
+    turnCount: s.turnsTotal,
+  }
+}
