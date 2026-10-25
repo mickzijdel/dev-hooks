@@ -276,7 +276,8 @@ cadence, with the dev-env twists below:
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"   # or: fleet_roster.sh ROOT ...
    ```
    It prints one line per `DEV_ENV_VERSION`-stamped repo — path, `version`, `branch`, `dirty`,
-   `behind` — plus a summary. **Show the user the roster and confirm the target set before
+   `behind`, and `origin_version` read after a fetch — plus a summary. `pull=1` means origin is
+   already ahead of the checkout: pull it and re-read the stamp before briefing any upgrade. **Show the user the roster and confirm the target set before
    touching anything.** To retire an abandoned repo (or a fork you don't own) from discovery
    without touching the repo itself, add its basename to
    `references/fleet-ignore.txt` — the roster skips listed names.

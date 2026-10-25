@@ -13,7 +13,12 @@
 #     repo=<abs path>  name=<basename>  version=<repo's DEV_ENV_VERSION>
 #     branch=<checked-out branch, "" if detached/not git>
 #     dirty=<1 if uncommitted changes>  behind=<1 if version < current_version>
-#   a "# fleet: N repo(s), N behind, N dirty" summary line.
+#     origin_version=<the upstream branch's DEV_ENV_VERSION, after a fetch; "" without one>
+#     pull=<1 if origin_version > version: pull before upgrading, the work may be done>
+#   a "# fleet: N repo(s), N behind, N dirty, N to pull" summary line.
+#
+# Each repo's upstream remote is fetched (non-interactive, 20s cap); offline, the last-fetched
+# ref is read instead.
 #
 # Scan depth is 2 (ROOT itself may be a repo, or a directory of repos); worktree
 # checkouts (.worktrees/, .claude/worktrees/), node_modules, and .git are pruned.
@@ -39,26 +44,44 @@ IGNORE_FILE="$SELF_DIR/../references/fleet-ignore.txt"
 ignored=""
 [ -f "$IGNORE_FILE" ] && ignored="$(sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' "$IGNORE_FILE" | grep -v '^$')"
 
+# DEV_ENV_VERSION's digits from the mise.toml on stdin.
+stamp() { grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' | head -n1 | tr -dc '0-9'; }
+
+bounded() {
+  if command -v timeout >/dev/null 2>&1; then timeout 20 "$@"; else "$@"; fi
+}
+
 total=0
 behind_total=0
 dirty_total=0
+pull_total=0
 while IFS= read -r mise_file; do
   grep -Eq '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$mise_file" || continue
   repo="$(cd "$(dirname "$mise_file")" && pwd)"
   name="$(basename "$repo")"
   printf '%s\n' "$ignored" | grep -Fxq "$name" && continue
-  version="$(grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$mise_file" | head -n1 | tr -dc '0-9')"
+  version="$(stamp <"$mise_file")"
   [ -z "$version" ] && version=0
   branch="$(git -C "$repo" symbolic-ref --short -q HEAD 2>/dev/null || true)"
   dirty=0
   [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ] && dirty=1
   behind=0
   [ "$version" -lt "$current_version" ] && behind=1
-  printf 'repo=%s\tname=%s\tversion=%s\tbranch=%s\tdirty=%s\tbehind=%s\n' \
-    "$repo" "$name" "$version" "$branch" "$dirty" "$behind"
+  # A checkout that never pulled reads an old stamp while origin already carries the upgrade.
+  origin_version=""
+  pull=0
+  upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  if [ -n "$upstream" ]; then
+    GIT_TERMINAL_PROMPT=0 bounded git -C "$repo" fetch --quiet "${upstream%%/*}" >/dev/null 2>&1 || true
+    origin_version="$(git -C "$repo" show "$upstream:mise.toml" 2>/dev/null | stamp)"
+    [ -n "$origin_version" ] && [ "$origin_version" -gt "$version" ] && pull=1
+  fi
+  printf 'repo=%s\tname=%s\tversion=%s\tbranch=%s\tdirty=%s\tbehind=%s\torigin_version=%s\tpull=%s\n' \
+    "$repo" "$name" "$version" "$branch" "$dirty" "$behind" "$origin_version" "$pull"
   total=$((total + 1))
   behind_total=$((behind_total + behind))
   dirty_total=$((dirty_total + dirty))
+  pull_total=$((pull_total + pull))
 done < <(
   for root in "${ROOTS[@]}"; do
     [ -d "$root" ] || continue
@@ -68,5 +91,5 @@ done < <(
   done | sort -u
 )
 
-echo "# fleet: $total repo(s), $behind_total behind, $dirty_total dirty"
+echo "# fleet: $total repo(s), $behind_total behind, $dirty_total dirty, $pull_total to pull"
 exit 0

@@ -774,6 +774,42 @@ def test_roster_multiple_roots_and_missing_root(tmp_path):
     assert "# fleet: 2 repo(s)" in stdout
 
 
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def test_roster_reads_origin_stamp_a_stale_checkout_has_not_pulled(tmp_path):
+    # 2026-10-22: two checkouts that never pulled read v23/v24 while origin carried v27, so
+    # agents were briefed for upgrades already done. The roster fetches and reads origin too.
+    make_fleet_repo(tmp_path / "seed", 23)
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "clone", "-q", "--bare", "seed", str(origin))
+    fleet = tmp_path / "fleet"
+    fleet.mkdir()
+    _git(fleet, "clone", "-q", str(origin), "stale")
+    _git(fleet, "clone", "-q", str(origin), "current")
+    other = tmp_path / "other-machine"
+    _git(tmp_path, "clone", "-q", str(origin), str(other))
+    (other / "mise.toml").write_text('[env]\nDEV_ENV_VERSION = "27"\n')
+    _git(other, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "v27")
+    _git(other, "push", "-q")
+    _git(fleet / "current", "pull", "-q")
+    repos, stdout = run_roster(fleet)
+    assert (repos["stale"]["version"], repos["stale"]["origin_version"]) == ("23", "27")
+    assert repos["stale"]["pull"] == "1"
+    assert (repos["current"]["origin_version"], repos["current"]["pull"]) == ("27", "0")
+    assert "1 to pull" in stdout
+
+
+def test_roster_without_a_remote_leaves_origin_version_empty(tmp_path):
+    make_fleet_repo(tmp_path / "local-only", 5)
+    repos, _ = run_roster(tmp_path)
+    assert (repos["local-only"]["origin_version"], repos["local-only"]["pull"]) == (
+        "",
+        "0",
+    )
+
+
 def test_roster_skips_repos_in_fleet_ignore(tmp_path):
     """A repo whose basename is listed in references/fleet-ignore.txt (an abandoned repo, a
     fork you don't own) is dropped from discovery even though it carries a DEV_ENV_VERSION
