@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ago, formatFacts } from '../hooks/register'
+import { ago, formatFacts, mergeBlocks } from '../hooks/register'
 import type { Facts } from '../types'
 
 const NOW = 1_791_015_800_000
@@ -107,4 +107,32 @@ test('formatFacts lists this session\'s Stop nudges with their outcome once one 
   expect(lines).toContain('Stop nudges (2)')
   expect(lines).toContain('  5m ago   review-reminder · acted (skill code-review)')
   expect(lines).toContain('  1m ago   memory-reminder · pending')
+})
+
+test('formatFacts shows every reason a merged Stop block carried, without the footer', async () => {
+  const facts: Facts = {
+    updatedAt: NOW,
+    skills: [],
+    agents: [],
+    repos: [],
+    stops: [
+      {
+        at: NOW - 2 * MIN,
+        block:
+          mergeBlocks('[other-plugin] Beneath the module.', [
+            'Verification failed. Fix these before finishing:\nFAILED tests/a.py',
+            '[review-reminder] You changed code this session.\nRun a review.',
+          ]) ?? null,
+      },
+    ],
+  }
+
+  const lines = formatFacts(facts, NOW, '/home/u').split('\n')
+  const start = lines.indexOf('Stops (1, 1 blocked)')
+  expect(lines.slice(start + 1, start + 5)).toEqual([
+    '  2m ago   [other-plugin] Beneath the module.',
+    '           Verification failed. Fix these before finishing:',
+    '           [review-reminder] You changed code this session.',
+    '',
+  ])
 })

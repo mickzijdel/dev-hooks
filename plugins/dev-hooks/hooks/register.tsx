@@ -194,6 +194,13 @@ export const formatFacts = (f: Facts, now: number, home: string): string => {
     ]
   })
   const blocked = f.stops.filter(s => s.block !== null)
+  // A merged block is its reasons joined by blank lines, then the footer: one line for each.
+  const reasons = (block: string) =>
+    block
+      .replace(END_REPORT_FOOTER, '')
+      .split(/\n\s*\n/)
+      .map(part => part.trim().split('\n')[0] ?? '')
+      .filter(Boolean)
 
   const lines = [
     f.updatedAt ? `Session facts · updated ${ago(f.updatedAt, now)}` : 'Session facts · nothing recorded yet',
@@ -209,7 +216,9 @@ export const formatFacts = (f: Facts, now: number, home: string): string => {
       ? ['Stops: none']
       : [
           `Stops (${f.stops.length}, ${blocked.length || 'none'} blocked)`,
-          ...blocked.map(s => `  ${when(s.at)} ${(s.block ?? '').split('\n')[0]}`),
+          ...blocked.flatMap(s =>
+            reasons(s.block ?? '').map((r, i) => `  ${i === 0 ? when(s.at) : ' '.repeat(8)} ${r}`),
+          ),
         ]),
     ...nudgeSection(f.nudges ?? [], when),
   ]
