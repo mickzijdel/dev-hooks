@@ -194,13 +194,13 @@
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/change-summary-reminder.sh\"",
-            "statusMessage": "Checking for a per-file change summary..."
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
+            "statusMessage": "Checking for reusable one-off scripts to save..."
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
-            "statusMessage": "Checking for reusable one-off scripts to save..."
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/end-report-reminder.sh\"",
+            "statusMessage": "Checking the last message has the end report..."
           }
         ]
       }

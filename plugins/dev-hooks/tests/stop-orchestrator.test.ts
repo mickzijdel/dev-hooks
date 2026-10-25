@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { mergeBlocks, STOP_CAPPED_MARK, stopCapped, stopHooks, stopReason } from '../hooks/register'
+import { END_REPORT_FOOTER, mergeBlocks, STOP_CAPPED_MARK, stopCapped, stopHooks, stopReason } from '../hooks/register'
 
 const ran = (exitCode: number, stdout = '', stderr = '') => ({ exitCode, stdout, stderr })
 
@@ -52,11 +52,18 @@ test('stopReason treats silence, other JSON, plain text and errors as no block',
   expect(stopReason(ran(2, '', '   '))).toBeNull()
 })
 
-test('mergeBlocks joins the reasons into one block after any block from beneath', async () => {
+test('mergeBlocks joins the reasons into one block after any block from beneath, closed by the footer once', async () => {
+  const F = END_REPORT_FOOTER
   expect(mergeBlocks(undefined, [])).toBeUndefined()
   expect(mergeBlocks('voice', [])).toBe('voice')
-  expect(mergeBlocks(undefined, ['a', 'b'])).toBe('a\n\nb')
-  expect(mergeBlocks('voice', ['a'])).toBe('voice\n\na')
+  expect(mergeBlocks(`voice\n\n${F}`, [])).toBe(`voice\n\n${F}`)
+  expect(mergeBlocks(undefined, ['a', 'b'])).toBe(`a\n\nb\n\n${F}`)
+  expect(mergeBlocks('voice', ['a'])).toBe(`voice\n\na\n\n${F}`)
+  expect(mergeBlocks(`voice\n\n${F}`, ['a'])).toBe(`voice\n\na\n\n${F}`)
+})
+
+test('mergeBlocks leaves the footer out of a headless run', async () => {
+  expect(mergeBlocks('voice', ['a'], false)).toBe('voice\n\na')
 })
 
 test('stopCapped reads the block-cap marker from a silent run only', async () => {
