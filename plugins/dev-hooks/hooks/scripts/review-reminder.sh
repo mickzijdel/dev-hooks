@@ -73,7 +73,9 @@ else
   # review still gets to stop) once the session has written a substantial amount of code.
   MAX_NUDGES=1
   [ "$COUNT" -ge "$SUBSTANTIAL" ] && MAX_NUDGES=3
-  reminder_state_file review-nudges
+  # Per repo, as the baselines are: the main checkout and each worktree get their own budget.
+  _reminder_repo_key
+  reminder_state_file review-nudges "$REPLY"
   NUDGES=$(cat "$REPLY" 2>/dev/null)
   case "$NUDGES" in *[!0-9]* | "") NUDGES=0 ;; esac
   [ "$NUDGES" -ge "$MAX_NUDGES" ] && exit 0

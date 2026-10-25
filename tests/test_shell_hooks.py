@@ -1814,6 +1814,20 @@ def test_review_reminder_nudges_small_change_only_once(tmp_path):
     assert stop_allowed(_run_review(tmp_path, payload))
 
 
+def test_review_reminder_nudge_budget_is_per_repo(tmp_path):
+    # One session stops in the main checkout and in its worktrees; spending the budget in
+    # one must not silence the others, as the re-arm baselines already don't.
+    payload = _review_payload(tmp_path)
+    repos = [tmp_path / "main", tmp_path / "worktree"]
+    for repo in repos:
+        repo.mkdir()
+        init_git_repo(repo)
+        (repo / "tiny.py").write_text("x = 1\n")
+    assert stop_blocked(_run_review(repos[0], payload))
+    assert stop_allowed(_run_review(repos[0], payload))
+    assert stop_blocked(_run_review(repos[1], payload))
+
+
 def test_review_reminder_refires_when_code_grows_after_review(tmp_path):
     # A review that ran seeds the baseline; code written afterwards makes it stale.
     init_git_repo(tmp_path)
