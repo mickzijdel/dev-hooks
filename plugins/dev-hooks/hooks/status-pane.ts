@@ -226,9 +226,15 @@ const NOT_MET = /not met|\bno\b|✗/i
 const MET = /\bmet\b|\bdone\b|\byes\b|✓/i
 const verdict = (item: string): boolean | null => (NOT_MET.test(item) ? false : MET.test(item) ? true : null)
 
+// The turns since the person last typed a prompt: what the pane reads.
+const windowOf = (s: StatusPaneState) => s.turns.slice(Math.max(s.turns.map(t => t.typed).lastIndexOf(true), 0))
+
+// The turn the Summarize button answers for: the latest that did work and left no report.
+export const noReportTurn = (s: StatusPaneState): TurnRecord | undefined =>
+  windowOf(s).findLast(t => classify(t) === 'no-report')
+
 export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now: number): PaneView => {
-  const lastTyped = s.turns.map(t => t.typed).lastIndexOf(true)
-  const window = s.turns.slice(Math.max(lastTyped, 0))
+  const window = windowOf(s)
   const background = [...s.background, ...extraRunning]
   const classes = window.map(classify)
   if (background.length > 0) classes.push('running')
@@ -246,7 +252,7 @@ export const paneView = (s: StatusPaneState, extraRunning: BackgroundItem[], now
   const criteria = s.brief?.doneWhen ?? []
   const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []
   const ticked = verdicts.length > 0 && verdicts.every(v => v !== null)
-  const noReport = window.findLast(t => classify(t) === 'no-report')
+  const noReport = noReportTurn(s)
 
   return {
     state,

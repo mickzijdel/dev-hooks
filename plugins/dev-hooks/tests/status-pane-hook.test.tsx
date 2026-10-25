@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import type { StatusPaneState } from '../types'
+import type { EndReport, StatusPaneState, TurnRecord } from '../types'
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
 const PUSHED = 'To github.com:mickzijdel/dev-hooks.git\n   1111111..762caa3  main -> main\n'
@@ -10,11 +10,16 @@ type Message = { role: 'user' | 'assistant'; text: string }
 
 // The engine beneath the module: $.state and $.store kept in memory, a session in a
 // worktree of /home/m/dev-hooks, and Bash answering `bash` for every command.
-function world(on: On, options: { pane?: unknown; messages?: Message[]; bash?: string; env?: Record<string, string> } = {}) {
+function world(
+  on: On,
+  options: { pane?: unknown; read?: () => unknown; messages?: Message[]; bash?: string; env?: Record<string, string> } = {},
+) {
   const state = new Map<string, unknown>(options.pane === undefined ? [] : [['statusPane', options.pane]])
   mock.env(on, options.env ?? {})
   const clock = mock.clock(on)
-  on('state.get', (_$, e) => ({ value: { value: state.get(e.key), version: 1 } }))
+  on('state.get', (_$, e) => ({
+    value: { value: e.key === 'statusPane' && options.read ? options.read() : state.get(e.key), version: 1 },
+  }))
   on('state.set', (_$, e) => {
     state.set(e.key, e.value)
     return { value: { isSet: true as const, version: 2 } }
@@ -118,4 +123,134 @@ test('Stop records background work, keeping a task first-seen time', async ($, o
 
   expect(first?.map(b => b.label)).toEqual(['npm test', 'wakes up: check the deploy'])
   expect(w.pane()?.background).toEqual(first)
+})
+
+// ── Drawing and opening ──────────────────────────────────────────────────────────────
+const PANE = {
+  plugin: 'dev-hooks',
+  component: 'Pane',
+  requestId: 'session-status',
+  props: {
+    title: 'Session status',
+    isFocused: false,
+    bodyColumns: 60,
+    placement: 'dock',
+    scroll: { offset: 0, bodyRows: 40 },
+    view: {},
+  },
+} as const
+const T0 = Date.UTC(2026, 9, 25, 8, 53)
+const shaped = (value: StatusPaneState) => ({ shape: 'status-pane-1', value })
+const base = (over: Partial<StatusPaneState> = {}): StatusPaneState => ({
+  turns: [],
+  turnsTotal: 0,
+  brief: null,
+  repos: [],
+  background: [],
+  startedAt: T0,
+  ...over,
+})
+const rep = (over: Partial<EndReport> = {}): EndReport => ({ doneWhen: [], changed: [], notChecked: [], yourMove: [], ...over })
+const ended = (over: Partial<TurnRecord> = {}): TurnRecord => ({
+  id: 'u1',
+  startedAt: T0,
+  typed: true,
+  endedAt: T0 + 60_000,
+  end: 'answer',
+  calls: 3,
+  edits: 1,
+  answer: 'Done.',
+  report: null,
+  ...over,
+})
+const SURFACES = ['terminal', 'vscode'] as const
+
+test('the pane draws each state on the terminal and in VS Code', async ($, on) => {
+  const cases: [StatusPaneState, RegExp][] = [
+    [base({ turns: [ended({ report: rep({ yourMove: ['push', 'merge'] }) })], turnsTotal: 1 }), /● Waiting on you/],
+    [base({ turns: [ended({ endedAt: undefined, end: undefined })], turnsTotal: 1 }), /● Working/],
+    [base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 }), /● Turn ended, no end report/],
+    [base({ turns: [ended({ report: rep() })], turnsTotal: 1 }), /● Done/],
+    [base(), /● No turns yet/],
+  ]
+  let current = base()
+  world(on, { read: () => shaped(current) })
+  for (const [pane, line] of cases) {
+    current = pane
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect([surface, (await ui.find({ type: 'Text', text: line }))?.text?.match(line)?.[0]]).toEqual([
+        surface,
+        line.source,
+      ])
+      await ui.unmount()
+    }
+  }
+})
+
+test('Your move numbers its items, and the Summarize button shows only without a report', async ($, on) => {
+  let current = base({ turns: [ended({ report: rep({ yourMove: ['push', 'merge'] }) })], turnsTotal: 1 })
+  world(on, { read: () => shaped(current) })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.find({ type: 'Text', text: /^1\. push$/ }))?.text).toBe('1. push')
+    expect(await ui.find({ key: 'summarize' })).toBeUndefined()
+    await ui.unmount()
+  }
+  current = base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await ui.find({ key: 'summarize' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('long lists end in "+N more" and a long Doing is clamped to two lines', async ($, on) => {
+  const moves = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+  const brief = { doing: 'x'.repeat(755), doneWhen: [] }
+  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: moves }) })], turnsTotal: 1, brief })) })
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.find({ type: 'Text', text: /\+3 more/ }))?.text).toBe('5. +3 more')
+  expect((await ui.find({ type: 'Text', text: /^x+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
+  await ui.unmount()
+})
+
+// What session.start reads, as stop-takeover.test.ts answers it, and every pane opened.
+function startWorld(on: On, env: Record<string, string> = {}) {
+  const opened: string[] = []
+  world(on, { env })
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('store.keys', () => ({ value: [] }))
+  on('fs.read', () => ({ value: JSON.stringify({ hooks: {} }) }))
+  on('env.set', () => ({ value: {} }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.attach', (_$, e) => ({ clientId: e.clientId }))
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
+  return opened
+}
+
+test('the pane opens by itself in VS Code, not in a terminal, and not when switched off', async ($, on) => {
+  const opened = startWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual([])
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
+  expect(opened).toEqual(['session-status'])
+})
+
+test('switched off, the pane never opens by itself', async ($, on) => {
+  const opened = startWorld(on, { DEV_HOOKS_STATUS_PANE: 'false' })
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  expect(opened).toEqual([])
+})
+
+test('a VS Code window attaching later opens it, and /session-status opens it anywhere', async ($, on) => {
+  const opened = startWorld(on)
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  expect(opened).toEqual(['session-status'])
+  const ran = await $.command.run({ command: 'session-status', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect([ran.text, opened]).toEqual(['Session status pane opened.', ['session-status', 'session-status']])
 })

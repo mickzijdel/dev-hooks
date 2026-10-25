@@ -51,7 +51,17 @@ import {
   resolvePending,
   toRecord,
 } from './nudge-outcomes'
-import { EMPTY_PANE_STATE, findBrief, isTypedPrompt, parseCommits, parseEndReport } from './status-pane'
+import {
+  clockTime,
+  EMPTY_PANE_STATE,
+  findBrief,
+  isTypedPrompt,
+  noReportTurn,
+  paneView,
+  parseCommits,
+  parseEndReport,
+  sinceLabel,
+} from './status-pane'
 
 const isShown = { plugin: 'dev-hooks', key: 'contextBarShown' } as const
 const snapshot = { plugin: 'dev-hooks', key: 'contextBarSnapshot' } as const
@@ -637,7 +647,8 @@ let paneQueue: Promise<unknown> = Promise.resolve()
 
 function changePane($: EngineInterface, fn: (s: StatusPaneState, now: number) => StatusPaneState): Promise<void> {
   const run = paneQueue.then(async () => {
-    const next = fn(await loadPane($), await $.clock.now())
+    const now = await $.clock.now()
+    const next = { ...fn(await loadPane($), now), updatedAt: now }
     await $.state.set(PANE_STATE, { shape: PANE_SHAPE, value: next })
   })
   paneQueue = run.catch(() => undefined)
@@ -697,6 +708,38 @@ async function recordBackground($: EngineInterface, e: StopBackground) {
     return { ...s, background: items }
   })
 }
+const STATUS_PANE = 'session-status'
+const PANE_TITLE = 'Session status'
+// shortcut: a fullscreen terminal docks a pane too, but can't be told apart here; it
+// gets /session-status.
+const DOCKING_SURFACES = new Set(['vscode', 'desktop'])
+
+async function openPaneUnasked($: EngineInterface, surface: string | null) {
+  if (surface === null || !DOCKING_SURFACES.has(surface)) return
+  if ((await $.env.get('DEV_HOOKS_STATUS_PANE')) === 'false') return
+  void $.ui.open({ id: STATUS_PANE, title: PANE_TITLE }).catch(() => undefined)
+}
+
+const ciBackground = (): BackgroundItem[] =>
+  [...ciWatches.values()].map(w => ({ label: `CI ${w.repo.split('/').at(-1)}@${w.sha.slice(0, 7)}`, since: w.startedAt }))
+
+const SUMMARY_PROMPT =
+  'Write the end report for the turn that just ended, as plain lines and nothing else: a "Status:" line, then "Your move:" with each action for the person as a "- " bullet, or "Your move: nothing".'
+
+// The pane's one model call, made only when the person presses Summarize.
+async function summarizeTurn($: EngineInterface) {
+  const target = noReportTurn(await loadPane($))?.id
+  if (target === undefined) return
+  const mark = (fn: (t: TurnRecord) => TurnRecord) =>
+    changePane($, s => ({ ...s, turns: s.turns.map(t => (t.id === target ? fn(t) : t)) }))
+  await mark(t => ({ ...t, summarizing: true, summaryError: undefined }))
+  const answer = await $.model.fork({ prompt: SUMMARY_PROMPT }).catch(() => null)
+  const summary = answer?.isAnswered ? parseEndReport(answer.text) : null
+  const failed = answer === null ? 'the call failed' : answer.isAnswered ? 'the answer held no end report' : answer.reason
+  await mark(t => ({ ...t, summarizing: false, ...(summary ? { summary } : { summaryError: failed }) }))
+}
+
+const clamp = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 // ── end session-status pane ─────────────────────────────────────────────────────────
 
 async function guardNow($: EngineInterface): Promise<number> {
@@ -719,6 +762,11 @@ export const register: Register = on => {
       name: 'session-facts',
       description: 'Show what dev-hooks recorded about this session (nudges: Stop-nudge outcomes)',
     })
+    await $.command.register({
+      name: STATUS_PANE,
+      description: 'Show where this session stands: what it needs from you, what runs, what changed',
+    })
+    await openPaneUnasked($, e.surface)
     const kept = await pruneFacts($)
     await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
@@ -848,6 +896,84 @@ export const register: Register = on => {
     })
 
     return ran
+  })
+
+  on('session.attach', async ($, e, next) => {
+    await openPaneUnasked($, e.surface)
+
+    return next(e)
+  })
+
+  on('command.run', { command: STATUS_PANE }, async $ => {
+    await $.ui.open({ id: STATUS_PANE, title: PANE_TITLE })
+
+    return { text: 'Session status pane opened.' }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: STATUS_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const s = await loadPane($)
+    const now = await $.clock.now()
+    const v = paneView(s, ciBackground(), now)
+    const width = Math.max(20, e.props.bodyColumns)
+    const section = (title: string, rows: string[], dim = false) => (
+      <Box flexDirection="column" marginTop={1}>
+        <Text dimColor>{title}</Text>
+        {rows.map(row => (
+          <Text dimColor={dim}>{row}</Text>
+        ))}
+      </Box>
+    )
+    const moves =
+      v.yourMove.length === 0 ? ['nothing'] : v.yourMove.length === 1 ? v.yourMove : v.yourMove.map((m, i) => `${i + 1}. ${m}`)
+    const parts = [
+      <Text dimColor>{`updated ${clockTime(s.updatedAt ?? s.startedAt)}`}</Text>,
+      <Box>
+        {v.tone === 'dim' ? <Text dimColor>{`● ${v.label}`}</Text> : <Text color={v.tone} bold>{`● ${v.label}`}</Text>}
+        <Text dimColor>{` · ${sinceLabel(v.since, now)}`}</Text>
+      </Box>,
+      ...(v.lastSaid ? [<Text dimColor>{`last said: "${clamp(v.lastSaid, width - 13)}"`}</Text>] : []),
+      ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => void summarizeTurn($)} />] : []),
+      ...(v.summarizing ? [<Text dimColor>Summarizing…</Text>] : []),
+      ...(v.summaryError ? [<Text color="red">{`summary failed: ${v.summaryError}`}</Text>] : []),
+      section('Your move', moves, v.yourMove.length === 0),
+      ...(v.doing ? [section('Doing', [clamp(v.doing, 2 * width)])] : []),
+      ...(v.doneWhen.length > 0
+        ? [
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>Done when</Text>
+              {v.doneWhen.map(d =>
+                d.met === null ? (
+                  <Text dimColor>{`○ ${d.text}`}</Text>
+                ) : (
+                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${d.text}`}</Text>
+                ),
+              )}
+              {v.doneWhenNote ? <Text dimColor>{`report: ${clamp(v.doneWhenNote, 2 * width)}`}</Text> : <Text> </Text>}
+            </Box>,
+          ]
+        : []),
+      ...(v.running.length > 0 ? [section('Running', v.running)] : []),
+      ...(v.changed.length + v.repoLines.length > 0
+        ? [
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>Changed</Text>
+              {v.changed.map(row => (
+                <Text>{row}</Text>
+              ))}
+              {v.repoLines.map(row => (
+                <Text dimColor>{row}</Text>
+              ))}
+            </Box>,
+          ]
+        : []),
+      ...(v.notChecked.length > 0 ? [section('Not checked', v.notChecked, true)] : []),
+      <Box marginTop={1}>
+        <Text dimColor>{`${v.turnCount} turn${v.turnCount === 1 ? '' : 's'} · session ${sinceLabel(s.startedAt, now)}`}</Text>
+      </Box>,
+    ]
+
+    return <Box flexDirection="column">{parts}</Box>
   })
 
   on('turn.start', async ($, e, next) => {

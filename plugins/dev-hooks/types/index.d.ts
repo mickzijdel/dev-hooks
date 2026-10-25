@@ -70,6 +70,8 @@ export type StatusPaneState = {
   repos: RepoCommits[]
   background: BackgroundItem[]
   startedAt: number
+  // When the record last changed: the pane shows it, so a stale pane is visible.
+  updatedAt?: number
 }
 
 
