@@ -14,7 +14,7 @@ Sources scanned:
 - `nateberkopec/dotfiles` — 6 commits 2026-10-22 to 2026-10-25 (`c3d8031` to `19ea6d8`); older ones were logged in Run 37.
 - Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-21 to 2026-10-24.
 - RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.307 to 2.1.310.
-- Unreachable (proxy 403): https://ai-automations-db.vercel.app/database.
+- Unreachable (proxy 403): https://upliftai.substack.com/feed, https://claude.dev/rss.xml, https://ai-automations-db.vercel.app/database.
 
 PRs opened this run: none.
 
@@ -37,8 +37,7 @@ No Rails-specific suggestions surfaced this run — nothing routed to `rails-too
 | Disk cleanup by agent, Remotion templates, voice dictation to Cursor, email/account audits, split AI tools by job | feed items 2026-10-23 to 2026-10-24 | Out of scope | Personal productivity; no dev-workflow surface. |
 | Mod runtime: `sed -i` now gets the standard Bash prompt; rm/rmdir deny with a rewrite hint in bypass mode; worktrees no longer fetch objects on demand; Monitor on Bedrock/Vertex/Foundry | changelog 2.1.309-2.1.310 | Out of scope | Harness behaviour changes; no change needed in the guard or `worktree-setup`. |
 | `claude_code.safety_event` OpenTelemetry event; `@claude review stop`; cloud-session admin roles; self-hosted runner checkout-hook timeout | changelog 2.1.307-2.1.310 | Out of scope | Admin/telemetry features with no plugin surface. |
-| Source unreachable | ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
-| Sources reachable this run | substack feed, claude.dev RSS | Problem | Substack feed returned no items in the window; claude.dev RSS was not fetched this run. |
+| Sources unreachable | substack feed, claude.dev RSS, ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
 
 ---
 
