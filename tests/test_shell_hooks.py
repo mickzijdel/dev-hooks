@@ -4438,6 +4438,74 @@ def test_guard_denies_catastrophic_inside_a_shell_string(command):
     assert _decision(_guard(command)) == "deny"
 
 
+# A runner hands its command to another shell or process: a container, a pod, a VM, a
+# repeating `watch`, a `script` recording. The guard follows it there as it does `ssh`.
+RUNNER_INVOCATIONS = [
+    "docker exec web gh auth token",
+    "docker exec -it -u root -e A=1 web fnox get X",
+    "docker exec web sh -c 'git credential fill'",
+    "docker container exec web gh auth token",
+    "docker compose exec -T app fnox get X",
+    "docker --context prod exec web gh auth token",
+    "podman exec web gh auth token",
+    "kubectl exec pod -- gh auth token",
+    "kubectl -n prod exec -it pod -c app -- sh -c 'fnox get X'",
+    "kubectl exec deploy/api --container app -- bws secret get abc",
+    "incus exec vm -- gh auth token",
+    "incus exec vm --env A=1 -- bash -c 'fnox get X'",
+    "lxc exec vm -- git credential fill",
+    "watch gh auth token",
+    "watch -n 5 'fnox get X'",
+    "watch -x gh auth token",
+    "script -q -c 'gh auth token' /dev/null",
+    "script -qc 'fnox get X'",
+    "script --command 'git credential fill' /tmp/log",
+]
+
+
+@pytest.mark.parametrize("command", RUNNER_INVOCATIONS)
+def test_guard_follows_commands_into_runners(command, secret_tree):
+    assert _decision(_guard_in(secret_tree, command)) == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "kubectl exec pod -- rm -rf /",
+        "watch 'rm -rf ~'",
+        "script -c 'rm -rf /'",
+        "docker exec web dd if=/dev/zero of=/dev/sda",
+    ],
+)
+def test_guard_denies_catastrophic_inside_a_runner(command):
+    assert _decision(_guard(command)) == "deny"
+
+
+RUNNER_SILENT = [
+    "docker exec web ls -la",
+    "docker exec -it web bash",
+    "docker ps",
+    "docker logs web",
+    "kubectl exec pod -- cat /etc/hostname",
+    "kubectl get pods -n prod",
+    "incus exec vm -- systemctl status nginx",
+    "watch -n 1 git status",
+    "script -q /dev/null",
+    # the runner's own stdout goes to a file, so the inner command's does too
+    "docker exec web gh auth token > /tmp/token",
+    "kubectl exec pod -- fnox get X >/dev/null",
+    # mentioning a runner is not running one
+    "rg -n 'docker exec web gh auth token' .",
+    'git commit -m "guard: follow kubectl exec -- gh auth token"',
+]
+
+
+@pytest.mark.parametrize("command", RUNNER_SILENT)
+def test_guard_silent_on_harmless_runner_commands(command, secret_tree):
+    r = _guard_in(secret_tree, command)
+    assert r.stdout.strip() == "", r.stdout
+
+
 # ── dangerous-command-guard.sh: credential probes ────────────────────────────────────
 # On 2026-10-02 a review subagent ran `git credential fill` with PATH=/usr/bin:/bin to
 # test a "gh missing" case. /usr/bin/gh, logged in, was the credential helper, so a live
@@ -4474,6 +4542,18 @@ CREDENTIAL_PROBES = [
     "cat ~/.config/gh/hosts.yml",
     "head -5 $HOME/.config/gh/hosts.yml",
     'bash -c "git credential fill"',
+    # other CLIs' token printers
+    "glab auth status -t",
+    "glab auth status --hostname gitlab.com --show-token",
+    "az account get-access-token",
+    "az account get-access-token --resource https://vault.azure.net",
+    "gcloud auth print-access-token",
+    "gcloud auth print-identity-token --audiences=https://x",
+    "gcloud auth application-default print-access-token",
+    "docker-credential-desktop get",
+    "echo https://index.docker.io/v1/ | docker-credential-pass get",
+    "/usr/local/bin/docker-credential-osxkeychain get </tmp/req",
+    "cat ~/.docker/config.json",
     # inline isolation is not trusted: a repo's own .git/config, an absolute-path
     # helper, and the desktop keyring all survive these variables.
     "HOME=$(mktemp -d) GH_CONFIG_DIR=/tmp/x GIT_CONFIG_GLOBAL=/dev/null "
@@ -4484,7 +4564,13 @@ CREDENTIAL_PROBES = [
 @pytest.fixture
 def credential_tree(secret_tree):
     repo, home = secret_tree
-    for rel in [".git-credentials", ".config/gh/hosts.yml", ".config/gh/config.yml"]:
+    for rel in [
+        ".git-credentials",
+        ".config/gh/hosts.yml",
+        ".config/gh/config.yml",
+        ".docker/config.json",
+        ".docker/daemon.json",
+    ]:
         f = home / rel
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text("x\n")
@@ -4540,6 +4626,16 @@ CREDENTIAL_SILENT = [
     'git commit -m "guard: block git credential fill"',
     # stdout discarded
     "gh auth token >/dev/null",
+    # the other CLIs' status and login, masked or credential-free
+    "glab auth status",
+    "glab auth login",
+    "az account show",
+    "az login",
+    "gcloud auth list",
+    "gcloud auth login",
+    "docker-credential-desktop list",
+    "docker-credential-pass store </tmp/cred",
+    "cat ~/.docker/daemon.json",
 ]
 
 

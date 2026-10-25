@@ -10,8 +10,10 @@
 # Quoting decides what is code: single quotes and quoted heredoc bodies are data, so
 # `rg "fnox get|bws secret get"` is one command, not two. What the shell would *run* is
 # emitted as commands of its own: $(…), `…` and <(…) (also inside double quotes and
-# unquoted heredocs), the string given to `bash -c`/`sh -c`/`eval`/`ssh host`, and a
-# heredoc body fed to a shell (`bash <<EOF`).
+# unquoted heredocs), the string given to `bash -c`/`sh -c`/`eval`/`ssh host`, a
+# heredoc body fed to a shell (`bash <<EOF`), and what a runner runs: `docker`/`podman`/
+# `kubectl`/`incus`/`lxc exec`, `watch` and `script -c` (carrying the runner's own
+# redirections, since its stdout is the inner command's).
 #
 # A command whose output is captured into a variable (`v=$(fnox get X)`,
 # `KEY="$(cat master.key)" bin/rails …`, `export T=$(…)`) prints nothing, so its line
@@ -35,6 +37,10 @@ BEGIN {
   for (t in tmp) KEYWORDS[tmp[t]] = 1
   split("export local declare typeset readonly", tmp, " ")
   for (t in tmp) DECLARERS[tmp[t]] = 1
+  split("docker podman kubectl oc incus lxc", tmp, " ")
+  for (t in tmp) RUNNERS[tmp[t]] = 1
+  # Runner options (global, exec's own, compose's) that take the next word as their value.
+  RUNNER_OPTV = "^(-[cefHlnsuw]|--(as|cluster|config|container|context|cwd|detach-keys|env|env-file|file|filename|group|host|index|kubeconfig|log-level|mode|namespace|pod-running-timeout|profile|project|project-directory|project-name|server|token|user|workdir))$"
   CAPNEXT = 0
 }
 
@@ -150,14 +156,50 @@ function flushseg() {
   PR[D] = ""
 }
 
+# a[from..to] joined by sep.
+function join(a, from, to, sep,    k, s) {
+  s = a[from]
+  for (k = from + 1; k <= to; k++) s = s sep a[k]
+  return s
+}
+
+# Where the command a runner's exec runs starts, as an index into a (0: this is no exec):
+# past the runner's options, `container`/`compose`, the target, and a `--` for the
+# runners that take one (kubectl, incus, lxc).
+function exec_start(a, n, dashdash,    k, j, target) {
+  for (k = 2; k <= n && a[k] != "exec"; k++) {
+    if (a[k] == "container" || a[k] == "compose") continue
+    if (a[k] !~ /^-/) return 0
+    if (a[k] ~ RUNNER_OPTV) k++
+  }
+  if (k > n) return 0
+  if (dashdash)
+    for (j = k + 1; j < n; j++)
+      if (a[j] == "--") return j + 1
+  target = 0
+  for (k++; k <= n; k++) {
+    if (target) return k
+    if (a[k] !~ /^-/) target = 1
+    else if (a[k] ~ RUNNER_OPTV) k++
+  }
+  return 0
+}
+
 # Record one simple command, then tokenize any command string it hands to a shell.
-function emit(seg,    f, a, n, name, k, host, rest) {
+function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
   f = finish(seg)
   if (f == "") return
   OUT = OUT f (CAP[D] ? US RD "=captured" : "") "\n"
   if (D > 8) return
-  n = split(f, a, US)
+  all = split(f, a, US)
+  n = all
   while (n > 0 && substr(a[n], 1, 1) == RD) n--
+  # The command's own redirections, as words (redirs) and as shell text (raw).
+  redirs = raw = ""
+  for (k = n + 1; k <= all; k++) {
+    redirs = redirs US a[k]
+    raw = raw " " substr(a[k], 2)
+  }
   name = basename(a[1])
   if (name in SHELLS) {
     for (k = 2; k < n; k++)
@@ -184,6 +226,34 @@ function emit(seg,    f, a, n, name, k, host, rest) {
     }
     CAPNEXT = CAP[D]
     if (rest != "") tokenize(rest)
+  } else if (name in RUNNERS) {
+    k = exec_start(a, n, name !~ /^(docker|podman)$/)
+    if (k) emit(join(a, k, n, US) redirs)
+  } else if (name == "watch") {
+    # Its words run through `sh -c`, joined by spaces; with -x they are the argv.
+    ex = 0
+    for (k = 2; k <= n; k++) {
+      if (a[k] == "-x" || a[k] == "--exec") ex = 1
+      else if (a[k] ~ /^(-[nq]|--interval|--equexit)$/) k++
+      else if (substr(a[k], 1, 1) != "-") break
+    }
+    if (k > n) return
+    if (ex) emit(join(a, k, n, US) redirs)
+    else {
+      CAPNEXT = CAP[D]
+      tokenize(join(a, k, n, " ") raw)
+    }
+  } else if (name == "script") {
+    for (k = 2; k <= n; k++) {
+      rest = ""
+      if (a[k] ~ /^--command=/) rest = substr(a[k], 11)
+      else if (k < n && (a[k] ~ /^-[A-Za-z]*c$/ || a[k] == "--command")) rest = a[k + 1]
+      if (rest != "") {
+        CAPNEXT = CAP[D]
+        tokenize(rest raw)
+        return
+      }
+    }
   }
 }
 

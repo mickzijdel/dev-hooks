@@ -14,8 +14,9 @@
 # prompts on them (and Claude Code's own auto-mode classifier catches them besides).
 #
 # The command is split into the simple commands the shell would run (lib/shell-segments.awk
-# honours quoting, and splits out $(…), backticks, `bash -c '…'`, `eval` and a heredoc fed
-# to a shell), and each command's flags and operands are judged only against that
+# honours quoting, and splits out $(…), backticks, `bash -c '…'`, `eval`, a heredoc fed
+# to a shell, and what `ssh`, `docker`/`kubectl`/`incus exec`, `watch` and `script -c`
+# run), and each command's flags and operands are judged only against that
 # command — so `cd ~ && rm -rf build/` isn't read as `rm -rf ~`, and a commit message or
 # search pattern that merely *mentions* a footgun doesn't trip it.
 #
@@ -35,7 +36,9 @@
 # Second check: commands whose *output* puts a secret value into the transcript —
 # printing a secret-bearing file (`cat .env`, `cat config/master.key`), a secret
 # manager read that prints to stdout (`bws secret get`, `op read`), a credential probe
-# (`git credential fill`, a helper's `get`, `gh auth token`, `secret-tool lookup`), or
+# (`git credential fill`, a git or docker helper's `get`, `gh auth token`, `glab auth
+# status -t`, `az account get-access-token`, `gcloud auth print-access-token`,
+# `secret-tool lookup`), or
 # echoing a secret-named variable. Once a value is in the transcript it is logged,
 # summarised, and pasted onward, and the only real remedy is rotating the credential.
 # So this BLOCKS rather than asking: `ask` selects whoever answers prompts, and under
@@ -72,8 +75,9 @@ cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 # xargs, …) and leading assignments already dropped, and each redirection as one word
 # starting with \035. Quoting decides what is code, so a separator inside a quoted
 # string (`rg "fnox get|bws secret get"`, a commit message) no longer starts a command,
-# while $(…), backticks, `bash -c '…'`, `eval`, `ssh host …` and a heredoc fed to a
-# shell are split out as commands of their own. On a parse failure (an unbalanced quote)
+# while $(…), backticks, `bash -c '…'`, `eval`, `ssh host …`, a heredoc fed to a
+# shell and a runner's command (`docker exec c …`, `watch …`) are split out as commands
+# of their own. On a parse failure (an unbalanced quote)
 # the awk falls back to the old quote-blind split, which over-matches rather than hides.
 SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk")
 
@@ -192,10 +196,11 @@ path_is_secret() {
       client_secret*.json | service*account*.json | \
       secrets.json | secrets.yml | secrets.yaml) return 0 ;;
   esac
-  # gh keeps its OAuth token in hosts.yml when no keyring is available; the name alone
-  # is too common to match without its directory.
+  # gh keeps its OAuth token in hosts.yml when no keyring is available, and docker its
+  # registry logins in config.json when no credential store is set; the names alone are
+  # too common to match without their directory.
   case "$1" in
-    *gh/hosts.yml | *gh/hosts.yaml) return 0 ;;
+    *gh/hosts.yml | *gh/hosts.yaml | *.docker/config.json) return 0 ;;
   esac
   return 1
 }
@@ -362,12 +367,12 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             unquote "$a"
             if path_is_secret "$UQ" && file_exists "$UQ"; then
               SECRET_ASK="\`$NAME $UQ\` prints the contents of a file that holds secret values."
-              case "$UQ" in *.git-credentials | *gh/hosts.y*ml) SECRET_KIND=cred ;; esac
+              case "$UQ" in *.git-credentials | *gh/hosts.y*ml | *.docker/config.json) SECRET_KIND=cred ;; esac
               break
             fi
           done
           ;;
-        bws | fnox | op | vault | gh | aws | doppler | kubectl | pass | secret-tool | security)
+        bws | fnox | op | vault | gh | glab | aws | az | gcloud | doppler | kubectl | pass | secret-tool | security)
           seg_words
           case "$NAME:$WORDS" in
             bws:'secret get '* | bws:'secret list '* | \
@@ -385,15 +390,22 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
               SECRET_ASK="\`gh ${WORDS% }\` prints your GitHub token."
               SECRET_KIND=cred
               ;;
-            gh:'auth status '*)
+            gh:'auth status '* | glab:'auth status '*)
+              forge=GitHub
+              [ "$NAME" = glab ] && forge=GitLab
               for a in "${ARGS[@]}"; do
                 case "$a" in
                   -t | --show-token | --show-token=true)
-                    SECRET_ASK="\`gh auth status $a\` prints your GitHub token unmasked."
+                    SECRET_ASK="\`$NAME auth status $a\` prints your $forge token unmasked."
                     SECRET_KIND=cred
                     ;;
                 esac
               done
+              ;;
+            az:'account get-access-token '* | gcloud:'auth print-access-token '* | \
+              gcloud:'auth print-identity-token '* | gcloud:'auth application-default print-access-token '*)
+              SECRET_ASK="\`$NAME ${WORDS% }\` prints a cloud access token."
+              SECRET_KIND=cred
               ;;
             # The desktop keyring: `lookup` prints the secret, `search` prints each match's.
             secret-tool:'lookup '* | secret-tool:'search '*)
@@ -432,7 +444,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
           esac
           [ -n "$SECRET_ASK" ] && SECRET_KIND=cred
           ;;
-        git-credential-*)
+        git-credential-* | docker-credential-*)
           for a in "${ARGS[@]}"; do
             if [ "$a" = get ]; then
               SECRET_ASK="\`$NAME get\` prints the password that credential helper holds."
