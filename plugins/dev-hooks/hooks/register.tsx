@@ -739,6 +739,24 @@ async function summarizeTurn($: EngineInterface) {
   await mark(t => ({ ...t, summarizing: false, ...(summary ? { summary } : { summaryError: failed }) }))
 }
 
+// The pane's ages ("12 min") move on their own: redraw once a minute while it is open.
+let paneTicking = false
+
+function tickPane($: EngineInterface) {
+  if (paneTicking) return
+  paneTicking = true
+  const tick = async () => {
+    const panes = await $.ui.panes().catch(() => [])
+    if (!panes.some(p => p.id === STATUS_PANE)) {
+      paneTicking = false
+      return
+    }
+    $.ui.invalidate('ui.render')
+    $.clock.after(60_000, () => void tick())
+  }
+  $.clock.after(60_000, () => void tick())
+}
+
 const clamp = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 // ── end session-status pane ─────────────────────────────────────────────────────────
 
@@ -912,6 +930,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: STATUS_PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    tickPane($)
     const s = await loadPane($)
     const now = await $.clock.now()
     const v = paneView(s, ciBackground(), now)
@@ -933,7 +952,7 @@ export const register: Register = on => {
         <Text dimColor>{` · ${sinceLabel(v.since, now)}`}</Text>
       </Box>,
       ...(v.lastSaid ? [<Text dimColor>{`last said: "${clamp(v.lastSaid, width - 13)}"`}</Text>] : []),
-      ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => void summarizeTurn($)} />] : []),
+      ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => summarizeTurn($)} />] : []),
       ...(v.summarizing ? [<Text dimColor>Summarizing…</Text>] : []),
       ...(v.summaryError ? [<Text color="red">{`summary failed: ${v.summaryError}`}</Text>] : []),
       section('Your move', moves, v.yourMove.length === 0),

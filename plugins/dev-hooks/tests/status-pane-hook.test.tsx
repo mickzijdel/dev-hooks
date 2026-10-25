@@ -254,3 +254,63 @@ test('a VS Code window attaching later opens it, and /session-status opens it an
   const ran = await $.command.run({ command: 'session-status', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
   expect([ran.text, opened]).toEqual(['Session status pane opened.', ['session-status', 'session-status']])
 })
+
+// ── Summarize and the clock ──────────────────────────────────────────────────────────
+const USAGE = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+const unreported = () => shaped(base({ turns: [ended({ answer: 'I fixed it.' })], turnsTotal: 1 }))
+
+test('Summarize asks once, and its answer stands in for the missing report', async ($, on) => {
+  const w = world(on, { pane: unreported() })
+  const asked: string[] = []
+  on('model.fork', (_$, e) => {
+    asked.push(e.prompt)
+    return { value: { isAnswered: true as const, text: 'Status: Done\nYour move:\n- push', usage: USAGE } }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'summarize' })
+  await ui.unmount()
+
+  expect(asked.length).toBe(1)
+  expect(w.pane()?.turns[0]?.summary?.yourMove).toEqual(['push'])
+  const again = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await again.find({ type: 'Text', text: /● Waiting on you/ }))?.text).toBe('● Waiting on you')
+  expect(await again.find({ key: 'summarize' })).toBeUndefined()
+  await again.unmount()
+})
+
+test('a failed Summarize keeps the warning and says why', async ($, on) => {
+  const w = world(on, { pane: unreported() })
+  on('model.fork', () => ({ value: { isAnswered: false as const, reason: 'api-error' as const, status: 529, error: 'overloaded' as const, usage: USAGE } }))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'summarize' })
+  await ui.unmount()
+
+  expect(w.pane()?.turns[0]?.summaryError).toBe('api-error')
+  const again = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await again.find({ type: 'Text', text: /summary failed/ }))?.text).toBe('summary failed: api-error')
+  await again.unmount()
+})
+
+test('the open pane redraws each minute, and stops once it is closed', async ($, on) => {
+  const w = world(on, { pane: shaped(base()) })
+  let isOpen = true
+  const redraws: string[] = []
+  on('ui.panes', () => ({
+    value: isOpen ? [{ id: 'session-status', title: 'Session status', isShown: true, isFocused: false, isPlaced: true }] : [],
+  }))
+  on('ui.invalidate', (_$, e) => {
+    redraws.push(e.event)
+    return { value: undefined }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await w.clock.advance(60_000)
+  expect(redraws).toEqual(['ui.render'])
+  isOpen = false
+  await w.clock.advance(60_000)
+  await w.clock.advance(60_000)
+  expect(redraws).toEqual(['ui.render'])
+  await ui.unmount()
+})
