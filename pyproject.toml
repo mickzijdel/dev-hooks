@@ -27,6 +27,17 @@ package = false
 # window moves with today's date. Urgent override: exclude-newer-package = { foo = "0 days" }.
 exclude-newer = "4 days"
 
+[tool.ruff]
+# The shipped PEP 723 scripts declare their own floor (>=3.12), and the hooks import
+# hook_helpers.py with whatever python3 the machine has; requires-python above is the dev
+# tooling's. Inferred from it, ruff formats for 3.14 and writes `except A, B:`, which 3.12
+# cannot parse. tests/test_ruff_target.py keeps this at or below every script's floor.
+target-version = "py312"
+
+[tool.ruff.per-file-target-version]
+# The one script whose own floor is 3.14.
+"plugins/dev-hooks/skills/deslop/scripts/slop_scan.py" = "py314"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Subprocess-bound and isolated per tmp_path: ~44s serial, ~10s parallel.

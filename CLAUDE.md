@@ -341,6 +341,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   the CI lint job, and `tests/test_exec_bits.py` all gate this (any tracked file whose first
   line is `#!`).
 - Before claiming a hook works, run the full local CI: `uv run pytest -q`, `shfmt -d .`,
-  `shellcheck **/*.sh`, and `bash scripts/run-jscpd.sh python,bash`. Let `shfmt -w` do the
+  `shellcheck **/*.sh`, `ruff check . && ruff format --check .`, and
+  `bash scripts/run-jscpd.sh python,bash`. Ruff targets Python 3.12 (`pyproject.toml`), the
+  floor the shipped scripts declare and `hook_helpers.py` must import under. Let `shfmt -w` do the
   formatting — with `.editorconfig` it rewrites `case` patterns to `a | b)` and pushes `$(…)`
   heredocs onto their own line.

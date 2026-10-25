@@ -273,7 +273,7 @@ def memory_written(transcript_path, facts_path=None):
         try:
             with open(facts_path, encoding="utf-8") as f:
                 repos = (json.load(f) or {}).get("repos") or []
-        except OSError, ValueError, TypeError, AttributeError:
+        except (OSError, ValueError, TypeError, AttributeError):
             repos = []
         for repo in repos:
             if any(
@@ -357,7 +357,7 @@ def facts_invoked(facts_path, needles, since=None):
     try:
         with open(facts_path, encoding="utf-8") as f:
             facts = json.load(f)
-    except OSError, ValueError, TypeError:
+    except (OSError, ValueError, TypeError):
         return False
     if not isinstance(facts, dict):
         return False

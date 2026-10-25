@@ -27,6 +27,11 @@ jobs:
           shellcheck **/*.sh
       - name: shfmt
         run: shfmt -d .
+      # Mirrors the hk ruff-check / ruff-format steps, with the same mise-locked ruff.
+      - name: ruff
+        run: |
+          ruff check .
+          ruff format --check .
       - name: Executable bits on shipped scripts
         # Any tracked file whose first line is a shebang must be mode 100755 in the
         # index — with core.fileMode=false a local chmod never reaches git, and a
