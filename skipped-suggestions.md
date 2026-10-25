@@ -8,6 +8,40 @@ Dedup rule: a suggestion already present anywhere in this file is never re-logge
 
 ---
 
+## 2026-10-25 (Run 38)
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 6 commits 2026-10-22 to 2026-10-25 (`c3d8031` to `19ea6d8`); older ones were logged in Run 37.
+- Atom feed: https://epoch-research.github.io/ai-productivity-digest/feed.xml — items 2026-10-21 to 2026-10-24.
+- RSS feed: https://code.claude.com/docs/en/changelog/rss.xml — 2.1.307 to 2.1.310.
+- Unreachable (proxy 403): https://ai-automations-db.vercel.app/database.
+
+PRs opened this run: none.
+
+No Rails-specific suggestions surfaced this run — nothing routed to `rails-toolkit`.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Paseo daemon (pinned, loopback-only) with pi providers; portable provider commands; UTF-8 locale for its launch agent | dotfiles commits `bdfd44f`, `62829d8`, `19ea6d8` | Out of scope | Personal agent-daemon setup on macOS launchd; no dev-hooks surface. |
+| Herdr session-template sync while clients are attached | dotfiles commit `ec14181` | Out of scope | Personal fish/terminal-multiplexer tooling. |
+| AGENTS.md: keep going within scope, commit locally per unit, ask before push/publish; end long-run turns with Goal/Done/Next/Needs you | dotfiles commit `a853b91` | Duplicate | The end-report footer on Stop hooks and the guard's outward-action questions already cover this. |
+| Run commands expected to take over 2 minutes in the background with a log file | dotfiles commit `a853b91` | Duplicate | Claude Code's `run_in_background` and `Monitor` do this natively; the sleep guard already steers to them. |
+| Pin Node to the patched release when mise/Homebrew still report the vulnerable one | dotfiles commit `63d8a95` | Out of scope | Pin is for one CVE in the author's lockfile; the 4-day cooldown guidance in `dev-env-setup` already explains the trade-off. |
+| Claude 2.1.308 filtered system certificates setting | dotfiles commit `c3d8031` | Out of scope | Specific to TLS-inspecting setups; Claude Code handles it by default since 2.1.307. |
+| Package managers should skip releases under 24 hours old, but install browser/OS security patches at once | feed item 2026-10-23 | Duplicate | `dev-env-setup` already ships the cooldown standard (mise `minimum_release_age`, Bundler `cooldown`, npm). |
+| Verify own work and return screenshots/recordings as evidence | feed item 2026-10-23 | Duplicate | `verify-work.sh` and `but-for-real`. |
+| Route subagents by task with a model and effort per use case; avoid defaulting to many parallel subagents | feed items 2026-10-24 | Duplicate | `board` and `agent-brief` already cover brief-per-role dispatch; the superpowers toolkit covers parallel-agent workflows. |
+| Daily agent scanning CVE/NVD/GitHub advisories and proposing fixes for your repos | feed item 2026-10-24 | Deferred | Overlaps Dependabot/`dependency-upgrade`; a scheduled advisory sweep could be a `dependency-upgrade` recipe, but needs a concrete data source reachable from cloud sessions. |
+| Agent posts progress, screenshots and video to a Slack thread | feed item 2026-10-23 | Out of scope | Needs a Slack connector; not a plugin-level concern. |
+| Tell the agent in AGENTS.md to share Tailscale links, not localhost | feed item 2026-10-21 | Duplicate | `expose-service` skill covers sharing dev servers. |
+| Disk cleanup by agent, Remotion templates, voice dictation to Cursor, email/account audits, split AI tools by job | feed items 2026-10-23 to 2026-10-24 | Out of scope | Personal productivity; no dev-workflow surface. |
+| Mod runtime: `sed -i` now gets the standard Bash prompt; rm/rmdir deny with a rewrite hint in bypass mode; worktrees no longer fetch objects on demand; Monitor on Bedrock/Vertex/Foundry | changelog 2.1.309-2.1.310 | Out of scope | Harness behaviour changes; no change needed in the guard or `worktree-setup`. |
+| `claude_code.safety_event` OpenTelemetry event; `@claude review stop`; cloud-session admin roles; self-hosted runner checkout-hook timeout | changelog 2.1.307-2.1.310 | Out of scope | Admin/telemetry features with no plugin surface. |
+| Source unreachable | ai-automations-db page | Problem | Egress proxy 403 (organization policy). |
+| Sources reachable this run | substack feed, claude.dev RSS | Problem | Substack feed returned no items in the window; claude.dev RSS was not fetched this run. |
+
+---
+
 ## 2026-10-21 (Run 37)
 
 Sources scanned:
