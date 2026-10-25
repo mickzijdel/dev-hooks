@@ -22,12 +22,13 @@
 // tells the person and Claude how they ended (the block marked below).
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Facts, Nudge, NudgeRecord, Segment, Snapshot } from '../types'
+import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
   ciNote,
   ciStatusLine,
   ciToast,
   ciVerdict,
+  gitDir,
   githubRepo,
   isDryRun,
   isGitPush,
@@ -50,6 +51,7 @@ import {
   resolvePending,
   toRecord,
 } from './nudge-outcomes'
+import { EMPTY_PANE_STATE, findBrief, isTypedPrompt, parseCommits, parseEndReport } from './status-pane'
 
 const isShown = { plugin: 'dev-hooks', key: 'contextBarShown' } as const
 const snapshot = { plugin: 'dev-hooks', key: 'contextBarSnapshot' } as const
@@ -616,6 +618,87 @@ async function pollCi($: EngineInterface, key: string) {
 }
 // ── end CI watch ────────────────────────────────────────────────────────────────────
 
+// ── Session-status pane ───────────────────────────────────────────────────────────
+// Records the session's turns, tool counts, commits and background work for the pane;
+// what it shows is derived in status-pane.ts.
+const PANE_STATE = { plugin: 'dev-hooks', key: 'statusPane' } as const
+// Change the tag when StatusPaneState changes: a value stored under another is declined.
+const PANE_SHAPE = 'status-pane-1'
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+const ANSWER_CAP = 20_000
+
+async function loadPane($: EngineInterface): Promise<StatusPaneState> {
+  const stored = (await $.state.get(PANE_STATE)).value
+  return stored?.shape === PANE_SHAPE ? stored.value : EMPTY_PANE_STATE(await $.clock.now())
+}
+
+// Tool calls run in parallel and $.state has no compare-and-set: one queue, as for facts.
+let paneQueue: Promise<unknown> = Promise.resolve()
+
+function changePane($: EngineInterface, fn: (s: StatusPaneState, now: number) => StatusPaneState): Promise<void> {
+  const run = paneQueue.then(async () => {
+    const next = fn(await loadPane($), await $.clock.now())
+    await $.state.set(PANE_STATE, { shape: PANE_SHAPE, value: next })
+  })
+  paneQueue = run.catch(() => undefined)
+  return run
+}
+
+const changeOpenTurn = (s: StatusPaneState, fn: (t: TurnRecord) => TurnRecord): StatusPaneState => {
+  const open = s.turns.findLast(t => t.endedAt === undefined)
+  return open ? { ...s, turns: s.turns.map(t => (t === open ? fn(t) : t)) } : s
+}
+
+// A repo by its main checkout's name, so a worktree's commits count for their repo.
+const repoNames = new Map<string, string | null>()
+
+async function repoName($: EngineInterface, dir: string): Promise<string | null> {
+  if (!repoNames.has(dir)) {
+    const common = await git($, dir, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    repoNames.set(dir, common?.replace(/\/\.git\/?$/, '').split('/').at(-1) || null)
+  }
+  return repoNames.get(dir) ?? null
+}
+
+async function recordGit($: EngineInterface, command: string, output: string) {
+  const commits = parseCommits(output)
+  const pushed = isGitPush(command) && !isDryRun(command) && parsePushOutput(output).some(p => p.refs.length > 0)
+  if (commits.length === 0 && !pushed) return
+  const cwd = await $.session.cwd()
+  const repo = await repoName($, gitDir(command, cwd, pushed && commits.length === 0 ? 'push' : 'commit'))
+  if (repo === null) return
+  await changePane($, (s, now) => {
+    const prev = s.repos.find(r => r.repo === repo) ?? { repo, commits: 0, lastCommitAt: 0 }
+    const next = {
+      ...prev,
+      commits: prev.commits + commits.length,
+      ...(commits.length > 0 ? { lastCommitAt: now } : {}),
+      ...(pushed ? { lastPushAt: now } : {}),
+    }
+    return { ...s, repos: [...s.repos.filter(r => r.repo !== repo), next] }
+  })
+}
+
+type StopBackground = {
+  background_tasks?: { id: string; type: string; status: string; description: string }[]
+  session_crons?: { id: string; prompt: string }[]
+}
+
+// What still runs when a turn stops: a task keeps the time it was first seen.
+async function recordBackground($: EngineInterface, e: StopBackground) {
+  const tasks = (e.background_tasks ?? []).filter(t => t.status === 'running' || t.status === 'pending')
+  const crons = e.session_crons ?? []
+  await changePane($, (s, now) => {
+    const seen = new Map(s.background.map(b => [b.id, b.since]))
+    const items: BackgroundItem[] = [
+      ...tasks.map(t => ({ id: t.id, label: t.description || t.type, since: seen.get(t.id) ?? now })),
+      ...crons.map(c => ({ id: c.id, label: `wakes up: ${c.prompt}`, since: seen.get(c.id) ?? now })),
+    ]
+    return { ...s, background: items }
+  })
+}
+// ── end session-status pane ─────────────────────────────────────────────────────────
+
 async function guardNow($: EngineInterface): Promise<number> {
   return $.clock.now().catch(() => Date.now())
 }
@@ -738,6 +821,12 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
+    if (e.agentId === undefined) {
+      const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
+      await changePane($, s =>
+        changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
+      ).catch(() => undefined)
+    }
     if (ran.deny !== undefined || ran.isError || (e.tool !== 'Edit' && e.tool !== 'Write')) return ran
 
     const result = ran.result as { structuredPatch?: Patch; type?: string } | undefined
@@ -761,6 +850,39 @@ export const register: Register = on => {
     return ran
   })
 
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: isTypedPrompt(e.text), calls: 0, edits: 0 }
+      await changePane($, (s, now) => ({
+        ...s,
+        turns: [...s.turns, { ...turn, startedAt: now }].slice(-20),
+        turnsTotal: s.turnsTotal + 1,
+      })).catch(() => undefined)
+    }
+
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const messages = await $.session.messages().catch(() => [])
+      const texts = Array.isArray(messages) ? messages.filter(m => m.role === 'assistant').map(m => m.text) : []
+      const brief = findBrief(texts)
+      await changePane($, (s, now) => ({
+        ...changeOpenTurn(s, t => ({
+          ...t,
+          endedAt: now,
+          end: e.reason,
+          answer: e.answer.slice(0, ANSWER_CAP),
+          report: parseEndReport(e.answer),
+        })),
+        brief: brief ?? s.brief,
+      })).catch(() => undefined)
+    }
+
+    return next(e)
+  })
+
   on('session.end', async ($, e, next) => {
     await closeNudges($, e.sessionId).catch(() => undefined)
 
@@ -771,6 +893,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError || e.tool !== 'Bash') return ran
+    await recordGit($, e.command, ran.text ?? '').catch(() => undefined)
     if (!isGitPush(e.command) || isDryRun(e.command) || (await ciOptedOut($))) return ran
 
     const targets = await pushTargets($, e.command, ran.text ?? '')
@@ -784,6 +907,7 @@ export const register: Register = on => {
   // blocking, only the last reason arrives here (Claude still gets them all).
   on('classic.Stop', async ($, e, next) => {
     const below = await next(e)
+    await recordBackground($, e).catch(() => undefined)
     if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
 
     try {

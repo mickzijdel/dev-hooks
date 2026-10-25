@@ -20,14 +20,23 @@ const resolveDir = (dir: string, cwd: string) => {
   return d.startsWith('/') ? d : `${cwd.replace(/\/$/, '')}/${d}`
 }
 
-// The directory the push ran in: `git -C <dir> push`, a `cd <dir> &&` before it, or cwd.
-export const pushDir = (command: string, cwd: string): string => {
-  const flag = /(^|[^A-Za-z0-9_])git[ \t]+(?:\S+[ \t]+)*?-C[ \t]+("[^"]*"|'[^']*'|\S+)(?:[ \t]+\S+)*?[ \t]+push/m.exec(command)
+// The directory a git subcommand ran in: `git -C <dir> <sub>`, a `cd <dir> &&` before it,
+// or cwd.
+export const gitDir = (command: string, cwd: string, sub: string): string => {
+  const flag = new RegExp(
+    String.raw`(^|[^A-Za-z0-9_])git[ \t]+(?:\S+[ \t]+)*?-C[ \t]+("[^"]*"|'[^']*'|\S+)(?:[ \t]+\S+)*?[ \t]+${sub}`,
+    'm',
+  ).exec(command)
   if (flag?.[2]) return resolveDir(flag[2], cwd)
-  const cd = /(^|[;&|][ \t]*)cd[ \t]+("[^"]*"|'[^']*'|\S+)[ \t]*(&&|;)[^\n]*git([ \t]+\S+)*[ \t]+push/m.exec(command)
+  const cd = new RegExp(
+    String.raw`(^|[;&|][ \t]*)cd[ \t]+("[^"]*"|'[^']*'|\S+)[ \t]*(&&|;)[^\n]*git([ \t]+\S+)*[ \t]+${sub}`,
+    'm',
+  ).exec(command)
   if (cd?.[2]) return resolveDir(cd[2], cwd)
   return cwd
 }
+
+export const pushDir = (command: string, cwd: string): string => gitDir(command, cwd, 'push')
 
 // Options of `git push` that take the next word as their value.
 const VALUE_OPTIONS = new Set(['-o', '--push-option', '--receive-pack', '--exec'])

@@ -1,8 +1,9 @@
 // The session-status pane's pure half: it reads end reports, briefs and git output, and
 // derives what the pane shows. register.tsx records the session and draws the result.
+import type { BackgroundItem, Brief, EndReport, StatusPaneState, TurnRecord } from '../types'
 
-export type EndReport = { status?: string; doneWhen: string[]; changed: string[]; notChecked: string[]; yourMove: string[] }
-export type Brief = { doing: string; doneWhen: string[] }
+export type { BackgroundItem, Brief, EndReport, RepoCommits, StatusPaneState, TurnEnd, TurnRecord } from '../types'
+
 
 // hook_helpers._END_REPORT_LINES' patterns, pinned by test_status_pane_parity.py.
 export const END_REPORT_LABELS = {
@@ -110,33 +111,6 @@ export const endsOnQuestion = (text: string): boolean => {
 }
 
 // ── The view ─────────────────────────────────────────────────────────────────────────
-
-export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
-export type TurnRecord = {
-  id: string
-  startedAt: number
-  // Started by a prompt the person typed: it opens the window of turns the pane reads.
-  typed: boolean
-  endedAt?: number
-  end?: TurnEnd
-  calls: number
-  edits: number
-  answer?: string
-  report?: EndReport | null
-  summary?: EndReport
-  summarizing?: boolean
-  summaryError?: string
-}
-export type RepoCommits = { repo: string; commits: number; lastCommitAt: number; lastPushAt?: number }
-export type BackgroundItem = { label: string; since: number }
-export type StatusPaneState = {
-  turns: TurnRecord[]
-  turnsTotal: number
-  brief: Brief | null
-  repos: RepoCommits[]
-  background: BackgroundItem[]
-  startedAt: number
-}
 
 export const EMPTY_PANE_STATE = (now: number): StatusPaneState => ({
   turns: [],
