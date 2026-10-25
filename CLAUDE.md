@@ -289,7 +289,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   **Prompt/agent hooks (`"type": "prompt"`, `"type": "agent"`) are only available on tool
   events** — PreToolUse, PostToolUse, PermissionRequest. Not Stop, not UserPromptSubmit: one
   configured there is accepted and silently never runs, so a Stop-time "judge" has to be a
-  command hook.
+  command hook. `tests/test_hooks_json.py` fails any plugin's hooks.json that tries.
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_is_probe_session` (a made-up session id, a `/tmp/claude-*` scratchpad or
