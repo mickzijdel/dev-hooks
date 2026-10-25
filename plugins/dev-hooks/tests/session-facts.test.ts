@@ -146,7 +146,9 @@ test('session end resolves a pending nudge as unknown and logs it across session
   expect(w.facts().nudges?.[0]?.outcome).toBe('unknown')
   const log = w.store.get('nudgeOutcomes') as NudgeRecord[]
   expect(log.map(r => [r.hook, r.session, r.outcome])).toEqual([['review-reminder', 's1', 'unknown']])
-  const exported = JSON.parse(w.written.get('/home/u/.claude/automation-review/stop-nudges.json') ?? '{}')
+  // The test loads the plugin from its folder, as a --plugin-dir dev copy: the real export is left alone.
+  expect(w.written.has('/home/u/.claude/automation-review/stop-nudges.json')).toBe(false)
+  const exported = JSON.parse(w.written.get('/home/u/.claude/automation-review/stop-nudges.inline.json') ?? '{}')
   expect(exported.last7Days).toEqual([{ hook: 'review-reminder', fired: 1, acted: 0, ignored: 0, declined: 0, unknown: 1 }])
 })
 

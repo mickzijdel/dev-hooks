@@ -125,9 +125,9 @@ weekly-automation-review skill reads. A new Stop hook gets `unknown` until it ha
 `resolveNudge`; give it one only for a remedy the facts can show. A probe session
 (`isProbeSession`) adds no nudges at all, so its facts give session end and the sweep nothing
 to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
-live `claude -p --plugin-dir` run. Note that such a run's mod writes `stop-nudges.json` from the
-inline store, replacing the marketplace export until the next real nudge resolves: back the
-file up first. The review needles, the memory-dir regex and the probe rule are mirrors of
+live `claude -p --plugin-dir` run. Such a run's mod writes `stop-nudges.inline.json` from the inline
+store (`nudgeExportFile`: only a root under `~/.claude/plugins/` writes `stop-nudges.json`), so the
+marketplace export is left alone. The review needles, the memory-dir regex and the probe rule are mirrors of
 `review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE` and `reminder_is_probe_session`, pinned by
 `tests/test_nudge_parity.py`.
 

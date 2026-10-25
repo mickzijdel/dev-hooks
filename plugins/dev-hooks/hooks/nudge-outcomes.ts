@@ -243,3 +243,8 @@ export const nudgeExport = (log: NudgeRecord[], now: number) => ({
   last30Days: summarizeNudges(log, now - 30 * DAY_MS),
   records: log,
 })
+
+// A --plugin-dir dev copy has a store of its own; exporting it would replace the installed
+// plugin's stop-nudges.json until the next real nudge, so it writes beside it instead.
+export const nudgeExportFile = (pluginRoot: string): string =>
+  pluginRoot.includes('/.claude/plugins/') ? 'stop-nudges.json' : 'stop-nudges.inline.json'

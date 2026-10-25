@@ -49,6 +49,7 @@ import {
   newNudge,
   NUDGE_LOG_KEY,
   nudgeExport,
+  nudgeExportFile,
   resolvePending,
   toRecord,
 } from './nudge-outcomes'
@@ -505,7 +506,9 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
   await $.store.set(NUDGE_LOG_KEY, log)
   // Beside the prompt log and hook-fires.jsonl; only where that directory already exists.
   const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/automation-review`
-  if (await $.fs.exists(dir)) await $.fs.write(`${dir}/stop-nudges.json`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+  if (await $.fs.exists(dir)) {
+    await $.fs.write(`${dir}/${nudgeExportFile($.plugin.root)}`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+  }
 }
 
 // ── CI watch ────────────────────────────────────────────────────────────────────────

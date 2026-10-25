@@ -10,6 +10,7 @@ import {
   resolveNudge,
   resolvePending,
   summarizeNudges,
+  nudgeExportFile,
 } from '../hooks/nudge-outcomes'
 import type { Facts, Nudge, NudgeRecord } from '../types'
 
@@ -182,4 +183,9 @@ test('end-report-reminder is acted on when the next reply carries Changed and Yo
   const missing = resolveNudge(n, atStop(facts(), { lastMessage: '**Changed:** a.py\nAll done.' }))
   expect([missing.outcome, missing.evidence]).toEqual(['ignored', 'the next reply still has no Your move line'])
   expect(resolveNudge(n, { facts: facts(), refired: [], atStop: false }).outcome).toBe('unknown')
+})
+
+test('only the installed plugin writes stop-nudges.json; a dev copy writes its own file', async () => {
+  expect(nudgeExportFile('/home/u/.claude/plugins/cache/dev-hooks/dev-hooks/2.65.11')).toBe('stop-nudges.json')
+  expect(nudgeExportFile('/home/u/src/dev-hooks/plugins/dev-hooks')).toBe('stop-nudges.inline.json')
 })
