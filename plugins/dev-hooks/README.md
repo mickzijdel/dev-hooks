@@ -174,6 +174,8 @@ $ claude
   (`DEV_HOOKS_VERIFY_TEST_TIMEOUT`, default `110` seconds, under the hook's 120s hard limit; `0`
   disables it): a run that exceeds it is stopped gracefully and the hook recommends switching to
   `changed` and/or adding a fast smoke-test subset, instead of being silently hard-killed.
+  Each linter and scanner run gets the same cap; one that exceeds it is named as having no
+  verdict (run it yourself), never reported as failing.
   In a uv project (`uv.lock`), ruff and pytest run as `uv run --no-sync …`, so a venv kept
   outside the repo (`UV_PROJECT_ENVIRONMENT`) is found, and the hook never installs packages or
   rewrites `uv.lock`.

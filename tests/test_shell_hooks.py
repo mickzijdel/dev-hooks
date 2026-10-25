@@ -3069,6 +3069,43 @@ def test_verify_work_slow_suite_recommends_changed(tmp_path):
     assert "smoke-test" in body
 
 
+SLOW = "sleep 5\n"
+SLOW_LINTERS = {
+    # name: (files to write, fake tool on PATH, its body)
+    "ruff": ({"ruff.toml": "", "mod.py": "x = 1\n"}, "ruff", SLOW),
+    "rubocop": (
+        {".rubocop.yml": "", "x.rb": "x = 1\n"},
+        "bundle",
+        'if [ "$1" = list ]; then echo "  * rubocop (1.0)"; exit 0; fi\n' + SLOW,
+    ),
+}
+
+
+@pytest.mark.parametrize("linter", SLOW_LINTERS)
+def test_verify_work_caps_a_slow_linter(tmp_path, linter):
+    # A linter that runs past the soft cap is stopped like a slow suite, not left to the
+    # 120 s hard kill; with no verdict it is named in an advisory, never reported as failing.
+    files, tool, body = SLOW_LINTERS[linter]
+    init_git_repo(tmp_path)
+    for name, text in files.items():
+        (tmp_path / name).write_text(text)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / tool).write_text("#!/bin/bash\n" + body)
+    (bindir / tool).chmod(0o755)
+    env = base_env(
+        PATH=f"{bindir}:{os.environ['PATH']}",
+        DEV_HOOKS_VERIFY_TEST_TIMEOUT="1",
+        DEV_HOOKS_VERIFY_TESTS="off",
+    )
+    started = time.monotonic()
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=env)
+    assert time.monotonic() - started < 4
+    assert stop_blocked(r)
+    body = json.dumps(assert_json_with(r.stdout, "result is unknown"))
+    assert "Verification failed" not in body
+
+
 def test_verify_work_changed_mode_maps_lib_to_flat_gem_spec(tmp_path):
     # changed mode: a conventional (non-Rails) gem keeps lib/foo.rb's spec at spec/foo_spec.rb,
     # NOT spec/lib/. The mapping must offer the flat candidate too, or it silently runs nothing.

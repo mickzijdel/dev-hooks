@@ -18,6 +18,7 @@
 # Test runs are wrapped in a soft timeout (DEV_HOOKS_VERIFY_TEST_TIMEOUT, default 110s, under
 # the 120s hook limit): a run that exceeds it is stopped gracefully and the hook recommends
 # switching to "changed" and/or adding a fast smoke-test subset, rather than being hard-killed.
+# Linters and scanners get the same cap, and one that exceeds it is named as having no verdict.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -55,13 +56,15 @@ TMPFILE=$REPLY
 
 TOOLS_RAN=0
 SLOW_TESTS=0
+SLOW_CHECKS=""
+RUN_IS_CHECK=""
 
 # Test scope: full (default) | changed | off. An unknown value falls back to full.
 MODE="${DEV_HOOKS_VERIFY_TESTS:-full}"
 case "$MODE" in changed | off | full) ;; *) MODE=full ;; esac
-# Soft cap on EACH test run, kept under the hook's 120s hard timeout (0 disables it). Note
-# this is per-run, not a cumulative budget: uncapped scanners and multiple suites in a polyglot
-# repo can still add up past 120s. A non-numeric value falls back to the default rather than
+# Soft cap on EACH test run and lint or scanner run, kept under the hook's 120s hard timeout
+# (0 disables it). Note this is per-run, not a cumulative budget: several in a polyglot repo
+# can still add up past 120s. A non-numeric value falls back to the default rather than
 # making `timeout` error the run out.
 TEST_TIMEOUT="${DEV_HOOKS_VERIFY_TEST_TIMEOUT:-110}"
 case "$TEST_TIMEOUT" in '' | *[!0-9]*) TEST_TIMEOUT=110 ;; esac
@@ -74,7 +77,8 @@ existing() { while read -r f; do [ -n "$f" ] && [ -f "$f" ] && echo "$f"; done; 
 
 # Run a test command, honouring the soft timeout, and report the outcome.
 #   $1 = failure-section label, rest = command (plus any targeted files)
-# Sets TOOLS_RAN and, on timeout, SLOW_TESTS; appends real failures to $TMPFILE.
+# Sets TOOLS_RAN and, on timeout, SLOW_TESTS (SLOW_CHECKS under run_check); appends real
+# failures to $TMPFILE. Returns the command's exit code.
 run_test() {
   local label=$1
   shift
@@ -83,10 +87,18 @@ run_test() {
   out=$(_capped "$@" 2>&1)
   rc=$?
   if [ "$rc" -eq 124 ]; then
-    SLOW_TESTS=1
+    if [ -n "$RUN_IS_CHECK" ]; then SLOW_CHECKS="${SLOW_CHECKS:+$SLOW_CHECKS, }$label"; else SLOW_TESTS=1; fi
   elif [ "$rc" -ne 0 ]; then
     printf '=== %s ===\n%s\n\n' "$label" "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
   fi
+  return "$rc"
+}
+
+# A linter or scanner under the same cap. One that runs out of time has no verdict, so it is
+# named in an advisory instead of being reported as failing.
+run_check() {
+  local RUN_IS_CHECK=1
+  run_test "$@"
 }
 
 # Cap a command with the soft timeout when `timeout` is available (coreutils; absent on a
@@ -178,41 +190,28 @@ _verify_work_pytest_runnable() {
 if [ "$HAS_RUBY" = "1" ]; then
   # RuboCop (check only — autocorrect already runs on each file write)
   if [ -f ".rubocop.yml" ] && bundle list 2>/dev/null | grep -q rubocop; then
-    TOOLS_RAN=1
-    out=$(bundle exec rubocop --no-color 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== RuboCop ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
+    run_check RuboCop bundle exec rubocop --no-color
   fi
 
   # herb — ERB lint + parse check, when an ERB file changed and herb is bundled (v17 standard)
   if echo "$CHANGED" | grep -qE '\.erb$' && [ -f "Gemfile" ] && grep -qw herb Gemfile.lock 2>/dev/null; then
-    TOOLS_RAN=1
-    out=$(bundle exec herb lint app/ 2>&1 && bundle exec herb analyze app/ 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== herb (ERB) ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
+    run_check "herb (ERB)" bundle exec herb lint app/ &&
+      run_check "herb (ERB)" bundle exec herb analyze app/
   fi
 
   # Security + correctness scanners, when Ruby code changed and the gems are bundled (v17 standard).
   # Each is guarded by its Gemfile.lock entry so only repos that adopted v17 pay the cost.
   if echo "$CHANGED" | grep -qE '\.rb$' && [ -f "Gemfile" ]; then
     if grep -qw brakeman Gemfile.lock 2>/dev/null; then
-      TOOLS_RAN=1
-      out=$(bundle exec brakeman -q --no-pager --exit-on-warn 2>&1)
-      [ $? -ne 0 ] && printf '=== Brakeman ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+      run_check Brakeman bundle exec brakeman -q --no-pager --exit-on-warn
     fi
     if grep -q bundler-audit Gemfile.lock 2>/dev/null; then
-      TOOLS_RAN=1
-      bundle exec bundle-audit update >/dev/null 2>&1 || true
-      out=$(bundle exec bundle-audit check 2>&1)
-      [ $? -ne 0 ] && printf '=== bundler-audit ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+      _capped bundle exec bundle-audit update >/dev/null 2>&1 || true
+      run_check bundler-audit bundle exec bundle-audit check
     fi
     if grep -q database_consistency Gemfile.lock 2>/dev/null &&
-      bin/rails runner "ActiveRecord::Base.connection" >/dev/null 2>&1; then
-      TOOLS_RAN=1
-      out=$(bundle exec database_consistency 2>&1)
-      [ $? -ne 0 ] && printf '=== database_consistency ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
+      _capped bin/rails runner "ActiveRecord::Base.connection" >/dev/null 2>&1; then
+      run_check database_consistency bundle exec database_consistency
     fi
   fi
 
@@ -261,11 +260,7 @@ fi
 if [ "$HAS_PYTHON" = "1" ]; then
   # ruff
   if [ -f "ruff.toml" ] || { [ -f "pyproject.toml" ] && grep -q '\[tool\.ruff\]' pyproject.toml 2>/dev/null; }; then
-    TOOLS_RAN=1
-    out=$("${PY_RUN[@]}" ruff check . 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== ruff ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
+    run_check ruff "${PY_RUN[@]}" ruff check .
   fi
 
   # pytest — gated on actual pytest-tests evidence, not just generic Python-project markers
@@ -309,11 +304,7 @@ if [ "$HAS_JS" = "1" ]; then
 
   # ESLint
   if ls .eslintrc* eslint.config.* >/dev/null 2>&1; then
-    TOOLS_RAN=1
-    out=$($PM exec eslint . 2>&1)
-    if [ $? -ne 0 ]; then
-      printf '=== ESLint ===\n%s\n\n' "$(echo "$out" | tail -c 1500)" >>"$TMPFILE"
-    fi
+    run_check ESLint "$PM" exec eslint .
   fi
 
   # JS tests (only if a "test" script exists in package.json). There's no portable way to run a
@@ -332,6 +323,10 @@ MSG=""
 if [ "$SLOW_TESTS" = "1" ]; then
   advisory="The test suite exceeded ${TEST_TIMEOUT}s and was stopped before finishing (the Stop hook is hard-killed at 120s). This suite is likely too slow to run on every stop.
 Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.json \"env\" block to run only affected tests, and/or add a fast smoke-test subset (current mode: ${MODE})."
+  if [ -n "$MSG" ]; then MSG="$MSG"$'\n\n'"$advisory"; else MSG="$advisory"; fi
+fi
+if [ -n "$SLOW_CHECKS" ]; then
+  advisory="${SLOW_CHECKS} ran past ${TEST_TIMEOUT}s and was stopped (the Stop hook is hard-killed at 120s), so its result is unknown. Run it yourself before finishing."
   if [ -n "$MSG" ]; then MSG="$MSG"$'\n\n'"$advisory"; else MSG="$advisory"; fi
 fi
 
