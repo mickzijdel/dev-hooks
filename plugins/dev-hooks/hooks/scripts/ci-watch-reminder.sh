@@ -20,11 +20,9 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SELF_DIR/lib/reminder-common.sh"
 reminder_post_bash_init DEV_HOOKS_CI_WATCH
 
-# Only a real `git push` invocation: `git` (optionally env-prefixed / flagged) walking tokens
-# to a `push` subcommand — matches `git push`, `git push origin main`, `git -C dir push`, and
-# `… && git push`, while skipping `git config …pushurl`, `git switch`, and `git pushall`.
-printf '%s' "$COMMAND" |
-  grep -Eq '(^|[^[:alnum:]_])git([[:space:]]+[^[:space:]]+)*[[:space:]]+push([^[:alnum:]_]|$)' || exit 0
+# Only a command that runs `git push`, read from the segments the shell would run: text that
+# merely mentions one (an echo, a commit message, a heredoc body) doesn't count.
+reminder_runs_git push || exit 0
 
 reminder_cwd_session
 

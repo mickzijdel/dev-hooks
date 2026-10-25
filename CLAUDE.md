@@ -125,9 +125,9 @@ weekly-automation-review skill reads. A new Stop hook gets `unknown` until it ha
 `resolveNudge`; give it one only for a remedy the facts can show. A probe session
 (`isProbeSession`) adds no nudges at all, so its facts give session end and the sweep nothing
 to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
-live `claude -p --plugin-dir` run. Note that such a run's mod writes `stop-nudges.json` from the
-inline store, replacing the marketplace export until the next real nudge resolves: back the
-file up first. The review needles, the memory-dir regex and the probe rule are mirrors of
+live `claude -p --plugin-dir` run. Such a run's mod writes `stop-nudges.inline.json` from the inline
+store (`nudgeExportFile`: only a root under `~/.claude/plugins/` writes `stop-nudges.json`), so the
+marketplace export is left alone. The review needles, the memory-dir regex and the probe rule are mirrors of
 `review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE` and `reminder_is_probe_session`, pinned by
 `tests/test_nudge_parity.py`.
 
@@ -146,6 +146,26 @@ down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orc
 In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the plugin's own
 `$.session.append` calls; `tests/ci-watch-hook.test.ts` reads them back with `.appended()` to tell
 the append path from the prompt path.
+
+The module also draws **the session-status pane** (the `Session-status pane` block of
+`register.tsx`; its pure half, the end-report and brief parsers and the state derivation, is
+`hooks/status-pane.ts`, unit-tested directly). It records each main-loop turn (`turn.start`,
+`turn.complete` with the final message's parsed end report), tool and edit counts per turn, this
+session's commits and pushes from Bash output (`gitDir` in `ci-watch.ts` finds the repo, by its
+main checkout's name), and the Stop input's `background_tasks` and `session_crons`, all in one
+`$.state` value written through the `changePane` queue (tool calls run in parallel). The value is
+stored as `{ shape, value }`; change `PANE_SHAPE` when `StatusPaneState` changes shape, so an older
+value is declined rather than misread. The view reads every turn since the last typed prompt
+(`typedFrom`: the origin `prompt.submit` names before `turn.start`, `composer`, `bridge` or `sdk`;
+the text only when no origin arrived), so a notification or scheduled turn can't clear an earlier
+ask, and a later turn's report covers an earlier one that left none (a Stop hook's continuation
+is a turn of its own). It stores a line of each answer (`answerFacts`), never the answer: the
+value is read and written on every tool call. Rules learned building it:
+the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
+`terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
+has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its
+label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
+`tests/test_status_pane_parity.py`. Design and plan: `docs/superpowers/specs/2026-10-25-status-pane-design.md`.
 
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
@@ -230,6 +250,10 @@ the append path from the prompt path.
   `reminder_transcript_invoked [--since <epoch>] <sentinel> <needles…>` ($REPLY 0|1 — wraps the python
   `transcript_invoked`, and also the mod's session facts via `facts_invoked` when
   `DEV_HOOKS_FACTS_FILE` is set, which see skills and agents run inside subagents),
+  `reminder_runs_git <sub> [operand]` (does $COMMAND run `git <sub>`, as `git push` or `git worktree
+  add`? Read from `shell-segments.awk`'s
+  segments via `seg_parse`/`seg_git_sub`, now in the lib, so text that only mentions it doesn't
+  count; never grep the raw command for a subcommand),
   `reminder_git_target_dir <words…>` (the directory the first `git <words…>` in $COMMAND runs
   in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
   git command acts on", since `cd other && git commit` acts on `other`),

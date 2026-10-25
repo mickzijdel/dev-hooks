@@ -6,6 +6,8 @@
 // from what the session facts show happened after it fired.
 import type { Facts, Nudge, NudgeCounts, NudgeOutcome, NudgeRecord } from '../types'
 
+import { endReportMissing } from './status-pane'
+
 // The hook a Stop command runs, by its script name: `bash ".../review-reminder.sh"` →
 // `review-reminder`. Names hooks without relying on each reason's tag.
 export const hookName = (command: string): string =>
@@ -133,6 +135,13 @@ export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
         return { outcome: 'ignored', evidence: 'still failing at the next Stop; block cap reached' }
       return acted('passed at the next Stop')
     }
+    case 'end-report-reminder': {
+      if (!ev.atStop || ev.lastMessage === undefined) return missed('reply to read')
+      const lacking = endReportMissing(ev.lastMessage)
+      return lacking.length === 0
+        ? acted('the next reply carried Changed and Your move')
+        : { outcome: 'ignored', evidence: `the next reply still has no ${lacking.join(' or ')} line` }
+    }
     default:
       return { outcome: 'unknown', evidence: 'no remedy the session facts can show' }
   }
@@ -234,3 +243,8 @@ export const nudgeExport = (log: NudgeRecord[], now: number) => ({
   last30Days: summarizeNudges(log, now - 30 * DAY_MS),
   records: log,
 })
+
+// A --plugin-dir dev copy has a store of its own; exporting it would replace the installed
+// plugin's stop-nudges.json until the next real nudge, so it writes beside it instead.
+export const nudgeExportFile = (pluginRoot: string): string =>
+  pluginRoot.includes('/.claude/plugins/') ? 'stop-nudges.json' : 'stop-nudges.inline.json'

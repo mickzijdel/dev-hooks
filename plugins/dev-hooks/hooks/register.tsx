@@ -22,15 +22,17 @@
 // tells the person and Claude how they ended (the block marked below).
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Facts, Nudge, NudgeRecord, Segment, Snapshot } from '../types'
+import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
   ciNote,
   ciStatusLine,
   ciToast,
   ciVerdict,
+  gitDir,
   githubRepo,
   isDryRun,
   isGitPush,
+  isQuietPush,
   parsePushOutput,
   parseRuns,
   pushDir,
@@ -47,9 +49,23 @@ import {
   newNudge,
   NUDGE_LOG_KEY,
   nudgeExport,
+  nudgeExportFile,
   resolvePending,
   toRecord,
 } from './nudge-outcomes'
+import {
+  answerFacts,
+  clockTime,
+  EMPTY_PANE_STATE,
+  findBrief,
+  keepTurns,
+  noReportTurn,
+  paneView,
+  parseCommits,
+  parseEndReport,
+  sinceLabel,
+  typedFrom,
+} from './status-pane'
 
 const isShown = { plugin: 'dev-hooks', key: 'contextBarShown' } as const
 const snapshot = { plugin: 'dev-hooks', key: 'contextBarSnapshot' } as const
@@ -490,7 +506,9 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
   await $.store.set(NUDGE_LOG_KEY, log)
   // Beside the prompt log and hook-fires.jsonl; only where that directory already exists.
   const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/automation-review`
-  if (await $.fs.exists(dir)) await $.fs.write(`${dir}/stop-nudges.json`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+  if (await $.fs.exists(dir)) {
+    await $.fs.write(`${dir}/${nudgeExportFile($.plugin.root)}`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+  }
 }
 
 // ── CI watch ────────────────────────────────────────────────────────────────────────
@@ -555,7 +573,9 @@ async function pushTargets($: EngineInterface, command: string, output: string):
   if (!workflows.some(w => /\.ya?ml$/.test(w.name))) return []
 
   const sections = parsePushOutput(output)
-  if (sections.length === 0 && /Everything up-to-date/.test(output)) return []
+  // No ref lines: up to date, or no push ran at all (the command only mentioned one), unless
+  // a quiet push hid them.
+  if (sections.length === 0 && (/Everything up-to-date/.test(output) || !isQuietPush(command))) return []
   const parts: PushSection[] = sections.length > 0 ? sections : [{ refs: [] }]
   const targets = new Map<string, { repo: string; sha: string }>()
   for (const section of parts) {
@@ -616,6 +636,151 @@ async function pollCi($: EngineInterface, key: string) {
 }
 // ── end CI watch ────────────────────────────────────────────────────────────────────
 
+// ── Session-status pane ───────────────────────────────────────────────────────────
+// Records the session's turns, tool counts, commits and background work for the pane;
+// what it shows is derived in status-pane.ts.
+const PANE_STATE = { plugin: 'dev-hooks', key: 'statusPane' } as const
+// Change the tag when StatusPaneState changes: a value stored under another is declined.
+const PANE_SHAPE = 'status-pane-2'
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+async function loadPane($: EngineInterface): Promise<StatusPaneState> {
+  const stored = (await $.state.get(PANE_STATE)).value
+  return stored?.shape === PANE_SHAPE ? stored.value : EMPTY_PANE_STATE(await $.clock.now())
+}
+
+// Tool calls run in parallel and $.state has no compare-and-set: one queue, as for facts.
+let paneQueue: Promise<unknown> = Promise.resolve()
+
+function changePane($: EngineInterface, fn: (s: StatusPaneState, now: number) => StatusPaneState): Promise<void> {
+  const run = paneQueue.then(async () => {
+    const now = await $.clock.now()
+    const next = { ...fn(await loadPane($), now), updatedAt: now }
+    await $.state.set(PANE_STATE, { shape: PANE_SHAPE, value: next })
+  })
+  paneQueue = run.catch(() => undefined)
+  return run
+}
+
+const changeOpenTurn = (s: StatusPaneState, fn: (t: TurnRecord) => TurnRecord): StatusPaneState => {
+  const open = s.turns.findLast(t => t.endedAt === undefined)
+  return open ? { ...s, turns: s.turns.map(t => (t === open ? fn(t) : t)) } : s
+}
+
+// The open turn is waiting on the person: an AskUserQuestion, or the guard's dialog.
+const setAsking = ($: EngineInterface, asking: boolean) =>
+  changePane($, s => changeOpenTurn(s, t => ({ ...t, asking }))).catch(() => undefined)
+
+// prompt.submit names the next turn's origin before turn.start; a Stop hook's continuation
+// has none, and reads as not typed.
+let nextOrigin: string | undefined
+
+// A repo by its main checkout's name, so a worktree's commits count for their repo.
+const repoNames = new Map<string, string | null>()
+
+async function repoName($: EngineInterface, dir: string): Promise<string | null> {
+  if (!repoNames.has(dir)) {
+    const common = await git($, dir, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    repoNames.set(dir, common?.replace(/\/\.git\/?$/, '').split('/').at(-1) || null)
+  }
+  return repoNames.get(dir) ?? null
+}
+
+async function recordGit($: EngineInterface, command: string, output: string) {
+  const commits = parseCommits(output)
+  const pushed = isGitPush(command) && !isDryRun(command) && parsePushOutput(output).some(p => p.refs.length > 0)
+  if (commits.length === 0 && !pushed) return
+  const cwd = await $.session.cwd()
+  const repo = await repoName($, gitDir(command, cwd, pushed && commits.length === 0 ? 'push' : 'commit'))
+  if (repo === null) return
+  await changePane($, (s, now) => {
+    const prev = s.repos.find(r => r.repo === repo) ?? { repo, commits: 0, lastCommitAt: 0 }
+    const next = {
+      ...prev,
+      commits: prev.commits + commits.length,
+      ...(commits.length > 0 ? { lastCommitAt: now } : {}),
+      ...(pushed ? { lastPushAt: now } : {}),
+    }
+    return { ...s, repos: [...s.repos.filter(r => r.repo !== repo), next] }
+  })
+}
+
+type StopBackground = {
+  background_tasks?: { id: string; type: string; status: string; description: string }[]
+  session_crons?: { id: string; prompt: string }[]
+}
+
+// What still runs when a turn stops: a task keeps the time it was first seen.
+async function recordBackground($: EngineInterface, e: StopBackground) {
+  const tasks = (e.background_tasks ?? []).filter(t => t.status === 'running' || t.status === 'pending')
+  const crons = e.session_crons ?? []
+  await changePane($, (s, now) => {
+    const seen = new Map(s.background.map(b => [b.id, b.since]))
+    const items: BackgroundItem[] = [
+      ...tasks.map(t => ({ id: t.id, label: t.description || t.type, since: seen.get(t.id) ?? now })),
+      ...crons.map(c => ({ id: c.id, label: `wakes up: ${c.prompt}`, since: seen.get(c.id) ?? now })),
+    ]
+    return { ...s, background: items }
+  })
+}
+const STATUS_PANE = 'session-status'
+const PANE_TITLE = 'Session status'
+// shortcut: a fullscreen terminal docks a pane too, but can't be told apart here; it
+// gets /session-status.
+const DOCKING_SURFACES = new Set(['vscode', 'desktop'])
+
+async function openPaneUnasked($: EngineInterface, surface: string | null) {
+  if (surface === null || !DOCKING_SURFACES.has(surface)) return
+  if ((await $.env.get('DEV_HOOKS_STATUS_PANE')) === 'false') return
+  void $.ui.open({ id: STATUS_PANE, title: PANE_TITLE }).catch(() => undefined)
+}
+
+const ciBackground = (): BackgroundItem[] =>
+  [...ciWatches.values()].map(w => ({ label: `CI ${w.repo.split('/').at(-1)}@${w.sha.slice(0, 7)}`, since: w.startedAt }))
+
+const SUMMARY_PROMPT =
+  'Write the end report for the turn that just ended, as plain lines and nothing else: a "Status:" line, then "Your move:" with each action for the person as a "- " bullet, or "Your move: nothing".'
+
+// The turn a Summarize press is answering, if any: module memory, so a reload mid-fork
+// clears it instead of leaving the button gone for good.
+let summarizing: string | undefined
+
+// The pane's one model call, made only when the person presses Summarize.
+async function summarizeTurn($: EngineInterface) {
+  const target = noReportTurn(await loadPane($))?.id
+  if (target === undefined || summarizing !== undefined) return
+  const mark = (fn: (t: TurnRecord) => TurnRecord) =>
+    changePane($, s => ({ ...s, turns: s.turns.map(t => (t.id === target ? fn(t) : t)) }))
+  summarizing = target
+  await mark(t => ({ ...t, summaryError: undefined }))
+  const answer = await $.model.fork({ prompt: SUMMARY_PROMPT }).catch(() => null)
+  summarizing = undefined
+  const summary = answer?.isAnswered ? parseEndReport(answer.text) : null
+  const failed = answer === null ? 'the call failed' : answer.isAnswered ? 'the answer held no end report' : answer.reason
+  await mark(t => ({ ...t, ...(summary ? { summary } : { summaryError: failed }) }))
+}
+
+// The pane's ages ("12 min") move on their own: redraw once a minute while it is open.
+let paneTicking = false
+
+function tickPane($: EngineInterface) {
+  if (paneTicking) return
+  paneTicking = true
+  const tick = async () => {
+    const panes = await $.ui.panes().catch(() => [])
+    if (!panes.some(p => p.id === STATUS_PANE)) {
+      paneTicking = false
+      return
+    }
+    $.ui.invalidate('ui.render')
+    $.clock.after(60_000, () => void tick())
+  }
+  $.clock.after(60_000, () => void tick())
+}
+
+const clamp = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+// ── end session-status pane ─────────────────────────────────────────────────────────
+
 async function guardNow($: EngineInterface): Promise<number> {
   return $.clock.now().catch(() => Date.now())
 }
@@ -636,6 +801,10 @@ export const register: Register = on => {
       name: 'session-facts',
       description: 'Show what dev-hooks recorded about this session (nudges: Stop-nudge outcomes)',
     })
+    await $.command.register({
+      name: STATUS_PANE,
+      description: 'Show where this session stands: what it needs from you, what runs, what changed',
+    })
     const kept = await pruneFacts($)
     await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
@@ -647,6 +816,7 @@ export const register: Register = on => {
       await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
     }
     await claimCiWatch($)
+    await openPaneUnasked($, e.surface).catch(() => undefined)
 
     return next(e)
   })
@@ -737,7 +907,16 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    const asks = e.agentId === undefined && e.tool === 'AskUserQuestion'
+    if (asks) await setAsking($, true)
     const ran = await next(e)
+    if (asks) await setAsking($, false)
+    if (e.agentId === undefined) {
+      const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
+      await changePane($, s =>
+        changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
+      ).catch(() => undefined)
+    }
     if (ran.deny !== undefined || ran.isError || (e.tool !== 'Edit' && e.tool !== 'Write')) return ran
 
     const result = ran.result as { structuredPatch?: Patch; type?: string } | undefined
@@ -761,6 +940,137 @@ export const register: Register = on => {
     return ran
   })
 
+  on('session.attach', async ($, e, next) => {
+    await openPaneUnasked($, e.surface).catch(() => undefined)
+
+    return next(e)
+  })
+
+  on('command.run', { command: STATUS_PANE }, async $ => {
+    await $.ui.open({ id: STATUS_PANE, title: PANE_TITLE })
+
+    return { text: 'Session status pane opened.' }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: STATUS_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    tickPane($)
+    const s = await loadPane($)
+    const now = await $.clock.now()
+    const v = paneView(s, ciBackground(), now, summarizing)
+    const width = Math.max(20, e.props.bodyColumns)
+    const section = (title: string, rows: string[], dim = false) => (
+      <Box flexDirection="column" marginTop={1}>
+        <Text dimColor>{title}</Text>
+        {rows.map(row => (
+          <Text dimColor={dim}>{clamp(row, 2 * width)}</Text>
+        ))}
+      </Box>
+    )
+    // Number the actions, not the "+N more" row after them.
+    const moves =
+      v.yourMove.length === 0
+        ? ['nothing']
+        : v.yourMove.length === 1
+          ? v.yourMove
+          : v.yourMove.map((m, i) => (/^\+\d+ more$/.test(m) ? m : `${i + 1}. ${m}`))
+    const parts = [
+      <Text dimColor>{`updated ${clockTime(s.updatedAt ?? s.startedAt)}`}</Text>,
+      <Box>
+        {v.tone === 'dim' ? <Text dimColor>{`● ${v.label}`}</Text> : <Text color={v.tone} bold>{`● ${v.label}`}</Text>}
+        <Text dimColor>{` · ${sinceLabel(v.since, now)}`}</Text>
+      </Box>,
+      ...(v.lastSaid ? [<Text dimColor>{`last said: "${clamp(v.lastSaid, width - 13)}"`}</Text>] : []),
+      ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => summarizeTurn($)} />] : []),
+      ...(v.summarizing ? [<Text dimColor>Summarizing…</Text>] : []),
+      ...(v.summaryError ? [<Text color="red">{`summary failed: ${v.summaryError}`}</Text>] : []),
+      section('Your move', moves, v.yourMove.length === 0),
+      ...(v.doing ? [section('Doing', [clamp(v.doing, 2 * width)])] : []),
+      ...(v.doneWhen.length > 0
+        ? [
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>Done when</Text>
+              {v.doneWhen.map(d =>
+                d.met === null ? (
+                  <Text dimColor>{`○ ${clamp(d.text, 2 * width)}`}</Text>
+                ) : (
+                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${clamp(d.text, 2 * width)}`}</Text>
+                ),
+              )}
+              {v.doneWhenNote ? <Text dimColor>{`report: ${clamp(v.doneWhenNote, 2 * width)}`}</Text> : <Text> </Text>}
+            </Box>,
+          ]
+        : []),
+      ...(v.running.length > 0 ? [section('Running', v.running)] : []),
+      ...(v.changed.length + v.repoLines.length > 0
+        ? [
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor>Changed</Text>
+              {v.changed.map(row => (
+                <Text>{clamp(row, 2 * width)}</Text>
+              ))}
+              {v.repoLines.map(row => (
+                <Text dimColor>{clamp(row, width)}</Text>
+              ))}
+            </Box>,
+          ]
+        : []),
+      ...(v.notChecked.length > 0 ? [section('Not checked', v.notChecked, true)] : []),
+      <Box marginTop={1}>
+        <Text dimColor>{`${v.turnCount} turn${v.turnCount === 1 ? '' : 's'} · session ${sinceLabel(s.startedAt, now)}`}</Text>
+      </Box>,
+    ]
+
+    return <Box flexDirection="column">{parts}</Box>
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    if (e.turnId === undefined) nextOrigin = e.origin.kind
+
+    return next(e)
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: typedFrom(nextOrigin, e.text), calls: 0, edits: 0 }
+      nextOrigin = undefined
+      await changePane($, (s, now) => ({
+        ...s,
+        turns: keepTurns([
+          // Main-loop turns don't overlap: one still open never got its end.
+          ...s.turns.map(t => (t.endedAt === undefined ? { ...t, endedAt: now, end: 'aborted' as const } : t)),
+          { ...turn, startedAt: now },
+        ]),
+        turnsTotal: s.turnsTotal + 1,
+      })).catch(() => undefined)
+    }
+
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      // A brief comes with a task the person typed; other turns don't read the transcript.
+      const typed = (await loadPane($)).turns.find(t => t.id === e.turnId)?.typed === true
+      const messages = typed ? await $.session.messages().catch(() => []) : []
+      const texts = Array.isArray(messages) ? messages.filter(m => m.role === 'assistant').map(m => m.text) : []
+      const brief = findBrief(texts)
+      await changePane($, (s, now) => ({
+        ...s,
+        turns: s.turns.map(t => (t.id !== e.turnId ? t : {
+          ...t,
+          endedAt: now,
+          end: e.reason,
+          ...answerFacts(e.answer),
+          report: parseEndReport(e.answer),
+        })),
+        brief: brief ?? s.brief,
+      })).catch(() => undefined)
+    }
+
+    return next(e)
+  })
+
   on('session.end', async ($, e, next) => {
     await closeNudges($, e.sessionId).catch(() => undefined)
 
@@ -771,6 +1081,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
     if (ran.deny !== undefined || ran.isError || e.tool !== 'Bash') return ran
+    await recordGit($, e.command, ran.text ?? '').catch(() => undefined)
     if (!isGitPush(e.command) || isDryRun(e.command) || (await ciOptedOut($))) return ran
 
     const targets = await pushTargets($, e.command, ran.text ?? '')
@@ -784,6 +1095,7 @@ export const register: Register = on => {
   // blocking, only the last reason arrives here (Claude still gets them all).
   on('classic.Stop', async ($, e, next) => {
     const below = await next(e)
+    await recordBackground($, e).catch(() => undefined)
     if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
 
     try {
@@ -828,6 +1140,7 @@ export const register: Register = on => {
     }
     const seconds = await guardTimeoutSeconds($, e.command)
     const question = guardQuestion(decided.ask, e.command, seconds)
+    await setAsking($, true)
     const asked = $.ui.ask(question, {
       header: 'dev-hooks',
       options: ['Allow', 'Deny'],
@@ -856,6 +1169,8 @@ export const register: Register = on => {
       return isInteractive
         ? { deny: 'The dev-hooks guard dialog was dismissed, so this command did not run.' }
         : decided
+    } finally {
+      await setAsking($, false)
     }
     if (answer === 'Allow') {
       const { ask: _withdrawn, ...rest } = decided

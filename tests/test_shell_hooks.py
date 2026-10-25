@@ -5547,14 +5547,17 @@ def test_ci_watch_fires_on_push_with_workflows(command, tmp_path):
     assert_json_with(r.stdout, "watch")
 
 
-# Not a `git push`: config with a pushurl, a switch, or a subcommand that only starts "push".
-# (The matcher can't shell-parse, so an *echoed* "git push" would false-fire — a harmless,
-# accepted edge, so it's deliberately not asserted silent here.)
+# Not a `git push`: config with a pushurl, a switch, a subcommand that only starts "push",
+# or text that merely mentions one (an echo, a commit message, a heredoc body).
 NON_PUSH_COMMANDS = [
     "git config remote.origin.pushurl x",
     "git switch main",
     "git pushall",
     "git status",
+    "echo 'git push'",
+    "git commit -m 'then git push'",
+    "python3 - <<'EOF'\nprint('git push')\nEOF",
+    "cat <<EOF\nrun git push later\nEOF",
 ]
 
 
@@ -6063,7 +6066,8 @@ def test_ci_watch_follows_cd_into_the_pushed_repo(tmp_path):
     assert r.stdout.strip() == ""
 
 
-def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
+def _provisioned_main(tmp_path):
+    """A main checkout with one gitignored file, and a worktree of it at tmp_path/wt."""
     main_repo = tmp_path / "main"
     main_repo.mkdir()
     run = init_git_repo(main_repo)
@@ -6072,6 +6076,11 @@ def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
     run("add", ".gitignore")
     run("commit", "-q", "-m", "init")
     run("worktree", "add", "-q", str(tmp_path / "wt"), "-b", "wt")
+    return main_repo
+
+
+def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
+    main_repo = _provisioned_main(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     payload = {
@@ -6085,3 +6094,28 @@ def test_worktree_provision_follows_cd_into_the_main_checkout(tmp_path):
         env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None, TMPDIR=str(tmp_path)),
     )
     assert "local.env" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo 'git worktree add ../wt -b wt'",
+        "git commit -m 'before git worktree add'",
+        "git worktree list",
+    ],
+)
+def test_worktree_provision_silent_on_a_command_that_only_mentions_it(
+    command, tmp_path
+):
+    main_repo = _provisioned_main(tmp_path)
+    payload = {
+        "tool_input": {"command": command},
+        "cwd": str(main_repo),
+        "session_id": "w2",
+    }
+    r = run_hook(
+        "worktree-provision-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None, TMPDIR=str(tmp_path)),
+    )
+    assert r.stdout.strip() == ""

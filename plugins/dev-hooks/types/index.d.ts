@@ -41,8 +41,51 @@ export type NudgeRecord = {
 }
 export type NudgeCounts = { fired: number } & Record<NudgeOutcome, number>
 
+// The session-status pane's record of the session, kept in $.state under `statusPane`.
+// yourMove: undefined when the report has no Your move line, which is not the same as "nothing".
+export type EndReport = { status?: string; doneWhen: string[]; changed: string[]; notChecked: string[]; yourMove?: string[] }
+export type Brief = { doing: string; doneWhen: string[] }
+export type TurnEnd = 'answer' | 'aborted' | 'refusal' | 'error'
+export type TurnRecord = {
+  id: string
+  startedAt: number
+  // Started by a prompt the person typed: it opens the window of turns the pane reads.
+  typed: boolean
+  endedAt?: number
+  end?: TurnEnd
+  calls: number
+  edits: number
+  // What the pane keeps of the final message: its first line, and whether it ends on a question.
+  lastSaid?: string
+  asksQuestion?: boolean
+  // An open turn waiting on a question in the chat (AskUserQuestion, the guard dialog).
+  asking?: boolean
+  report?: EndReport | null
+  summary?: EndReport
+  summaryError?: string
+}
+export type RepoCommits = { repo: string; commits: number; lastCommitAt: number; lastPushAt?: number }
+// id: a background task's, so its age survives the next Stop's list.
+export type BackgroundItem = { label: string; since: number; id?: string }
+export type StatusPaneState = {
+  turns: TurnRecord[]
+  turnsTotal: number
+  brief: Brief | null
+  repos: RepoCommits[]
+  background: BackgroundItem[]
+  startedAt: number
+  // When the record last changed: the pane shows it, so a stale pane is visible.
+  updatedAt?: number
+}
+
+
 declare module 'claude-code' {
   interface PluginState {
-    'dev-hooks': { contextBarShown: boolean; contextBarSnapshot: Snapshot | null; guardTimedOut: Record<string, string> }
+    'dev-hooks': {
+      contextBarShown: boolean
+      contextBarSnapshot: Snapshot | null
+      guardTimedOut: Record<string, string>
+      statusPane: Shaped<StatusPaneState>
+    }
   }
 }

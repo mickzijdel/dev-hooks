@@ -5,9 +5,11 @@ import {
   ciStatusLine,
   ciToast,
   ciVerdict,
+  gitDir,
   githubRepo,
   isDryRun,
   isGitPush,
+  isQuietPush,
   parsePushOutput,
   pushDir,
   pushRepositories,
@@ -54,6 +56,18 @@ test('pushDir follows git -C and a leading cd, else the cwd', async () => {
   expect(pushDir('git -C sub push origin main', '/s/')).toBe('/s/sub')
   expect(pushDir('cd "/my repo" && git push', '/s')).toBe('/my repo')
   expect(pushDir('cd ../other; git push', '/s')).toBe('/s/../other')
+})
+
+test('isQuietPush reads -q and --quiet on the push itself', async () => {
+  expect(['git push -q', 'git push --quiet origin main', 'git -C r push -q'].map(isQuietPush)).toEqual([true, true, true])
+  expect(['git push', 'git commit -q && git push', 'git push origin quiet'].map(isQuietPush)).toEqual([false, false, false])
+})
+
+test('gitDir finds the directory of any git subcommand, the same way', async () => {
+  expect(gitDir('git add a && git commit -m x', '/s', 'commit')).toBe('/s')
+  expect(gitDir('git -C /repo commit -m x', '/s', 'commit')).toBe('/repo')
+  expect(gitDir('cd .worktrees/x && git add . && git commit -m y', '/s', 'commit')).toBe('/s/.worktrees/x')
+  expect(gitDir('cd /a && git -C /b push', '/s', 'push')).toBe(pushDir('cd /a && git -C /b push', '/s'))
 })
 
 test('parsePushOutput reads the remote and every ref line git prints', async () => {
