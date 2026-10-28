@@ -1,9 +1,9 @@
 ---
 name: seo-toolkit
 description: |
-  Use when doing SEO work on a website — rankings, keywords, competitors, backlinks, meta tags,
+  Use when doing SEO work on a website (rankings, keywords, competitors, backlinks, meta tags,
   sitemaps, structured data, Search Console, AI-search visibility, "why does nobody find my
-  site" — when adding web analytics, or when starting, launching or auditing a website.
+  site"), when adding web analytics, or when starting, launching or auditing a website.
 ---
 
 # SEO toolkit
