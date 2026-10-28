@@ -90,6 +90,9 @@ A one-off is usually wired to the task that spawned it. Before saving:
 - Replace hard-coded paths, IDs, and values with **arguments / flags** (sensible defaults are
   fine). The script should work outside the directory it was born in.
 - Remove any **secrets** — read them from the environment or a flag, never bake them in.
+- A script that **writes to a live system** (production data, Airtable, email, payments, a
+  shared API) dry-runs by default: it prints what it would change and acts only with an explicit
+  `--apply` flag.
 - Make output predictable (a clear exit code; errors to stderr).
 - Confirm `--help` reads well to someone who's never seen the script.
 
