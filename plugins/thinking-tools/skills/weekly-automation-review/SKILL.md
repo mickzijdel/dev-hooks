@@ -106,10 +106,10 @@ Write to `plans/automation-reviews/YYYY-MM-DD.md`:
    - First step: <…>
 
 ## Skill candidates (<N> open → <N> decided)
-- <date · repo · amend X | new Y> — shipped / declined: <reason> / deferred: <waits on>
+- <date · repo · amend X | new Y>: shipped / declined: <reason> / deferred: <waits on>
 
 ## Retros (<N> since last report)
-- <date · repo · #tags> — cause: <from the transcript> — fix: <skill / hook / CLAUDE.md line, or none>
+- <date · repo · #tags>: cause <from the transcript>; fix <skill / hook / CLAUDE.md line, or none>
 
 ## Retire this week (0–2)
 - <hook/skill> — bet: <its bet> — mechanism: <what it did on a representative case; does its target exist?> — verdict: <still holds / model outgrew it> — <keep / delete / downgrade>
