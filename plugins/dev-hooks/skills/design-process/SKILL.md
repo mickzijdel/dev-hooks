@@ -1,12 +1,6 @@
 ---
 name: design-process
-description: |
-  Use when designing or restyling a UI — a landing page, marketing site, app screen, dashboard,
-  component, or "make it look good / less generic / more premium" — and when the user says the
-  result looks AI-generated, bland, or like every other AI-built site. Also when they want
-  several visual directions to choose from, a design critic pass, or a polish pass before
-  shipping. Not for positioning floating UI (popovers-tooltips), utility-class mechanics
-  (tailwind), or a11y audits (accessibility) — those pair with this.
+description: Use when designing or restyling a UI (landing page, app screen, dashboard, component), on "make it look good", "less generic" or "more premium", when it looks AI-generated or bland, or for several visual directions, a design critique or a pre-ship polish pass. Not for Tailwind mechanics (tailwind).
 allowed-tools:
   - Read
   - Write

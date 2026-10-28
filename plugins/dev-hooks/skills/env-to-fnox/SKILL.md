@@ -1,14 +1,7 @@
 ---
 name: env-to-fnox
 version: 1.2.0
-description: |
-  Migrate a project's plaintext .env file to fnox, a secret manager that stores
-  only *references* in a committed fnox.toml and resolves real values from a vault
-  at run time. Use when a repo has secrets in .env (or .env.local) and the user
-  wants them out of plaintext, when setting up secrets for a new project, or when
-  the user mentions fnox, Bitwarden Secrets Manager, bws, or "stop committing my
-  .env". Defaults to the Bitwarden Secrets Manager provider; also supports
-  1Password, age, AWS/Azure/Vault, and the OS keychain.
+description: Use when a repo keeps secrets in plaintext .env or .env.local and the user wants them out, when setting up secrets for a new project, or on a mention of fnox, bws, Bitwarden Secrets Manager or "stop committing my .env".
 allowed-tools:
   - Read
   - Write

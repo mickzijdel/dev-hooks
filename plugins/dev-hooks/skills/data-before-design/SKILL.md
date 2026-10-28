@@ -1,13 +1,6 @@
 ---
 name: data-before-design
-description: |
-  Use when about to build, restyle or lay out anything that displays stored data — a card,
-  panel, detail view, dashboard, table, report, profile page or summary strip — and the design
-  depends on what the data actually contains. Also when a field looks obviously useful, when a
-  stakeholder describes what they want to see, when choosing between layouts for the same
-  records, or when a page puts several cards or charts over the same categories side by side.
-  Not for pure aesthetics (design-process), a single chart's colour and form (dataviz), or
-  floating UI mechanics (popovers-tooltips).
+description: Use before building a view of stored data (card, panel, table, dashboard, report, profile page), and when a stakeholder says what to show, a field looks obviously useful, layouts for the same records compete, or several cards or charts cover the same categories. Not for pure looks (design-process).
 ---
 
 # Data before design

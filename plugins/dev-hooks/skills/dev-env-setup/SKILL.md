@@ -1,15 +1,7 @@
 ---
 name: dev-env-setup
 version: 4.7.0
-description: |
-  Audit a repo against an opinionated dev-environment standard (mise pinning tools, an hk
-  pre-commit hook running linters/tests + gitleaks, a GitHub Actions workflow that
-  mirrors those checks, and project docs — README.md + CLAUDE.md recording pinned
-  package versions) and set it up or upgrade it. Use when a repo is missing
-  the standard setup, when the dev-env-reminder hook flags a gap, when the user mentions
-  hk/mise/gitleaks/"my dev setup", when starting a new repo, or to backfill every
-  standard-tracking repo after a version bump (fleet mode). Tracks a standard version
-  via DEV_ENV_VERSION in mise.toml and upgrades behind repos using references/upgrade-guide.md.
+description: "Use to audit, set up or upgrade a repo against the dev-env standard (mise, hk pre-commit, gitleaks, mirrored CI): starting a new repo, the dev-env-reminder hook flagging a gap, a mention of hk, mise, gitleaks or \"my dev setup\", or backfilling every repo after a standard version bump."
 allowed-tools:
   - Read
   - Write

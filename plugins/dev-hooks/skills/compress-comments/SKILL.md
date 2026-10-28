@@ -1,11 +1,6 @@
 ---
 name: compress-comments
-description: |
-  Use when a session's work left verbose or redundant code comments to clean up — after
-  finishing a feature, before commit/merge, when the compress-comments-reminder hook fires,
-  or when asked to "compress the comments", "clean up your comments", or "review the
-  comments you added". NOT for reviewing code structure (use code-simplifier) or whole-repo
-  audits (use repo-review).
+description: "Use when this session's code left verbose or redundant comments: after a feature, before commit or merge, when the compress-comments-reminder hook fires, or on \"compress the comments\", \"clean up your comments\", \"review the comments you added\". Not for code structure (code-simplifier)."
 allowed-tools:
   - Read
   - Edit

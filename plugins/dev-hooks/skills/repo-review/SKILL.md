@@ -1,11 +1,6 @@
 ---
 name: repo-review
-description: |
-  Whole-repository review/audit of an existing or inherited codebase. Use when the user
-  says "review this repository", "audit this codebase", "do a full code review of the
-  repo", "what's wrong with this app", "I just inherited this project", or asks for a
-  multi-axis sweep (e.g. "review for 1. performance 2. code smells 3. structure"). NOT
-  for reviewing a single diff/PR (use the /code-review command) or a one-file change.
+description: "Use for a whole-repo review or audit of an existing or inherited codebase: \"review this repository\", \"audit this codebase\", \"what's wrong with this app\", \"I just inherited this project\", or a multi-axis sweep (\"review for performance, smells, structure\"). Not for one diff or PR (/code-review)."
 allowed-tools:
   - Read
   - Bash

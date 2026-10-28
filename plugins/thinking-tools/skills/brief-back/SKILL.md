@@ -1,6 +1,6 @@
 ---
 name: brief-back
-description: Use at the start of any task the person hands you (research, a doc, code, a plan, a buying decision), and when they say "be thorough", "quick look", "go deep", or correct the scope mid-task. Plays the brief back as a contract sized to the task (depth, done when, what you need from them) and ends with a status. Skip for plain questions and lookups.
+description: Use at the start of any task the person hands you (research, a doc, code, a plan, a buying decision) to agree depth and done-when, and when they say "be thorough", "quick look", "go deep", or change the scope mid-task. Skip plain questions and lookups.
 ---
 
 # Brief-back

@@ -1,10 +1,6 @@
 ---
 name: agent-brief
-description: Use when writing a task brief for an agent — dispatching a subagent, handing off
-  work, or turning a fuzzy request into instructions — and you want it aimed at an outcome, not
-  a method. Triggers on "brief an agent", "write a task for a subagent", "spec this out for an
-  agent", or a handoff that says what to do but not why or what's out of scope. Pairs with the
-  intent-check hook.
+description: "Use when writing a brief for an agent: dispatching a subagent, handing off work, or turning a fuzzy request into instructions. Triggers on \"brief an agent\", \"write a task for a subagent\", \"spec this out for an agent\", or a handoff missing the why or what's out of scope."
 ---
 
 # Agent Brief

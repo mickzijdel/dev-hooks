@@ -1,6 +1,6 @@
 ---
 name: commit-digest
-description: Use on a weekly (or on-demand) cadence to review recent commits from tracked external repos (e.g. dotfiles, framework repos) and optionally Atom/RSS feeds and curated web pages, then pull in improvements applicable to the current project. Opens a separate PR for each implementation and logs skipped suggestions to a dedicated branch for searchable, dedup-safe history. Triggers on "check for new ideas", "what changed upstream", "any improvements to pull in from <repo>", "review dotfiles commits", or as a scheduled agent. Companion to weekly-automation-review, which reviews the local repo's own activity.
+description: Use weekly, on demand or as a scheduled agent to scan tracked external repos (dotfiles, frameworks), feeds and curated pages for ideas worth pulling into this project. Triggers on "check for new ideas", "what changed upstream", "any improvements to pull in from <repo>", "review dotfiles commits".
 ---
 
 # Commit Digest

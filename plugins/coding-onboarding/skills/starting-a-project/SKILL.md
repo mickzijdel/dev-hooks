@@ -1,12 +1,7 @@
 ---
 name: starting-a-project
 version: 1.1.0
-description: |
-  Use when someone is starting a new project and unsure what stack or framework to build it
-  with — "what should I use to build X?", "how do I start a new project?" — or asks how to
-  deploy / put a project online. Covers the common beginner goals: a content website, an
-  interactive app, a database-backed web app, an API, a script or automation, a phone app, a
-  data dashboard.
+description: "Use when someone is starting a new project and unsure what stack or framework to use (\"what should I use to build X?\", \"how do I start a new project?\"), or asks how to deploy or put a project online. Fits beginner goals: a website, web or phone app, API, script or dashboard."
 allowed-tools:
   - Read
   - Write

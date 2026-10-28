@@ -1,6 +1,6 @@
 ---
 name: but-for-real
-description: Use when about to claim something is done, fixed, working, passing, or ready to ship; when a change has only been eyeballed or pattern-matched rather than actually run; or when the user says "but for real", "for real this time", "don't guess", or "did you actually test it". Triggers on premature success claims, unverified fixes, and hand-waving instead of inspecting the real code.
+description: Use when about to claim something is done, fixed, passing or ready to ship, when a change was only eyeballed or pattern-matched and never run, or when the user says "but for real", "for real this time", "don't guess" or "did you actually test it".
 ---
 
 # But For Real

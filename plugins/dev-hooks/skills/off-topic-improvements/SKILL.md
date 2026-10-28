@@ -1,6 +1,6 @@
 ---
 name: off-topic-improvements
-description: Use when working through a repo's `plans/off-topic-improvements.md` backlog — the out-of-scope improvements noted during earlier work. Triggers on "drain the backlog", "address the off-topic improvements", "tackle the off-topic backlog", "work through the improvements file", or clearing accumulated backlog items. Triages each item (do now / defer / drop), lands each addressed item as its own atomic commit, and keeps the backlog file in sync. NOT for finding new improvements (that's a review) or a single ad-hoc fix.
+description: "Use to work through a repo's plans/off-topic-improvements.md backlog: \"drain the backlog\", \"address the off-topic improvements\", \"work through the improvements file\", or clearing parked items. Not for finding new improvements."
 ---
 
 # Draining the off-topic-improvements backlog

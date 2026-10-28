@@ -1,6 +1,6 @@
 ---
 name: review-queue
-description: Use when someone wants agents to prepare changes to a dataset they maintain (a directory, listings site, CRM, catalogue, Airtable or Notion base, spreadsheet) so a human only accepts or rejects. Triggers on "set up a review queue", "approval inbox", "agents propose, I approve", "I keep falling behind on keeping X up to date", "triage requests from email/forms/Slack/Discord into data changes", "minimise human input in data upkeep", or a mention of AISafety.com's Queue. NOT for one-off bulk edits (just do them) or loops with no human decision step (that's loop-oversight).
+description: "Use when agents should prepare changes to a maintained dataset (directory, CRM, Airtable/Notion base, spreadsheet) for a human to accept or reject: \"review queue\", \"agents propose, I approve\", \"I keep falling behind on keeping X up to date\", triaging requests into edits, or AISafety.com's Queue."
 ---
 
 # Designing a review queue

@@ -1,14 +1,7 @@
 ---
 name: github-actions
 version: 1.1.0
-description: |
-  Write, review, and harden GitHub Actions workflows against supply-chain attacks, and bump a
-  whole fleet of repos' action pins to the latest versions. Use when writing or editing a
-  workflow YAML (.github/workflows/*.yml, ci.yml), when asked to review a CI workflow or audit
-  GitHub Actions security, when the ci-action-ref-reminder hook fires, or when the user wants to
-  "bump my actions", "update the fleet", "pin actions to SHAs", run zizmor, or close supply-chain /
-  pull_request_target / script-injection / GITHUB_TOKEN-permissions gaps. Pairs with
-  references/security-checklist.md (the full checklist) and dev-env-setup's CI templates.
+description: Use when writing, editing or reviewing a GitHub Actions workflow (.github/workflows/*.yml), auditing CI security (pull_request_target, script injection, GITHUB_TOKEN permissions, zizmor), when the ci-action-ref-reminder hook fires, or on "bump my actions", "update the fleet", "pin actions to SHAs".
 allowed-tools:
   - Read
   - Write
