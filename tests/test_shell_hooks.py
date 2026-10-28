@@ -1621,6 +1621,76 @@ def test_memory_reminder_still_fires_for_writes_outside_memory_dirs(tmp_path, pa
     assert stop_blocked(r)
 
 
+# ── skill-candidate-reminder.sh ─────────────────────────────────────────────────────
+SKILL_SENTINEL = (
+    "[skill-candidate-reminder] skill candidates not yet reviewed this session"
+)
+QUEUE = "/home/u/.claude/automation-review/skill-candidates.md"
+
+
+def _run_skill_candidate(tmp_path, transcript, *, review_dir=True, **env):
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True, exist_ok=True)
+    if review_dir:
+        (home / ".claude" / "automation-review").mkdir(exist_ok=True)
+    return run_hook(
+        "skill-candidate-reminder.sh",
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+        env=base_env(HOME=str(home), **env),
+    )
+
+
+def test_skill_candidate_reminder_fires_on_substantial_session(tmp_path):
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_blocked(r)
+    reason = json.loads(r.stdout)["reason"]
+    assert reason.startswith(SKILL_SENTINEL)
+    assert "~/.claude/automation-review/skill-candidates.md" in reason
+    assert "nothing to propose" in reason
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"review_dir": False},  # the weekly-review setup isn't in use
+        {"DEV_HOOKS_SKILL_CANDIDATES": "false"},
+    ],
+)
+def test_skill_candidate_reminder_silent_when_off(tmp_path, kwargs):
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None, **kwargs)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "turns, extra",
+    [
+        (5, []),  # too short to have worked anything out
+        (6, [SKILL_SENTINEL]),  # already asked this session
+        (6, [_memory_write(QUEUE)]),  # already proposed this session
+    ],
+)
+def test_skill_candidate_reminder_silent(tmp_path, turns, extra):
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=turns, extra_lines=extra
+    )
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+def test_skill_candidate_reminder_counts_a_proposal_a_subagent_wrote(tmp_path):
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    facts = tmp_path / "facts.json"
+    facts.write_text(
+        json.dumps({"repos": [{"root": None, "files": [QUEUE], "added": 9}]})
+    )
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=str(facts))
+    assert stop_allowed(r)
+
+
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────
 def _plan_env(tmp_path, session="plan-session"):
     """Isolate the hook's state dir per test, and give it a stable session id."""

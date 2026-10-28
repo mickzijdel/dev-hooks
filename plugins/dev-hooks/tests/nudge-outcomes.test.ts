@@ -89,6 +89,20 @@ test('memory-reminder: a memory write acts, the escape-hatch phrase declines, si
   expect(resolveNudge(nudge('memory-reminder'), said).outcome).toBe('declined')
 })
 
+test('skill-candidate-reminder: a queue write acts, the escape-hatch phrase declines, silence ignores', async () => {
+  const wrote = facts({ lastEdit: { '/home/u/.claude/automation-review/skill-candidates.md': T + 1 } })
+  expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(wrote))).toEqual({
+    outcome: 'acted',
+    evidence: 'proposed in skill-candidates.md',
+  })
+
+  const elsewhere = facts({ lastEdit: { '/repo/plans/skill-candidates.md': T + 1 } })
+  expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(elsewhere)).outcome).toBe('ignored')
+
+  const said = atStop(facts(), { lastMessage: 'Nothing to propose: this was a one-off fix.' })
+  expect(resolveNudge(nudge('skill-candidate-reminder'), said).outcome).toBe('declined')
+})
+
 test('missing-test-reminder is acted on by a test for a listed file', async () => {
   const n = nudge('missing-test-reminder', '[missing-test] …', ['src/parser.ts'])
   const test_ = facts({ lastEdit: { '/repo/tests/parser.test.ts': T + 1 } })

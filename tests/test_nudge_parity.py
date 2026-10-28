@@ -35,6 +35,16 @@ def test_memory_dir_rule_matches_hook_helpers():
     )
 
 
+def test_skill_queue_rule_matches_hook_helpers():
+    sys.path.insert(0, str(HOOKS / "lib"))
+    sys.dont_write_bytecode = True
+    from hook_helpers import SKILL_QUEUE_RE
+
+    assert (
+        _ts_regex_source("SKILL_QUEUE_RE").replace("\\/", "/") == SKILL_QUEUE_RE.pattern
+    )
+
+
 def test_compress_comments_needle_matches_its_hook():
     sh = (HOOKS / "compress-comments-reminder.sh").read_text()
     assert 'reminder_transcript_invoked "" compress-comments\n' in sh

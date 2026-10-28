@@ -128,9 +128,9 @@ weekly-automation-review skill reads. A new Stop hook gets `unknown` until it ha
 to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
 live `claude -p --plugin-dir` run. Such a run's mod writes `stop-nudges.inline.json` from the inline
 store (`nudgeExportFile`: only a root under `~/.claude/plugins/` writes `stop-nudges.json`), so the
-marketplace export is left alone. The review needles, the memory-dir regex and the probe rule are mirrors of
-`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE` and `reminder_is_probe_session`, pinned by
-`tests/test_nudge_parity.py`.
+marketplace export is left alone. The review needles, the memory-dir and skill-queue regexes and the probe rule are mirrors of
+`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE`/`SKILL_QUEUE_RE` and `reminder_is_probe_session`,
+pinned by `tests/test_nudge_parity.py`.
 
 The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
 push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported
@@ -302,7 +302,9 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
   `scan_script_dirs()` for the recursive script-index inventory, `memory_written()` for "did this
-  session write a memory file?" (transcript Write/Edit into a memory dir, plus the facts file), `authored_scripts()` for the
+  session write a memory file?" (transcript Write/Edit into a memory dir, plus the facts file;
+  `path_written()` is the same check for any path regex, as skill-candidate-reminder uses for its
+  queue), `human_turns()` for the "substantial session" turn count with the sentinel guard, `authored_scripts()` for the
   save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
   actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
   skill_listing attachment names every installed skill, so a plain grep for a skill name
