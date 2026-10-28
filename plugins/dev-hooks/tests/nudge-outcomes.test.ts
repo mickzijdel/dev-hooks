@@ -90,7 +90,7 @@ test('memory-reminder: a memory write acts, the escape-hatch phrase declines, si
 })
 
 test('skill-candidate-reminder: a queue write acts, the escape-hatch phrase declines, silence ignores', async () => {
-  const wrote = facts({ lastEdit: { '/home/u/.claude/automation-review/skill-candidates.md': T + 1 } })
+  const wrote = facts({ lastEdit: { '/home/u/.local/share/dev-hooks/skill-candidates.md': T + 1 } })
   expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(wrote))).toEqual({
     outcome: 'acted',
     evidence: 'proposed in skill-candidates.md',

@@ -4,12 +4,14 @@
 # Stop hook: once per substantial session, ask Claude whether the session worked out a
 # repeatable procedure or hit a mistake an existing skill should have prevented, and if so
 # to append a proposal to the skill-candidate queue, which weekly-automation-review triages.
+# The queue lives outside ~/.claude, whose files Claude Code always asks before writing, even
+# with an allow rule; an allow rule for the queue's folder makes the write prompt-free.
 # It only proposes: creating or editing the skill is the weekly review's call, so the queue
 # collects candidates without piling up untested skills.
 #
 # Gates, all must pass or we stay silent (exit 0):
 #   1. The automation-review dir exists (~/.claude/automation-review: the prompt log and
-#      weekly review are in use; the queue lives there beside them).
+#      weekly review are in use).
 #   2. Substantial session: >= DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS (default 6) human turns.
 #   3. Once per session: the sentinel embedded in the reminder isn't in the transcript yet.
 #   4. Nothing proposed yet: no Write/Edit to the queue this session (a subagent's via the
@@ -17,6 +19,7 @@
 # Opt out with DEV_HOOKS_SKILL_CANDIDATES=false.
 
 MIN_TURNS="${DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS:-6}"
+QUEUE="${XDG_DATA_HOME:-$HOME/.local/share}/dev-hooks/skill-candidates.md"
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -48,7 +51,7 @@ case "$RESULT" in
 esac
 [ "$RESULT" -lt "$MIN_TURNS" ] && exit 0
 
-MSG="${SENTINEL}. Before finishing, ask: did this session work out a repeatable multi-step procedure, or hit a mistake that an existing skill should have prevented? If so, append one entry per candidate to ~/.claude/automation-review/skill-candidates.md with the Write or Edit tool (create the file if it's missing), in this shape:
+MSG="${SENTINEL}. Before finishing, ask: did this session work out a repeatable multi-step procedure, or hit a mistake that an existing skill should have prevented? If so, append one entry per candidate to $QUEUE with the Write or Edit tool (create the file if it's missing), in this shape:
 
 ## <YYYY-MM-DD> · <repo or folder> · amend <plugin:skill> | new <name>
 - Trigger: <when it should fire, in the words a user would type>

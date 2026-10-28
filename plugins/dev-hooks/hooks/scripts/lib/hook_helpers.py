@@ -262,7 +262,7 @@ def _split_needles(needles):
 # Claude Code's file-based memory: per project (~/.claude/projects/<slug>/memory/) or
 # global (~/.claude/memory/). A repo's own "memory" folder is not it.
 MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
-SKILL_QUEUE_RE = re.compile(r"/\.claude/automation-review/skill-candidates\.md$")
+SKILL_QUEUE_RE = re.compile(r"/dev-hooks/skill-candidates\.md$")
 _WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 

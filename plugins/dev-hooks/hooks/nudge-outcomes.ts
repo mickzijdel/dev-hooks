@@ -37,7 +37,7 @@ export const REVIEW_NEEDLES = ['code-review', 'code_review', 'requesting-code-re
 // Mirrors hook_helpers.MEMORY_DIR_RE.
 export const MEMORY_DIR_RE = /\/\.claude\/(?:projects\/[^/]+\/)?memory\//
 // Mirrors hook_helpers.SKILL_QUEUE_RE.
-export const SKILL_QUEUE_RE = /\/\.claude\/automation-review\/skill-candidates\.md$/
+export const SKILL_QUEUE_RE = /\/dev-hooks\/skill-candidates\.md$/
 
 // Mirrors hook_helpers._AGENT_DOER_RE and _agent_job_re: "Review task 8" is a review,
 // "Add product review form" is not.

@@ -1625,7 +1625,7 @@ def test_memory_reminder_still_fires_for_writes_outside_memory_dirs(tmp_path, pa
 SKILL_SENTINEL = (
     "[skill-candidate-reminder] skill candidates not yet reviewed this session"
 )
-QUEUE = "/home/u/.claude/automation-review/skill-candidates.md"
+QUEUE = "/home/u/.local/share/dev-hooks/skill-candidates.md"
 
 
 def _run_skill_candidate(tmp_path, transcript, *, review_dir=True, **env):
@@ -1636,7 +1636,7 @@ def _run_skill_candidate(tmp_path, transcript, *, review_dir=True, **env):
     return run_hook(
         "skill-candidate-reminder.sh",
         stdin=json.dumps({"transcript_path": str(transcript)}),
-        env=base_env(HOME=str(home), **env),
+        env=base_env(HOME=str(home), XDG_DATA_HOME=str(tmp_path / "data"), **env),
     )
 
 
@@ -1646,7 +1646,7 @@ def test_skill_candidate_reminder_fires_on_substantial_session(tmp_path):
     assert stop_blocked(r)
     reason = json.loads(r.stdout)["reason"]
     assert reason.startswith(SKILL_SENTINEL)
-    assert "~/.claude/automation-review/skill-candidates.md" in reason
+    assert str(tmp_path / "data" / "dev-hooks" / "skill-candidates.md") in reason
     assert "nothing to propose" in reason
 
 
