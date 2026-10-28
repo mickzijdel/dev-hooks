@@ -262,12 +262,13 @@ def _split_needles(needles):
 # Claude Code's file-based memory: per project (~/.claude/projects/<slug>/memory/) or
 # global (~/.claude/memory/). A repo's own "memory" folder is not it.
 MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
+SKILL_QUEUE_RE = re.compile(r"/\.claude/automation-review/skill-candidates\.md$")
 _WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def memory_written(transcript_path, facts_path=None):
-    """True when this session wrote a memory file: a Write/Edit tool call into a memory
-    dir in the transcript, or — via the dev-hooks mod's session facts — such an edit made
+def path_written(transcript_path, facts_path, pattern):
+    """True when this session wrote a file whose path matches `pattern`: a Write/Edit tool
+    call in the transcript, or — via the dev-hooks mod's session facts — such an edit made
     by a subagent, which the parent transcript never records."""
     if facts_path:
         try:
@@ -276,17 +277,51 @@ def memory_written(transcript_path, facts_path=None):
         except (OSError, ValueError, TypeError, AttributeError):
             repos = []
         for repo in repos:
-            if any(
-                MEMORY_DIR_RE.search(str(p)) for p in (repo or {}).get("files") or []
-            ):
+            if any(pattern.search(str(p)) for p in (repo or {}).get("files") or []):
                 return True
     for line in _transcript_lines(transcript_path):
         for block in _tool_use_blocks(line):
             if block.get("name") in _WRITE_TOOLS:
                 path = str((block.get("input") or {}).get("file_path") or "")
-                if MEMORY_DIR_RE.search(path):
+                if pattern.search(path):
                     return True
     return False
+
+
+def memory_written(transcript_path, facts_path=None):
+    """True when this session wrote a memory file (see `path_written`)."""
+    return path_written(transcript_path, facts_path, MEMORY_DIR_RE)
+
+
+def _is_human_turn(rec):
+    """A user message carrying real human input, not just a tool_result."""
+    msg = rec.get("message", rec)
+    if not isinstance(msg, dict) or msg.get("role") != "user":
+        return False
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content.strip() != ""
+    if isinstance(content, list):
+        return any(
+            isinstance(b, dict) and b.get("type") != "tool_result" for b in content
+        )
+    return False
+
+
+def human_turns(transcript_path, sentinel):
+    """The number of human turns in the transcript, or None once `sentinel` appears in it
+    (the hook already spoke this session)."""
+    turns = 0
+    for line in _transcript_lines(transcript_path):
+        if sentinel in line:
+            return None
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and _is_human_turn(rec):
+            turns += 1
+    return turns
 
 
 _SEGMENT_WRAPPERS = {"sudo", "command", "nohup", "time", "env", "exec"}

@@ -18,6 +18,10 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/script-index.sh\"",
             "statusMessage": "Indexing your saved CLI script library..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin-scope-reminder.sh\" session"
           }
         ]
       }
@@ -39,6 +43,10 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/data-before-design-reminder.sh\"",
             "statusMessage": "Checking whether the data was looked at first..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin-scope-reminder.sh\" prompt"
           }
         ]
       }
@@ -186,6 +194,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/memory-reminder.sh\"",
             "statusMessage": "Checking for session learnings worth remembering..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/skill-candidate-reminder.sh\"",
+            "statusMessage": "Checking for skill candidates worth proposing..."
           },
           {
             "type": "command",

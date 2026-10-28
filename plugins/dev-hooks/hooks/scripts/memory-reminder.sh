@@ -49,53 +49,14 @@ reminder_stop_init "$SENTINEL"
 # integer count of human turns (user messages that aren't pure tool_result records).
 RESULT=$(
   python3 - "$TRANSCRIPT" "$SENTINEL" "$REMINDER_LIB_DIR" "${DEV_HOOKS_FACTS_FILE:-}" <<'PYEOF'
-import sys, json
+import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
-from hook_helpers import memory_written
+from hook_helpers import human_turns, memory_written
 
-path, sentinel = sys.argv[1], sys.argv[2]
-if memory_written(path, sys.argv[4] or None):
-    print("skip")
-    sys.exit(0)
-
-
-def is_human_turn(rec):
-    """True for a user message that carries real human input (not just a tool_result)."""
-    msg = rec.get("message", rec)
-    if not isinstance(msg, dict) or msg.get("role") != "user":
-        return False
-    content = msg.get("content")
-    if isinstance(content, str):
-        return content.strip() != ""
-    if isinstance(content, list):
-        for block in content:
-            if isinstance(block, dict) and block.get("type") != "tool_result":
-                return True
-    return False
-
-
-turns = 0
-try:
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if sentinel in line:
-                print("skip")
-                sys.exit(0)
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if is_human_turn(rec):
-                turns += 1
-except OSError:
-    pass
-
-print(turns)
+turns = human_turns(sys.argv[1], sys.argv[2])
+print("skip" if turns is None or memory_written(sys.argv[1], sys.argv[4] or None) else turns)
 PYEOF
 )
 

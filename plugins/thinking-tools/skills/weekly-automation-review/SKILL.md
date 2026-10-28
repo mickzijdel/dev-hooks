@@ -23,17 +23,20 @@ Automation is a one-way ratchet unless something also **removes** it. So each ru
 - **Recent git activity** — commits/branches in the working repo over the last 7 days (`git log --since='7 days ago' --stat`); what kinds of changes repeated?
 - **The off-topic backlog** — `plans/off-topic-improvements.md` if present; recurring themes there are automation candidates.
 - **Repetition signals** — the same multi-step manual workflow done more than once, the same class of fix, the same checklist run by hand.
-- **The previous report** — read the last file in `plans/automation-reviews/` so recommendations build on prior ones and you can note what actually got automated (self-improving loop).
+- **The skill-candidate queue** — `~/.claude/automation-review/skill-candidates.md`, appended by dev-hooks' `skill-candidate-reminder` at the end of substantial sessions: one `## <date> · <repo> · amend <skill> | new <name>` entry per proposal, with its trigger, should-fire and should-not-fire prompts, evidence and a `Status:` line. Every `Status: open` entry gets a decision this run (see Procedure). The same proposal from two sessions is a strong signal.
+- **Retros** — `~/.claude/automation-review/retros.jsonl`, written by `/retro`: one line per moment the user flagged a session as going badly (`ts`, `session`, `cwd`, `note` with any `#tags`). Read those since the previous report, corruption-tolerantly like the prompt log. Each is a failure signal nobody diagnosed yet: open the session's transcript (`~/.claude/projects/*/<session>.jsonl`) around `ts` and name the cause before proposing a fix (usually a skill amendment, a hook, or a CLAUDE.md line).
+- **The previous report** — read the newest `YYYY-MM-DD.md` in `plans/automation-reviews/` (other files and subfolders there aren't weekly reports) so recommendations build on prior ones and you can note what actually got automated (self-improving loop).
 
 ## Procedure
 
 1. Read the previous report (if any) and note which past suggestions shipped.
 2. Gather the week's activity — start with the prompt log (when present), then the memory indexes, then git/backlog.
 3. Identify repeated workflows — favor ones that are **high-volume, well-defined, low blast-radius, and measurable**.
-4. Pick the top **1–2** and, for each, specify: what it is, whether it's best as a **skill / hook / tool**, a rough effort estimate, and the first concrete step.
-5. **Retire pass** (below) — pick 1–2 scaffolds to propose removing.
-6. **Separate sub-reviews** (below) — run any that are installed.
-7. Write the dated report (below) and post a one-paragraph summary to the user.
+4. **Triage the skill-candidate queue.** For each `Status: open` entry: amend the named skill, add the new one, or decline. Prefer amending; a new skill must first show it triggers on its should-fire prompts and stays quiet on the rest (skill-creator's description test, or a `claude plugin eval` case with a `tool_used: Skill` grader), since every added skill makes picking the right one harder. Rewrite the entry's status line as `Status: shipped <date> <commit>`, `Status: declined <date>: <reason>` or `Status: deferred <date>: <what it waits on>`. A candidate you'd build counts as one of this week's picks.
+5. Pick the top **1–2** and, for each, specify: what it is, whether it's best as a **skill / hook / tool**, a rough effort estimate, and the first concrete step.
+6. **Retire pass** (below) — pick 1–2 scaffolds to propose removing.
+7. **Separate sub-reviews** (below) — run any that are installed.
+8. Write the dated report (below) and post a one-paragraph summary to the user.
 
 ## Retire pass — prune scaffolding the model outgrew
 
@@ -101,6 +104,12 @@ Write to `plans/automation-reviews/YYYY-MM-DD.md`:
 ## Recommended this week (1–2)
 1. <name> — skill | hook | tool — effort: <S/M/L>
    - First step: <…>
+
+## Skill candidates (<N> open → <N> decided)
+- <date · repo · amend X | new Y> — shipped / declined: <reason> / deferred: <waits on>
+
+## Retros (<N> since last report)
+- <date · repo · #tags> — cause: <from the transcript> — fix: <skill / hook / CLAUDE.md line, or none>
 
 ## Retire this week (0–2)
 - <hook/skill> — bet: <its bet> — mechanism: <what it did on a representative case; does its target exist?> — verdict: <still holds / model outgrew it> — <keep / delete / downgrade>

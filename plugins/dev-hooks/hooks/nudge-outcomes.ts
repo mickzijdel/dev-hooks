@@ -36,6 +36,8 @@ export const newNudge = (hook: string, reason: string, at: number): Nudge => {
 export const REVIEW_NEEDLES = ['code-review', 'code_review', 'requesting-code-review', 'code-reviewer']
 // Mirrors hook_helpers.MEMORY_DIR_RE.
 export const MEMORY_DIR_RE = /\/\.claude\/(?:projects\/[^/]+\/)?memory\//
+// Mirrors hook_helpers.SKILL_QUEUE_RE.
+export const SKILL_QUEUE_RE = /\/\.claude\/automation-review\/skill-candidates\.md$/
 
 // Mirrors hook_helpers._AGENT_DOER_RE and _agent_job_re: "Review task 8" is a review,
 // "Add product review form" is not.
@@ -114,6 +116,14 @@ export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
         return { outcome: 'declined', evidence: "said 'nothing worth saving'" }
       }
       return missed('memory write')
+    }
+    case 'skill-candidate-reminder': {
+      if (editedSince(ev.facts, n.at, f => SKILL_QUEUE_RE.test(f))) return acted('proposed in skill-candidates.md')
+      // The reason's own escape hatch: "say 'nothing to propose' in one line and stop."
+      if (/nothing to propose/i.test(ev.lastMessage ?? '')) {
+        return { outcome: 'declined', evidence: "said 'nothing to propose'" }
+      }
+      return missed('skill-candidate proposal')
     }
     case 'missing-test-reminder': {
       const stems = (n.files ?? []).map(stem)
