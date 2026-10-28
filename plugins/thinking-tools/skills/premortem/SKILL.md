@@ -1,6 +1,6 @@
 ---
 name: premortem
-description: Use before committing to a non-trivial plan, design, architecture, migration, launch, or irreversible decision — especially when momentum or optimism is high and nobody has named what could go wrong. Triggers when you're about to start executing a plan, when stakes are high or the decision is hard to reverse, or when the user asks to stress-test, pressure-test, or sanity-check an approach. Not for generating ideas (that's brainstorming).
+description: Use before committing to or starting a non-trivial plan, design, migration, launch or hard-to-reverse decision, above all when optimism runs high and nobody has said what could go wrong, or when asked to stress-test, pressure-test or sanity-check an approach.
 ---
 
 # Premortem

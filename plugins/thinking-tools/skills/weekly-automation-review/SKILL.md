@@ -1,6 +1,6 @@
 ---
 name: weekly-automation-review
-description: Use on a weekly (Monday) cadence, or when asked what repetitive work is worth automating, what to turn into a skill/hook/tool, or to review recent activity for automation opportunities. This is the skill the scheduled Monday remote agent invokes. Triggers on recurring-task review, "what should I automate", and end-of-week/start-of-week retrospectives.
+description: Use for the weekly (Monday) review the scheduled agent runs, or when asked "what should I automate", what repeated work to turn into a skill, hook or tool, or for an end- or start-of-week look back at recent activity.
 ---
 
 # Weekly Automation Review

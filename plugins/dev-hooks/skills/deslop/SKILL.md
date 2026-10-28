@@ -1,12 +1,6 @@
 ---
 name: deslop
-description: |
-  Use before declaring a coding task done, before a commit, or before merging — and when
-  asked to "deslop", "de-LLMify", "remove the AI slop", "make this look human-written", or
-  "clean up your code". Also when a diff grew a file, added fallbacks or defensive checks,
-  piled on comments, duplicated logic the repo already has, or repeated tests. Behaviour-preserving
-  cleanup of AI-authored slop in the current diff, run by a fresh-context subagent. NOT
-  for new features, redesigns, or comment-only cleanup (use compress-comments).
+description: Use before calling a coding task done, committing or merging, and on "deslop", "de-LLMify", "remove the AI slop", "make this look human-written", "clean up your code", or when the diff grew, added fallbacks or defensive checks, or duplicated logic or tests. Not for comments only (compress-comments).
 allowed-tools:
   - Bash
   - Read

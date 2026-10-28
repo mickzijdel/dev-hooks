@@ -1,15 +1,6 @@
 ---
 name: worktree-setup
-description: |
-  Provision a freshly-created git worktree so it's actually ready to work in — trust its
-  mise config at whatever path it lives, copy gitignored-but-needed files (Rails
-  config/master.key, .env, …) from the main checkout, and re-mark shebang scripts executable.
-  Use right after creating a worktree (native EnterWorktree or `git worktree add`), or when a
-  new worktree errors with "config file is not
-  trusted", is missing secrets/.env, can't load the app, or has non-executable scripts. Also
-  when parallel worktrees collide on the same dev-server port or database — opt into per-worktree
-  ports + databases via a `.worktree-isolate.conf`. Pairs with using-git-worktrees (which creates
-  the worktree; this provisions it).
+description: Use right after creating a git worktree (EnterWorktree or `git worktree add`), or when a new worktree says "config file is not trusted", lacks .env or other gitignored secrets, can't boot the app, has non-executable scripts, or shares a dev-server port or database with another worktree.
 allowed-tools:
   - Read
   - Bash

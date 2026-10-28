@@ -1,13 +1,6 @@
 ---
 name: expose-service
-description: |
-  Make a service running on an internal or private host reachable — over Tailscale, a
-  Cloudflare Tunnel, or a public reverse proxy — and keep it reachable after a reboot. Use on
-  "expose X", "give me access to the admin panel", "put this behind a URL", "set up a tunnel
-  to", "serve it on tailscale", "I can't reach it from outside", or when a just-deployed
-  service 502s, is unreachable, or throws a cert warning. Also for the reverse — auditing
-  whether something exposed is reachable by a path you did not intend. NOT a hosting or
-  deployment decision (where the app should run); this starts once it runs somewhere.
+description: "Use to make a private service reachable (Tailscale, Cloudflare Tunnel, proxy): \"expose X\", \"put this behind a URL\", \"give me access to the admin panel\", \"set up a tunnel to\", \"I can't reach it from outside\", a deploy that 502s or has a cert warning, or an exposure audit. Not for choosing hosting."
 ---
 
 # Exposing an internal service

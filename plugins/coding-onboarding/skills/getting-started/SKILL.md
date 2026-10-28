@@ -1,11 +1,7 @@
 ---
 name: getting-started
 version: 1.2.1
-description: |
-  Use when someone new to coding (or to AI-assisted coding) needs their machine set up — they
-  say "set me up", "onboard me", "I just installed Claude Code", ask how to start coding with
-  Claude, or want an existing setup checked or brought up to date (toolchain, editor, Docker,
-  GitHub, Claude config). Idempotent and safe to re-run. macOS, Linux, and WSL2.
+description: "Use when someone new to coding, or to coding with AI, needs their machine set up: \"set me up\", \"onboard me\", \"I just installed Claude Code\", how to start coding with Claude, or checking or updating an existing setup (toolchain, editor, Docker, GitHub, Claude config)."
 allowed-tools:
   - Read
   - Write
