@@ -78,7 +78,11 @@ A repo is **compliant at v28** when it has all of:
   is scanned — **not** `gitleaks/gitleaks-action`, which requires a paid `GITLEAKS_LICENSE`
   on org-owned repos (the free tier covers exactly 1 repo per org; personal-account repos are
   unaffected, so the failure stays invisible until CI runs on an org repo). The CLI is free
-  for every repo and is the same mise.lock-pinned binary the local hk hook runs.
+  for every repo and is the same mise.lock-pinned binary the local hk hook runs. The templates
+  pin `jdx/mise-action` v5 (v29), which installs a mise binary at least 24 hours old and keeps
+  its GitHub token inside its own step: every tool a later step runs must be installed by that
+  job's mise-action step (in `install_args` when the step narrows it), never lazily by
+  `mise exec` or a shim, which would fetch it without a token.
 - **SHA-pinned actions + read-only token** (all stacks, added in v16) — applies to **every file
   under `.github/workflows/`**, not just `ci.yml` (a repo's `deploy.yml`, `release.yml`, etc.
   count too). In each, every `uses:` pins a full commit SHA with the release tag in a trailing
