@@ -91,9 +91,9 @@ A repo is **compliant at v29** when it has all of:
   otherwise links its transcript from every commit and PR it makes; once that session is set
   to Public, any signed-in claude.ai account can read it. The Co-Authored-By line stays.
   Checker-enforced (`has_session_url_off`).
-- **Dependency cooldown** — Python repos pin a 4-day uv cooldown (checker-enforced); other
-  stacks get the same window via their package manager (recommended). See "Dependency cooldown
-  (supply-chain)".
+- **Dependency cooldown** — a 4-day window via the package manager. Checker-enforced for uv in
+  Python repos and for npm, pnpm and yarn Berry beside each JS lockfile (root or one directory
+  down); Bundler's is recommended. See "Dependency cooldown (supply-chain)".
 
 **Recommended, advisory:** a **mise-driven dev container**. Having a `.devcontainer/`
 is optional and never gates compliance — but *if* a repo ships one, it must be mise-driven (the
@@ -446,8 +446,11 @@ disturbs already-locked versions — it only gates *new* resolutions.
 | **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
 | pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
 
-Only **uv** is checker-enforced for Python repos (see "The standard"); the rest are recommended
-and applied by the setup/upgrade flow when the matching lockfile is present. `exclude-newer` accepts
+The checker enforces **uv** in Python repos and **npm, pnpm and yarn Berry** beside each JS
+lockfile at the root or one directory down (`frontend/package-lock.json` needs
+`frontend/.npmrc`), in a file git doesn't ignore; a yarn 1 lockfile is exempt, having no such
+setting. Bundler and pip are recommended and applied by the setup/upgrade flow when the matching
+lockfile is present. `exclude-newer` accepts
 a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
 so the window moves forward with the current date.
 

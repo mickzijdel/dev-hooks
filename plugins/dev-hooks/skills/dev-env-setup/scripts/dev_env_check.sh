@@ -24,9 +24,12 @@
 #   has_readme       1 if a README (README.md/README/…) is present (required from standard v3)
 #   has_claude       1 if CLAUDE.md, or AGENTS.md in its place, is present (required from
 #                    standard v3)
-#   has_cooldown     1 if the uv dependency cooldown is set (Python: pyproject.toml [tool.uv]
-#                    exclude-newer; required from standard v6). Defaults to 1 for non-Python
-#                    stacks / repos without pyproject.toml, so it never blocks them.
+#   has_cooldown     1 if every gated 4-day dependency cooldown is set (required from standard
+#                    v6): uv's for Python (pyproject.toml [tool.uv] exclude-newer), and beside
+#                    each JS lockfile at the root or one directory down, npm's (.npmrc
+#                    min-release-age >= 4), pnpm's (pnpm-workspace.yaml minimumReleaseAge >= 5760)
+#                    or yarn Berry's (.yarnrc.yml npmMinimalAgeGate >= 5760), in a file git
+#                    doesn't ignore. 1 when none applies; Bundler's cooldown is not gated.
 #   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
 #                    shared jscpd runner both the hk step and CI's audit job call).
 #   has_version_sync 1 if scripts/check_version_sync.sh present (required from standard v23 — the
@@ -146,13 +149,37 @@ if find "$DIR" -maxdepth 1 -type f \( -iname 'claude.md' -o -iname 'agents.md' \
   has_claude=1
 fi
 
-# Dependency cooldown (v6): a Python repo pins the uv cooldown in pyproject.toml
-# ([tool.uv] exclude-newer). Default to 1 so non-Python stacks / repos without a
-# pyproject.toml are never blocked on this axis (Ruby/JS cooldown is recommended, not gated).
-has_cooldown=1
+# Dependency cooldown (v6): a 4-day window on new releases, one gap phrase per missing setting. A
+# Python repo pins uv's in pyproject.toml ([tool.uv] exclude-newer). Each JS lockfile at the root
+# or one directory down (fringe-chat locks in frontend/) needs its manager's setting beside it, in
+# a file git doesn't ignore, so every clone and CI run has it. Bundler's cooldown is recommended,
+# not gated.
+cooldown_gaps=()
 if [ "$stack" = "python" ] && [ -f "$DIR/pyproject.toml" ]; then
-  grep -qE '^[[:space:]]*exclude-newer[[:space:]]*=' "$DIR/pyproject.toml" || has_cooldown=0
+  grep -qE '^[[:space:]]*exclude-newer[[:space:]]*=' "$DIR/pyproject.toml" || cooldown_gaps+=("uv cooldown missing")
 fi
+# js_cooldown MANAGER FILE SETTING ERE MINIMUM: ERE matches a line of FILE and captures its value.
+js_cooldown() {
+  local v=""
+  [ -f "$DIR/$2" ] && ! git -C "$DIR" check-ignore -q "$2" 2>/dev/null &&
+    v="$(sed -nE "s/$4/\1/p" "$DIR/$2" | tail -n1)"
+  if [ -z "$v" ]; then
+    cooldown_gaps+=("$1 cooldown missing ($2 $3)")
+  elif [ "$v" -lt "$5" ]; then
+    cooldown_gaps+=("$1 cooldown under 4 days ($2 $3)")
+  fi
+}
+while IFS= read -r lock; do
+  lock="${lock#./}" && at="${lock%"${lock##*/}"}"
+  case "${lock##*/}" in
+    package-lock.json) js_cooldown npm "${at}.npmrc" "min-release-age=4" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 4 ;;
+    pnpm-lock.yaml) js_cooldown pnpm "${at}pnpm-workspace.yaml" "minimumReleaseAge: 5760" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760 ;;
+    # Yarn 1 (classic) has no cooldown setting; only a Berry lockfile is gated.
+    yarn.lock) grep -q '^# yarn lockfile v1' "$DIR/$lock" || js_cooldown yarn "${at}.yarnrc.yml" "npmMinimalAgeGate: 5760" '^npmMinimalAgeGate:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760 ;;
+  esac
+done < <(cd "$DIR" && find . -mindepth 1 -maxdepth 2 -type f \( -name package-lock.json -o -name pnpm-lock.yaml -o -name yarn.lock \) 2>/dev/null | sort)
+has_cooldown=1
+[ ${#cooldown_gaps[@]} -gt 0 ] && has_cooldown=0
 
 # Shared jscpd runner (v14): the version-cooldown policy lives in scripts/run-jscpd.sh,
 # called by both the hk step and CI's audit job so the two gates can't drift.
@@ -273,7 +300,7 @@ gap 0 "$has_gitleaks" "gitleaks missing"
 gap 2 "$has_lockfile" "mise.lock missing"
 gap 3 "$has_readme" "README.md missing"
 gap 3 "$has_claude" "CLAUDE.md (or AGENTS.md) missing"
-gap 6 "$has_cooldown" "uv cooldown missing"
+[ "$current_version" -ge 6 ] && [ "$has_cooldown" = 0 ] && gaps+=("${cooldown_gaps[@]}")
 gap 10 "$has_gitleaks_config" ".gitleaks.toml missing"
 gap 14 "$has_jscpd_runner" "scripts/run-jscpd.sh missing"
 gap 15 "$has_exec_bit" "exec-bit gate missing"

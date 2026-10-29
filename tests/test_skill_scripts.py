@@ -380,8 +380,8 @@ def test_checker_needs_upgrade_without_actionlint(tmp_path):
 
 
 def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
-    # Ruby repo (no pyproject.toml): the uv cooldown can't apply, so has_cooldown
-    # defaults to 1 and never blocks — Ruby/JS cooldowns are recommended, not gated.
+    # Ruby repo (no pyproject.toml, no JS lockfile): no gated cooldown applies, so
+    # has_cooldown stays 1 — Bundler's cooldown is recommended, not gated.
     version = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
     (tmp_path / "Gemfile").write_text('source "https://rubygems.org"\n')
     (tmp_path / "mise.toml").write_text(
@@ -407,6 +407,95 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
     )
     out = run_checker(tmp_path)
     assert out["stack"] == "ruby"
+    assert out["has_cooldown"] == "1"
+    assert out["status"] == "compliant"
+
+
+# Each JS lockfile and the setting its manager needs beside it (SKILL.md's cooldown table).
+JS_COOLDOWN = {
+    "package-lock.json": (".npmrc", "min-release-age=4"),
+    "pnpm-lock.yaml": ("pnpm-workspace.yaml", "minimumReleaseAge: 5760"),
+    "yarn.lock": (".yarnrc.yml", "npmMinimalAgeGate: 5760"),
+}
+
+
+def _js_repo(path, lock, *, at=".", setting=None):
+    """A repo compliant but for `lock` in `at` (impamp-3 locks at the root, fringe-chat in
+    frontend/), with `setting` written to its manager's config beside it, if given."""
+    make_compliant_repo(path)
+    (path / "pyproject.toml").unlink()
+    (path / at).mkdir(exist_ok=True)
+    (path / at / "package.json").write_text("{}\n")
+    (path / at / lock).write_text("")
+    if setting is not None:
+        (path / at / JS_COOLDOWN[lock][0]).write_text(f"# 4-day cooldown\n{setting}\n")
+
+
+@pytest.mark.parametrize("at", [".", "frontend"])
+@pytest.mark.parametrize("lock", JS_COOLDOWN)
+def test_checker_needs_upgrade_without_js_cooldown(tmp_path, lock, at):
+    # impamp-3 (npm, no .npmrc) read compliant while open to same-day releases.
+    _js_repo(tmp_path, lock, at=at)
+    out = run_checker(tmp_path)
+    assert out["has_cooldown"] == "0"
+    assert out["status"] == "needs-upgrade"
+    config, setting = JS_COOLDOWN[lock]
+    where = "" if at == "." else f"{at}/"
+    assert f"cooldown missing ({where}{config} {setting})" in _needs_upgrade_line(
+        tmp_path
+    )
+
+
+@pytest.mark.parametrize("at", [".", "frontend"])
+@pytest.mark.parametrize("lock", JS_COOLDOWN)
+def test_checker_accepts_js_cooldown(tmp_path, lock, at):
+    _js_repo(tmp_path, lock, at=at, setting=JS_COOLDOWN[lock][1])
+    out = run_checker(tmp_path)
+    assert out["has_cooldown"] == "1"
+    assert out["status"] == "compliant"
+
+
+@pytest.mark.parametrize(
+    "lock, setting",
+    [
+        ("package-lock.json", "min-release-age=1"),
+        ("pnpm-lock.yaml", "minimumReleaseAge: 1440"),
+        ("yarn.lock", "npmMinimalAgeGate: 60"),
+    ],
+)
+def test_checker_needs_upgrade_with_js_cooldown_under_four_days(
+    tmp_path, lock, setting
+):
+    _js_repo(tmp_path, lock, setting=setting)
+    assert run_checker(tmp_path)["has_cooldown"] == "0"
+    config, want = JS_COOLDOWN[lock]
+    assert f"cooldown under 4 days ({config} {want})" in _needs_upgrade_line(tmp_path)
+
+
+def test_checker_needs_upgrade_when_npmrc_gitignored(tmp_path):
+    # .npmrc often holds a registry token and gets gitignored; then no clone or CI run
+    # has the cooldown.
+    _js_repo(tmp_path, "package-lock.json", setting="min-release-age=4")
+    init_git_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".npmrc\n")
+    assert run_checker(tmp_path)["has_cooldown"] == "0"
+
+
+def test_checker_does_not_gate_a_yarn_1_lockfile(tmp_path):
+    # Yarn 1 has no cooldown setting (the table's row is Berry 4.10+); scav-hunt runs 1.22.
+    _js_repo(tmp_path, "yarn.lock")
+    (tmp_path / "yarn.lock").write_text("# yarn lockfile v1\n\n")
+    out = run_checker(tmp_path)
+    assert out["has_cooldown"] == "1"
+    assert out["status"] == "compliant"
+
+
+def test_checker_js_cooldown_leaves_a_repo_without_js_lockfile_alone(tmp_path):
+    # A package.json with no lockfile resolves nothing to gate (and make_compliant_repo's
+    # Python repo with the uv cooldown stays compliant).
+    make_compliant_repo(tmp_path)
+    (tmp_path / "package.json").write_text("{}\n")
+    out = run_checker(tmp_path)
     assert out["has_cooldown"] == "1"
     assert out["status"] == "compliant"
 

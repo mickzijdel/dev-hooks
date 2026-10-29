@@ -142,8 +142,10 @@ A repo is **compliant at v29** when it has all of:
 - **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
   `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until
   they've been public long enough for a malicious release to be caught and yanked. The checker
-  enforces this on Python stacks; Ruby and JS repos get the same window via their own package
-  manager (recommended, not gated) — see "Dependency cooldown (supply-chain)" in `../SKILL.md`.
+  enforces this on Python stacks, and beside each JS lockfile at the root or one directory down
+  the npm (`.npmrc`), pnpm (`pnpm-workspace.yaml`) or yarn Berry (`.yarnrc.yml`) setting; Ruby
+  repos get the same window via Bundler (recommended, not gated) — see "Dependency cooldown
+  (supply-chain)" in `../SKILL.md`.
 
 ## Per-stack checks
 

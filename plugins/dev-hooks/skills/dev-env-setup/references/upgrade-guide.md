@@ -227,12 +227,13 @@ at v5, and degrade gracefully when the npm registry is unreachable. To reach v5:
 
 v6 adds a **4-day dependency cooldown** to a repo's own packages — the same supply-chain window the
 standard already applies to its jscpd tooling and that the Bundler cooldown gives Ruby. The **uv
-cooldown is checker-enforced** for Python repos; Ruby and JS cooldowns are recommended but not gated
-(the checker can't reliably tell which JS package manager a repo uses). See the
+cooldown is checker-enforced** for Python repos, and so is the **JS cooldown** beside each
+`package-lock.json`, `pnpm-lock.yaml` or yarn Berry `yarn.lock` at the root or one directory down;
+the Ruby cooldown is recommended but not gated. See the
 "Dependency cooldown (supply-chain)" section in `../SKILL.md` for the full per-ecosystem reference.
 To reach v6:
 
-1. **Add the cooldown to the repo (the enforced part is uv).**
+1. **Add the cooldown to the repo (the enforced parts are uv and JS).**
    - **Python (uv)** — add to `pyproject.toml`:
      ```toml
      [tool.uv]
@@ -242,18 +243,20 @@ To reach v6:
      package: `exclude-newer-package = { foo = "0 days" }`. Then re-resolve: `uv lock` (an existing
      lock is honoured as-is; the cooldown only gates *new* resolutions).
    - **Ruby (Bundler ≥ 4.0.13)** — `source "https://rubygems.org", cooldown: 4` in the `Gemfile`.
-   - **JS** — `.npmrc` `min-release-age=4` (npm), `pnpm-workspace.yaml` `minimumReleaseAge: 5760`
-     (pnpm), or `.yarnrc.yml` `npmMinimalAgeGate: 5760` (yarn). Minutes for pnpm/yarn; 5760 = 4 days.
+   - **JS** — beside each lockfile, in a file git doesn't ignore: `.npmrc` `min-release-age=4`
+     (npm), `pnpm-workspace.yaml` `minimumReleaseAge: 5760` (pnpm), or `.yarnrc.yml`
+     `npmMinimalAgeGate: 5760` (yarn Berry; yarn 1 has no such setting). Minutes for pnpm/yarn;
+     5760 = 4 days.
 2. **(Optional) set a machine-wide default if missing** so repos that haven't opted in still get a
    floor — `bundle config set --global cooldown 4`, `npm config set min-release-age 4
    --location=user`, `pnpm config set minimumReleaseAge 5760 --global`, or `exclude-newer = "4 days"`
    in `~/.config/uv/uv.toml`. The per-repo setting overrides the global one.
 3. **Bump the stamp.** Set `DEV_ENV_VERSION = "6"` in `mise.toml`.
 4. **Verify:** `bash scripts/dev_env_check.sh .` → `status=compliant` with `has_cooldown=1`
-   (Python repos), and `uv lock` still resolves under the cooldown.
+   (Python and JS repos), and `uv lock` still resolves under the cooldown.
 
-> **Future symmetry:** only uv is gated today. Enforcing the Ruby `Gemfile` cooldown (a simple
-> `cooldown:` grep) or a JS lockfile-keyed check could land in a later version if wanted.
+> **Future symmetry:** the Ruby `Gemfile` cooldown (a simple `cooldown:` grep) is not gated yet
+> and could land in a later version if wanted.
 
 ---
 
