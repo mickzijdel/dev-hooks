@@ -1,6 +1,7 @@
 .DS_Store
 tmp/
 .worktrees/
+.claude/worktrees/
 
 # Type declarations Claude Code writes beside a mod it loads from this working copy
 plugins/*/.claude-plugin/types/

@@ -10,10 +10,12 @@ fast and offline.
 import ast
 import json
 import re
+import subprocess
+import sys
 
 import pytest
 
-from conftest import DEV_HOOKS
+from conftest import DEV_HOOKS, ROOT
 
 TEMPLATES_DIR = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "templates"
 CI_TEMPLATES = [
@@ -396,6 +398,49 @@ def test_jscpd_template_uses_ignore_key():
     data = json.loads((TEMPLATES_DIR / ".jscpd.json").read_text())
     assert "ignore" in data
     assert "ignorePattern" not in data
+
+
+@pytest.mark.parametrize(
+    "hk",
+    [TEMPLATES_DIR / "hk.python.pkl", TEMPLATES_DIR / "hk.shell.pkl", ROOT / "hk.pkl"],
+    ids=["hk.python.pkl", "hk.shell.pkl", "this-repo-hk.pkl"],
+)
+@pytest.mark.parametrize(
+    "checkout",
+    [".", ".worktrees/feat", ".claude/worktrees/agent-1"],
+    ids=["main-checkout", "in-a-worktree", "in-a-claude-worktree"],
+)
+def test_vulture_step_skips_in_repo_worktrees(hk, checkout, tmp_path):
+    """v29: vulture collects every *.py under `.` and ignores .gitignore, so only `--exclude`
+    keeps a worktree checked out inside the repo out of the scan. Without it the main checkout's
+    pre-commit scanned every worktree's copy, and one session's unfinished dead code failed
+    another session's commit. vulture matches the patterns against absolute paths, so a bare
+    `.worktrees` would also match a checkout that is itself a worktree and scan nothing there:
+    run the step's own flags, shell-expanded, from each kind of checkout."""
+    m = re.search(
+        r'vulture --min-confidence (\d+) --exclude \\"([^"\\]*)\\" \.', hk.read_text()
+    )
+    assert m, f"{hk.name} has no vulture step of the expected shape"
+    root = tmp_path / checkout
+    # Unreachable code is reported at 100% confidence; an unused function only at 60%, below
+    # the step's floor, so it would pass here without proving anything.
+    dead = 'def probe():\n    return 1\n    print("dead")\n'
+    for rel in (
+        "app/probe.py",
+        ".worktrees/feat/app/probe.py",
+        ".claude/worktrees/agent-1/app/probe.py",
+    ):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(dead)
+    r = subprocess.run(
+        ["bash", "-c", f'"$0" -m vulture --min-confidence {m[1]} --exclude "{m[2]}" .']
+        + [sys.executable],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    reported = sorted({line.split(":")[0] for line in r.stdout.splitlines()})
+    assert reported == ["app/probe.py"], r.stdout + r.stderr
 
 
 def test_herb_template_enables_linter():

@@ -156,6 +156,14 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > catching dead code / clones before push beats finding out in CI. Thresholds are tunable — see
 > `upgrade-guide.md`.
 >
+> **vulture** walks every `*.py` under `.` and ignores `.gitignore`, so its `--exclude` must name
+> the in-repo worktree directories (v29), or the main checkout's pre-commit scans every
+> worktree's copy of the code. vulture matches the patterns against **absolute** paths, and one
+> without a `*` matches anywhere in them, so the worktree patterns start at the checkout:
+> `$(pwd -P)/.worktrees/*,$(pwd -P)/.claude/worktrees/*`. A bare `.worktrees` would match every
+> file of a checkout that is itself a worktree, and vulture would pass there having scanned
+> nothing.
+>
 > **jscpd** runs via `npx` (its v5 Rust engine — the `cpd` binary — ships through npm optional
 > platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading
 > `.jscpd.json`. It uses the agent-friendly **`ai`** reporter (compact clone output) and the
@@ -487,6 +495,12 @@ check these gotchas, where the default may be wrong or the standard's tooling ex
   stamp lives in the committed file, machine-local overrides go in `mise.local.toml`.
 - **Keep `.venv/` ignored** — CI's `git ls-files` and `.jscpd.json`'s `ignore` both assume it.
   The default already covers this; just don't un-ignore it.
+- **Ignore `.worktrees/` and `.claude/worktrees/`** (v29) — the in-repo worktree locations
+  (`.worktrees/` for a `git worktree add`, `.claude/worktrees/` for `EnterWorktree` and the Agent
+  tool's worktree isolation). jscpd skips them only
+  because `.jscpd.json` sets `"gitignore": true` (it honours `.git/info/exclude` too), and
+  `.gitleaks.toml` allowlists both. `git check-ignore -v .worktrees/x .claude/worktrees/x` must
+  print two lines; a v28 `.claude/*` rule already covers the second.
 
 ## Dev container (mise-driven, advisory — v19)
 
