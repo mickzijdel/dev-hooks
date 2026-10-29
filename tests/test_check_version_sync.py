@@ -835,6 +835,71 @@ def test_exact_mise_spec_disagreeing_with_lock_fails(tmp_path):
     assert "mise.lock node (24.11.0)" in r.stdout
 
 
+# ── v29: [tools.<tool>] tables, and the lock beside a config outside the root ──────────
+BL_CONFIG = """
+    [tools.ruby]
+    version = "4.0.9"
+    # a comment line inside the table
+    compile = false
+
+    [tools.node]
+    version = "24.13.0"
+    postinstall = "corepack enable"
+
+    [tools]
+    hk = "latest"
+"""
+
+
+def test_mise_tools_table_form_is_compared(tmp_path):
+    """`[tools.ruby]` + `version = …` is as much a pin as `ruby = "…"`; the gate read only
+    inline entries, so a drifted .ruby-version passed against it."""
+    files = {"mise.toml": BL_CONFIG, ".ruby-version": "4.0.9\n"}
+    r = run(tmp_path, files)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ ruby 4.0.9 — .ruby-version, mise.toml ruby" in r.stdout
+    r = run(tmp_path, {**files, ".ruby-version": "4.0.8\n"})
+    assert r.returncode == 1, r.stdout
+    assert "4.0.8" in r.stdout and "4.0.9" in r.stdout
+
+
+def test_mise_config_outside_the_root_reads_the_lock_beside_it(tmp_path):
+    """BlackLightning's shape: mise/config.toml locks to mise/mise.lock, not a root mise.lock."""
+    files = {
+        "mise/config.toml": BL_CONFIG,
+        "mise/mise.lock": lock(ruby="4.0.9", node="24.13.0"),
+        ".ruby-version": "4.0.9\n",
+        ".node-version": "24.13.0\n",
+        "Dockerfile": "ARG RUBY_VERSION=4.0.9\n",
+    }
+    r = run(tmp_path, files)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (
+        "✓ ruby 4.0.9 — .ruby-version, mise/config.toml ruby, mise/mise.lock ruby,"
+        " Dockerfile ARG RUBY_VERSION" in r.stdout
+    )
+    assert (
+        "✓ node 24.13.0 — .node-version, mise/config.toml node, mise/mise.lock node"
+        in (r.stdout)
+    )
+    r = run(tmp_path, {**files, "mise/mise.lock": lock(ruby="4.0.9", node="24.11.0")})
+    assert r.returncode == 1, r.stdout
+    assert "mise/mise.lock node (24.11.0)" in r.stdout
+
+
+def test_dot_mise_toml_locks_to_the_root_mise_lock(tmp_path):
+    r = run(
+        tmp_path,
+        {
+            ".mise.toml": '[tools]\npython = "latest"\n',
+            "mise.lock": lock(python="3.14.6"),
+            ".python-version": "3.14.6\n",
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ python 3.14.6 — .python-version, mise.lock python" in r.stdout
+
+
 def test_other_version_file_contents_are_compared(tmp_path):
     """`.nvmrc` is not the tool's usual pin file, but CI reads it: its contents must agree."""
     r = run(

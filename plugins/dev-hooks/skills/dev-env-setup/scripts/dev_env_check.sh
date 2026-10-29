@@ -10,7 +10,8 @@
 # Emits machine-readable KEY=VALUE lines on stdout (parsed by the hook), followed by a
 # short human-readable summary on lines beginning with "# ". Keys:
 #   applicable       1 if the standard applies (recognized stack OR scripts present)
-#   has_mise         1 if mise.toml / .mise.toml present
+#   has_mise         1 if a mise config is present: mise.toml, .mise.toml, mise.local.toml,
+#                    mise/config.toml, .config/mise.toml or .config/mise/config.toml
 #   has_hk           1 if hk.pkl present
 #   has_ci           1 if any .github/workflows/* present
 #   has_gitleaks     1 if hk.pkl references gitleaks
@@ -18,9 +19,11 @@
 #                    v10). gitleaks `dir` scans the whole tree with no respect-gitignore flag, so
 #                    this allowlist file keeps gitignored artifacts (.env, log/, *.key) from
 #                    failing every commit. See references/templates/.gitleaks.toml.
-#   has_lockfile     1 if mise.lock present (required from standard v2)
+#   has_lockfile     1 if the mise lock is present (required from standard v2): mise.lock (or
+#                    .mise.lock) at the root, or mise.lock beside the config (mise/mise.lock)
 #   has_readme       1 if a README (README.md/README/…) is present (required from standard v3)
-#   has_claude       1 if CLAUDE.md present (required from standard v3)
+#   has_claude       1 if CLAUDE.md, or AGENTS.md in its place, is present (required from
+#                    standard v3)
 #   has_cooldown     1 if the uv dependency cooldown is set (Python: pyproject.toml [tool.uv]
 #                    exclude-newer; required from standard v6). Defaults to 1 for non-Python
 #                    stacks / repos without pyproject.toml, so it never blocks them.
@@ -62,7 +65,7 @@
 #                    codename directly (debian:<codename>) and they differ — a `ruby:X-slim`-style
 #                    prod base isn't mappable to a codename here, so it can't be flagged. Advisory
 #                    only (mirrors suggests_fnox); never affects status.
-#   repo_version     DEV_ENV_VERSION from mise.toml, else 0
+#   repo_version     DEV_ENV_VERSION from the first mise config that carries it, else 0
 #   current_version  the standard version shipped by this skill (from ../VERSION)
 #   stack            python | ruby | javascript | go | shell | unknown
 #   status           not-applicable | needs-setup | needs-upgrade | compliant
@@ -103,15 +106,18 @@ fi
 [ "$stack" = "unknown" ] && [ "$has_scripts" = 1 ] && stack="shell"
 
 # ── Compliance signals ───────────────────────────────────────────────────────────
+# mise reads its config from any of these and writes the lock beside it (mise/config.toml locks
+# to mise/mise.lock). The version stamp lives in whichever one the repo uses.
 has_mise=0
+has_lockfile=0
 MISE_FILE=""
-for f in mise.toml .mise.toml mise.local.toml; do
-  if [ -f "$DIR/$f" ]; then
-    has_mise=1
-    MISE_FILE="$DIR/$f"
-    break
-  fi
+for f in mise.toml .mise.toml mise.local.toml mise/config.toml .config/mise.toml .config/mise/config.toml; do
+  [ -f "$DIR/$f" ] || continue
+  has_mise=1
+  [ -f "$(dirname "$DIR/$f")/mise.lock" ] && has_lockfile=1
+  [ -z "$MISE_FILE" ] && grep -qE '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$DIR/$f" && MISE_FILE="$DIR/$f"
 done
+[ -f "$DIR/.mise.lock" ] && has_lockfile=1
 
 has_hk=0
 [ -f "$DIR/hk.pkl" ] && has_hk=1
@@ -124,21 +130,19 @@ fi
 has_gitleaks=0
 [ "$has_hk" = 1 ] && grep -qi 'gitleaks' "$DIR/hk.pkl" && has_gitleaks=1
 
-has_lockfile=0
-{ [ -f "$DIR/mise.lock" ] || [ -f "$DIR/.mise.lock" ]; } && has_lockfile=1
-
 # gitleaks allowlist (v10): gitleaks `dir` scans the whole tree (no respect-gitignore flag), so a
 # root .gitleaks.toml is required to keep gitignored artifacts from failing every commit.
 has_gitleaks_config=0
 [ -f "$DIR/.gitleaks.toml" ] && has_gitleaks_config=1
 
-# Project docs (v3): a README (any common form) and a CLAUDE.md at the repo root.
+# Project docs (v3): a README (any common form) and a CLAUDE.md at the repo root. An AGENTS.md
+# counts in its place: some repos keep their instructions there and forbid a CLAUDE.md.
 has_readme=0
 if find "$DIR" -maxdepth 1 -type f -iname 'readme*' 2>/dev/null | grep -q .; then
   has_readme=1
 fi
 has_claude=0
-if find "$DIR" -maxdepth 1 -type f -iname 'claude.md' 2>/dev/null | grep -q .; then
+if find "$DIR" -maxdepth 1 -type f \( -iname 'claude.md' -o -iname 'agents.md' \) 2>/dev/null | grep -q .; then
   has_claude=1
 fi
 
@@ -268,7 +272,7 @@ gap() { [ "$current_version" -ge "$1" ] && [ "$2" = 0 ] && gaps+=("$3"); }
 gap 0 "$has_gitleaks" "gitleaks missing"
 gap 2 "$has_lockfile" "mise.lock missing"
 gap 3 "$has_readme" "README.md missing"
-gap 3 "$has_claude" "CLAUDE.md missing"
+gap 3 "$has_claude" "CLAUDE.md (or AGENTS.md) missing"
 gap 6 "$has_cooldown" "uv cooldown missing"
 gap 10 "$has_gitleaks_config" ".gitleaks.toml missing"
 gap 14 "$has_jscpd_runner" "scripts/run-jscpd.sh missing"

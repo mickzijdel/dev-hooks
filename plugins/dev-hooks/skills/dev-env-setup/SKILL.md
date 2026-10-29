@@ -24,9 +24,11 @@ A repo is **compliant at v28** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "28"`.
-- **`mise.lock`** (committed) — reproducible, checksum-verified tool installs. See "Lockfile &
-  supply-chain verification".
+  `[env]` version stamp `DEV_ENV_VERSION = "28"`. The config may live wherever mise reads it
+  (`mise/config.toml`, `.config/mise/config.toml`, `.config/mise.toml`, `.mise.toml`), with
+  `[tools.<tool>]` tables allowed; the checker, the roster and the version-sync gate all follow.
+- **`mise.lock`** (committed, beside the config: `mise/mise.lock` for `mise/config.toml`) —
+  reproducible, checksum-verified tool installs. See "Lockfile & supply-chain verification".
 - **`.jscpd.json`** — duplication config (`minTokens 70`, `threshold 0`, path excludes under
   `ignore` — never `ignorePattern`, inert in jscpd v5).
 - **`scripts/run-jscpd.sh`** — the shared jscpd runner holding the
@@ -82,8 +84,8 @@ A repo is **compliant at v28** when it has all of:
   finding, every `actions/checkout` sets `persist-credentials: false` (keeps the repo token out
   of `.git/config` on the runner). Needs `zizmor` + `actionlint` in `mise.toml`; checker-enforced
   (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]** skill.
-- **`README.md` + `CLAUDE.md`** — both present, both recording current key-package versions.
-  See "Project docs (README + CLAUDE.md)".
+- **`README.md` + `CLAUDE.md`** (or `AGENTS.md` in its place) — both present, both recording
+  current key-package versions. See "Project docs (README + CLAUDE.md)".
 - **`.claude/settings.json`** (committed, never gitignored): sets `attribution.sessionUrl` to
   `false`. A cloud session (claude.ai/code, a scheduled routine) reads only this file, and
   otherwise links its transcript from every commit and PR it makes; once that session is set
@@ -268,8 +270,10 @@ cadence, with the dev-env twists below:
    bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/fleet_roster.sh"   # or: fleet_roster.sh ROOT ...
    ```
    It prints one line per `DEV_ENV_VERSION`-stamped repo — path, `version`, `branch`, `dirty`,
-   `behind`, and `origin_version` read after a fetch — plus a summary. `pull=1` means origin is
-   already ahead of the checkout: pull it and re-read the stamp before briefing any upgrade. **Show the user the roster and confirm the target set before
+   `behind`, and `origin_version` read after a fetch from `origin_ref` (an `upstream` remote when
+   the repo has one, since its `origin` may be a stale fork; else the tracking branch) — plus a
+   summary. `pull=1` means that remote is already ahead of the checkout: pull from `origin_ref`
+   and re-read the stamp before briefing any upgrade. **Show the user the roster and confirm the target set before
    touching anything.** To retire an abandoned repo (or a fork you don't own) from discovery
    without touching the repo itself, add its basename to
    `references/fleet-ignore.txt` — the roster skips listed names.
@@ -292,7 +296,8 @@ cadence, with the dev-env twists below:
 
 ## Project docs (README + CLAUDE.md)
 
-A compliant repo has both a **README.md** and a **CLAUDE.md** at its root, and both
+A compliant repo has both a **README.md** and a **CLAUDE.md** at its root (an **AGENTS.md**
+counts in its place; a repo whose AGENTS.md forbids a CLAUDE.md keeps it that way), and both
 record the **current versions of the project's key packages** (main framework, Tailwind,
 Bootstrap, etc.). Humans read the README; Claude reads CLAUDE.md — and both drift from the
 manifests fast, so the version numbers are the point.

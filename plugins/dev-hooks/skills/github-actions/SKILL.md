@@ -82,7 +82,7 @@ request). Do the whole fleet in one session — bump, verify, commit, push — s
 in lockstep.
 
 1. **Enumerate the fleet.** Start from the dev-env fleet: [[dev-env-setup]]'s
-   `fleet_roster.sh` discovers every local repo whose `mise.toml` carries `DEV_ENV_VERSION`
+   `fleet_roster.sh` discovers every local repo whose mise config carries `DEV_ENV_VERSION`
    (one line per repo with its path, version, checked-out branch, and a dirty flag). Cross-check
    it with the remote list, since a repo can have workflows without tracking the standard:
    ```bash

@@ -14,9 +14,15 @@ A repo is **compliant at v28** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "28"`.
+  stamp `DEV_ENV_VERSION = "28"`. Any config path mise reads works (v29): `mise.toml`,
+  `.mise.toml`, `mise/config.toml`, `.config/mise.toml` or `.config/mise/config.toml`, with a pin
+  written inline (`ruby = "4.0.9"`) or as a `[tools.ruby]` table with `version = "4.0.9"`. The
+  checker, `fleet_roster.sh` and the version-sync gate read the first that exists (the checker
+  and roster: the first carrying the stamp); the hk `versions` glob must name that file.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
-  are reproducible and checksum-verified. See "Lockfile & supply-chain verification" in `../SKILL.md`.
+  are reproducible and checksum-verified. mise writes it beside the config (`mise/mise.lock` for
+  `mise/config.toml`, the root `mise.lock` for `.mise.toml`), and every tool here reads it there.
+  See "Lockfile & supply-chain verification" in `../SKILL.md`.
 - **`.jscpd.json`** (all stacks) — duplication config: `minTokens 70`, `threshold 0`,
   `reporters ["ai","threshold"]`, `gitignore true`, path excludes under `ignore` — the key must
   be `ignore`, **not** `ignorePattern` (inert for paths in jscpd v5; see the exclusions note)
@@ -113,7 +119,8 @@ A repo is **compliant at v28** when it has all of:
   keeps the default and adds a per-line `# zizmor: ignore[artipacked]`. The checker enforces both
   tools + hk steps (`has_zizmor`, `has_actionlint`). See the **[[github-actions]]**
   skill.
-- **`README.md`** and **`CLAUDE.md`** (added in v3) — both present at the repo root, and both
+- **`README.md`** and **`CLAUDE.md`** (added in v3; an `AGENTS.md` counts in place of
+  `CLAUDE.md` from v29) — both present at the repo root, and both
   recording the **current versions of the project's key packages** (main framework, Tailwind,
   Bootstrap, etc.) so the human-facing docs don't drift from the manifests. The checker only
   enforces that both files exist; keeping the version numbers accurate is the writer's job (the
@@ -316,7 +323,7 @@ One version, many files — because different consumers read different ones:
 
 | Pin | Read by |
 | --- | --- |
-| `mise.toml` `[tools]` + the exact release in `mise.lock` | local dev, `mise-action` in CI |
+| `mise.toml` `[tools]` (or `[tools.<tool>]`, in whichever config path the repo uses) + the exact release in the `mise.lock` beside it | local dev, `mise-action` in CI |
 | `.ruby-version` / `.node-version` / `.python-version` / `.go-version` | `ruby/setup-ruby`, `actions/setup-node`, … |
 | `Dockerfile` `ARG RUBY_VERSION` / `NODE_VERSION` / `YARN_VERSION` / … | the production image build |
 | `package.json` `packageManager` | corepack (yarn/pnpm) |

@@ -208,6 +208,48 @@ def test_checker_needs_upgrade_without_claude(tmp_path):
     assert out["status"] == "needs-upgrade"
 
 
+def test_checker_accepts_agents_md_for_claude_md(tmp_path):
+    # BlackLightning keeps its instructions in AGENTS.md and says never to add a CLAUDE.md.
+    make_compliant_repo(tmp_path, claude=False)
+    (tmp_path / "AGENTS.md").write_text("# agent instructions\n")
+    out = run_checker(tmp_path)
+    assert out["has_claude"] == "1"
+    assert out["status"] == "compliant"
+
+
+def _move_mise_config(repo, config):
+    """Move make_compliant_repo's mise.toml to `config`, with mise.lock beside it (where mise
+    writes it: mise/config.toml locks to mise/mise.lock, .mise.toml to the root mise.lock)."""
+    (repo / config).parent.mkdir(parents=True, exist_ok=True)
+    (repo / "mise.toml").rename(repo / config)
+    lock = (repo / config).parent / "mise.lock"
+    (repo / "mise.lock").rename(lock)
+    return lock
+
+
+@pytest.mark.parametrize(
+    "config",
+    [".mise.toml", "mise/config.toml", ".config/mise.toml", ".config/mise/config.toml"],
+)
+def test_checker_reads_a_mise_config_outside_the_root(tmp_path, config):
+    # BlackLightning's mise/config.toml + mise/mise.lock read as needs-setup at repo_version=0.
+    make_compliant_repo(tmp_path)
+    _move_mise_config(tmp_path, config)
+    out = run_checker(tmp_path)
+    current = (DEV_HOOKS / "skills" / "dev-env-setup" / "VERSION").read_text().strip()
+    assert (out["has_mise"], out["has_lockfile"]) == ("1", "1")
+    assert out["repo_version"] == current
+    assert out["status"] == "compliant"
+
+
+def test_checker_wants_the_lock_beside_a_config_outside_the_root(tmp_path):
+    make_compliant_repo(tmp_path)
+    _move_mise_config(tmp_path, "mise/config.toml").unlink()
+    out = run_checker(tmp_path)
+    assert out["has_lockfile"] == "0"
+    assert out["status"] == "needs-upgrade"
+
+
 def test_checker_needs_upgrade_without_cooldown(tmp_path):
     # A Python repo whose pyproject.toml lacks [tool.uv] exclude-newer is flagged.
     make_compliant_repo(tmp_path, cooldown=False)
@@ -855,6 +897,80 @@ def test_roster_skips_repos_in_fleet_ignore(tmp_path):
     make_fleet_repo(tmp_path / "keep", 5)  # … and one that stays in the fleet
     repos, _ = run_roster(tmp_path)
     assert set(repos) == {"keep"}
+
+
+MISE_CONFIG_PATHS = [
+    ".mise.toml",
+    "mise/config.toml",
+    ".config/mise.toml",
+    ".config/mise/config.toml",
+]
+
+
+def make_fleet_repo_at(path, config, version):
+    """A fleet member whose stamped mise config lives at `config` instead of mise.toml."""
+    (path / config).parent.mkdir(parents=True, exist_ok=True)
+    (path / config).write_text(f'[env]\nDEV_ENV_VERSION = "{version}"\n')
+    run = init_git_repo(path)
+    run("add", "-A")
+    run("commit", "-q", "-m", "init")
+    return run
+
+
+@pytest.mark.parametrize("config", MISE_CONFIG_PATHS)
+def test_roster_finds_a_mise_config_outside_the_root(tmp_path, config):
+    # BlackLightning keeps its config in mise/config.toml and never appeared in the roster.
+    make_fleet_repo_at(tmp_path / "elsewhere", config, 28)
+    repos, stdout = run_roster(tmp_path)
+    assert set(repos) == {"elsewhere"}, stdout
+    assert repos["elsewhere"]["version"] == "28"
+    # Scanned as its own root too, and its .config/ is never reported as a second repo.
+    repos, stdout = run_roster(tmp_path / "elsewhere")
+    assert set(repos) == {"elsewhere"}, stdout
+
+
+def _clone_pair(tmp_path, config, origin_version, upstream_version):
+    """A checkout tracking `origin` (a fork) with an `upstream` remote (the real repo), each
+    carrying `config` at its own stamp."""
+    seeds = {}
+    for name, version in (("origin", origin_version), ("upstream", upstream_version)):
+        seed = tmp_path / f"seed-{name}"
+        seed.mkdir()
+        if version is None:
+            (seed / "README.md").write_text("no stamp here\n")
+            run = init_git_repo(seed)
+            run("add", "-A")
+            run("commit", "-q", "-m", "init")
+        else:
+            make_fleet_repo_at(seed, config, version)
+        seeds[name] = tmp_path / f"{name}.git"
+        _git(tmp_path, "clone", "-q", "--bare", str(seed), str(seeds[name]))
+    fleet = tmp_path / "fleet"
+    fleet.mkdir()
+    _git(fleet, "clone", "-q", str(seeds["origin"]), "forked")
+    _git(fleet / "forked", "remote", "add", "upstream", str(seeds["upstream"]))
+    return fleet
+
+
+def test_roster_reads_the_upstream_remote_at_the_same_config_path(tmp_path):
+    # BlackLightning: origin is a stale fork on v23, upstream is the real repo on v28, and the
+    # stamp lives in mise/config.toml on both.
+    fleet = _clone_pair(tmp_path, "mise/config.toml", 23, 28)
+    repos, stdout = run_roster(fleet)
+    forked = repos["forked"]
+    assert (forked["version"], forked["origin_version"]) == ("23", "28"), stdout
+    assert (forked["origin_ref"], forked["pull"]) == ("upstream/main", "1")
+
+
+def test_roster_falls_back_to_the_tracking_branch_when_upstream_has_no_stamp(tmp_path):
+    # A fork of someone else's project: their repo carries no stamp, the fork does.
+    fleet = _clone_pair(tmp_path, "mise.toml", 27, None)
+    repos, stdout = run_roster(fleet)
+    forked = repos["forked"]
+    assert (forked["origin_version"], forked["origin_ref"]) == ("27", "origin/main"), (
+        stdout
+    )
+    assert forked["pull"] == "0"
 
 
 # ── a11y_audit.py (accessibility skill checker) ──────────────────────────────────────

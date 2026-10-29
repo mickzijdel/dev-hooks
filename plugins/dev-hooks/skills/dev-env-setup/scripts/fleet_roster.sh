@@ -1,9 +1,10 @@
 #!/bin/bash
 # dev-env-setup fleet discovery.
 #
-# Finds every repo under the given roots that tracks the dev-env standard (a top-level
-# mise.toml carrying DEV_ENV_VERSION) and reports each repo's upgrade state, so a fleet
-# backfill enumerates its targets live instead of trusting a hand-maintained roster.
+# Finds every repo under the given roots that tracks the dev-env standard (a mise config carrying
+# DEV_ENV_VERSION: mise.toml, .mise.toml, mise/config.toml, .config/mise.toml or
+# .config/mise/config.toml) and reports each repo's upgrade state, so a fleet backfill enumerates
+# its targets live instead of trusting a hand-maintained roster.
 #
 # Usage: fleet_roster.sh [ROOT ...]   (default: ~/Stack/Programmeren)
 #
@@ -13,15 +14,20 @@
 #     repo=<abs path>  name=<basename>  version=<repo's DEV_ENV_VERSION>
 #     branch=<checked-out branch, "" if detached/not git>
 #     dirty=<1 if uncommitted changes>  behind=<1 if version < current_version>
-#     origin_version=<the upstream branch's DEV_ENV_VERSION, after a fetch; "" without one>
+#     origin_version=<the remote's DEV_ENV_VERSION at the same config path, after a fetch;
+#       "" without one>
 #     pull=<1 if origin_version > version: pull before upgrading, the work may be done>
+#     origin_ref=<the remote branch origin_version was read from, e.g. upstream/main>
 #   a "# fleet: N repo(s), N behind, N dirty, N to pull" summary line.
 #
-# Each repo's upstream remote is fetched (non-interactive, 20s cap); offline, the last-fetched
-# ref is read instead.
+# The remote read is where the work lands: a remote named `upstream` (the real repo behind a fork,
+# whose `origin` may be stale) on the tracking branch's name, else the tracking branch itself; the
+# first that carries the stamp wins. Each is fetched (non-interactive, 20s cap); offline, the
+# last-fetched ref is read instead.
 #
-# Scan depth is 2 (ROOT itself may be a repo, or a directory of repos); worktree
-# checkouts (.worktrees/, .claude/worktrees/), node_modules, and .git are pruned.
+# A repo is ROOT itself or a directory directly under it; worktree checkouts (.worktrees/,
+# .claude/worktrees/), node_modules, .git and .config (which holds a config, never a repo) are
+# skipped.
 # Always exits 0 — status lives in the data (matches dev_env_check.sh).
 
 set -u
@@ -44,8 +50,20 @@ IGNORE_FILE="$SELF_DIR/../references/fleet-ignore.txt"
 ignored=""
 [ -f "$IGNORE_FILE" ] && ignored="$(sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' "$IGNORE_FILE" | grep -v '^$')"
 
-# DEV_ENV_VERSION's digits from the mise.toml on stdin.
+# DEV_ENV_VERSION's digits from the mise config on stdin.
 stamp() { grep -E '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' | head -n1 | tr -dc '0-9'; }
+
+# The first mise config in repo $1 that carries the stamp, relative to the repo.
+stamped_config() {
+  local f
+  for f in mise.toml .mise.toml mise/config.toml .config/mise.toml .config/mise/config.toml; do
+    if [ -f "$1/$f" ] && grep -Eq '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$1/$f"; then
+      printf '%s' "$f"
+      return 0
+    fi
+  done
+  return 1
+}
 
 bounded() {
   if command -v timeout >/dev/null 2>&1; then timeout 20 "$@"; else "$@"; fi
@@ -55,12 +73,12 @@ total=0
 behind_total=0
 dirty_total=0
 pull_total=0
-while IFS= read -r mise_file; do
-  grep -Eq '^[[:space:]]*DEV_ENV_VERSION[[:space:]]*=' "$mise_file" || continue
-  repo="$(cd "$(dirname "$mise_file")" && pwd)"
+while IFS= read -r dir; do
+  config="$(stamped_config "$dir")" || continue
+  repo="$(cd "$dir" && pwd)"
   name="$(basename "$repo")"
   printf '%s\n' "$ignored" | grep -Fxq "$name" && continue
-  version="$(stamp <"$mise_file")"
+  version="$(stamp <"$repo/$config")"
   [ -z "$version" ] && version=0
   branch="$(git -C "$repo" symbolic-ref --short -q HEAD 2>/dev/null || true)"
   dirty=0
@@ -69,15 +87,24 @@ while IFS= read -r mise_file; do
   [ "$version" -lt "$current_version" ] && behind=1
   # A checkout that never pulled reads an old stamp while origin already carries the upgrade.
   origin_version=""
+  origin_ref=""
   pull=0
-  upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [ -n "$upstream" ]; then
-    GIT_TERMINAL_PROMPT=0 bounded git -C "$repo" fetch --quiet "${upstream%%/*}" >/dev/null 2>&1 || true
-    origin_version="$(git -C "$repo" show "$upstream:mise.toml" 2>/dev/null | stamp)"
-    [ -n "$origin_version" ] && [ "$origin_version" -gt "$version" ] && pull=1
-  fi
-  printf 'repo=%s\tname=%s\tversion=%s\tbranch=%s\tdirty=%s\tbehind=%s\torigin_version=%s\tpull=%s\n' \
-    "$repo" "$name" "$version" "$branch" "$dirty" "$behind" "$origin_version" "$pull"
+  tracking="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  refs=()
+  git -C "$repo" remote get-url upstream >/dev/null 2>&1 && refs+=("upstream/${tracking#*/}")
+  [ -n "$tracking" ] && refs+=("$tracking")
+  for ref in ${refs[@]+"${refs[@]}"}; do
+    [ "$ref" = upstream/ ] && ref=upstream/HEAD
+    GIT_TERMINAL_PROMPT=0 bounded git -C "$repo" fetch --quiet "${ref%%/*}" >/dev/null 2>&1 || true
+    origin_version="$(git -C "$repo" show "$ref:$config" 2>/dev/null | stamp)"
+    if [ -n "$origin_version" ]; then
+      origin_ref=$ref
+      break
+    fi
+  done
+  [ -n "$origin_version" ] && [ "$origin_version" -gt "$version" ] && pull=1
+  printf 'repo=%s\tname=%s\tversion=%s\tbranch=%s\tdirty=%s\tbehind=%s\torigin_version=%s\tpull=%s\torigin_ref=%s\n' \
+    "$repo" "$name" "$version" "$branch" "$dirty" "$behind" "$origin_version" "$pull" "$origin_ref"
   total=$((total + 1))
   behind_total=$((behind_total + behind))
   dirty_total=$((dirty_total + dirty))
@@ -85,9 +112,9 @@ while IFS= read -r mise_file; do
 done < <(
   for root in "${ROOTS[@]}"; do
     [ -d "$root" ] || continue
-    find "$root" -maxdepth 2 \
-      \( -name .worktrees -o -name worktrees -o -name node_modules -o -name .git \) -prune \
-      -o -type f -name mise.toml -print 2>/dev/null
+    printf '%s\n' "$root"
+    find "$root" -mindepth 1 -maxdepth 1 -type d ! -name .worktrees ! -name worktrees \
+      ! -name node_modules ! -name .git ! -name .config 2>/dev/null
   done | sort -u
 )
 
