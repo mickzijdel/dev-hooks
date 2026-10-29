@@ -254,7 +254,14 @@ export const nudgeExport = (log: NudgeRecord[], now: number) => ({
   records: log,
 })
 
-// A --plugin-dir dev copy has a store of its own; exporting it would replace the installed
-// plugin's stop-nudges.json until the next real nudge, so it writes beside it instead.
-export const nudgeExportFile = (pluginRoot: string): string =>
-  pluginRoot.includes('/.claude/plugins/') ? 'stop-nudges.json' : 'stop-nudges.inline.json'
+// Every copy of the plugin (the installed one, a --plugin-dir dev copy) keeps a store of its
+// own and can't tell which copy it is, so each merges into the one export rather than
+// replacing another's. A half-written file reads as empty; the next export rewrites it whole.
+export const exportedRecords = (text: string): NudgeRecord[] => {
+  try {
+    const records = (JSON.parse(text) as { records?: unknown }).records
+    return Array.isArray(records) ? (records as NudgeRecord[]) : []
+  } catch {
+    return []
+  }
+}

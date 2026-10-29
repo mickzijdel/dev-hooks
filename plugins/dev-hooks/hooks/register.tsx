@@ -42,6 +42,7 @@ import {
 } from './ci-watch'
 import type { PushSection, Run, Watch } from './ci-watch'
 import {
+  exportedRecords,
   formatNudgeStats,
   hookName,
   isProbeSession,
@@ -49,7 +50,6 @@ import {
   newNudge,
   NUDGE_LOG_KEY,
   nudgeExport,
-  nudgeExportFile,
   resolvePending,
   toRecord,
 } from './nudge-outcomes'
@@ -516,7 +516,9 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
   // Beside the prompt log and hook-fires.jsonl; only where that directory already exists.
   const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/automation-review`
   if (await $.fs.exists(dir)) {
-    await $.fs.write(`${dir}/${nudgeExportFile($.plugin.root)}`, `${JSON.stringify(nudgeExport(log, now))}\n`)
+    const file = `${dir}/stop-nudges.json`
+    const held = (await $.fs.exists(file)) ? exportedRecords(await $.fs.read(file)) : []
+    await $.fs.write(file, `${JSON.stringify(nudgeExport(mergeNudgeLog(held, log, now), now))}\n`)
   }
 }
 

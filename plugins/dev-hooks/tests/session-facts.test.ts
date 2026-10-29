@@ -8,7 +8,7 @@ const DAY = 86_400_000
 
 // The test's $ has no store noun to read back through, so answer the
 // plugin's $.session.id, $.store and $.process.run from memory the test sees.
-function world(on: On, options: { root?: string | null; store?: Record<string, unknown> } = {}) {
+function world(on: On, options: { root?: string | null; store?: Record<string, unknown>; files?: Record<string, string> } = {}) {
   const store = new Map<string, unknown>(Object.entries(options.store ?? {}))
   const root = options.root === undefined ? '/repo' : options.root
   on('session.id', () => ({ value: 's1' }))
@@ -24,7 +24,9 @@ function world(on: On, options: { root?: string | null; store?: Record<string, u
   on('store.keys', () => ({ value: [...store.keys()] }))
   const written = new Map<string, string>()
   on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
-  on('fs.exists', (_$, e) => ({ value: e.path === '/home/u/.claude/automation-review' }))
+  const files = new Map<string, string>(Object.entries(options.files ?? {}))
+  on('fs.exists', (_$, e) => ({ value: e.path === '/home/u/.claude/automation-review' || files.has(e.path) }))
+  on('fs.read', (_$, e) => ({ value: files.get(e.path) ?? '' }))
   on('fs.write', (_$, e) => {
     written.set(e.path, e.text)
     return { value: undefined }
@@ -136,9 +138,14 @@ const pendingReview = (at: number): Facts => ({
   nudges: [{ hook: 'review-reminder', at, summary: '[review-reminder] run a review' }],
 })
 
-test('session end resolves a pending nudge as unknown and logs it across sessions', async ($, on) => {
+const EXPORT = '/home/u/.claude/automation-review/stop-nudges.json'
+
+test('session end resolves a pending nudge as unknown, logs it, and adds it to the export', async ($, on) => {
   const at = Date.now() - 60_000
-  const w = world(on, { store: { 'facts:s1': pendingReview(at) } })
+  // Another copy of the plugin (the installed one, a --plugin-dir dev copy) keeps its own
+  // store but exports to the same file; its records stay.
+  const other: NudgeRecord = { hook: 'verify-work', session: 's0', at: at - 1_000, resolvedAt: at, outcome: 'ignored', evidence: '' }
+  const w = world(on, { store: { 'facts:s1': pendingReview(at) }, files: { [EXPORT]: JSON.stringify({ records: [other] }) } })
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
 
   await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } })
@@ -146,10 +153,9 @@ test('session end resolves a pending nudge as unknown and logs it across session
   expect(w.facts().nudges?.[0]?.outcome).toBe('unknown')
   const log = w.store.get('nudgeOutcomes') as NudgeRecord[]
   expect(log.map(r => [r.hook, r.session, r.outcome])).toEqual([['review-reminder', 's1', 'unknown']])
-  // The test loads the plugin from its folder, as a --plugin-dir dev copy: the real export is left alone.
-  expect(w.written.has('/home/u/.claude/automation-review/stop-nudges.json')).toBe(false)
-  const exported = JSON.parse(w.written.get('/home/u/.claude/automation-review/stop-nudges.inline.json') ?? '{}')
-  expect(exported.last7Days).toEqual([{ hook: 'review-reminder', fired: 1, acted: 0, ignored: 0, declined: 0, unknown: 1 }])
+  const exported = JSON.parse(w.written.get(EXPORT) ?? '{}')
+  expect((exported.records as NudgeRecord[]).map(r => [r.hook, r.session])).toEqual([['verify-work', 's0'], ['review-reminder', 's1']])
+  expect(exported.last7Days.length).toBe(2)
 })
 
 test('session start sweeps abandoned sessions\' pending nudges into the log, leaving live ones', async ($, on) => {

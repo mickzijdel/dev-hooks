@@ -2,15 +2,16 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   actedRate,
+  exportedRecords,
   formatNudgeStats,
   hookName,
   isProbeSession,
   mergeNudgeLog,
   newNudge,
+  nudgeExport,
   resolveNudge,
   resolvePending,
   summarizeNudges,
-  nudgeExportFile,
 } from '../hooks/nudge-outcomes'
 import type { Facts, Nudge, NudgeRecord } from '../types'
 
@@ -199,7 +200,9 @@ test('end-report-reminder is acted on when the next reply carries Changed and Yo
   expect(resolveNudge(n, { facts: facts(), refired: [], atStop: false }).outcome).toBe('unknown')
 })
 
-test('only the installed plugin writes stop-nudges.json; a dev copy writes its own file', async () => {
-  expect(nudgeExportFile('/home/u/.claude/plugins/cache/dev-hooks/dev-hooks/2.65.11')).toBe('stop-nudges.json')
-  expect(nudgeExportFile('/home/u/src/dev-hooks/plugins/dev-hooks')).toBe('stop-nudges.inline.json')
+test('exportedRecords reads back what an export holds, and nothing from a half-written file', async () => {
+  const r = rec('verify-work', 'ignored')
+  expect(exportedRecords(JSON.stringify(nudgeExport([r], T)))).toEqual([r])
+  expect(exportedRecords('{"records": [')).toEqual([])
+  expect(exportedRecords('{}')).toEqual([])
 })
