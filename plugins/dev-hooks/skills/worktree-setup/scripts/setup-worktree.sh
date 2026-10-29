@@ -7,6 +7,9 @@
 #   1. mise:      trusts the worktree's mise config at any supported path (it's the same repo
 #                 you already trust, so this does NOT contradict dev-env-setup's "never auto-trust unknown configs")
 #                 and sets `worktree.baseref head` so future worktrees branch from local HEAD.
+#                 For a worktree inside the main checkout it also caps mise's config search at
+#                 the worktrees dir, so mise run in the worktree stops relocking the main
+#                 checkout's mise.lock.
 #   2. secrets:   copies gitignored-but-needed files (Rails config/master.key, .env, …) from
 #                 the main checkout, since git never put them in the worktree. Everything
 #                 gitignored is copied EXCEPT known-heavy build/dependency dirs (node_modules,
@@ -25,6 +28,7 @@
 #   source         absolute path of the main checkout copied from
 #   worktree       absolute path of the provisioned worktree
 #   mise_trusted   1 if `mise trust` ran on the worktree's mise config, else 0
+#   mise_ceiling   the .miserc.toml written beside the worktree, or `no`
 #   copied         number of gitignored entries copied in
 #   skipped_heavy  number of gitignored entries skipped as heavy/excluded
 #   exec_fixed     number of shebang scripts re-marked executable
@@ -87,8 +91,27 @@ for candidate in \
     break
   fi
 done
+mise_ceiling=no
 if command -v mise >/dev/null 2>&1 && [ -n "$mise_config_path" ]; then
   mise trust "$WT" >/dev/null 2>&1 && mise_trusted=1
+  # mise loads every config from the cwd up to $HOME, so in <repo>/.worktrees/<name> it also
+  # loads the main checkout's config, and with lockfiles on, `mise install`, `mise upgrade` or
+  # a `mise x` that installs re-locks that config too: the main checkout's mise.lock changes.
+  # A .miserc.toml in the worktrees dir makes that dir a ceiling for every worktree in it,
+  # including mise commands run later outside this script. Only in a gitignored dir: a
+  # ceiling at the repo root would hide the main checkout's own config from itself.
+  wt_dir="$(dirname "$WT")"
+  miserc="$wt_dir/.miserc.toml"
+  marker="# Written by dev-hooks worktree-setup: mise stops its config search at this dir."
+  case "$WT" in
+    "$SRC"/*)
+      if git -C "$SRC" check-ignore -q -- "$miserc" &&
+        { [ ! -e "$miserc" ] || [ "$(head -n1 "$miserc")" = "$marker" ]; }; then
+        printf '%s\nceiling_paths = ["%s"]\n' "$marker" "$wt_dir" >"$miserc" &&
+          mise_ceiling="$miserc"
+      fi
+      ;;
+  esac
 fi
 
 # ── 2. copy gitignored-but-present files, skipping heavy dirs ─────────────────────────
@@ -199,6 +222,7 @@ cat <<EOF
 source=$SRC
 worktree=$WT
 mise_trusted=$mise_trusted
+mise_ceiling=$mise_ceiling
 copied=$copied
 skipped_heavy=$skipped_heavy
 exec_fixed=$exec_fixed
@@ -210,6 +234,8 @@ echo "# Provisioned worktree $WT"
 echo "# Copied $copied gitignored file(s) from $SRC (skipped $skipped_heavy heavy/excluded)."
 if [ "$mise_trusted" = 1 ]; then
   echo "# mise trusted ($mise_config_path); set worktree.baseref=head."
+  [ "$mise_ceiling" != no ] &&
+    echo "# mise in $(dirname "$mise_ceiling")/* no longer loads or relocks the main checkout's config."
 elif command -v mise >/dev/null 2>&1; then
   echo "# No mise config found — skipped mise trust; set worktree.baseref=head."
 else

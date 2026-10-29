@@ -48,9 +48,14 @@ not instead of it.
    `.config/mise.toml` and the other paths mise supports (safe — it's a worktree of a repo you
    already trust, so
    this does **not** contradict [[dev-env-setup]]'s "never auto-trust unknown configs" rule),
-   copies the gitignored files, and re-marks shebang scripts executable. It reports `copied`,
-   `skipped_heavy`, `mise_trusted`, `exec_fixed`, and `isolated`. Pass `--source DIR` to override
-   the copy origin, or a positional worktree path to provision one you're not currently inside.
+   copies the gitignored files, and re-marks shebang scripts executable. For a worktree in a
+   gitignored dir inside the repo (`.worktrees/`, `.claude/worktrees/`) it also writes a
+   `.miserc.toml` there that makes that dir mise's config ceiling: without it, mise in the
+   worktree loads the main checkout's config too, and `mise install`, `mise upgrade` or an
+   installing `mise x` rewrites the main checkout's `mise.lock`. It reports `copied`,
+   `skipped_heavy`, `mise_trusted`, `mise_ceiling`, `exec_fixed`, and `isolated`. Pass
+   `--source DIR` to override the copy origin, or a positional worktree path to provision one
+   you're not currently inside.
    If the repo carries a `.worktree-isolate.conf`, this step also allocates the worktree its own
    port + database (see [Per-worktree isolation](#per-worktree-isolation) below).
 

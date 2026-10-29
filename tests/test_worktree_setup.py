@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 
+import pytest
 
 from conftest import DEV_HOOKS, init_git_repo, parse_kv
 
@@ -290,8 +291,6 @@ def test_post_setup_sees_the_worktrees_isolated_env(tmp_path):
     worktree's name. Also pins that `mise trust` (which runs before isolation writes
     mise.local.toml) covers the later-written file."""
     if shutil.which("mise") is None:
-        import pytest
-
         pytest.skip("mise not installed")
     src = tmp_path / "src"
     src.mkdir()
@@ -314,3 +313,87 @@ def test_post_setup_sees_the_worktrees_isolated_env(tmp_path):
     assert port == str(3000 + int(out["isolated"]))  # the worktree's port, not 3000
     assert suffix == "_wt"
     assert app == "demo"  # the repo's own mise.toml still applies
+
+
+# ── mise config ceiling ──────────────────────────────────────────────────────────────
+
+needs_mise = pytest.mark.skipif(
+    shutil.which("mise") is None, reason="mise not installed"
+)
+
+# A lock entry for a tool the config no longer declares: mise prunes it on the next relock,
+# so any relock of a lockfile shows up as a change to it.
+STALE_LOCK = '[[tools.gone]]\nversion = "1.0.0"\nbackend = "aqua:example/gone"\n'
+
+
+def _mise_lock_repo(tmp_path, wt_rel=".worktrees/wt"):
+    src = tmp_path / "src"
+    src.mkdir()
+    run = _make_source_repo(src)
+    (src / "mise.toml").write_text("[settings]\nlockfile = true\n")
+    (src / "mise.lock").write_text(STALE_LOCK)
+    run("add", "mise.toml", "mise.lock")
+    run("commit", "-q", "-m", "mise")
+    wt = src / wt_rel
+    _add_worktree(src, wt)
+    return src, wt
+
+
+def _mise_install(cwd, tmp_path):
+    """`mise install` with an empty global config (nothing to download) and both checkouts
+    trusted, so the main checkout's config is loadable if mise looks for it."""
+    empty = tmp_path / "global.toml"
+    empty.touch()
+    trusted = os.environ.get("MISE_TRUSTED_CONFIG_PATHS", "")
+    env = {
+        **os.environ,
+        "MISE_GLOBAL_CONFIG_FILE": str(empty),
+        "MISE_TRUSTED_CONFIG_PATHS": f"{trusted}:{tmp_path}",
+    }
+    r = subprocess.run(
+        ["mise", "install"], cwd=cwd, env=env, capture_output=True, text=True
+    )
+    assert r.returncode == 0, r.stderr
+
+
+@needs_mise
+def test_mise_in_the_worktree_leaves_the_main_lockfile_alone(tmp_path):
+    """mise loads every config from the cwd upwards, so in <repo>/.worktrees/<name> it also
+    loaded the main checkout's mise config and re-locked it: an agent's `mise install` in a
+    worktree rewrote the main checkout's mise.lock."""
+    src, wt = _mise_lock_repo(tmp_path)
+
+    out, _ = run_setup(wt)
+    _mise_install(wt, tmp_path)
+
+    assert (src / "mise.lock").read_text() == STALE_LOCK
+    assert out["mise_ceiling"] == str((src / ".worktrees" / ".miserc.toml").resolve())
+    # Control: the run did relock, so a mise that never relocks can't pass this vacuously.
+    assert "tools.gone" not in (wt / "mise.lock").read_text()
+    # The ceiling sits below the main checkout, which still loads (and locks) its own config.
+    _mise_install(src, tmp_path)
+    assert "tools.gone" not in (src / "mise.lock").read_text()
+
+
+@needs_mise
+def test_no_mise_ceiling_outside_a_gitignored_worktrees_dir(tmp_path):
+    """A worktree straight under the repo root would put the ceiling at the root, and hide
+    the main checkout's own config from mise run in the main checkout."""
+    src, wt = _mise_lock_repo(tmp_path, wt_rel="wt")
+
+    out, _ = run_setup(wt)
+
+    assert out["mise_ceiling"] == "no"
+    assert not (src / ".miserc.toml").exists()
+
+
+@needs_mise
+def test_mise_ceiling_keeps_a_miserc_it_did_not_write(tmp_path):
+    src, wt = _mise_lock_repo(tmp_path)
+    own = src / ".worktrees" / ".miserc.toml"
+    own.write_text('env = ["test"]\n')
+
+    out, _ = run_setup(wt)
+
+    assert out["mise_ceiling"] == "no"
+    assert own.read_text() == 'env = ["test"]\n'
