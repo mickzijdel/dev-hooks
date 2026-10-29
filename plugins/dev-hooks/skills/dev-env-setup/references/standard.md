@@ -166,10 +166,11 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > **vulture** walks every `*.py` under `.` and ignores `.gitignore`, so its `--exclude` must name
 > the in-repo worktree directories (v29), or the main checkout's pre-commit scans every
 > worktree's copy of the code. vulture matches the patterns against **absolute** paths, and one
-> without a `*` matches anywhere in them, so the worktree patterns start at the checkout:
-> `$(pwd -P)/.worktrees/*,$(pwd -P)/.claude/worktrees/*`. A bare `.worktrees` would match every
-> file of a checkout that is itself a worktree, and vulture would pass there having scanned
-> nothing.
+> without a `*` matches anywhere in them, so every pattern starts at the checkout:
+> `$(pwd -P)/<dir>/*`, plus `$(pwd -P)/*/<dir>/*` for `.venv`, `build` and `dist` at any depth.
+> A bare `.worktrees` would match every file of a checkout that is itself a worktree, and a bare
+> `build` every file whose path holds the word (`scripts/build_docs.py`), and vulture passes
+> having never scanned them.
 >
 > **jscpd** runs via `npx` (its v5 Rust engine — the `cpd` binary — ships through npm optional
 > platform packages that `npx` resolves but the mise `npm:` backend doesn't), reading

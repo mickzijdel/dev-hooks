@@ -1176,12 +1176,17 @@ templates) and step 4 (only a repo whose mise config is not a root `mise.toml`).
   longer exports `MISE_GITHUB_TOKEN` to later steps, so a tool a later step installs lazily is
   fetched without a token; and the cache key format changed (v5.2.0, v5.2.3), so the first run
   after the bump misses the cache once.
-- **vulture skips in-repo worktrees.** vulture collects every `*.py` under `.` and ignores
-  `.gitignore`; only `--exclude` filters it. Neither `.worktrees/` (the default worktree spot)
-  nor `.claude/worktrees/` (where `EnterWorktree` and the Agent tool's worktree isolation put
-  one) was excluded, so the main checkout's pre-commit scanned every worktree's copy of the
-  code, and dead code in one agent's unfinished work failed another session's commit. jscpd
-  needs no change: `.jscpd.json`'s `"gitignore": true` skips both, as long as git ignores them.
+- **vulture skips in-repo worktrees, and only what it means to skip.** vulture collects every
+  `*.py` under `.` and ignores `.gitignore`; only `--exclude` filters it. Neither `.worktrees/`
+  (the default worktree spot) nor `.claude/worktrees/` (where `EnterWorktree` and the Agent
+  tool's worktree isolation put one) was excluded, so the main checkout's pre-commit scanned
+  every worktree's copy of the code, and dead code in one agent's unfinished work failed
+  another session's commit. And vulture matches the patterns against absolute paths, where one
+  without a `*` matches anywhere: the bare `build` and `dist` skipped every file whose path
+  holds either word (`scripts/build_docs.py`, `tests/test_distance.py`, a whole repo cloned
+  under such a path). Every pattern now starts at the checkout. jscpd needs no change:
+  `.jscpd.json`'s `"gitignore": true` skips both worktree directories, as long as git ignores
+  them.
 - **mise config outside a root `mise.toml`.** mise also reads `.mise.toml`, `mise/config.toml`,
   `.config/mise.toml` and `.config/mise/config.toml`, and writes the lock beside the config
   (`mise/mise.lock`, `.config/mise/mise.lock`, `.config/mise.lock`; a root `mise.lock` for
@@ -1212,18 +1217,25 @@ Steps:
      `actions/checkout` v7.0.1, `ruby/setup-ruby` v1.335.0 and `actions/cache` v6.1.0), then run
      `bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh"
      .github/workflows`: it must report `0 unresolved` and no `FAIL` line.
-2. **Exclude both worktree directories from vulture** (only where `hk.pkl` has a `["vulture"]`
-   step). Change the `--exclude` value's single quotes to `\"` (a double quote inside the Pkl
-   string, so the shell expands `$(pwd -P)`) and append two patterns that start at the
-   checkout. The template form, as it appears in `hk.pkl`:
+2. **Anchor vulture's excludes at the checkout** (only where `hk.pkl` has a `["vulture"]`
+   step). Replace the step's whole `--exclude '…'` argument with this value, exactly as it
+   appears in `hk.pkl` (`\"` is a double quote inside the Pkl string, so the shell expands
+   `$(pwd -P)`):
    ```
-   --exclude \"*/.venv/*,.venv,build,dist,$(pwd -P)/.worktrees/*,$(pwd -P)/.claude/worktrees/*\" .
+   --exclude \"$(pwd -P)/.venv/*,$(pwd -P)/*/.venv/*,$(pwd -P)/build/*,$(pwd -P)/*/build/*,$(pwd -P)/dist/*,$(pwd -P)/*/dist/*,$(pwd -P)/.worktrees/*,$(pwd -P)/.claude/worktrees/*\" .
    ```
-   Keep any entries the repo added. Do **not** append a bare `.worktrees`: vulture matches
-   `--exclude` against absolute paths, and a pattern without `*` matches anywhere in them, so in a
-   checkout that is itself a worktree (`<repo>/.worktrees/<branch>`, where the fleet's agents
-   work) it matches every file and vulture silently scans nothing. CI needs no change: its
-   vulture step reads `git ls-files`, which never lists a worktree.
+   It skips `.venv/`, `build/` and `dist/` directories at any depth and both worktree
+   directories, and nothing else. Carry over any entry the repo added, written the same way
+   (`$(pwd -P)/<dir>/*`). Never leave a pattern without a `*`: vulture matches `--exclude`
+   against absolute paths, and such a pattern matches anywhere in them, so a bare `.worktrees`
+   matches every file of a checkout that is itself a worktree (`<repo>/.worktrees/<branch>`,
+   where the fleet's agents work) and vulture silently scans nothing there. CI needs no
+   change: its vulture step reads `git ls-files`, which never lists a worktree.
+
+   Files the bare `build`/`dist` patterns skipped are now scanned, so
+   `hk run check --all -S vulture` may report findings the repo never saw. Delete code that is
+   plainly dead. Otherwise silence the finding the way the repo already does (a whitelist file
+   passed to vulture, or an inline `# noqa` comment, which vulture honours), and report it.
 3. **Make sure git ignores both worktree directories** (every stack; jscpd skips them only
    through this). `git check-ignore -v .worktrees/x .claude/worktrees/x` must print two lines.
    For each path it leaves out, add `.worktrees/` or `.claude/worktrees/` to `.gitignore`. A
@@ -1253,15 +1265,16 @@ Steps:
      ```bash
      mkdir -p .worktrees/v29-probe .claude/worktrees/v29-probe
      printf 'def probe():\n    return 1\n    print("dead")\n' |
-       tee .worktrees/v29-probe/probe.py .claude/worktrees/v29-probe/probe.py >v29_probe.py
+       tee .worktrees/v29-probe/probe.py .claude/worktrees/v29-probe/probe.py >build_v29_probe.py
      hk run check --all -S vulture
      ```
-     The step must fail on `v29_probe.py:3: unreachable code after 'return'` and name neither
-     worktree file. A pass with no finding means the patterns are not anchored. Use unreachable
-     code, not an unused function: vulture rates an unused function at 60% confidence, below
-     the step's `--min-confidence 80`, so it is never reported anywhere and proves nothing.
-     Delete the three files and both `v29-probe` directories before you commit, or the
-     pre-commit vulture step fails on `v29_probe.py`.
+     The step must fail on `build_v29_probe.py:3: unreachable code after 'return'` and name
+     neither worktree file. A pass with no finding means a pattern is still bare (`build` hides
+     the root file; `.worktrees` hides everything in a worktree checkout). Use unreachable code,
+     not an unused function: vulture rates an unused function at 60% confidence, below the
+     step's `--min-confidence 80`, so it is never reported anywhere and proves nothing. Delete
+     the three files and both `v29-probe` directories before you commit, or the pre-commit
+     vulture step fails on `build_v29_probe.py`.
 
 ---
 

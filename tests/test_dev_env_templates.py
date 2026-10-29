@@ -407,16 +407,23 @@ def test_jscpd_template_uses_ignore_key():
 )
 @pytest.mark.parametrize(
     "checkout",
-    [".", ".worktrees/feat", ".claude/worktrees/agent-1"],
-    ids=["main-checkout", "in-a-worktree", "in-a-claude-worktree"],
+    [".", ".worktrees/feat", ".claude/worktrees/agent-1", "rebuild-dist"],
+    ids=[
+        "main-checkout",
+        "in-a-worktree",
+        "in-a-claude-worktree",
+        "path-says-build-and-dist",
+    ],
 )
-def test_vulture_step_skips_in_repo_worktrees(hk, checkout, tmp_path):
+def test_vulture_excludes_are_anchored_at_the_checkout(hk, checkout, tmp_path):
     """v29: vulture collects every *.py under `.` and ignores .gitignore, so only `--exclude`
     keeps a worktree checked out inside the repo out of the scan. Without it the main checkout's
     pre-commit scanned every worktree's copy, and one session's unfinished dead code failed
-    another session's commit. vulture matches the patterns against absolute paths, so a bare
-    `.worktrees` would also match a checkout that is itself a worktree and scan nothing there:
-    run the step's own flags, shell-expanded, from each kind of checkout."""
+    another session's commit. vulture matches the patterns against absolute paths, and one
+    without a `*` matches anywhere in them: a bare `.worktrees` skipped every file of a checkout
+    that is itself a worktree, and a bare `build` or `dist` skipped `scripts/build_docs.py`,
+    `tests/test_distance.py` and every file of a checkout whose path says either word. Run the
+    step's own flags, shell-expanded, from each kind of checkout."""
     m = re.search(
         r'vulture --min-confidence (\d+) --exclude \\"([^"\\]*)\\" \.', hk.read_text()
     )
@@ -425,11 +432,17 @@ def test_vulture_step_skips_in_repo_worktrees(hk, checkout, tmp_path):
     # Unreachable code is reported at 100% confidence; an unused function only at 60%, below
     # the step's floor, so it would pass here without proving anything.
     dead = 'def probe():\n    return 1\n    print("dead")\n'
-    for rel in (
-        "app/probe.py",
+    scanned = ["app/probe.py", "scripts/build_docs.py", "tests/test_distance.py"]
+    skipped = [
         ".worktrees/feat/app/probe.py",
         ".claude/worktrees/agent-1/app/probe.py",
-    ):
+        ".venv/lib/probe.py",
+        "tools/.venv/lib/probe.py",
+        "build/lib/probe.py",
+        "dist/probe.py",
+        "packages/web/build/probe.py",
+    ]
+    for rel in scanned + skipped:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(dead)
     r = subprocess.run(
@@ -440,7 +453,7 @@ def test_vulture_step_skips_in_repo_worktrees(hk, checkout, tmp_path):
         text=True,
     )
     reported = sorted({line.split(":")[0] for line in r.stdout.splitlines()})
-    assert reported == ["app/probe.py"], r.stdout + r.stderr
+    assert reported == sorted(scanned), r.stdout + r.stderr
 
 
 def test_herb_template_enables_linter():
