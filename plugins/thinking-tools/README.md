@@ -24,10 +24,11 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | `grill` | A plan or design is still fuzzy — interviews you relentlessly, one question at a time with a recommendation attached, walking the decision tree in dependency order until every branch is resolved. |
 | `domain-modeling` | Pinning down project terminology — builds and sharpens a `CONTEXT.md` ubiquitous-language glossary (with `_Avoid_` synonym lists), challenging vague or conflicting terms as they come up. |
 | `codebase-design` | Designing or restructuring a module's interface — the deep-modules vocabulary (module, interface, depth, seam, adapter, leverage, locality), the deletion test, and a design-it-twice parallel-subagent pattern. |
+| `wait-what` | You seem lost after Claude's last answer ("wait what", "huh?", "I don't follow") — Claude re-pitches it on its own: a little context first, then a shorter version in ASD-STE100 Simplified Technical English at about a 10th-grade reading level. |
 | `brief-back` | Someone hands you a task — plays the brief back as a contract sized to it (Doing, Not doing, Depth with a check-in point, Done when, Need from you, Assuming), works to that depth, and ends with an end report that stands alone for someone coming back to the session: Status against Done when, what Changed, and Your move (every action left for them). A hook that sends Claude back gets that report again, not a reply about the hook. Quick/Solid/Deep make "how thorough" one word. The receiving side of dev-hooks' `agent-brief`. |
 | `thinking-toolbox` | Choosing what to work on, deciding, stuck, overcommitted, or reviewing how you work — flags the one of [Adam Jones's 38 thinking tools](https://adamjones.me/blog/thinking-tools-to-be-more-effective-at-anything/) that fits, then guides you through its steps one at a time. |
 
-`grill`, `domain-modeling`, and `codebase-design` are adapted from
+`grill`, `domain-modeling`, `codebase-design`, and `wait-what` are adapted from
 [mattpocock/skills](https://github.com/mattpocock/skills) (MIT). Each skill's frontmatter
 carries its precise upstream `source:` and `license:`; the shared license text lives at
 [`skills/matt-pocock-skills-LICENSE.txt`](skills/matt-pocock-skills-LICENSE.txt).
