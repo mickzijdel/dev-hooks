@@ -26,6 +26,8 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
 source "$SELF_DIR/lib/reminder-common.sh"
 reminder_prompt_init DEV_HOOKS_INTENT_CHECK # sets PROMPT; exits silently if empty/opted-out
+# A program wrote a nested run's prompt and reads its reply: nobody to play the brief back to.
+reminder_is_nested_run && exit 0
 
 p="${PROMPT,,}" # lowercase for matching
 

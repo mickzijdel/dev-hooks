@@ -301,7 +301,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   script does: it inherits that session's `CLAUDE_CODE_ENTRYPOINT`, and Claude Code gives
   every hook `CLAUDE_CODE_CHILD_SESSION`, so only the claude process's own environment,
   `/proc/$CLAUDE_PID/environ`, tells; the mod reads the same through `$.env`; also empties
-  `reminder_prompt_typed` and counts as headless; copied as `voice_is_nested_run`, pinned by
+  `reminder_prompt_typed`, silences `intent-check-reminder` (which reads the raw prompt) and
+  counts as headless; copied as `voice_is_nested_run`, pinned by
   `test_nested_run_checks_match`),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`

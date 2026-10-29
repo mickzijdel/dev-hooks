@@ -5465,6 +5465,15 @@ def test_intent_check_fires_on_thin_task():
     assert payload["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
 
 
+def test_intent_check_silent_in_a_nested_run(claude_pid):
+    # A program wrote the prompt and reads the reply: nobody to play the brief back to.
+    r = _run_intent_check(
+        "add dark mode to the settings page", env=base_env(CLAUDE_PID=claude_pid(True))
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_intent_check_fires_on_polite_thin_task():
     # A leading politeness phrase is stripped before the verb check anchors.
     r = _run_intent_check("can you add a search box to the navbar")
