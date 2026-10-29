@@ -1311,7 +1311,8 @@ Markdown.
 
 **Which steps apply.** A repo **runs ruff** when its mise config has a `ruff` tool, a
 `pyproject.toml` lists `ruff` in a dependency group, or `hk.pkl` has a `ruff-check` step. Such a
-repo does steps 1–9. A repo with none of these does only step 8. Leave the global
+repo does steps 1–9. A repo with none of these re-copies the version-sync script (the first
+sentence of step 3, so every repo carries the same script) and does step 8. Leave the global
 `~/.config/mise/config.toml` ruff pin alone: it moves after the fleet backfill. Never run a bare
 `mise upgrade`; name the tool.
 
@@ -1416,12 +1417,12 @@ Steps:
   because the default set is wider than the `select` it had.
 - **fringe-chat**: keep `select = ["E4", "E7", "E9", "F"]` in `backend/pyproject.toml` and do
   not add the step 4 config yet; adopting the default rule set gets its own pass later. Do steps
-  2, 5 and 8: pin `"ruff>=0.17,<0.18"` in `backend/pyproject.toml`, run
-  `uv lock --project backend --upgrade-package ruff`, and set both hk ruff-format globs to
-  `List("backend/**/*.py", "backend/**/*.md")`. CI already runs
-  `ruff format --check backend`, so step 6 does not apply. Its mise config has no ruff and its
-  `uv.lock` is in `backend/`, so the version-sync gate has no ruff pair to compare; that is
-  expected.
+  2, 3, 5, 8 and 9: pin `"ruff>=0.17,<0.18"` in `backend/pyproject.toml` and run
+  `uv lock --project backend --upgrade-package ruff`; re-copy the version-sync script but leave
+  the `versions` glob alone; set the hk `ruff-format` step's glob (not `ruff-check`'s) to
+  `List("backend/**/*.py", "backend/**/*.md")`. CI already runs `ruff format --check backend`,
+  so step 6 does not apply. Its mise config has no ruff and its `uv.lock` is in `backend/`, so
+  the version-sync gate prints nothing for ruff; that is expected.
 - **server-setup**: runs no ruff, so only step 8 applies, plus one correction. The `hk.pkl`
   header says "This repo ships no Python source of its own", which is wrong: it tracks
   `tests/fake-github-api.py`, `tests/ntfy-listener.py`, `tests/lib/env_secrets.py`,
