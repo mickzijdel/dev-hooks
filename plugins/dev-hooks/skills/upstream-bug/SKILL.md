@@ -7,7 +7,7 @@ description: Use when a dependency or tool you don't own is broken and needs an 
 
 Get the bug reported once, worked around minimally, and make the way back to upstream explicit.
 The workaround is temporary; its exit tracker is what stops it becoming permanent: a `shortcut:`
-comment beside it, or, in a fork or a shared repo, a tracking issue.
+comment beside it, plus a tracking issue in a fork or a shared repo.
 
 ## Authority
 
@@ -41,14 +41,15 @@ approve. One ask can cover a batch they see in full. Past these limits, ask rath
 5. **Prove it**: the original repro fails before the workaround and passes after, on every
    supported platform, installed through the project's normal install path.
 6. **Write the exit tracker**:
-   - **A repo only the user works in**: a comment right beside the workaround (the pin, patch or
-     fork reference), `shortcut: <the limit>, <when to upgrade>`, carrying the upstream report's
-     link and the exact upstream change that lets you revert. It goes in the workaround commit, so
-     it needs no approval of its own.
-   - **A fork, or a repo shared with other people** (other committers in `git shortlog -sne`, an
-     organisation's repo): draft an issue labelled `blocked` linking the upstream report, fork
-     release, patch, and workaround PR, and stating what upstream change lets you revert. Link it
-     from the PR with `Refs #N` — merging the workaround must not close it.
+   - **Always**: a comment right beside the workaround (the pin, patch or fork reference),
+     `shortcut: <the limit>, <when to upgrade>`, carrying the upstream report's link and the exact
+     upstream change that lets you revert. It goes in the workaround commit, so it needs no
+     approval of its own. In a repo only the user works in, this is the whole tracker.
+   - **Also, for a fork or a repo shared with other people** (other committers in
+     `git shortlog -sne`, an organisation's repo): draft an issue labelled `blocked` linking the
+     upstream report, fork release, patch, and workaround PR, and stating what upstream change
+     lets you revert. Link it from the PR with `Refs #N` — merging the workaround must not close
+     it.
 7. **Ask, then post**: show the user every draft from steps 3 and 4, and the step 6 issue if there
    is one, and post what they approve, in that order, filling in the links (the `shortcut:`
    comment's too) as each one exists.
@@ -67,13 +68,13 @@ blank line, putting in the name of the person whose GitHub account posts it:
 - The workaround is in place with before/after evidence, and its PR is merged or ready (or
   drafted, if the user held it back).
 - The exit tracker names the upstream link and the revert condition: the `shortcut:` comment
-  beside the workaround, or, in a fork or shared repo, the `blocked` issue (or its draft, with the
-  user).
+  beside the workaround, plus, in a fork or shared repo, the `blocked` issue (or its draft, with
+  the user).
 - The user has the links, drafts, evidence, and any remaining limitation — or the specific
   blocker.
 
 ## Returning to upstream
 
 When a fix ships: rerun the original repro against it, then remove the workaround and its
-`shortcut:` comment, or, where a tracking issue exists, replace the workaround via PR and close the
-issue only after that merges. Deleting the fork needs explicit approval.
+`shortcut:` comment; where a tracking issue exists, do that via PR and close the issue only after
+it merges. Deleting the fork needs explicit approval.
