@@ -94,6 +94,23 @@ def test_dev_env_reminder_silent_when_opted_out(tmp_path):
     assert r.stdout.strip() == ""
 
 
+@pytest.mark.parametrize("doc", ["CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md"])
+def test_dev_env_reminder_silent_with_skip_marker(tmp_path, doc):
+    # The checker accepts AGENTS.md for CLAUDE.md, so the opt-out marker counts there too: a
+    # repo whose AGENTS.md forbids a CLAUDE.md had no file to put it in.
+    init_git_repo(tmp_path)
+    (tmp_path / "foo.sh").write_text("#!/bin/bash\necho hi\n")  # makes it applicable
+    (tmp_path / doc).parent.mkdir(exist_ok=True)
+    (tmp_path / doc).write_text("# Instructions\n\n<!-- dev-env: skip -->\n")
+    r = run_hook(
+        "dev-env-reminder.sh",
+        stdin=json.dumps({"cwd": str(tmp_path)}),
+        env=base_env(DEV_HOOKS_DEVENV_OWNED="true", CLAUDE_PLUGIN_ROOT=str(DEV_HOOKS)),
+    )
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_dev_env_reminder_fires_on_needs_setup(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "foo.sh").write_text("#!/bin/bash\necho hi\n")  # makes it applicable

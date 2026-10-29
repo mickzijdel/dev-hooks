@@ -8,7 +8,8 @@
 #
 # Gates (any failure → silent exit 0):
 #   1. git repo
-#   2. not opted out (env override DEV_HOOKS_DEVENV_OWNED=false, or `dev-env: skip` in CLAUDE.md)
+#   2. not opted out (env override DEV_HOOKS_DEVENV_OWNED=false, or `dev-env: skip` in CLAUDE.md
+#      or AGENTS.md)
 #   3. the user's repo (override =true, OR origin owner in DEV_HOOKS_DEVENV_OWNERS, OR >=80% of
 #      last-month commits authored by the local git user.email)
 #   4. applicable + non-compliant per scripts/dev_env_check.sh
@@ -35,7 +36,7 @@ OVERRIDE="${DEV_HOOKS_DEVENV_OWNED:-}"
 case "$OVERRIDE" in
   false | 0 | no | FALSE | False) exit 0 ;;
 esac
-for f in CLAUDE.md .claude/CLAUDE.md; do
+for f in CLAUDE.md .claude/CLAUDE.md AGENTS.md; do
   [ -f "$DIR/$f" ] && grep -qiE '(^|[[:space:]<!-]*)dev-env:[[:space:]]*skip' "$DIR/$f" && exit 0
 done
 
@@ -83,7 +84,7 @@ eval "$(bash "$CHECKER" "$DIR" 2>/dev/null | grep -E '^(applicable|status|repo_v
 NAME="${DIR##*/}"
 case "$status" in
   needs-setup)
-    MSG="[dev-env] This looks like the user's repo (${NAME}) and it's missing their standard dev-env setup (mise + hk pre-commit + CI + gitleaks). Flag this to the user and offer to run the dev-hooks:dev-env-setup skill to set it up. Do NOT set it up silently — it writes commit-tracked config. If this repo should be exempt, set DEV_HOOKS_DEVENV_OWNED=false in .claude/settings.local.json or add a 'dev-env: skip' line to its CLAUDE.md."
+    MSG="[dev-env] This looks like the user's repo (${NAME}) and it's missing their standard dev-env setup (mise + hk pre-commit + CI + gitleaks). Flag this to the user and offer to run the dev-hooks:dev-env-setup skill to set it up. Do NOT set it up silently — it writes commit-tracked config. If this repo should be exempt, set DEV_HOOKS_DEVENV_OWNED=false in .claude/settings.local.json or add a 'dev-env: skip' line to its CLAUDE.md (or AGENTS.md)."
     ;;
   needs-upgrade)
     MSG="[dev-env] This looks like the user's repo (${NAME}); it has a dev-env setup but is behind the current standard (repo v${repo_version} < v${current_version}, or gitleaks is missing). Flag this to the user and offer to run the dev-hooks:dev-env-setup skill to upgrade it (it applies references/upgrade-guide.md and re-stamps DEV_ENV_VERSION)."

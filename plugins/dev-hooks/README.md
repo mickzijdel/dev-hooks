@@ -197,7 +197,7 @@ $ claude
   silences it entirely), `DEV_HOOKS_DEVENV_OWNERS` (GitHub owners to treat as yours, e.g. your
   username or an org you own), `DEV_HOOKS_DEVENV_EMAIL` (commit-author email for the heuristic;
   defaults to your local `git config user.email`).
-  Per-repo opt-out also via a `dev-env: skip` line in the project's `CLAUDE.md`.
+  Per-repo opt-out also via a `dev-env: skip` line in the project's `CLAUDE.md` (or `AGENTS.md`).
 - `docs-context.sh` scans `docs/` (falling back to `doc/`) at the project root for Markdown
   files up to two levels deep. Titles come from YAML frontmatter (`title:`) or the first `#`
   heading; an optional frontmatter `description:` field is included after an em-dash. Two more
