@@ -1324,3 +1324,86 @@ def test_composite_call_with_trailing_slash_finds_its_caller(tmp_path):
         },
     )
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ── ruff: mise's copy and uv's copy (v30) ───────────────────────────────────────────
+def uv_lock(**packages):
+    """A uv.lock with one `[[package]]` per name, each carrying a subtable like real entries."""
+    return 'version = 1\nrevision = 3\nrequires-python = ">=3.14"\n\n' + "".join(
+        f'[[package]]\nname = "{name}"\nversion = "{ver}"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'[package.optional-dependencies]\nextra = [{{ name = "{name}" }}]\n\n'
+        for name, ver in packages.items()
+    )
+
+
+def test_ruff_in_mise_and_uv_lock_agreeing_passes(tmp_path):
+    """mise's ruff runs in hk and CI, uv's under `uv run ruff` and the editor hooks; the same
+    release in both locks passes, and the ✓ line names all three sources."""
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\nruff = "0.17"\n',
+            "mise.lock": lock(ruff="0.17.2"),
+            "uv.lock": uv_lock(pytest="9.0.2", ruff="0.17.2", vulture="2.16"),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ ruff 0.17.2 — mise.toml ruff, mise.lock ruff, uv.lock ruff" in r.stdout
+
+
+@pytest.mark.parametrize(
+    ("spec", "mise_locked", "uv_locked", "message"),
+    [
+        # dev-hooks before v30: two patch releases apart, both copies on "latest"/unpinned.
+        (
+            "latest",
+            "0.15.18",
+            "0.15.22",
+            "✗ uv.lock ruff (0.15.22) != mise.lock ruff (0.15.18)",
+        ),
+        # a mise minor bump that the pyproject range never followed
+        (
+            "0.18",
+            "0.18.0",
+            "0.17.2",
+            "✗ uv.lock ruff (0.17.2) != mise.toml ruff (0.18)",
+        ),
+    ],
+)
+def test_ruff_drift_between_mise_and_uv_lock_fails(
+    tmp_path, spec, mise_locked, uv_locked, message
+):
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": f'[tools]\nruff = "{spec}"\n',
+            "mise.lock": lock(ruff=mise_locked),
+            "uv.lock": uv_lock(ruff=uv_locked),
+        },
+    )
+    assert r.returncode == 1, r.stdout
+    assert message in r.stdout
+
+
+def test_ruff_only_in_uv_lock_is_reported_not_failed(tmp_path):
+    """A Python-stack repo runs only uv's ruff: one copy, nothing to compare, said out loud."""
+    r = run(tmp_path, {"uv.lock": uv_lock(ruff="0.17.2")})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "- ruff: pinned only in uv.lock ruff (0.17.2), nothing to cross-check" in (
+        r.stdout
+    )
+
+
+def test_uv_lock_package_with_a_longer_name_is_not_ruff(tmp_path):
+    """Only the entry named exactly `ruff` counts; a `ruff-lsp` before it must not."""
+    r = run(
+        tmp_path,
+        {
+            "mise.toml": '[tools]\nruff = "latest"\n',
+            "mise.lock": lock(ruff="0.17.2"),
+            "uv.lock": uv_lock(**{"ruff-lsp": "0.0.62", "ruff": "0.17.2"}),
+        },
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "✓ ruff 0.17.2 — mise.lock ruff, uv.lock ruff" in r.stdout

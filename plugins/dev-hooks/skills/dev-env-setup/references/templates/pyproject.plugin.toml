@@ -13,7 +13,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest",
-    "ruff",
+    "ruff>=0.17,<0.18",  # minor pinned with mise.toml's ruff (dev-env v30)
     "vulture",   # dead-code audit; run via `uv run vulture`
     # Mirror here any libraries the bundled scripts declare in their PEP 723 blocks,
     # so the test environment can import/run them.
@@ -32,6 +32,15 @@ exclude-newer = "4 days"
 # blanket "bin/*" if bin/ also holds shell scripts — ruff would try to parse those as
 # Python and fail. (hk/CI lint these via shebang detection regardless of this setting.)
 extend-include = ["bin/your-python-cli"]
+
+# dev-env v30: ruff's default rule set, minus UP031 everywhere and PLW1510 in tests.
+[tool.ruff.lint]
+ignore = ["UP031"]  # %-format → .format(): style only, the fix doesn't produce f-strings
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["PLW1510"]  # tests assert returncode themselves
+"**/test_*.py" = ["PLW1510"]
+"**/conftest.py" = ["PLW1510"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

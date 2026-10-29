@@ -1287,6 +1287,151 @@ Steps:
 
 ---
 
+## v29 → v30 (ruff pinned to its minor, its default rules, Python blocks in Markdown)
+
+**Every repo that runs ruff**; a repo without ruff only bumps the stamp. ruff 0.16 did two
+things a `ruff = "latest"` spec and an unpinned uv `"ruff"` let in without review:
+
+- **A wider default rule set.** With no `select`, ruff now checks far more than `E4`, `E7`, `E9`
+  and `F` (`PLW1510`, `ISC004`, `FURB…`, `I001`, `UP…`, `BLE001`, `RUF100`, …). dev-hooks went
+  from 0 findings to 122 on ruff 0.17.2.
+- **Python blocks in Markdown.** `ruff format` now formats the Python code blocks in `*.md`
+  files, and `ruff format --check .` walks them. Every hk ruff-format glob was `*.py` only, so
+  the first failure on a Markdown file showed up in CI and never at pre-commit (fringe-chat).
+
+The two ruff copies a repo can hold had also drifted: mise's (hk, CI) and uv's (`uv run ruff`,
+plus dev-hooks' `verify-work.sh` and `lint-on-edit.sh`, which prefer `.venv/bin/ruff`).
+dev-hooks itself had mise.lock on 0.15.18 and uv.lock on 0.15.22.
+
+v30 pins both copies to the **0.17 minor** (the release that locks is 0.17.2, the newest past
+the 4-day cooldown on 2026-10-29), so the next default-rule change takes a standard bump. The
+version-sync gate now fails when the two locks name different releases. The standard adds one
+shared lint config, and the hk ruff-format step and CI both format the Python blocks in
+Markdown.
+
+**Which steps apply.** A repo **runs ruff** when its mise config has a `ruff` tool, a
+`pyproject.toml` lists `ruff` in a dependency group, or `hk.pkl` has a `ruff-check` step. Such a
+repo does steps 1–9. A repo with none of these does only step 8. Leave the global
+`~/.config/mise/config.toml` ruff pin alone: it moves after the fleet backfill. Never run a bare
+`mise upgrade`; name the tool.
+
+Steps:
+
+1. **Pin mise's ruff** (only where the mise config has `ruff`). Replace the line with
+   `ruff = "0.17"`, keeping a comment that says why, for example
+   `ruff = "0.17"   # minor pinned (dev-env v30); uv's ruff pins the same minor`. Then run
+   `mise install ruff`: it resolves the newest 0.17.x past the cooldown and rewrites the lock's
+   `[[tools.ruff]]` entry. Check that the lock now says `version = "0.17.<n>"`.
+2. **Pin uv's ruff** (only where a `pyproject.toml` lists `ruff`). In the dependency group,
+   replace the entry (`"ruff"`, `"ruff>=0.6"`, `"ruff>=0.17"`) with `"ruff>=0.17,<0.18"`. Then
+   run `uv lock --upgrade-package ruff` and `uv sync` (add `--project <dir>` when the
+   pyproject is not at the root). Where both copies exist, `uv.lock` and the mise lock must name
+   the same release. If they differ, move the older one up: `mise upgrade ruff` or
+   `uv lock --upgrade-package ruff==<the other release>`.
+3. **Re-copy the version-sync script and run it at pre-commit on `uv.lock` too.** Copy
+   `references/templates/check_version_sync.sh` to `scripts/check_version_sync.sh`, then
+   `shfmt -w` it in a repo without an `.editorconfig`. It now compares `mise.toml`'s ruff spec,
+   the mise lock's ruff and the root `uv.lock`'s ruff. Where a root `uv.lock` exists, add
+   `"uv.lock"` to the hk `versions` glob after the mise lock, so the glob starts
+   `List("mise.toml", "mise.lock", "uv.lock", …`. A `uv lock` that changes only `uv.lock` then
+   runs the gate at pre-commit.
+4. **Add the shared lint config** to the `pyproject.toml` that holds `[tool.ruff]` (in a
+   `ruff.toml`, drop the `tool.ruff.` prefix from the table names). Merge into tables that
+   already exist; never add a second `[tool.ruff.lint]`:
+   ```toml
+   [tool.ruff.lint]
+   ignore = ["UP031"]  # %-format → .format(): style only, the fix doesn't produce f-strings
+
+   [tool.ruff.lint.per-file-ignores]
+   "**/tests/**" = ["PLW1510"]  # tests assert returncode themselves
+   "**/test_*.py" = ["PLW1510"]
+   "**/conftest.py" = ["PLW1510"]
+   ```
+   Do not add `BLE001` to `ignore`. Keep `ISC004`, `RUF059`, `I001`, `FURB167` and `RUF100` on;
+   their fixes are mechanical. A repo with an explicit `select` keeps it only where this guide
+   names the repo below; otherwise remove `select`, so the default rule set applies.
+5. **Format Markdown at pre-commit.** Add `**/*.md` to the hk `ruff-format` step's glob. Leave
+   `ruff-check` alone: `ruff check` skips Markdown.
+   - Shell template (`["ruff-format"] = Builtins.ruff_format`): replace that line with
+     ```pkl
+     ["ruff-format"] = (Builtins.ruff_format) {
+         glob = List("**/*.py", "**/*.pyi", "**/*.md")
+     }
+     ```
+   - Python template (a custom step with `glob = "**/*.py"` and `uv run ruff format
+     --force-exclude`): set `glob = List("**/*.py", "**/*.md")`.
+   - A glob scoped to a directory (`backend/**/*.py`): add the same directory's Markdown
+     (`List("backend/**/*.py", "backend/**/*.md")`), matching what CI's
+     `ruff format --check backend` walks.
+
+   Keep `--force-exclude` in the command (the builtins and the Python template have it). It
+   makes a listed file obey the config's `exclude`/`extend-exclude`, so a Markdown exclude
+   still holds at pre-commit.
+6. **Format Markdown in CI** (only for a workflow that hands ruff an explicit file list, as
+   `ci.shell.yml` does). Replace the ruff step's `run:` with the template's: it lists
+   `git ls-files '*.md'` for the format check and passes `--force-exclude` to both commands.
+   Without `--force-exclude`, a file listed by name skips the config's excludes. A workflow
+   that runs `ruff format --check .` (the Python template) already walks Markdown and obeys
+   the excludes, so it needs no change.
+7. **Fix what the new rules and the Markdown formatter report**, in this order, with the
+   repo's own ruff (`uv run ruff` in a Python-stack repo, `ruff` from mise otherwise):
+   1. `ruff check --fix .` applies the safe fixes (`I001`, `FURB167`, `RUF100`, `UP017`, …).
+   2. `ruff check --unsafe-fixes --diff .` shows the rest of the fixes. Read every hunk before
+      you apply them with `ruff check --fix --unsafe-fixes .`. `ISC004` wraps two adjacent
+      strings in a list or tuple in parentheses; where the two were meant as separate items, add
+      the missing comma instead, because that comma is the bug the rule exists to find.
+   3. Fix the remaining findings by hand. `PLW1510` outside tests: write `check=False` where the
+      code reads `returncode` itself, `check=True` where a failure should raise. `BLE001`:
+      catch a narrower exception, or, where catching everything is the point, annotate the
+      line `# noqa: BLE001 - <reason>`. For any other rule, follow its message.
+   4. `ruff format .` formats Python and the Python blocks in Markdown. Read each Markdown
+      hunk. Accept it, or shorten a trailing comment so the line fits and stays one line. A
+      deliberately bad "before" example goes between `<!-- fmt: off -->` and
+      `<!-- fmt: on -->` lines, which ruff skips. A block labelled `python` that holds
+      something else is skipped without a warning: label it for what it is (`text`, `console`).
+   5. Run the repo's own test suite. Behaviour must not change; these are lint fixes.
+8. **Bump the stamp.** Set `DEV_ENV_VERSION = "30"` in the mise config that carries it.
+9. **Verify, including the negative tests.**
+   - `ruff check . && ruff format --check .` exits 0 (with `uv run` in a Python-stack repo).
+   - `bash scripts/check_version_sync.sh` exits 0. With both copies it prints
+     `✓ ruff 0.17.2 — mise.toml ruff, mise.lock ruff, uv.lock ruff`; with only uv's, it prints
+     `- ruff: pinned only in uv.lock ruff (0.17.2), nothing to cross-check`. Negative test
+     (both copies only): change the `version` under `name = "ruff"` in `uv.lock` to a different
+     0.17 release and confirm it exits 1 with `✗ uv.lock ruff (…) != mise.lock ruff (…)`. Then
+     `git checkout uv.lock`.
+   - `hk run pre-commit --plan README.md` lists `✓ ruff-format (1 file matched)` (a file under
+     `backend/` for a scoped glob), not `○ ruff-format (no files matched filters)`. Negative
+     test: write a Markdown file with a `python` block holding `x=1`, then
+     `hk run check -S ruff-format <file>` must fail and name the file. Delete the file.
+   - The checker reports `status=compliant` with `repo_version=30`.
+
+**Repos with their own steps:**
+
+- **aisafety-radar**: delete `select = ["E", "F", "I", "UP", "B"]` from `[tool.ruff.lint]` and
+  put the step 4 `ignore` there instead, so the default rule set applies. Keep
+  `extend-exclude = ["*.md"]` in `[tool.ruff]`: its Markdown under `skills/` is checksummed
+  pipeline output, which a formatter must never rewrite. Still add `**/*.md` to the hk glob
+  (step 5); `--force-exclude` makes it skip those files, and a later, narrower exclude then
+  works at pre-commit with no hk change. Expect more findings in step 7 than other repos have,
+  because the default set is wider than the `select` it had.
+- **fringe-chat**: keep `select = ["E4", "E7", "E9", "F"]` in `backend/pyproject.toml` and do
+  not add the step 4 config yet; adopting the default rule set gets its own pass later. Do steps
+  2, 5 and 8: pin `"ruff>=0.17,<0.18"` in `backend/pyproject.toml`, run
+  `uv lock --project backend --upgrade-package ruff`, and set both hk ruff-format globs to
+  `List("backend/**/*.py", "backend/**/*.md")`. CI already runs
+  `ruff format --check backend`, so step 6 does not apply. Its mise config has no ruff and its
+  `uv.lock` is in `backend/`, so the version-sync gate has no ruff pair to compare; that is
+  expected.
+- **server-setup**: runs no ruff, so only step 8 applies, plus one correction. The `hk.pkl`
+  header says "This repo ships no Python source of its own", which is wrong: it tracks
+  `tests/fake-github-api.py`, `tests/ntfy-listener.py`, `tests/lib/env_secrets.py`,
+  `tests/lib/tasks.py` and `vps/backup-docker-volumes.py`. Replace the sentence with: "Its
+  Python (test helpers under tests/ and vps/backup-docker-volumes.py) is not linted: there is
+  no ruff/vulture/pytest step — only the linters relevant to Ansible/YAML/bash content." Do not
+  add ruff in the backfill; report the unlinted Python as a gap.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

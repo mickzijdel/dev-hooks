@@ -18,13 +18,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v29)
+## The standard (v30)
 
-A repo is **compliant at v29** when it has all of:
+A repo is **compliant at v30** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "29"`. The config may live wherever mise reads it
+  `[env]` version stamp `DEV_ENV_VERSION = "30"`. The config may live wherever mise reads it
   (`mise/config.toml`, `.config/mise/config.toml`, `.config/mise.toml`, `.mise.toml`), with
   `[tools.<tool>]` tables allowed; the checker, the roster and the version-sync gate all follow.
 - **`mise.lock`** (committed, beside the config: `mise/mise.lock` for `mise/config.toml`) —
@@ -55,6 +55,12 @@ A repo is **compliant at v29** when it has all of:
   `ruff` is a mise tool — `ruff`/`ruff_format`); stacks that run a tool through their package
   manager (`uv run ruff`, `npx prettier`, `bundle exec rubocop`, `golangci-lint`) keep custom
   steps, as the bare-command built-ins would bypass the project-pinned version.
+- **ruff on one minor, one config, Markdown too** (repos that run ruff) — a ruff minor can
+  switch on new default rules, so mise's `ruff = "0.17"` and uv's `"ruff>=0.17,<0.18"` both pin
+  the minor and lock the same release (the version-sync gate compares `uv.lock` with
+  `mise.lock`). The lint config is the default rule set plus the `[tool.ruff.lint]` block in
+  `pyproject.plugin.toml`. The hk ruff-format step and CI also format the Python blocks in
+  `*.md`, both with `--force-exclude`. See "ruff" in `references/standard.md`.
 - **Executable-bit gate** — the hk `exec-bit-scripts` step + a CI lint-job
   mirror fail when any tracked shebang file is index mode `100644` (a fresh clone/plugin
   install would get a script that dies with exit 126). Fix:
@@ -384,8 +390,9 @@ before the other reports.
 ## Lockfile & supply-chain verification
 
 The mise toolchain is pinned reproducibly via a committed **`mise.lock`** plus
-`[settings] lockfile = true` in `mise.toml`. Tools stay spec'd `"latest"`; the lock records what
-that resolved to, so every machine and CI install the same artifacts and verify them.
+`[settings] lockfile = true` in `mise.toml`. Tools stay spec'd `"latest"` (ruff alone pins its
+minor); the lock records what that resolved to, so every machine and CI install the same
+artifacts and verify them.
 
 Three layers (the latter two apply per the tool's aqua-registry entry — most registry tools, incl.
 `gitleaks`, are aqua-backed):

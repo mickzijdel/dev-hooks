@@ -9,12 +9,16 @@ fast and offline.
 
 import ast
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
+import textwrap
+import tomllib
 
 import pytest
-from conftest import DEV_HOOKS, ROOT
+from conftest import DEV_HOOKS, GIT_REPO_VARS, ROOT, init_git_repo
 
 TEMPLATES_DIR = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "templates"
 CI_TEMPLATES = [
@@ -267,12 +271,160 @@ def test_every_checkout_disables_persist_credentials(name):
 def test_shell_hk_uses_ruff_builtins():
     """v18: the shell stack swaps its hand-rolled ruff steps for the hk built-ins — there `ruff`
     is a mise tool (bare command on PATH), so `Builtins.ruff`/`Builtins.ruff_format` match exactly.
-    (Stacks that run ruff via `uv run` deliberately keep custom steps — see hk.python.pkl.)"""
+    (Stacks that run ruff via `uv run` deliberately keep custom steps — see hk.python.pkl.)
+    v30 amends the format built-in with a wider glob rather than spelling the step out."""
     text = (TEMPLATES_DIR / "hk.shell.pkl").read_text()
     assert '["ruff-check"] = Builtins.ruff' in text
-    assert '["ruff-format"] = Builtins.ruff_format' in text
+    assert '["ruff-format"] = (Builtins.ruff_format) {' in text
     # The bare hand-rolled invocation must be gone from the shell template.
     assert 'check = "ruff check --force-exclude' not in text
+
+
+@pytest.mark.parametrize(
+    "hk",
+    [TEMPLATES_DIR / "hk.python.pkl", TEMPLATES_DIR / "hk.shell.pkl", ROOT / "hk.pkl"],
+    ids=["hk.python.pkl", "hk.shell.pkl", "this-repo-hk.pkl"],
+)
+def test_ruff_format_step_takes_markdown(hk):
+    """v30: ruff >= 0.16 formats the Python blocks in Markdown, and CI's format check walks
+    them, so the hk format step must take *.md too, or a Markdown failure first shows up in CI
+    (fringe-chat). ruff check skips Markdown, so its glob keeps *.py."""
+    text = hk.read_text()
+    step = text.split('["ruff-format"]')[1].split("}")[0]
+    assert '"**/*.py"' in step and '"**/*.md"' in step, step
+    check = text.split('["ruff-check"]')[1].split('["ruff-format"]')[0]
+    code = [ln for ln in check.splitlines() if not ln.strip().startswith("//")]
+    assert not any("*.md" in ln for ln in code), check
+
+
+@pytest.mark.parametrize("name", ["hk.python.pkl", "hk.shell.pkl"])
+def test_versions_glob_names_uv_lock(name):
+    """v30: the gate compares uv.lock's ruff with mise's, so a uv.lock-only change runs it."""
+    step = (TEMPLATES_DIR / name).read_text().split('["versions"]')[1].split("}")[0]
+    assert '"mise.lock", "uv.lock"' in step, step
+
+
+def _minor(spec):
+    return re.fullmatch(r"(\d+\.\d+)", spec)[1]
+
+
+@pytest.mark.parametrize(
+    ("mise", "pyproject"),
+    [
+        (TEMPLATES_DIR / "mise.shell.toml", TEMPLATES_DIR / "pyproject.plugin.toml"),
+        (ROOT / "mise.toml", ROOT / "pyproject.toml"),
+    ],
+    ids=["templates", "this-repo"],
+)
+def test_both_ruff_copies_pin_the_same_minor(mise, pyproject):
+    """v30: a ruff minor can switch on new default rules (0.16 did), so neither copy floats:
+    mise's spec names a minor and uv's dev dependency is capped below the next one."""
+    spec = tomllib.loads(mise.read_text())["tools"]["ruff"]
+    minor = _minor(spec)
+    major, low = minor.split(".")
+    dev = tomllib.loads(pyproject.read_text())["dependency-groups"]["dev"]
+    ruff = [d for d in dev if re.match(r"ruff\b", d)]
+    assert ruff == [f"ruff>={minor},<{major}.{int(low) + 1}"], ruff
+
+
+def test_plugin_template_lint_config_matches_this_repo():
+    """The shared lint config ships in pyproject.plugin.toml and dev-hooks runs under the same
+    one, so a rule decided for the fleet is first proved on this repo."""
+
+    def lint(path):
+        return tomllib.loads(path.read_text())["tool"]["ruff"]["lint"]
+
+    template = lint(TEMPLATES_DIR / "pyproject.plugin.toml")
+    assert template == {
+        "ignore": ["UP031"],
+        "per-file-ignores": {
+            "**/tests/**": ["PLW1510"],
+            "**/test_*.py": ["PLW1510"],
+            "**/conftest.py": ["PLW1510"],
+        },
+    }
+    assert lint(ROOT / "pyproject.toml") == template
+
+
+def _ci_ruff_step():
+    """The `run:` body of ci.shell.yml's ruff step, dedented."""
+    text = (TEMPLATES_DIR / "ci.shell.yml").read_text()
+    step = text.split("- name: Run ruff")[1].split("\n      - name:")[0]
+    body = step.split("run: |\n")[1]
+    return textwrap.dedent(body)
+
+
+def test_git_hook_env_never_reaches_a_test():
+    """The hk dev-env-version-sync step runs this file inside the pre-commit hook, where git
+    exports GIT_DIR and GIT_INDEX_FILE. The temp-repo tests below then ran `git init` and
+    `git add -A` against the real repo (core.bare=true, every file staged as deleted) until
+    conftest stripped them."""
+    assert [v for v in GIT_REPO_VARS if v in os.environ] == []
+
+
+@pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")
+@pytest.mark.parametrize(
+    ("files", "fails_on"),
+    [
+        ({"docs/guide.md": "```python\nx=1\n```\n"}, "docs/guide.md"),
+        (
+            {
+                "docs/guide.md": "<!-- fmt: off -->\n```python\nx=1\n```\n<!-- fmt: on -->\n"
+            },
+            None,
+        ),
+        ({"docs/excluded.md": "```python\nx=1\n```\n"}, None),
+        ({"tool.py": "import sys\n"}, "tool.py"),
+        ({"README.md": "# no code\n"}, None),
+    ],
+    ids=["md-unformatted", "md-fmt-off", "md-excluded", "py-lint", "md-clean"],
+)
+def test_ci_shell_ruff_step_formats_markdown_and_obeys_excludes(
+    tmp_path, files, fails_on
+):
+    """v30: CI lists *.md for the format check, as hk does, and passes --force-exclude so a
+    listed file obeys the config's extend-exclude (without it, naming a file overrides the
+    exclude). A deliberately bad example between fmt: off/on comments is left alone."""
+    run = init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.ruff]\nextend-exclude = ["docs/excluded.md"]\n'
+    )
+    for name, content in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(content)
+    run("add", "-A")
+    r = subprocess.run(
+        # A `run:` step with no `shell:` runs under `bash -e`, without pipefail.
+        ["bash", "-e", "-c", _ci_ruff_step()],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    if fails_on is None:
+        assert r.returncode == 0, r.stdout + r.stderr
+    else:
+        assert r.returncode != 0, r.stdout + r.stderr
+        assert fails_on in r.stdout + r.stderr
+
+
+@pytest.mark.skipif(shutil.which("hk") is None, reason="needs hk on PATH")
+@pytest.mark.parametrize("name", ["hk.shell.pkl", "hk.python.pkl"])
+def test_hk_ruff_format_step_matches_a_markdown_file(tmp_path, name):
+    """The amended built-in (`(Builtins.ruff_format) { glob = … }`) must really widen the glob:
+    hk's plan for a lone Markdown file runs ruff-format and still skips ruff-check."""
+    init_git_repo(tmp_path)
+    (tmp_path / "hk.pkl").write_text((TEMPLATES_DIR / name).read_text())
+    (tmp_path / "README.md").write_text("# x\n")
+    r = subprocess.run(
+        ["hk", "run", "pre-commit", "--plan", "README.md"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    out = r.stdout + r.stderr
+    assert re.search(r"✓ ruff-format\s+\(1 file matched\)", out), out
+    assert re.search(r"○ ruff-check\s+\(no files matched", out), out
 
 
 def test_python_hk_keeps_uv_run_ruff():

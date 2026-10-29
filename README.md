@@ -90,8 +90,10 @@ One repo-wide toolchain covers all four plugins: `mise` pins the tools, `hk` run
 pre-commit checks (shellcheck, shfmt, ruff, vulture, jscpd, gitleaks, zizmor, actionlint, plus
 `claude plugin validate --strict` over the marketplace and every plugin when plugin files
 are staged), and CI mirrors the same checks (except plugin-validate, which needs the Claude
-CLI and runs locally only). The pytest suite at `tests/` exercises every hook and skill
-script across all plugins; it runs in parallel via pytest-xdist (`-n auto` in
+CLI and runs locally only). ruff's format step also covers the Python blocks in Markdown, and
+its minor is pinned in both `mise.toml` and the uv dev group, which
+`scripts/check_version_sync.sh` keeps on one release. The pytest suite at `tests/` exercises
+every hook and skill script across all plugins; it runs in parallel via pytest-xdist (`-n auto` in
 `pyproject.toml`), and `uv run pytest -n 0` runs it serially for `pdb` or `-s`.
 
 ```bash

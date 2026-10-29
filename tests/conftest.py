@@ -12,6 +12,16 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+# What git exports to a hook to locate the repo it runs for.
+GIT_REPO_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -22,10 +32,15 @@ def _clean_dev_hooks_env(monkeypatch):
     test, and the mod's DEV_HOOKS_FACTS_FILE hands every hook that session's facts (a memory
     written there silences memory-reminder's tests). Strip them all; tests set what they need.
     CLAUDE_PID goes too: in a suite run from a nested `claude -p` it names that run, and every
-    hook would read the run as nested (reminder_is_nested_run)."""
+    hook would read the run as nested (reminder_is_nested_run).
+    The git variables go too: the hk `dev-env-version-sync` step runs tests inside the
+    pre-commit hook, where git exports them, and a temp repo's `git init`/`git add` then
+    acted on the real repo (core.bare=true, a clobbered index)."""
     for var in [v for v in os.environ if v.startswith("DEV_HOOKS_")]:
         monkeypatch.delenv(var)
     monkeypatch.delenv("CLAUDE_PID", raising=False)
+    for var in GIT_REPO_VARS:
+        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-# The standard (v29) — full specification
+# The standard (v30) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v29** when it has all of:
+A repo is **compliant at v30** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v29** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "29"`. Any config path mise reads works (v29): `mise.toml`,
+  stamp `DEV_ENV_VERSION = "30"`. Any config path mise reads works (v29): `mise.toml`,
   `.mise.toml`, `mise/config.toml`, `.config/mise.toml` or `.config/mise/config.toml`, with a pin
   written inline (`ruby = "4.0.9"`) or as a `[tools.ruby]` table with `version = "4.0.9"`. The
   checker, `fleet_roster.sh` and the version-sync gate read the first that exists (the checker
@@ -154,11 +154,11 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 
 | Stack | Linters (pre-commit) | Tests | Secrets | Large file | Dead code (pre-commit) | Duplication (pre-commit) |
 |-------|---------|-------|---------|------------|-----------|-------------|
-| Python | `ruff check`, `ruff format` (via `uv run`) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
+| Python | `ruff check`, `ruff format` (via `uv run`; format covers `.md` too) | `pytest` | gitleaks | `check-added-large-files` | `vulture` | `jscpd` |
 | Ruby/Rails | `bin/rubocop` (omakase + rubocop-minitest\|-rspec + house cops `rubocop-mick`; plain-rubocop adds rubocop-rails/-performance too), `herb` (ERB analyze + lint) | `bin/rails test` | gitleaks | `check-added-large-files` | `debride` | `jscpd` (polyglot gate) + `flay` (Ruby structural, advisory) |
 | JS/TypeScript | `prettier` (check/fix) | — | gitleaks | `check-added-large-files` | — | `jscpd` (`-f javascript,typescript,css,scss`) |
 | Go | `golangci-lint run` + `golangci-lint fmt` (gofmt/goimports), `shellcheck`/`shfmt` (shipped `.sh`) | `go test` (CI: `go build`/`go vet`/`go test -race`) | gitleaks | `check-added-large-files` | golangci-lint `unused` (built in) | `jscpd` (`-f golang`) |
-| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
+| Shell / CC plugin | `shellcheck`, `shfmt`, `ruff` (any `.py`; format covers `.md` too) | `pytest` over bundled scripts (see below) | gitleaks | `check-added-large-files` | `vulture` (any `.py`) | `jscpd` |
 
 > Dead-code (`vulture`/`debride`) and duplication (`jscpd`/`flay`) run on pre-commit alongside the
 > linters (each is glob-gated, so they only fire when a matching file is staged) and again in
@@ -334,6 +334,7 @@ One version, many files — because different consumers read different ones:
 | `docker-compose.yml` / `config/deploy.yml` / `.devcontainer/compose.yaml` service `image:` tags | what production and the dev container actually run |
 | `.github/workflows/*.yml` `services:` `image:` tags | what CI tests against |
 | `.github/workflows/*.yml` setup steps (`setup-python`/`-node`/`-ruby`/`-go`/`-bun`, `setup-uv`) | which language version CI actually runs |
+| the root `uv.lock`'s `ruff` (v30) | `uv run ruff`, and editor hooks that prefer `.venv/bin/ruff` — compared with the mise lock's `ruff`, which hk and CI run |
 
 Nothing makes them agree, so a bump that misses one file is **silent**: the image builds on a
 different Ruby than the tests ran on, or the suite goes green against a database server nobody
@@ -426,6 +427,45 @@ unchecked, was the third; v24 closed it — see the bullet above.)
 
 Both are candidates for a future bump (subdirectory discovery; `FROM` parsing). Until then, a
 pass on a monorepo or a `FROM`-pinned image means less than it looks like — read the skip lines.
+
+## ruff: one minor, one config, Markdown too (v30)
+
+Applies to every repo that runs ruff (a mise `ruff` tool, `ruff` in a `pyproject.toml`
+dependency group, or an hk `ruff-check` step).
+
+- **Both copies pin the minor.** ruff 0.16 widened the default rule set (it was `E4`, `E7`,
+  `E9`, `F`) and started formatting the Python blocks in Markdown, so a floating spec turns new
+  rules on with no review. mise: `ruff = "0.17"`. uv's dev group: `"ruff>=0.17,<0.18"`. Both
+  locks name the same release; the version-sync gate fails when the root `uv.lock`'s ruff
+  differs from the mise lock's. hk and CI run mise's copy (`uv run ruff` in the Python stack);
+  dev-hooks' `verify-work.sh` and `lint-on-edit.sh` prefer uv's. Moving to the next minor is
+  a standard bump.
+- **One lint config.** No `select`: the default rule set applies, minus two rules:
+  ```toml
+  [tool.ruff.lint]
+  ignore = ["UP031"]  # %-format → .format(): style only, the fix doesn't produce f-strings
+
+  [tool.ruff.lint.per-file-ignores]
+  "**/tests/**" = ["PLW1510"]  # tests assert returncode themselves
+  "**/test_*.py" = ["PLW1510"]
+  "**/conftest.py" = ["PLW1510"]
+  ```
+  `BLE001` stays on: a deliberate catch-all carries `# noqa: BLE001 - <reason>` on its line.
+  `pyproject.plugin.toml` ships the block; a Python-stack repo adds it to its own
+  `pyproject.toml`.
+- **Markdown is formatted, at pre-commit and in CI alike.** `ruff format` formats the Python
+  blocks in `*.md`, and `ruff format --check .` walks them. The hk `ruff-format` step adds
+  `**/*.md` to its glob (the shell stack amends the built-in:
+  `(Builtins.ruff_format) { glob = List("**/*.py", "**/*.pyi", "**/*.md") }`), and
+  `ci.shell.yml` lists `git ls-files '*.md'` for its format check. `ruff check` skips
+  Markdown, so its globs keep `*.py`. Every ruff command that is handed file names passes
+  `--force-exclude`, so a file the config excludes (`extend-exclude = ["*.md"]`) stays excluded
+  when hk or CI names it.
+- **Keeping a bad example as written.** Wrap a deliberately unformatted "before" block in
+  `<!-- fmt: off -->` and `<!-- fmt: on -->` lines; ruff leaves it alone. To make a block fit,
+  prefer shortening its trailing comment over turning formatting off. A block labelled `python`
+  that does not parse as Python is skipped without a warning, so label shell sessions and
+  pseudo-code for what they are.
 
 ## Executable bits on shipped scripts (v15)
 

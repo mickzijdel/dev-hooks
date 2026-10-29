@@ -10,8 +10,12 @@ local linters = new Mapping<String, Step> {
     // here (bare `ruff` on PATH), so the builtins' `ruff check`/`ruff format --force-exclude`
     // commands match what these steps used to spell out by hand. (The python stack template
     // keeps custom steps instead, because there ruff is a uv dev dep run via `uv run ruff`.)
+    // ruff >= 0.16 formats the Python blocks in Markdown too, and CI's ruff step checks them,
+    // so the format step adds `**/*.md` to the builtin's glob (ruff check skips Markdown).
     ["ruff-check"] = Builtins.ruff
-    ["ruff-format"] = Builtins.ruff_format
+    ["ruff-format"] = (Builtins.ruff_format) {
+        glob = List("**/*.py", "**/*.pyi", "**/*.md")
+    }
     // --- Extensionless scripts (bin/foo, hooks) ----------------------------------
     // CC-plugin / script repos keep their executables extensionless so they run as
     // bare commands, so the *.sh / *.py globs above never match them. These companion
@@ -60,7 +64,7 @@ local linters = new Mapping<String, Step> {
     // this repo pins a version somewhere else. A mise config outside the root goes in place of
     // mise.toml, with the lock beside it: "mise/config.toml", "mise/mise.lock".
     ["versions"] {
-        glob = List("mise.toml", "mise.lock", "Dockerfile", "docker-compose.yml", "compose.yaml", "config/deploy.yml", ".devcontainer/compose.yaml", ".github/workflows/*.yml")
+        glob = List("mise.toml", "mise.lock", "uv.lock", "Dockerfile", "docker-compose.yml", "compose.yaml", "config/deploy.yml", ".devcontainer/compose.yaml", ".github/workflows/*.yml")
         check = "bash scripts/check_version_sync.sh"
     }
     // --- Audits (dead-code + duplication) ---------------------------------------

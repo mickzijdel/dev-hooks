@@ -8,8 +8,10 @@ local linters = new Mapping<String, Step> {
         check = "uv run ruff check --force-exclude {{ files }}"
         fix = "uv run ruff check --force-exclude --fix {{ files }}"
     }
+    // ruff >= 0.16 formats the Python blocks in Markdown too, and CI's `ruff format --check .`
+    // walks them, so the format step also takes *.md (ruff check skips Markdown).
     ["ruff-format"] {
-        glob = "**/*.py"
+        glob = List("**/*.py", "**/*.md")
         check = "uv run ruff format --force-exclude --diff {{ files }}"
         fix = "uv run ruff format --force-exclude {{ files }}"
     }
@@ -39,7 +41,7 @@ local linters = new Mapping<String, Step> {
     // this repo pins a version somewhere else. A mise config outside the root goes in place of
     // mise.toml, with the lock beside it: "mise/config.toml", "mise/mise.lock".
     ["versions"] {
-        glob = List("mise.toml", "mise.lock", ".python-version", "Dockerfile", "docker-compose.yml", "compose.yaml", "config/deploy.yml", ".devcontainer/compose.yaml", ".github/workflows/*.yml")
+        glob = List("mise.toml", "mise.lock", "uv.lock", ".python-version", "Dockerfile", "docker-compose.yml", "compose.yaml", "config/deploy.yml", ".devcontainer/compose.yaml", ".github/workflows/*.yml")
         check = "bash scripts/check_version_sync.sh"
     }
     // --- Audits (dead-code + duplication) ---------------------------------------
