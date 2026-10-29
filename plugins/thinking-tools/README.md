@@ -34,13 +34,12 @@ carries its precise upstream `source:` and `license:`; the shared license text l
 
 ## Hooks
 
-These skills are model-invocable, but Claude tends to wait for an explicit ask. Two advisory
-hooks push it to reach for them on its own. Both inject context only; neither blocks anything.
+These skills are model-invocable, but Claude tends to wait for an explicit ask. An advisory
+hook pushes it to reach for them on its own. It injects context only and blocks nothing.
 
 | Hook | Fires on | Opt out |
 |------|----------|---------|
 | `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (handed a task → `brief-back`; before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
-| `thinking-tools-nudge` | `UserPromptSubmit` whose prompt matches a situational cue — injects a one-line nudge toward the single matching tool (e.g. "poke holes" → `board`, "is this fixed for real" → `but-for-real`, "be thorough" → `brief-back`). Reads only what you typed: a subagent's report, IDE context, a pasted block or a forwarded side-agent note's quoted lines never pick a tip. Silent otherwise. | `THINKING_TOOLS=false` |
 
 ## Install
 

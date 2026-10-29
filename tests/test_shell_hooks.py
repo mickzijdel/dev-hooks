@@ -887,80 +887,6 @@ def test_thinking_reminder_silent_when_opted_out(tmp_path):
     assert r.stdout.strip() == ""
 
 
-# ── thinking-tools-nudge.sh (thinking-tools plugin; UserPromptSubmit, self-contained) ─
-def _run_thinking_nudge(prompt, env=None):
-    return run_hook(
-        "thinking-tools-nudge.sh",
-        stdin=json.dumps({"prompt": prompt, "session_id": "tn"}),
-        env=env,
-        scripts=THINKING_HOOKS,
-    )
-
-
-def test_thinking_nudge_fires_for_board_cue():
-    r = _run_thinking_nudge("Can you poke holes in this plan?")
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "thinking-tools:board")
-
-
-def test_thinking_nudge_fires_for_but_for_real_cue():
-    r = _run_thinking_nudge("Is this actually fixed for real?")
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "thinking-tools:but-for-real")
-
-
-def test_thinking_nudge_fires_for_premortem_cue():
-    r = _run_thinking_nudge("What could go wrong before we commit to this migration?")
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "thinking-tools:premortem")
-
-
-def test_thinking_nudge_fires_for_grill_cue():
-    r = _run_thinking_nudge("Grill me on this feature idea until it's fully specified.")
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "thinking-tools:grill")
-
-
-@pytest.mark.parametrize(
-    "prompt",
-    [
-        "look into CRMs for us, be thorough",
-        "Can you do a deep dive on gym options near the office?",
-        "just a quick look at the pricing please",
-    ],
-)
-def test_thinking_nudge_fires_for_brief_back_depth_cue(prompt):
-    r = _run_thinking_nudge(prompt)
-    assert r.returncode == 0
-    assert_json_with(r.stdout, "thinking-tools:brief-back")
-
-
-def test_thinking_nudge_silent_without_cue():
-    r = _run_thinking_nudge("Please add a new column to the users table")
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_thinking_nudge_silent_when_opted_out():
-    r = _run_thinking_nudge("poke holes in this", env=base_env(THINKING_TOOLS="false"))
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-@pytest.mark.parametrize("prompt", INJECTED_PROMPTS)
-def test_thinking_nudge_silent_on_words_nobody_typed(prompt):
-    r = _run_thinking_nudge(prompt)
-    assert r.returncode == 0
-    assert r.stdout.strip() == ""
-
-
-def test_thinking_nudge_fires_on_typed_words_beside_a_paste():
-    r = _run_thinking_nudge(
-        'poke holes in this: <pasted_content id="p1">the plan</pasted_content id="p1">'
-    )
-    assert_json_with(r.stdout, "thinking-tools:board")
-
-
 # ── data-before-design-reminder.sh (UserPromptSubmit) ───────────────────────────────
 def _run_data_before_design(tmp_path, prompt):
     payload = {"prompt": prompt, "cwd": "/x/y", "session_id": "dbd"}
@@ -1044,14 +970,13 @@ def test_data_before_design_silent_on_cues_that_are_not_a_view_request(
 
 
 def test_typed_prompt_filters_match():
-    # The writing and thinking-tools plugins can't source dev-hooks' lib, so each carries a copy
-    # of the filter; a drifted copy fires on injected prompts again without erroring.
+    # The writing plugin can't source dev-hooks' lib, so it carries a copy of the filter; a
+    # drifted copy fires on injected prompts again without erroring.
     def jq_of(path, name):
         return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.M | re.S).group(1)
 
     canon = jq_of(HOOKS / "lib" / "reminder-common.sh", "REMINDER_TYPED_JQ")
     assert jq_of(WRITING_HOOKS / "lib" / "voice-common.sh", "VOICE_TYPED_JQ") == canon
-    assert jq_of(THINKING_HOOKS / "thinking-tools-nudge.sh", "TYPED_JQ") == canon
 
 
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────

@@ -187,7 +187,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
 
 - **The standalone-plugin hooks never source dev-hooks' lib.** The `writing` plugin
   (`readme-reminder.sh`, the four `voice-*.sh`) and the `thinking-tools` plugin
-  (`thinking-tools-reminder.sh`, `thinking-tools-nudge.sh`) live in their own
+  (`thinking-tools-reminder.sh`) live in their own
   `plugins/*/hooks/` and must NOT source `reminder-common.sh` or import `hook_helpers.py`:
   those plugins install without `dev-hooks`, and a cross-plugin `source` would break that
   standalone install. Sharing *within* a plugin is fine and preferred — the writing hooks
@@ -198,8 +198,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   the `DEV_HOOKS_FIRE_LOG` telemetry those emits record). `VOICE_PROSE_EXTS` is passed into
   `voice_transcript_scan`'s python heredoc by argv rather than re-listed there — a drifted
   copy of an extension list doesn't error, it just silently stops seeing files.
-  `thinking-tools`' two hooks have no sibling to share with, so their small reimplemented
-  bits stay terse and under jscpd's minTokens.
+  `thinking-tools`' one hook has no sibling to share with, so its small reimplemented bits
+  stay terse and under jscpd's minTokens.
 - **Reach for `hooks/scripts/lib/` first.** `reminder-common.sh` owns the payload-schema
   knowledge for the hooks. PostToolUse(Write|Edit|MultiEdit): `reminder_init <OPT_VAR>`
   (opt-out + INPUT/FILE/SESSION/TOOL/BASE in one jq spawn), `reminder_content` /
@@ -226,8 +226,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   CI-watch prompt, with IDE context, pasted blocks and a forwarded side-agent note's quoted lines
   stripped; cross-session messages stay, as they relay briefs), as `data-before-design-reminder`
   does: a subagent's report matched its cues 48 times in one week, and a false fire also spends
-  the once-per-session nudge. The filter is copied into `voice-common.sh` and
-  `thinking-tools-nudge.sh`, pinned by `test_typed_prompt_filters_match`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
+  the once-per-session nudge. The filter is copied into `voice-common.sh`, pinned by
+  `test_typed_prompt_filters_match`. Note that on exit 0 a UserPromptSubmit hook's stdout is injected
   into Claude's *context* (unlike PostToolUse's user-facing stdout), so such a hook must print only
   the structured additionalContext JSON (via `reminder_emit_prompt`) or nothing at all. PostToolUse(Bash): `reminder_post_bash_init <OPT_VAR>` (opt-out + INPUT/COMMAND;
   reads `.tool_input.command` on its own so a multi-line command isn't truncated), followed —
