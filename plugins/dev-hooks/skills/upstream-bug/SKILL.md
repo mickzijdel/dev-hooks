@@ -48,9 +48,9 @@ approve. One ask can cover a batch they see in full. Past these limits, ask rath
 ## Disclosure
 
 Start every GitHub message posted here (issue, comment, PR, release notes) with this line and a
-blank line:
+blank line, putting in the name of the person whose GitHub account posts it:
 
-`_Claude wrote and posted this comment on Mick's behalf._`
+`_Claude wrote and posted this comment on <account owner>'s behalf._`
 
 ## Done when
 
