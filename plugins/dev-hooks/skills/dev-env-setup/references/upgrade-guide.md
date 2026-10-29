@@ -1166,7 +1166,7 @@ Steps:
 ## v28 → v29 (mise-action v5, vulture skips worktrees, mise config outside the root)
 
 **Every stack**, except step 2 (only where `hk.pkl` runs vulture: the Python and shell
-templates) and step 4 (only a repo whose mise config is not a root `mise.toml`).
+templates).
 
 - **mise-action v5.** The CI templates move `jdx/mise-action` from v4.2.0 to v5.2.3. Its one
   breaking change (v5.0.0): without a `version` input the action now installs the newest mise
@@ -1192,8 +1192,10 @@ templates) and step 4 (only a repo whose mise config is not a root `mise.toml`).
   (`mise/mise.lock`, `.config/mise/mise.lock`, `.config/mise.lock`; a root `mise.lock` for
   `.mise.toml`). The checker read only the root files and reported such a repo `needs-setup`
   at `repo_version=0`, the fleet roster never listed it, and the version-sync gate skipped
-  `[tools.ruby]`-style tables and read only a root `mise.lock`. The checker now also accepts
-  `AGENTS.md` in place of `CLAUDE.md`.
+  `[tools.ruby]`-style tables and read only a root `mise.lock`. The hk `versions` glob also
+  never named the lock, which the gate has compared since v26, so a lock-only `mise upgrade`
+  skipped it at pre-commit. The checker now also accepts `AGENTS.md` in place of `CLAUDE.md`,
+  and the dev-env-reminder hook reads its `dev-env: skip` opt-out from `AGENTS.md` too.
 
 Steps:
 
@@ -1240,11 +1242,13 @@ Steps:
    through this). `git check-ignore -v .worktrees/x .claude/worktrees/x` must print two lines.
    For each path it leaves out, add `.worktrees/` or `.claude/worktrees/` to `.gitignore`. A
    `.claude/*` rule from v28 already covers `.claude/worktrees/`.
-4. **Mise config outside a root `mise.toml`** (skip this step when the config is `mise.toml`).
-   - Keep the `DEV_ENV_VERSION` stamp in that config file's `[env]`, and commit the lock beside
-     it (`mise/mise.lock` for `mise/config.toml`).
-   - In `hk.pkl`'s `["versions"]` step, the glob must name that config file, for example
-     `"mise/config.toml"` in place of `"mise.toml"`, or an edit to it never runs the gate.
+4. **Name the mise config and its lock in the hk `versions` glob** (every stack), so an edit
+   to either one, a lock-only `mise upgrade` included, runs the gate at pre-commit.
+   - Root `mise.toml`: add `"mise.lock"` after `"mise.toml"`, so the glob starts
+     `List("mise.toml", "mise.lock", …`.
+   - Any other config: put that config and the lock beside it in place of `"mise.toml"`, for
+     example `List("mise/config.toml", "mise/mise.lock", …` (`mise.lock` for `.mise.toml`).
+     Keep the `DEV_ENV_VERSION` stamp in that config's `[env]`, and commit that lock.
 5. **Re-copy the version-sync script** (every stack: it now also reads `[tools.<tool>]` tables
    and the lock beside the config). `references/templates/check_version_sync.sh` →
    `scripts/check_version_sync.sh`, then `shfmt -w` it in a repo without an `.editorconfig`.
@@ -1255,6 +1259,8 @@ Steps:
    - The checker reports `status=compliant` with `repo_version=29`, `has_mise=1`,
      `has_lockfile=1` and `has_claude=1` (this is the check that read `needs-setup` before for a
      repo with `mise/config.toml`).
+   - `hk run pre-commit --plan mise.lock` (or the lock beside your config) lists
+     `✓ versions (1 file matched)`, not `○ versions (no files matched filters)`.
    - `bash scripts/check_version_sync.sh` exits 0. With a non-root config or a
      `[tools.<tool>]` table, the Toolchain lines name the config and the lock, for example
      `✓ ruby 4.0.9 — .ruby-version, mise/config.toml ruby, mise/mise.lock ruby, Dockerfile ARG

@@ -128,7 +128,8 @@ def test_version_sync_gate_in_every_template(name):
     """v23: every hk template carries the `versions` step and every CI template mirrors it in a
     `versions` job, both invoking the *same* shared script — a hand-rolled copy in either place
     would let the local and CI gates drift, which is exactly the failure the gate exists to catch.
-    The hk step must stay glob-gated so an unrelated commit skips it."""
+    The hk step must stay glob-gated so an unrelated commit skips it, and the glob names the lock
+    too (v29): the gate compares mise.lock, so a lock-only `mise upgrade` must run it."""
     text = (TEMPLATES_DIR / name).read_text()
     assert "bash scripts/check_version_sync.sh" in text, (
         f"{name} doesn't run the shared version-sync script"
@@ -139,6 +140,7 @@ def test_version_sync_gate_in_every_template(name):
         assert "glob = List(" in step and "mise.toml" in step, (
             f"{name}'s versions step must be glob-gated to the files that carry pins"
         )
+        assert '"mise.lock"' in step, f"{name}'s versions glob must name mise.lock"
     else:
         assert "\n  versions:\n" in text, f"{name} is missing the `versions` job"
 

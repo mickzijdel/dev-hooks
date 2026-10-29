@@ -18,7 +18,8 @@ A repo is **compliant at v29** when it has all of:
   `.mise.toml`, `mise/config.toml`, `.config/mise.toml` or `.config/mise/config.toml`, with a pin
   written inline (`ruby = "4.0.9"`) or as a `[tools.ruby]` table with `version = "4.0.9"`. The
   checker, `fleet_roster.sh` and the version-sync gate read the first that exists (the checker
-  and roster: the first carrying the stamp); the hk `versions` glob must name that file.
+  and roster: the first carrying the stamp); the hk `versions` glob must name that file and the
+  lock beside it.
 - **`mise.lock`** (committed) — records resolved tool versions + per-platform checksums so installs
   are reproducible and checksum-verified. mise writes it beside the config (`mise/mise.lock` for
   `mise/config.toml`, the root `mise.lock` for `.mise.toml`), and every tool here reads it there.
