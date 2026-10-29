@@ -131,7 +131,8 @@ voice pass), your reply is this end report again, updated, with nothing in front
 the hook's work only as lines in it: what it changed under Changed, what it found that needs
 the person under Your move, what it left undone under Not checked. An ask that doesn't apply
 gets no line at all; never report a clean result, the hook's name, why it fired, or that it
-misfired.
+misfired. When the hook's work changed nothing the report says, reply with one line saying so
+instead of repeating the report.
 
 ## Example
 

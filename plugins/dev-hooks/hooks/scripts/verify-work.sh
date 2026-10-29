@@ -6,7 +6,8 @@
 #
 # Opt out entirely with DEV_HOOKS_VERIFY=false (per-repo/user, in a .claude/settings.json
 # "env" block). Real linter/test failures re-block on every stop until fixed, forced
-# continuations included (max 3 blocks in a row); the "no tooling detected" advisory fires at
+# continuations included (max 3 blocks in a row, and none for the failure the last block
+# already reported unchanged); the "no tooling detected" advisory fires at
 # most once per session so a repo with no recognised tooling is never trapped in a Stop loop.
 #
 # Test-suite scope is controlled by DEV_HOOKS_VERIFY_TESTS (default "full"):
@@ -319,7 +320,7 @@ fi
 
 # ── Report ────────────────────────────────────────────────────────────────────
 MSG=""
-[ -s "$TMPFILE" ] && MSG="Verification failed. Fix these before finishing:"$'\n'"$(cat "$TMPFILE")"
+[ -s "$TMPFILE" ] && MSG="Verification failed. Fix these before finishing. A failure this session didn't cause still counts: don't pass over it; name the check and what fails in your reply, and offer the fix under Your move."$'\n'"$(cat "$TMPFILE")"
 if [ "$SLOW_TESTS" = "1" ]; then
   advisory="The test suite exceeded ${TEST_TIMEOUT}s and was stopped before finishing (the Stop hook is hard-killed at 120s). This suite is likely too slow to run on every stop.
 Recommended: set DEV_HOOKS_VERIFY_TESTS=changed in this repo's .claude/settings.json \"env\" block to run only affected tests, and/or add a fast smoke-test subset (current mode: ${MODE})."
@@ -331,21 +332,30 @@ if [ -n "$SLOW_CHECKS" ]; then
 fi
 
 if [ -n "$MSG" ]; then
-  # Real failures re-fire on every stop attempt until fixed — correct for ground truth.
-  # Capped within a forced-continuation chain so an unfixable failure still stops.
+  # Real failures re-fire on every natural stop until fixed — correct for ground truth.
+  # Within a forced-continuation chain they are capped, so an unfixable failure still stops,
+  # and a continuation that left the failure as it was isn't blocked again: the reply to the
+  # last block already saw it, and the same text could only get that reply again.
   reminder_state_file verify-work-active-blocks
+  COUNT_FILE=$REPLY
+  reminder_state_file verify-work-last-failure
+  LAST_FILE=$REPLY
+  # shortcut: digits are dropped, so run times and seeds don't count as a change, and nor does
+  # a failure that changed only in a number; the next natural stop checks it again regardless.
+  FAILURE=$(printf '%s' "$MSG" | tr -s '0-9' '#' | cksum)
   BLOCKS=0
   if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
-    BLOCKS=$(cat "$REPLY" 2>/dev/null)
+    BLOCKS=$(cat "$COUNT_FILE" 2>/dev/null)
     case "$BLOCKS" in *[!0-9]* | "") BLOCKS=0 ;; esac
-    if [ "$BLOCKS" -ge 3 ]; then
+    if [ "$BLOCKS" -ge 3 ] || [ "$FAILURE" = "$(cat "$LAST_FILE" 2>/dev/null)" ]; then
       # The failure stands; tell the mod so it doesn't score this stop as a pass.
       [ -n "${DEV_HOOKS_ORCHESTRATED:-}" ] && echo "dev-hooks: block cap reached" >&2
       exit 0
     fi
     BLOCKS=$((BLOCKS + 1))
   fi
-  printf '%s' "$BLOCKS" >"$REPLY" 2>/dev/null
+  printf '%s' "$BLOCKS" >"$COUNT_FILE" 2>/dev/null
+  printf '%s' "$FAILURE" >"$LAST_FILE" 2>/dev/null
   reminder_emit_stop "$MSG"
 elif [ "$TOOLS_RAN" = "0" ] && [ "$MODE" != off ] && reminder_fire_once verify-work-notools; then
   # No tools detected — nudge Claude to check manually, but only ONCE per session (suppressed

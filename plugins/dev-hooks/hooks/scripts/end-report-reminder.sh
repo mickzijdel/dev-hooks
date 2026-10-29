@@ -4,7 +4,8 @@
 # Stop: on a turn that did work (a file edit, or DEV_HOOKS_END_REPORT_TOOLS tool calls,
 # default 10), block when Claude's last message has no Changed or Your move line: that
 # message is what the person reads on coming back to the session. The footer
-# reminder_emit_stop adds names the whole report. --when-active: it also checks the reply
+# reminder_emit_stop adds names the whole report; one line after this turn's report passes,
+# as the footer's reply to a block that changed nothing. --when-active: it also checks the reply
 # another Stop hook forced, still blocking at most once per natural stop. Skips headless
 # runs (claude -p, the Agent SDK), whose end report nobody reads. Opt out with
 # DEV_HOOKS_END_REPORT=false.
@@ -33,13 +34,18 @@ MISSING=$(
 import json, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
-from hook_helpers import end_report_missing, turn_activity
+from hook_helpers import end_report_missing, turn_activity, turn_reported
 with open(sys.argv[2], encoding="utf-8") as f:
     payload = json.load(f)
 last = payload.get("last_assistant_message") or ""
-calls, edits = turn_activity(payload.get("transcript_path") or "")
+path = payload.get("transcript_path") or ""
+calls, edits = turn_activity(path)
 if last and (edits or calls >= int(sys.argv[3])):
-    print(" or ".join(end_report_missing(last)))
+    missing = end_report_missing(last)
+    # One line after this turn's report: the footer's reply to a block that changed nothing.
+    if missing and "\n" not in last.strip() and turn_reported(path):
+        missing = []
+    print(" or ".join(missing))
 PYEOF
 )
 [ -z "$MISSING" ] && exit 0

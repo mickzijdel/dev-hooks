@@ -621,6 +621,29 @@ _END_REPORT_LINES = {
 }
 
 
+def turn_reported(transcript_path):
+    """Whether a main-thread message since the current turn opened carried the end report."""
+    reported = False
+    for line in _transcript_lines(transcript_path):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rec, dict):
+            continue
+        if _opens_turn(rec):
+            reported = False
+        elif rec.get("type") == "assistant" and not rec.get("isSidechain"):
+            content = (rec.get("message") or {}).get("content")
+            text = "\n".join(
+                b.get("text", "")
+                for b in (content if isinstance(content, list) else [])
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            reported = reported or bool(text and not end_report_missing(text))
+    return reported
+
+
 def end_report_missing(text):
     """The end report's Changed / Your move lines `text` lacks. A line counts as a label
     ("**Changed:**", "Your move:", "What I changed this session:") or a heading

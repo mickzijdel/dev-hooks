@@ -2920,10 +2920,65 @@ def test_verify_work_still_verifies_during_a_forced_continuation(tmp_path):
     assert_json_with(r.stdout, "Verification failed")
 
 
+def _verify_work_changing_failure_repo(tmp_path):
+    # Each run fails differently (one more "x" in the message), as a fix in progress does.
+    init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "test_x.py").write_text(
+        "from pathlib import Path\n\n\ndef test_bad():\n"
+        "    runs = Path(__file__).with_name('runs')\n"
+        "    runs.write_text(runs.read_text() + 'x' if runs.exists() else 'x')\n"
+        "    assert runs.read_text() == ''\n"
+    )
+
+
+@requires_python3
+def test_verify_work_asks_to_name_a_failure_it_did_not_cause(tmp_path):
+    # A failure that predates the session must reach the person, not be passed over.
+    _verify_work_py_repo(tmp_path)
+    r = run_hook("verify-work.sh", cwd=tmp_path, env=base_env(TMPDIR=str(tmp_path)))
+    assert stop_blocked(r)
+    reason = json.loads(r.stdout)["reason"]
+    assert "didn't cause still counts" in reason
+    assert "offer the fix under Your move" in reason
+
+
+@requires_python3
+def test_verify_work_does_not_reblock_a_continuation_that_left_the_failure_alone(
+    tmp_path,
+):
+    # The reply to the first block already saw this failure, so the same text again could
+    # only get that reply again. The mod hears it stands; the next natural stop blocks again.
+    _verify_work_py_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
+    natural = json.dumps({"session_id": "vw-same"})
+    active = json.dumps({"session_id": "vw-same", "stop_hook_active": True})
+    run = lambda stdin: run_hook(  # noqa: E731
+        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
+    )
+    assert stop_blocked(run(natural))
+    again = run(active)
+    assert stop_allowed(again)
+    assert "dev-hooks: block cap reached" in again.stderr
+    assert stop_blocked(run(natural))
+
+
+@requires_python3
+def test_verify_work_reblocks_a_continuation_that_changed_the_failure(tmp_path):
+    _verify_work_changing_failure_repo(tmp_path)
+    env = base_env(TMPDIR=str(tmp_path))
+    natural = json.dumps({"session_id": "vw-moved"})
+    active = json.dumps({"session_id": "vw-moved", "stop_hook_active": True})
+    assert stop_blocked(
+        run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=natural)
+    )
+    assert stop_blocked(run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=active))
+
+
 @requires_python3
 def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
     # Max 3 blocks per chain; a natural stop resets the count
-    _verify_work_py_repo(tmp_path)
+    _verify_work_changing_failure_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
     natural = json.dumps({"session_id": "vw-cap"})
     active = json.dumps({"session_id": "vw-cap", "stop_hook_active": True})
@@ -2939,7 +2994,7 @@ def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
 @requires_python3
 def test_verify_work_tells_the_mod_when_the_cap_silenced_a_failure(tmp_path):
     # Standing down at the cap isn't a pass: the mod scores the nudge from this marker.
-    _verify_work_py_repo(tmp_path)
+    _verify_work_changing_failure_repo(tmp_path)
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
     active = json.dumps({"session_id": "vw-capmark", "stop_hook_active": True})
     runs = [
@@ -5018,6 +5073,31 @@ def test_end_report_a_sentence_is_not_the_line(tmp_path):
         tmp_path, _turn(["Edit"]), "Changed the hook so it fires.\nYour move is easy."
     )
     assert stop_blocked(r)
+
+
+def _said(text):
+    return {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+    }
+
+
+def test_end_report_takes_one_line_after_this_turns_report(tmp_path):
+    # A Stop block that changed nothing gets one line saying so, not the report again.
+    line = "No change since the report above."
+    lines = _turn(["Edit"]) + [_said(REPORT), STOP_FEEDBACK, _said(line)]
+    assert _end_report(tmp_path, lines, line, active=True).stdout.strip() == ""
+
+
+def test_end_report_one_line_needs_this_turns_report(tmp_path):
+    line = "No change since the report above."
+    earlier = _turn(["Edit"], prompt="earlier") + [_said(REPORT)]
+    r = _end_report(tmp_path, earlier + _turn(["Edit"], prompt="now"), line)
+    assert stop_blocked(r)
+    # More than one line after the report has to be the report.
+    lines = _turn(["Edit"]) + [_said(REPORT), STOP_FEEDBACK]
+    two = "Saved a memory.\nIt covers X."
+    assert stop_blocked(_end_report(tmp_path, lines, two, active=True, session="er2"))
 
 
 def test_end_report_checks_a_forced_continuation_once(tmp_path):

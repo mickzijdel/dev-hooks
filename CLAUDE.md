@@ -272,7 +272,10 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   `reminder_emit_stop <msg>` (`{"decision":"block","reason":…}` + exit 0 — Claude keeps working
   and acts on the reason in the same turn). It appends `REMINDER_END_REPORT_FOOTER`: the reply
   to a Stop hook becomes the last message the person reads, so the footer asks for the end
-  report again, with the hook's own work as lines in it. Left off under orchestration (the mod
+  report again, with the hook's own work as lines in it, or for one line when that work changed
+  nothing in it (Mick, 2026-10-29: identical reports after every block read as the same message
+  over and over; end-report-reminder passes a one-line reply after this turn's report,
+  `hook_helpers.turn_reported`). Left off under orchestration (the mod
   adds it once) and in a headless run (`reminder_is_headless`: `CLAUDE_CODE_ENTRYPOINT`
   `sdk-*`, i.e. `claude -p` or the Agent SDK, or a nested run); copied into `voice-common.sh` and
   `register.tsx`, pinned by `test_end_report_footers_match`. **Never `continue: false` on Stop**: it halts Claude
@@ -280,7 +283,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
   payload's `stop_hook_active` is true, capping each natural stop at one forced continuation
   (`--when-active` opts out, for verify-work: the continuation is where Claude edits code, so it
-  keeps verifying there, bounding its own blocks), and
+  keeps verifying there, bounding its own blocks and skipping a failure the last block already
+  reported unchanged), and
   the re-arm baselines are keyed per session **and per repo** (an orchestrator's Stop fires from
   the main checkout and from worktrees alike).
   **Prefer a re-arming baseline over a once-per-session sentinel** for any "do this before you
