@@ -967,9 +967,10 @@ that pins two versions as the concatenation of both (`24.19.020.0.0`).
 Steps:
 
 1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
-   `scripts/check_version_sync.sh`, then `shfmt -w scripts/check_version_sync.sh` (the template is
-   2-space indented for this marketplace's `.editorconfig`; a repo without one gets shfmt's
-   default tabs). This is the whole migration — the logic is never hand-edited, and nothing else
+   `scripts/check_version_sync.sh`, then `shfmt -w scripts/check_version_sync.sh` only where the
+   repo lints shell with shfmt or its committed copy is tab-indented (the template is 2-space
+   indented for this marketplace's `.editorconfig`; a repo without one gets shfmt's default
+   tabs). This is the whole migration — the logic is never hand-edited, and nothing else
    in the repo changes.
 2. **Fix whatever the wider check now reports.** A second Dockerfile that has been drifting is the
    expected first finding; that is the point of the bump. As in v23, the gate names the file and
@@ -1070,7 +1071,8 @@ v26 changes two things in `scripts/check_version_sync.sh`, and the templates to 
 Steps:
 
 1. **Re-copy the script.** `references/templates/check_version_sync.sh` →
-   `scripts/check_version_sync.sh`, then `shfmt -w` it (as in v24).
+   `scripts/check_version_sync.sh`, then `shfmt -w` it only where the repo lints shell with
+   shfmt or its committed copy is tab-indented.
 2. **Run it and fix what the CI section reports.** For a repo on mise (the template shape):
    - Python / shell: add `python = "latest"` to `mise.toml`'s `[tools]`, run `mise install`
      (and `mise lock python` if the lock entry lacks per-platform checksums), and copy the
@@ -1127,7 +1129,8 @@ drift it was built to catch:
 Steps:
 
 1. **Re-copy the script** (`references/templates/check_version_sync.sh` →
-   `scripts/check_version_sync.sh`, then `shfmt -w` in repos without an `.editorconfig`).
+   `scripts/check_version_sync.sh`, then `shfmt -w` it only where the repo lints shell with
+   shfmt or its committed copy is tab-indented).
 2. **Fix what it newly reports.** The expected finding is a `.<lang>-version` that names a line
    (`3.12`) where CI reads it: write the full release `mise.lock` pins — or better, install the
    tool with mise-action as the templates do. A floating `mise.toml` spec now also compares a
@@ -1254,7 +1257,10 @@ Steps:
      Keep the `DEV_ENV_VERSION` stamp in that config's `[env]`, and commit that lock.
 5. **Re-copy the version-sync script** (every stack: it now also reads `[tools.<tool>]` tables
    and the lock beside the config). `references/templates/check_version_sync.sh` →
-   `scripts/check_version_sync.sh`, then `shfmt -w` it in a repo without an `.editorconfig`.
+   `scripts/check_version_sync.sh`. Run `shfmt -w` on it only where the repo lints shell with
+   shfmt (an hk or CI `shfmt` step) or where its committed copy is tab-indented; otherwise keep
+   the template's 2-space copy verbatim. Without an `.editorconfig`, `shfmt -w` re-indents the
+   whole script with tabs, a 600-line diff in a repo that never runs shfmt.
    A repo that carried its own patch for these two cases (BlackLightning did) drops the patch:
    the template now does the same.
 6. **Bump the stamp.** Set `DEV_ENV_VERSION = "29"` in the mise config that carries it.
@@ -1311,10 +1317,22 @@ Markdown.
 
 **Which steps apply.** A repo **runs ruff** when its mise config has a `ruff` tool, a
 `pyproject.toml` lists `ruff` in a dependency group, or `hk.pkl` has a `ruff-check` step. Such a
-repo does steps 1–9. A repo with none of these re-copies the version-sync script (the first
-sentence of step 3, so every repo carries the same script) and does step 8. Leave the global
-`~/.config/mise/config.toml` ruff pin alone: it moves after the fleet backfill. Never run a bare
-`mise upgrade`; name the tool.
+repo does steps 1–9. A repo with none of these re-copies the version-sync script (the copy and
+the `shfmt` rule at the start of step 3, so every repo carries the same script) and does step 8.
+Leave the global `~/.config/mise/config.toml` ruff pin alone: it moves after the fleet backfill.
+Never run a bare `mise upgrade`; name the tool.
+
+**In a worktree, keep uv off a venv outside the checkout.** Where the mise config sets
+`UV_PROJECT_ENVIRONMENT` to a path outside the repo (readwise-digest points it at the venv its
+live timer runs from), step 2's `uv sync` and every `uv run` in the worktree rewrite that venv. A
+prefix on your own uv commands is not enough: `mise x -- hk run …` applies `mise.toml`'s value
+again. Before step 2, give the worktree a `mise.local.toml` that points it at the worktree, never
+commit that file, and delete it when you finish:
+
+```toml
+[env]
+UV_PROJECT_ENVIRONMENT = "{{config_root}}/.venv"
+```
 
 Steps:
 
@@ -1330,8 +1348,10 @@ Steps:
    the same release. If they differ, move the older one up: `mise upgrade ruff` or
    `uv lock --upgrade-package ruff==<the other release>`.
 3. **Re-copy the version-sync script and run it at pre-commit on `uv.lock` too.** Copy
-   `references/templates/check_version_sync.sh` to `scripts/check_version_sync.sh`, then
-   `shfmt -w` it in a repo without an `.editorconfig`. It now compares `mise.toml`'s ruff spec,
+   `references/templates/check_version_sync.sh` to `scripts/check_version_sync.sh`. Run
+   `shfmt -w` on it only where the repo lints shell with shfmt (an hk or CI `shfmt` step) or
+   where its committed copy is tab-indented; otherwise keep the template's 2-space copy
+   verbatim (v28 → v29 step 5 says why). It now compares `mise.toml`'s ruff spec,
    the mise lock's ruff and the root `uv.lock`'s ruff. Where a root `uv.lock` exists, add
    `"uv.lock"` to the hk `versions` glob after the mise lock, so the glob starts
    `List("mise.toml", "mise.lock", "uv.lock", …`. A `uv lock` that changes only `uv.lock` then
@@ -1377,6 +1397,9 @@ Steps:
 7. **Fix what the new rules and the Markdown formatter report**, in this order, with the
    repo's own ruff (`uv run ruff` in a Python-stack repo, `ruff` from mise otherwise):
    1. `ruff check --fix .` applies the safe fixes (`I001`, `FURB167`, `RUF100`, `UP017`, …).
+      Where `RUF100` finds a `# noqa` unneeded, it deletes the whole comment, including a reason
+      written after the code (`# noqa: BLE001 - <reason>`). Look in `git diff` for deleted
+      `noqa` comments and keep each reason as a plain comment (`# <reason>`).
    2. `ruff check --unsafe-fixes --diff .` shows the rest of the fixes. Read every hunk before
       you apply them with `ruff check --fix --unsafe-fixes .`. `ISC004` wraps two adjacent
       strings in a list or tuple in parentheses; where the two were meant as separate items, add
@@ -1397,9 +1420,11 @@ Steps:
    - `bash scripts/check_version_sync.sh` exits 0. With both copies it prints
      `✓ ruff 0.17.2 — mise.toml ruff, mise.lock ruff, uv.lock ruff`; with only uv's, it prints
      `- ruff: pinned only in uv.lock ruff (0.17.2), nothing to cross-check`. Negative test
-     (both copies only): change the `version` under `name = "ruff"` in `uv.lock` to a different
-     0.17 release and confirm it exits 1 with `✗ uv.lock ruff (…) != mise.lock ruff (…)`. Then
-     `git checkout uv.lock`.
+     (both copies only): back up `uv.lock` (`cp uv.lock uv.lock.bak`), change the `version`
+     under `name = "ruff"` in `uv.lock` to a different 0.17 release and confirm it exits 1 with
+     `✗ uv.lock ruff (…) != mise.lock ruff (…)`. Then restore the backup
+     (`mv uv.lock.bak uv.lock`). Before the commit, `git checkout uv.lock` would also undo step
+     2's relock; after the commit, it is safe.
    - `hk run pre-commit --plan README.md` lists `✓ ruff-format (1 file matched)` (a file under
      `backend/` for a scoped glob), not `○ ruff-format (no files matched filters)`. Negative
      test: write a Markdown file with a `python` block holding `x=1`, then
@@ -1414,7 +1439,10 @@ Steps:
   pipeline output, which a formatter must never rewrite. Still add `**/*.md` to the hk glob
   (step 5); `--force-exclude` makes it skip those files, and a later, narrower exclude then
   works at pre-commit with no hk change. Expect more findings in step 7 than other repos have,
-  because the default set is wider than the `select` it had.
+  because the default set is wider than the `select` it had. Step 9's Markdown negative test
+  cannot fail here: `extend-exclude = ["*.md"]` with `--force-exclude` skips every Markdown
+  file, the probe included. Check instead that the probe fails under
+  `uv run ruff format --isolated --check <file>` (`--isolated` ignores the config).
 - **fringe-chat**: keep `select = ["E4", "E7", "E9", "F"]` in `backend/pyproject.toml` and do
   not add the step 4 config yet; adopting the default rule set gets its own pass later. Do steps
   2, 3, 5, 8 and 9: pin `"ruff>=0.17,<0.18"` in `backend/pyproject.toml` and run
@@ -1423,7 +1451,8 @@ Steps:
   `List("backend/**/*.py", "backend/**/*.md")`. CI already runs `ruff format --check backend`,
   so step 6 does not apply. Its mise config has no ruff and its `uv.lock` is in `backend/`, so
   the version-sync gate prints nothing for ruff; that is expected.
-- **server-setup**: runs no ruff, so only step 8 applies, plus one correction. The `hk.pkl`
+- **server-setup**: runs no ruff, so it re-copies the version-sync script (verbatim: it has no
+  shfmt step and its copy uses 2 spaces) and does step 8, plus one correction. The `hk.pkl`
   header says "This repo ships no Python source of its own", which is wrong: it tracks
   `tests/fake-github-api.py`, `tests/ntfy-listener.py`, `tests/lib/env_secrets.py`,
   `tests/lib/tasks.py` and `vps/backup-docker-volumes.py`. Replace the sentence with: "Its

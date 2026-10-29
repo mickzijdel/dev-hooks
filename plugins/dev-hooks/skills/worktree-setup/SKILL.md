@@ -103,3 +103,14 @@ suffix + `bin/rails db:prepare`), the devcontainer notes, and the dotenv alterna
 `WT_POST_SETUP` runs the seeding commands as part of provisioning — isolation allocates the
 port and database *names*, but nothing exists behind them until those commands run, and an
 unseeded worktree fails like a broken branch rather than like a missing setup step.
+
+A uv venv outside the checkout is shared too. Where the committed mise config sets
+`UV_PROJECT_ENVIRONMENT` outside the repo (often the venv a live service runs from), `uv sync` in
+the worktree rewrites it, and a prefix on your own commands misses `mise x -- hk run …`, which
+applies the config's value again. Point it at the worktree in a `mise.local.toml` you never
+commit, and delete that file when you finish:
+
+```toml
+[env]
+UV_PROJECT_ENVIRONMENT = "{{config_root}}/.venv"
+```
