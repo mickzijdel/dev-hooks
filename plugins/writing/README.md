@@ -65,7 +65,8 @@ $ claude
   the skill. The first three are advisory — they inject context and nothing checks afterwards
   — which is why the last one exists. Its message ends by asking Claude to close with its full
   end report again (what changed, what you must do), since that reply is the last thing you
-  read; dev-hooks' Stop hooks carry the same footer, and a `claude -p` run gets none.
+  read; dev-hooks' Stop hooks carry the same footer, and a `claude -p` run gets none, nor does a
+  `claude` started from another session's shell.
 - All four share one profile discovery order (`$WRITING_VOICE_PROFILE`, then
   `<repo>/.claude/voice_profile.md`, then `~/.claude/voice_profile.md`; first hit wins), one
   prose-file list, and one `WRITING_VOICE=false` switch, out of

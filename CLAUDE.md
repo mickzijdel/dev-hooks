@@ -274,7 +274,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   to a Stop hook becomes the last message the person reads, so the footer asks for the end
   report again, with the hook's own work as lines in it. Left off under orchestration (the mod
   adds it once) and in a headless run (`reminder_is_headless`: `CLAUDE_CODE_ENTRYPOINT`
-  `sdk-*`, i.e. `claude -p` or the Agent SDK); copied into `voice-common.sh` and
+  `sdk-*`, i.e. `claude -p` or the Agent SDK, or a nested run); copied into `voice-common.sh` and
   `register.tsx`, pinned by `test_end_report_footers_match`. **Never `continue: false` on Stop**: it halts Claude
   outright, and one halting hook overrides every blocking one; across every transcript since June
   only ~5 of ~1,050 such halts were acted on in-turn. `reminder_stop_init` exits silently when the
@@ -295,8 +295,14 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   Both kinds: `reminder_mktemp` (composable temp files — result in `$REPLY`, one shared
   cleanup trap; do NOT set your own `trap … EXIT`, it would clobber the lib's),
   `reminder_is_probe_session` (a made-up session id, a `/tmp/claude-*` scratchpad or
-  `~/.cache/` cwd, or `DEV_HOOKS_PROBE` set: the fire log and prompt log skip these;
-  `_voice_log_fire` and the mod's `isProbeSession` mirror it),
+  `~/.cache/` cwd, `DEV_HOOKS_PROBE` set, or a nested run: the fire log and prompt log skip
+  these; `_voice_log_fire` and the mod's `isProbeSession` mirror it),
+  `reminder_is_nested_run` (a `claude` started from another session's shell, as a fan-out
+  script does: it inherits that session's `CLAUDE_CODE_ENTRYPOINT`, and Claude Code gives
+  every hook `CLAUDE_CODE_CHILD_SESSION`, so only the claude process's own environment,
+  `/proc/$CLAUDE_PID/environ`, tells; the mod reads the same through `$.env`; also empties
+  `reminder_prompt_typed` and counts as headless; copied as `voice_is_nested_run`, pinned by
+  `test_nested_run_checks_match`),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
   persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
   on purpose, so a secret pasted with no space before it still matches),

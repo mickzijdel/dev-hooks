@@ -20,9 +20,32 @@ def _clean_dev_hooks_env(monkeypatch):
     suite run by verify-work from a live session. Every DEV_HOOKS_* there is the real
     session's: DEV_HOOKS_FIRE_LOG writes into the real hook-fires.jsonl, an opt-out flips a
     test, and the mod's DEV_HOOKS_FACTS_FILE hands every hook that session's facts (a memory
-    written there silences memory-reminder's tests). Strip them all; tests set what they need."""
+    written there silences memory-reminder's tests). Strip them all; tests set what they need.
+    CLAUDE_PID goes too: in a suite run from a nested `claude -p` it names that run, and every
+    hook would read the run as nested (reminder_is_nested_run)."""
     for var in [v for v in os.environ if v.startswith("DEV_HOOKS_")]:
         monkeypatch.delenv(var)
+    monkeypatch.delenv("CLAUDE_PID", raising=False)
+
+
+@pytest.fixture
+def claude_pid():
+    """A stand-in for the `claude` process a hook runs under, as a pid for CLAUDE_PID:
+    claude_pid(nested=True) carries CLAUDE_CODE_CHILD_SESSION in its own environment, as a
+    `claude` started from another session's shell does; nested=False is one a person started."""
+    procs = []
+
+    def start(nested):
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_CHILD_SESSION"}
+        if nested:
+            env["CLAUDE_CODE_CHILD_SESSION"] = "1"
+        procs.append(subprocess.Popen(["sleep", "60"], env=env))
+        return str(procs[-1].pid)
+
+    yield start
+    for p in procs:
+        p.kill()
+        p.wait()
 
 
 @pytest.fixture(autouse=True)

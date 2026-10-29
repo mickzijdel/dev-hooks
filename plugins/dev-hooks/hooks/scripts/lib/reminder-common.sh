@@ -311,6 +311,17 @@ reminder_fire_once() {
   return 0
 }
 
+# A `claude` started from another session's shell (a fan-out script, `claude -p` in a Bash
+# call): a program writes its prompts and reads its replies. Claude Code gives every process it
+# starts CLAUDE_CODE_CHILD_SESSION, this hook included, so only the claude process's own
+# environment tells: one a person started has none. Mirrored by voice_is_nested_run and by the
+# mod, which reads that environment as $.env.
+# shortcut: reads /proc, so on macOS a nested run still looks typed; read `ps eww` there if needed.
+reminder_is_nested_run() {
+  [ -r "/proc/${CLAUDE_PID:-none}/environ" ] &&
+    grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
+}
+
 # Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
 # per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so weekly-automation-
 # review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
@@ -318,13 +329,15 @@ reminder_fire_once() {
 # fails the hook. $1 = firing hook's basename.
 # A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
 # a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
-# scratchpad, or a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
-# ~/.cache). Mirrored by _voice_log_fire in the writing plugin, which can't source this, and
-# by isProbeSession in the mod (hooks/nudge-outcomes.ts), pinned by test_nudge_parity.py.
+# scratchpad, a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
+# ~/.cache), or a nested run. Mirrored by _voice_log_fire in the writing plugin, which can't
+# source this, and by isProbeSession in the mod (hooks/nudge-outcomes.ts), pinned by
+# test_nudge_parity.py.
 reminder_is_probe_session() {
   [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
   case "${DEV_HOOKS_PROBE:-}" in 1 | true | yes | on) return 0 ;; esac
   case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-* | "$HOME"/.cache/*) return 0 ;; esac
+  reminder_is_nested_run && return 0
   return 1
 }
 
@@ -401,6 +414,8 @@ REMINDER_TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
   | sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'
 # jscpd:ignore-end
 reminder_prompt_typed() {
+  REPLY=""
+  reminder_is_nested_run && return 0
   REPLY=$(jq -rn --arg p "$PROMPT" "\$p | $REMINDER_TYPED_JQ" 2>/dev/null) || REPLY=$PROMPT
 }
 
@@ -435,12 +450,13 @@ reminder_emit_note() {
 # to its merged block), pinned by test_end_report_footers_match.
 REMINDER_END_REPORT_FOOTER='Whatever the above asks, do it without narrating it, then end with your full end report again, written for someone who reads only that message: Status (say what is still running and what happens when it lands), Done when, Changed (what is different now: files linked, commits, settings, anything sent), Assumed, Not checked, and Your move (every action the person must take, including asks from earlier in this turn, or "nothing"); drop any other line that would be empty. Report that work only as what it changed, what it found that needs the person, or what it left undone, one line each in that report: never a clean result, an ask that did not apply, a hook name, why a hook fired, or that it misfired.'
 
-# A `claude -p` or Agent SDK run (sdk-cli, sdk-py, sdk-ts): nobody reads its end report.
+# A `claude -p` or Agent SDK run (sdk-cli, sdk-py, sdk-ts), or a nested run, which keeps the
+# entrypoint of the session that started it: nobody reads its end report.
 reminder_is_headless() {
   case ${CLAUDE_CODE_ENTRYPOINT:-} in
     sdk-*) return 0 ;;
   esac
-  return 1
+  reminder_is_nested_run
 }
 
 # decision:block keeps Claude working on the reason. Never continue:false: it halts Claude,

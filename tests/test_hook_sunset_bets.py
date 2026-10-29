@@ -75,6 +75,22 @@ def test_fire_log_skips_probe_sessions(tmp_path, lib, logger):
     assert log.exists()
 
 
+@pytest.mark.parametrize(
+    "lib, logger", [(LIB, "_reminder_log_fire"), (VOICE_LIB, "_voice_log_fire")]
+)
+def test_fire_log_skips_nested_runs(tmp_path, lib, logger, claude_pid):
+    # A `claude -p` started from another session's shell runs a program's prompts; its fires
+    # would count as the person's.
+    log = tmp_path / ".claude" / "automation-review" / "hook-fires.jsonl"
+    log.parent.mkdir(parents=True)
+    nested = claude_pid(nested=True)
+    _fire(tmp_path, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1", CLAUDE_PID=nested)
+    assert not log.exists()
+    top = claude_pid(nested=False)
+    _fire(tmp_path, lib=lib, logger=logger, DEV_HOOKS_FIRE_LOG="1", CLAUDE_PID=top)
+    assert log.exists()
+
+
 def test_fire_log_silent_without_dir(tmp_path):
     # Opted in but the automation-review dir doesn't exist → still silent, never errors.
     _fire(tmp_path, DEV_HOOKS_FIRE_LOG="1")

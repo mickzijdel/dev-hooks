@@ -36,6 +36,8 @@ test('isProbeSession keeps scratchpad probes and replay harnesses out of the nud
   expect(isProbeSession({ ...real, probe: '1' })).toBe(true)
   expect(isProbeSession({ ...real, probe: 'false' })).toBe(false)
   expect(isProbeSession({ ...real, cwd: '/home/u/.cachet/repo' })).toBe(false)
+  // A `claude -p` started from another session's shell: its own CLAUDE_CODE_CHILD_SESSION.
+  expect(isProbeSession({ ...real, nested: '1' })).toBe(true)
 })
 
 test('hookName names a Stop command by its script', async () => {

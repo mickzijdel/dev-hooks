@@ -289,8 +289,11 @@ export const mergeBlocks = (below: string | undefined, reasons: string[], footer
   return [...parts, ...(footer ? [END_REPORT_FOOTER] : [])].join('\n\n')
 }
 
-// A `claude -p` or Agent SDK run: nobody reads its end report (reminder_is_headless).
-const isHeadless = async ($: EngineInterface) => ((await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? '').startsWith('sdk-')
+// A `claude -p` or Agent SDK run, or a nested one (which keeps the entrypoint of the session
+// that started it): nobody reads its end report (reminder_is_headless).
+const isHeadless = async ($: EngineInterface) =>
+  ((await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? '').startsWith('sdk-') ||
+  (await $.env.get('CLAUDE_CODE_CHILD_SESSION')) !== undefined
 
 async function ownStopHooks($: EngineInterface): Promise<StopHook[]> {
   return stopHooks(JSON.parse(await $.fs.read(`${$.plugin.root}/hooks/hooks.json`)))
@@ -457,7 +460,8 @@ async function trackNudges(
   // A probe never adds a nudge, so session end and the sweep have none to log either.
   const home = (await $.env.get('HOME')) ?? ''
   const probe = await $.env.get('DEV_HOOKS_PROBE')
-  if (isProbeSession({ session: e.session_id, cwd: e.cwd, home, probe })) return
+  const nested = await $.env.get('CLAUDE_CODE_CHILD_SESSION')
+  if (isProbeSession({ session: e.session_id, cwd: e.cwd, home, probe, nested })) return
   const now = Date.now()
   let resolved: Nudge[] = []
   await changeFacts($, f => {

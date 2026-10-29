@@ -64,6 +64,10 @@ def test_probe_session_rule_matches_reminder_is_probe_session():
     assert re.findall(r"'([^']+)'", ts_cwds) == sh_cwds
     assert "[[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0" in lines
     assert "/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(p.session)" in NUDGES_TS
+    assert "reminder_is_nested_run && return 0" in lines
+    assert "p.nested !== undefined" in NUDGES_TS
+    tsx = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    assert "const nested = await $.env.get('CLAUDE_CODE_CHILD_SESSION')" in tsx
 
 
 def test_block_cap_mark_matches_verify_work():

@@ -27,6 +27,14 @@ voice_payload() {
   [ -z "$INPUT" ] && exit 0
 }
 
+# A `claude` started from another session's shell, whose prompts a program wrote: a copy of
+# dev-hooks' reminder_is_nested_run, pinned equal by test_nested_run_checks_match.
+# shortcut: reads /proc, so on macOS a nested run still looks typed; read `ps eww` there if needed.
+voice_is_nested_run() {
+  [ -r "/proc/${CLAUDE_PID:-none}/environ" ] &&
+    grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
+}
+
 # Echo one jq field from INPUT ("" when absent).
 voice_field() {
   printf '%s' "$INPUT" | jq -r "$1 // empty" 2>/dev/null
@@ -34,8 +42,8 @@ voice_field() {
 
 # The words the person typed, in REPLY (needs PROMPT): a copy of dev-hooks'
 # reminder_prompt_typed filter, pinned equal by test_typed_prompt_filters_match. Empty for an
-# injected prompt (a task notification, a subagent's report, the CI watch); IDE context, pasted
-# blocks and a forwarded side-agent note's quoted lines are stripped.
+# injected prompt (a task notification, a subagent's report, the CI watch) and for a nested
+# run; IDE context, pasted blocks and a forwarded side-agent note's quoted lines are stripped.
 # jscpd:ignore-start
 VOICE_TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
   | sub("\\A\\s+"; "")
@@ -49,6 +57,8 @@ VOICE_TYPED_JQ='gsub("<ide_(?<t>[a-z_]+)>[\\s\\S]*?</ide_\\k<t>>"; "")
   | sub("\\A\\s+"; "") | sub("\\s+\\z"; "")'
 # jscpd:ignore-end
 voice_prompt_typed() {
+  REPLY=""
+  voice_is_nested_run && return 0
   REPLY=$(jq -rn --arg p "$PROMPT" "\$p | $VOICE_TYPED_JQ" 2>/dev/null) || REPLY=$PROMPT
 }
 
@@ -216,6 +226,7 @@ _voice_log_fire() {
   [[ ${SESSION:-} =~ ^[0-9a-f]{8}-[0-9a-f]{4}- ]] || return 0
   case "${DEV_HOOKS_PROBE:-}" in 1 | true | yes | on) return 0 ;; esac
   case "${CWD:-$PWD}" in /tmp/claude-* | /private/tmp/claude-* | "$HOME"/.cache/*) return 0 ;; esac
+  voice_is_nested_run && return 0
   local dir="$HOME/.claude/automation-review"
   [ -d "$dir" ] || return 0
   printf '{"hook":"%s","session":"%s","ts":%s}\n' \
@@ -235,7 +246,7 @@ voice_emit() {
 # decision:block, so Claude revises before the user reads the draft. Never continue:false,
 # which halts Claude.
 # dev-hooks' REMINDER_END_REPORT_FOOTER, pinned by test_end_report_footers_match; left off a
-# `claude -p` or Agent SDK run, whose end report nobody reads.
+# `claude -p` or Agent SDK run and a nested run, whose end report nobody reads.
 VOICE_END_REPORT_FOOTER='Whatever the above asks, do it without narrating it, then end with your full end report again, written for someone who reads only that message: Status (say what is still running and what happens when it lands), Done when, Changed (what is different now: files linked, commits, settings, anything sent), Assumed, Not checked, and Your move (every action the person must take, including asks from earlier in this turn, or "nothing"); drop any other line that would be empty. Report that work only as what it changed, what it found that needs the person, or what it left undone, one line each in that report: never a clean result, an ask that did not apply, a hook name, why a hook fired, or that it misfired.'
 
 voice_emit_stop() {
@@ -243,7 +254,7 @@ voice_emit_stop() {
   local msg=$1
   case ${CLAUDE_CODE_ENTRYPOINT:-} in
     sdk-*) ;;
-    *) msg+=$'\n\n'"$VOICE_END_REPORT_FOOTER" ;;
+    *) voice_is_nested_run || msg+=$'\n\n'"$VOICE_END_REPORT_FOOTER" ;;
   esac
   jq -cn --arg msg "$msg" '{decision: "block", reason: $msg}'
   exit 0

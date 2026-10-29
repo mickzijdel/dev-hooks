@@ -144,7 +144,9 @@ $ claude
   to purge history. Probe sessions aren't logged: a made-up session id (a hand-run smoke test),
   a cwd in Claude Code's `/tmp/claude-*` scratchpad (a `claude -p` probe), or a replay harness:
   a cwd under `~/.cache/` (a disposable clone) or `DEV_HOOKS_PROBE=1` in the environment of the
-  `claude` it starts. Set that in any harness that runs Claude headless over real tasks.
+  `claude` it starts. Set that in any harness that runs Claude headless over real tasks. A
+  `claude` started from another Claude session's shell (a fan-out script) is skipped without
+  it, on Linux: its prompt hooks see nothing typed and its Stop reasons carry no footer.
 - **Fire telemetry (opt-in).** Set `DEV_HOOKS_FIRE_LOG=1` (in `"env"`) to have every advisory
   reminder append one JSONL line (`hook`, `session`, `ts`) to
   `~/.claude/automation-review/hook-fires.jsonl`. Off by default; probe sessions are skipped as in

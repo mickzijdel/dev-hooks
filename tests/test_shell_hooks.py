@@ -979,6 +979,21 @@ def test_typed_prompt_filters_match():
     assert jq_of(WRITING_HOOKS / "lib" / "voice-common.sh", "VOICE_TYPED_JQ") == canon
 
 
+def test_nested_run_checks_match():
+    # The writing plugin can't source dev-hooks' lib; a drifted copy logs a program's prompts
+    # as typed again without erroring.
+    def body(path, name):
+        return re.search(
+            rf"^{name}\(\) \{{\n(.+?)\n\}}", path.read_text(), re.M | re.S
+        ).group(1)
+
+    canon = body(HOOKS / "lib" / "reminder-common.sh", "reminder_is_nested_run")
+    assert (
+        body(WRITING_HOOKS / "lib" / "voice-common.sh", "voice_is_nested_run") == canon
+    )
+    assert "CLAUDE_CODE_CHILD_SESSION" in canon
+
+
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
 def test_popover_reminder_fires_for_controller_filename(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"
@@ -5090,6 +5105,49 @@ def test_stop_reasons_end_with_the_footer(lib, fn):
     assert _emit_stop(lib, fn, CLAUDE_CODE_ENTRYPOINT="sdk-cli") == "do x"
 
 
+@pytest.mark.parametrize(
+    "lib, fn",
+    [
+        (HOOKS / "lib" / "reminder-common.sh", "reminder_emit_stop"),
+        (WRITING_HOOKS / "lib" / "voice-common.sh", "voice_emit_stop"),
+    ],
+)
+def test_a_nested_run_gets_no_footer(lib, fn, claude_pid):
+    # The child inherits the parent's CLAUDE_CODE_ENTRYPOINT (claude-vscode, say), so only the
+    # nested marker shows that a program reads its replies.
+    env = {"CLAUDE_CODE_ENTRYPOINT": "claude-vscode"}
+    assert _emit_stop(lib, fn, CLAUDE_PID=claude_pid(True), **env) == "do x"
+    footed = _emit_stop(lib, fn, CLAUDE_PID=claude_pid(False), **env)
+    assert footed == f"do x\n\n{_canon_footer()}"
+
+
+@pytest.mark.parametrize(
+    "lib, fn",
+    [
+        (HOOKS / "lib" / "reminder-common.sh", "reminder_prompt_typed"),
+        (WRITING_HOOKS / "lib" / "voice-common.sh", "voice_prompt_typed"),
+    ],
+)
+def test_a_nested_run_typed_nothing(lib, fn, claude_pid):
+    def typed(pid):
+        r = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source "$1"; PROMPT="build a dashboard"; {fn}; printf %s "$REPLY"',
+                "_",
+                str(lib),
+            ],
+            env=base_env(CLAUDE_PID=pid),
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout
+
+    assert typed(claude_pid(True)) == ""
+    assert typed(claude_pid(False)) == "build a dashboard"
+
+
 def test_orchestrated_stop_reasons_leave_the_footer_to_the_mod():
     lib = HOOKS / "lib" / "reminder-common.sh"
     assert _emit_stop(lib, "reminder_emit_stop", DEV_HOOKS_ORCHESTRATED="1") == "do x"
@@ -5223,6 +5281,16 @@ def test_prompt_log_skips_probe_sessions(tmp_path, session_id, cwd, env):
     r = run_prompt_log(tmp_path, payload=payload, **env)
     assert r.returncode == 0
     assert not _prompt_log_path(tmp_path).exists()
+
+
+def test_prompt_log_skips_a_nested_run(tmp_path, claude_pid):
+    r = run_prompt_log(
+        tmp_path, prompt="critique this song", CLAUDE_PID=claude_pid(True)
+    )
+    assert r.returncode == 0
+    assert not _prompt_log_path(tmp_path).exists()
+    run_prompt_log(tmp_path, prompt="critique this song", CLAUDE_PID=claude_pid(False))
+    assert _prompt_log_path(tmp_path).exists()
 
 
 def test_prompt_log_appends_second_line(tmp_path):
