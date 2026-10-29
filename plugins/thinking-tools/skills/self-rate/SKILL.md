@@ -27,6 +27,16 @@ A number means nothing without anchors. Define what the scale's points actually 
    - High score you can't justify → it's not high; re-score honestly
 4. **Return** the scores + the revised work.
 
+## When self-scoring isn't enough
+
+Self-scoring shares the same blind spots as the work — a model grading its own subjective output
+(voice, tone, taste, "is this actually good") is prone to the same self-preferential bias a human
+author has toward their own draft. For genuinely subjective or high-stakes calls, dispatch a
+**separate** subagent as the grader instead: hand it the work and the rubric, nothing else, so its
+score doesn't inherit your reasoning. See [[dispatching-parallel-agents]] for the dispatch
+mechanics. Skip this for ordinary correctness checks — a second agent isn't warranted just to
+confirm code runs.
+
 ## Common mistakes
 
 - Inflating to be agreeable — the user wants the real number, not reassurance.
