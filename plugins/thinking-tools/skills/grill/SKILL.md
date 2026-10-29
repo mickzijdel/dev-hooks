@@ -2,7 +2,7 @@
 name: grill
 description: "Use to interrogate a plan, design or idea one question at a time until every decision is resolved: \"grill me\", \"interview me\", \"ask me questions about this\", \"stress-test this plan with me\", \"help me fully specify this\", or before writing a plan or PRD from a fuzzy idea. Not for critique (board)."
 license: "MIT; copyright Matt Pocock; see ../matt-pocock-skills-LICENSE.txt"
-source: "adapted/merged from https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me, https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling, https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs"
+source: "adapted/merged from https://github.com/mattpocock/skills/blob/74ca5fe077456a0b3b2f5310cf9430999fd0b5fd/skills/productivity/grill-me/SKILL.md, https://github.com/mattpocock/skills/blob/74ca5fe077456a0b3b2f5310cf9430999fd0b5fd/skills/productivity/grilling/SKILL.md, https://github.com/mattpocock/skills/blob/74ca5fe077456a0b3b2f5310cf9430999fd0b5fd/skills/engineering/grill-with-docs/SKILL.md"
 ---
 
 # Grill
