@@ -7,7 +7,7 @@ import tomllib
 
 from conftest import ROOT
 
-FLOOR = re.compile(r'^# requires-python = ">=(\d+)\.(\d+)"', re.M)
+FLOOR = re.compile(r'^# requires-python = ">=(\d+)\.(\d+)"', re.MULTILINE)
 
 
 def _version(target):

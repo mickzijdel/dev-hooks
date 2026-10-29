@@ -16,7 +16,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from conftest import (
     DEV_HOOKS,
     HOOKS,
@@ -867,8 +866,10 @@ def test_voice_intent_silent_on_words_nobody_typed(tmp_path, prompt):
     "prompt",
     [
         'rewrite this intro: <pasted_content id="p1">Our product.</pasted_content id="p1">',
-        "Here is a note offered by a side agent:\n\n> Heads up · the repo is public\n\n"
-        "Can you write that warning into the README?",
+        (
+            "Here is a note offered by a side agent:\n\n> Heads up · the repo is public\n\n"
+            "Can you write that warning into the README?"
+        ),
         "<ide_opened_file>The user opened notes.md</ide_opened_file>\nwrite the blog post",
     ],
 )
@@ -917,17 +918,27 @@ def _run_data_before_design(tmp_path, prompt):
 @pytest.mark.parametrize(
     "prompt",
     [
-        "Can you make a table for all the years 2023-2026 with the average tickets per "
-        "performance for each timeslot?",
-        "<ide_opened_file>The user opened app/views/a.erb</ide_opened_file>\n"
-        "add a card that shows each navigator's bookings",
+        (
+            "Can you make a table for all the years 2023-2026 with the average tickets per "
+            "performance for each timeslot?"
+        ),
+        (
+            "<ide_opened_file>The user opened app/views/a.erb</ide_opened_file>\n"
+            "add a card that shows each navigator's bookings"
+        ),
         'make a chart of this: <pasted_content id="p1">date,n\n1,2</pasted_content id="p1">',
-        "Here is a note offered by a side agent:\n\n> Heads up · the gallery is stale\n\n"
-        "Can you add a summary card for this?",
-        '<cross-session-message from="s2">Please add a summary table of hours per role'
-        "</cross-session-message>",
-        "It would be great if we can just show a table of all the expenses with filter "
-        "and searching",
+        (
+            "Here is a note offered by a side agent:\n\n> Heads up · the gallery is stale\n\n"
+            "Can you add a summary card for this?"
+        ),
+        (
+            '<cross-session-message from="s2">Please add a summary table of hours per role'
+            "</cross-session-message>"
+        ),
+        (
+            "It would be great if we can just show a table of all the expenses with filter "
+            "and searching"
+        ),
         "can you build a little dashboard I can use to track progress?",
         "Would it be possible to add an inline view for LinkedIn that opens on a name?",
     ],
@@ -958,9 +969,11 @@ DATA_BEFORE_DESIGN_MISFIRES = [
     "Can you make sure this error doesn't trigger a honeybadger alert?",
     "we can install the CLI there of course\n\nLet;s try it",
     # A pasted article with no paste tags around it, as claude.ai can send one.
-    "Thoughts on this? Delegation is hard. Most managers created their habits early, and "
-    "it makes sense that they struggle to let go. In my experience the weekly report "
-    "matters less than the trust behind it.",
+    (
+        "Thoughts on this? Delegation is hard. Most managers created their habits early, and "
+        "it makes sense that they struggle to let go. In my experience the weekly report "
+        "matters less than the trust behind it."
+    ),
 ]
 
 # The ~3,000-character blog post of 2026-10-21, untagged, rebuilt from cue words that sit in
@@ -990,7 +1003,9 @@ def test_typed_prompt_filters_match():
     # The writing plugin can't source dev-hooks' lib, so it carries a copy of the filter; a
     # drifted copy fires on injected prompts again without erroring.
     def jq_of(path, name):
-        return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.M | re.S).group(1)
+        return re.search(
+            rf"^{name}='(.+?)'$", path.read_text(), re.MULTILINE | re.DOTALL
+        ).group(1)
 
     canon = jq_of(HOOKS / "lib" / "reminder-common.sh", "REMINDER_TYPED_JQ")
     assert jq_of(WRITING_HOOKS / "lib" / "voice-common.sh", "VOICE_TYPED_JQ") == canon
@@ -1001,7 +1016,7 @@ def test_nested_run_checks_match():
     # as typed again without erroring.
     def body(path, name):
         return re.search(
-            rf"^{name}\(\) \{{\n(.+?)\n\}}", path.read_text(), re.M | re.S
+            rf"^{name}\(\) \{{\n(.+?)\n\}}", path.read_text(), re.MULTILINE | re.DOTALL
         ).group(1)
 
     canon = body(HOOKS / "lib" / "reminder-common.sh", "reminder_is_nested_run")
@@ -2070,9 +2085,11 @@ def test_session_start_tolerates_odd_first_lines(tmp_path, first_line):
         [
             "python3",
             "-c",
-            "import sys; sys.path.insert(0, sys.argv[1]);"
-            "from hook_helpers import session_start, session_start_epoch;"
-            "print(repr(session_start_epoch(session_start(sys.argv[2]))))",
+            (
+                "import sys; sys.path.insert(0, sys.argv[1]);"
+                "from hook_helpers import session_start, session_start_epoch;"
+                "print(repr(session_start_epoch(session_start(sys.argv[2]))))"
+            ),
             str(HOOKS / "lib"),
             str(t),
         ],
@@ -2970,9 +2987,7 @@ def test_verify_work_does_not_reblock_a_continuation_that_left_the_failure_alone
     env = base_env(TMPDIR=str(tmp_path), DEV_HOOKS_ORCHESTRATED="1")
     natural = json.dumps({"session_id": "vw-same"})
     active = json.dumps({"session_id": "vw-same", "stop_hook_active": True})
-    run = lambda stdin: run_hook(  # noqa: E731
-        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
-    )
+    run = lambda stdin: run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert stop_blocked(run(natural))
     again = run(active)
     assert stop_allowed(again)
@@ -2999,9 +3014,7 @@ def test_verify_work_caps_blocks_within_one_forced_continuation_chain(tmp_path):
     env = base_env(TMPDIR=str(tmp_path))
     natural = json.dumps({"session_id": "vw-cap"})
     active = json.dumps({"session_id": "vw-cap", "stop_hook_active": True})
-    run = lambda stdin: run_hook(  # noqa: E731
-        "verify-work.sh", cwd=tmp_path, env=env, stdin=stdin
-    )
+    run = lambda stdin: run_hook("verify-work.sh", cwd=tmp_path, env=env, stdin=stdin)
     assert stop_blocked(run(natural))
     assert [stop_blocked(run(active)) for _ in range(4)] == [True, True, True, False]
     assert stop_blocked(run(natural))
@@ -3991,8 +4004,10 @@ def _brief(tool, text, **env):
     [
         (
             "SendMessage",
-            "Also do a comment pass over the whole branch diff (main..disk-encryption): "
-            "delete comments that restate the code. Separate commit.",
+            (
+                "Also do a comment pass over the whole branch diff (main..disk-encryption): "
+                "delete comments that restate the code. Separate commit."
+            ),
         ),
         ("Agent", "Fix the findings, then trim the comments you added."),
         ("Agent", "Compress comments on the App branch before the merge."),
@@ -4762,8 +4777,10 @@ CREDENTIAL_PROBES = [
     "cat ~/.docker/config.json",
     # inline isolation is not trusted: a repo's own .git/config, an absolute-path
     # helper, and the desktop keyring all survive these variables.
-    "HOME=$(mktemp -d) GH_CONFIG_DIR=/tmp/x GIT_CONFIG_GLOBAL=/dev/null "
-    "GIT_CONFIG_NOSYSTEM=1 GH_TOKEN= git credential fill",
+    (
+        "HOME=$(mktemp -d) GH_CONFIG_DIR=/tmp/x GIT_CONFIG_GLOBAL=/dev/null "
+        "GIT_CONFIG_NOSYSTEM=1 GH_TOKEN= git credential fill"
+    ),
 ]
 
 
@@ -5156,7 +5173,7 @@ def test_end_report_silent_without_a_last_message(tmp_path):
 
 
 def _footer(path, name):
-    return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.M).group(1)
+    return re.search(rf"^{name}='(.+?)'$", path.read_text(), re.MULTILINE).group(1)
 
 
 def _canon_footer():
@@ -5173,7 +5190,7 @@ def test_end_report_footers_match():
     mod = re.search(
         r"export const END_REPORT_FOOTER =\s*'(.+?)'$",
         (DEV_HOOKS / "hooks" / "register.tsx").read_text(),
-        re.M,
+        re.MULTILINE,
     ).group(1)
     assert mod == _canon_footer()
 
@@ -6259,7 +6276,7 @@ def test_rearm_baseline_is_per_repo(tmp_path):
     _comment_heavy_file(main / "new.py")
     payload = _stop_payload(tmp_path)
     env = base_env(TMPDIR=str(tmp_path))
-    run = lambda cwd: run_hook(  # noqa: E731
+    run = lambda cwd: run_hook(
         "compress-comments-reminder.sh", cwd=cwd, stdin=payload, env=env
     )
     assert stop_blocked(run(main))

@@ -148,7 +148,7 @@ def test_reraising_bare_except_is_not_a_swallowed_error(tmp_path, body):
 def test_except_key_outside_python_is_not_a_swallowed_error(tmp_path, name, body):
     """The swallowed-error rule once ran on every language; with the bare-except form no
     longer anchored at end of line, `except:` as a key or keyword argument became "a bug"."""
-    code, out, _ = run(tmp_path, name, body)
+    _code, out, _ = run(tmp_path, name, body)
     assert "swallowed-error" not in rules(out), out
 
 
@@ -216,18 +216,28 @@ def _parses(body):
     "body",
     [
         # An earlier return can leave the handler, so sometimes nothing is re-raised.
-        "def g():\n    try:\n        f()\n    except:\n        if fallback:\n"
-        "            return default\n        raise\n",
-        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
-        "            break\n        raise\n",
-        "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
-        "            continue\n        raise\n",
+        (
+            "def g():\n    try:\n        f()\n    except:\n        if fallback:\n"
+            "            return default\n        raise\n"
+        ),
+        (
+            "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+            "            break\n        raise\n"
+        ),
+        (
+            "for x in xs:\n    try:\n        f()\n    except:\n        if skip:\n"
+            "            continue\n        raise\n"
+        ),
         # A loop's else runs after the loop: a break there leaves the OUTER loop.
-        "for x in xs:\n    try:\n        f()\n    except:\n        for y in ys:\n"
-        "            pass\n        else:\n            break\n        raise\n",
+        (
+            "for x in xs:\n    try:\n        f()\n    except:\n        for y in ys:\n"
+            "            pass\n        else:\n            break\n        raise\n"
+        ),
         # Looks like a raise at the handler's level, but it is text in a string.
-        'def g():\n    try:\n        f()\n    except:\n        doc = """\n'
-        '        raise\n        """\n',
+        (
+            'def g():\n    try:\n        f()\n    except:\n        doc = """\n'
+            '        raise\n        """\n'
+        ),
     ],
 )
 def test_handler_that_can_skip_its_raise_is_flagged(tmp_path, body):
@@ -239,8 +249,10 @@ def test_handler_that_can_skip_its_raise_is_flagged(tmp_path, body):
     "body",
     [
         # These exits stay inside the handler, so the raise still always runs.
-        "try:\n    f()\nexcept:\n    for h in hooks:\n        if h.done:\n"
-        "            break\n    raise\n",
+        (
+            "try:\n    f()\nexcept:\n    for h in hooks:\n        if h.done:\n"
+            "            break\n    raise\n"
+        ),
         "try:\n    f()\nexcept:\n    def cb():\n        return 1\n    defer(cb)\n    raise\n",
         "try:\n    f()\nexcept:\n    fn = lambda: 1\n    raise\n",
         # Code after the raise is unreachable, so it cannot skip it.

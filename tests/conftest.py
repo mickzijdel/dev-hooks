@@ -106,7 +106,7 @@ def init_git_repo(path: Path, *, remote=None, email="t@t", name="t"):
     """Initialise an empty git repo at `path` (no commits — HEAD doesn't resolve yet,
     deliberately exercising hooks against the brand-new-repo edge); optional origin
     remote. Returns a `run(*git_args)` helper so tests add/commit when they need to."""
-    run = lambda *a: subprocess.run(  # noqa: E731
+    run = lambda *a: subprocess.run(
         ["git", *a], cwd=path, check=True, capture_output=True, text=True
     )
     run("init", "-q", "-b", "main")
@@ -218,8 +218,7 @@ def make_transcript(path: Path, *, human_turns=0, extra_lines=None):
         lines.append(
             json.dumps({"message": {"role": "user", "content": f"human message {i}"}})
         )
-    for line in extra_lines or []:
-        lines.append(line)
+    lines.extend(extra_lines or [])
     path.write_text("\n".join(lines) + "\n")
     return path
 

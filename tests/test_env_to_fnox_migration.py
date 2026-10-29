@@ -16,7 +16,6 @@ import subprocess
 import sys
 
 import pytest
-
 from conftest import DEV_HOOKS
 
 SCRIPT = DEV_HOOKS / "skills" / "env-to-fnox" / "scripts" / "migrate_env_to_fnox.py"
@@ -80,17 +79,12 @@ def bare_path(tmp_path):
 def test_dry_run_parses_bare_single_and_double_quoted_values(tmp_path, bare_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "\n".join(
-            [
-                "# a comment, and a blank line above",
-                "",
-                "BARE_VALUE=hello",
-                "SINGLE_QUOTED='hello world'",
-                'DOUBLE_QUOTED="hello \\"world\\""',
-                "EMPTY_VALUE=",
-            ]
-        )
-        + "\n"
+        "# a comment, and a blank line above\n"
+        "\n"
+        "BARE_VALUE=hello\n"
+        "SINGLE_QUOTED='hello world'\n"
+        'DOUBLE_QUOTED="hello \\"world\\""\n'
+        "EMPTY_VALUE=\n"
     )
     r = _run(
         "--env-file",

@@ -14,7 +14,7 @@ dependencies = []
 dev = [
     "pytest",
     "pytest-xdist",
-    "ruff",
+    "ruff>=0.17,<0.18",  # minor pinned with mise.toml's ruff (dev-env v30); check_version_sync.sh compares the locks
     "vulture",   # dead-code audit; run via `uvx vulture`
     # The bundled Python scripts are stdlib-only (PEP 723 deps = []), so there is
     # nothing extra to mirror here for the test environment to import.
@@ -37,6 +37,15 @@ target-version = "py312"
 [tool.ruff.per-file-target-version]
 # The one script whose own floor is 3.14.
 "plugins/dev-hooks/skills/deslop/scripts/slop_scan.py" = "py314"
+
+# dev-env v30: ruff's default rule set (0.16+), minus UP031 everywhere and PLW1510 in tests.
+[tool.ruff.lint]
+ignore = ["UP031"]  # %-format → .format(): style only, the fix doesn't produce f-strings
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["PLW1510"]  # tests assert returncode themselves
+"**/test_*.py" = ["PLW1510"]
+"**/conftest.py" = ["PLW1510"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

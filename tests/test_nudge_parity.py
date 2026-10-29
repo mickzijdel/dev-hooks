@@ -53,7 +53,9 @@ def test_compress_comments_needle_matches_its_hook():
 
 def test_probe_session_rule_matches_reminder_is_probe_session():
     sh = (HOOKS / "lib" / "reminder-common.sh").read_text()
-    body = re.search(r"^reminder_is_probe_session\(\) \{\n(.+?)\n\}", sh, re.M | re.S)
+    body = re.search(
+        r"^reminder_is_probe_session\(\) \{\n(.+?)\n\}", sh, re.MULTILINE | re.DOTALL
+    )
     lines = body.group(1)
     on = re.search(r'case "\$\{DEV_HOOKS_PROBE:-\}" in (.+?)\)', lines).group(1)
     cwds = re.search(r'case "\$\{CWD:-\$PWD\}" in (.+?)\)', lines).group(1)

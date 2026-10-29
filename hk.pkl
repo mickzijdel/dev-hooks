@@ -8,9 +8,13 @@ local linters = new Mapping<String, Step> {
     ["shfmt"] = Builtins.shfmt
     // ruff lint + format for the *.py skill scripts and tests. hk builtins — ruff is a mise
     // tool here (bare `ruff` on PATH), so the builtins' `ruff check`/`ruff format --force-exclude`
-    // commands match what these steps used to spell out by hand.
+    // commands match what these steps used to spell out by hand. ruff >= 0.16 formats the Python
+    // fences in Markdown too, and CI's `ruff format --check .` walks them, so the format step
+    // adds `**/*.md` to the builtin's glob (ruff check skips Markdown, so its glob stays).
     ["ruff-check"] = Builtins.ruff
-    ["ruff-format"] = Builtins.ruff_format
+    ["ruff-format"] = (Builtins.ruff_format) {
+        glob = List("**/*.py", "**/*.pyi", "**/*.md")
+    }
     // Shipped scripts must carry the executable bit IN THE GIT INDEX (mode 100755):
     // with core.fileMode=false a local chmod +x never reaches git, so clones and
     // plugin-cache installs get scripts that die with exit 126 "Permission denied".

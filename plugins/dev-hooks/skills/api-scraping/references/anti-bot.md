@@ -35,7 +35,8 @@ a real browser:
 
 ```python
 from curl_cffi import requests
-r = requests.get(url, headers=HEADERS, impersonate="chrome")   # matches Chrome's TLS + HTTP2
+
+r = requests.get(url, headers=HEADERS, impersonate="chrome")  # Chrome's TLS + HTTP2
 ```
 
 It's a near drop-in for `requests`/`httpx` (`.get`, `.json()`, sessions), so the client

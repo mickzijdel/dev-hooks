@@ -22,7 +22,7 @@ import subprocess
 def git(args):
     """Run git, returning stdout on success and '' on any failure."""
     try:
-        r = subprocess.run(["git", *args], capture_output=True, text=True)
+        r = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
         return r.stdout if r.returncode == 0 else ""
     except OSError:
         return ""
@@ -46,7 +46,7 @@ def session_start(transcript_path):
     # Anything unreadable means "session start unknown", never a traceback.
     try:
         stamp = json.loads(first).get("timestamp")
-    except Exception:
+    except Exception:  # noqa: BLE001 - any unreadable first line means "start unknown"
         return ""
     if not isinstance(stamp, str):
         return ""
@@ -69,10 +69,8 @@ def session_start_epoch(since):
     if re.match(r"[^T ]+[T ]24", since):
         return None
     try:
-        return int(
-            datetime.datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
-        )
-    except Exception:
+        return int(datetime.datetime.fromisoformat(since).timestamp())
+    except Exception:  # noqa: BLE001 - a hook gets None for any bad stamp, never a traceback
         return None
 
 
@@ -141,7 +139,7 @@ def new_lines():
         for line in git(["diff", "HEAD", "--no-color", "--unified=0"]).splitlines():
             if line.startswith("+++ "):
                 p = line[4:]
-                cur = p[2:] if p.startswith("b/") else p
+                cur = p.removeprefix("b/")
             elif line.startswith("@@"):
                 m = re.search(r"\+(\d+)", line)
                 new_ln = int(m.group(1)) if m else None
@@ -655,6 +653,6 @@ def end_report_missing(text):
         if not re.search(
             rf"^[\s>*_|-]*{word}{tail}[*_\s]*:|^\s*#+\s*{word}{tail}\s*$",
             text,
-            re.I | re.M,
+            re.IGNORECASE | re.MULTILINE,
         )
     ]

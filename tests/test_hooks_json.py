@@ -5,7 +5,6 @@ on Stop or UserPromptSubmit loads without error and silently never runs."""
 import json
 
 import pytest
-
 from conftest import ROOT
 
 TOOL_EVENTS = {"PreToolUse", "PostToolUse", "PermissionRequest"}

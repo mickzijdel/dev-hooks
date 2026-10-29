@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 
-
 from conftest import HOOKS, requires_jq
 
 pytestmark = requires_jq

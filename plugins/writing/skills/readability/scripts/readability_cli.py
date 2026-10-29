@@ -69,6 +69,7 @@ class ReadabilityCli:
             ["git", "show", f"{self.branch}:{self.filename}"],
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0 or not result.stdout.strip():
             self._exit_with_error(f"Could not read file from branch '{self.branch}'")

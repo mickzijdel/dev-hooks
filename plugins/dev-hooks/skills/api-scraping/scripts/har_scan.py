@@ -142,7 +142,7 @@ def analyse(entry: dict, find_terms: list[str], all_entries: bool) -> dict | Non
 def rank_key(c: dict) -> tuple:
     """Matches first, then JSON responses, then bigger bodies."""
     is_json = any(tag in c["mime"].lower() for tag in DATA_MIMES)
-    return (-len(c["hits"]), 0 if is_json else 1, -(c["size"] if c["size"] > 0 else 0))
+    return (-len(c["hits"]), 0 if is_json else 1, -max(0, c["size"]))
 
 
 def render(candidates: list[dict]) -> str:

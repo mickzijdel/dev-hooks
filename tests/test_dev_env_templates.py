@@ -14,7 +14,6 @@ import subprocess
 import sys
 
 import pytest
-
 from conftest import DEV_HOOKS, ROOT
 
 TEMPLATES_DIR = DEV_HOOKS / "skills" / "dev-env-setup" / "references" / "templates"
@@ -186,7 +185,7 @@ def test_ci_template_declares_read_only_token(name):
     GITHUB_TOKEN defaults to read-only and a compromised step can't write. A job needing more
     declares its own job-level block."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert re.search(r"^permissions:\n  contents: read$", text, re.M), (
+    assert re.search(r"^permissions:\n  contents: read$", text, re.MULTILINE), (
         f"{name} is missing a top-level read-only permissions block"
     )
 
@@ -206,7 +205,7 @@ def test_zizmor_tool_in_every_mise_template(name):
     """v18: every mise template pins `zizmor` so the hk step + CI job have the binary on PATH
     (and mise.lock checksum-verifies it)."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert re.search(r'^zizmor = "latest"', text, re.M), (
+    assert re.search(r'^zizmor = "latest"', text, re.MULTILINE), (
         f"{name} does not pin the zizmor tool"
     )
 
@@ -228,7 +227,7 @@ def test_actionlint_step_in_every_hk_template(name):
 def test_actionlint_tool_in_every_mise_template(name):
     """v18: every mise template pins `actionlint` so the hk step + CI job have the binary on PATH."""
     text = (TEMPLATES_DIR / name).read_text()
-    assert re.search(r'^actionlint = "latest"', text, re.M), (
+    assert re.search(r'^actionlint = "latest"', text, re.MULTILINE), (
         f"{name} does not pin the actionlint tool"
     )
 
@@ -313,7 +312,7 @@ def test_mise_template_version_stamp_matches_version_file(name):
     bumps, so freshly scaffolded repos immediately flagged as needing a v9→v12 upgrade."""
     version = VERSION_FILE.read_text().strip()
     m = re.search(
-        r'^DEV_ENV_VERSION = "(\d+)"$', (TEMPLATES_DIR / name).read_text(), re.M
+        r'^DEV_ENV_VERSION = "(\d+)"$', (TEMPLATES_DIR / name).read_text(), re.MULTILINE
     )
     assert m is not None, f"{name} is missing a DEV_ENV_VERSION stamp"
     assert m.group(1) == version, (
@@ -346,7 +345,7 @@ def test_doc_current_version_mentions(path, pattern):
     '## v10 → v11') deliberately don't match — when writing prose about a *past*
     version, phrase it that way rather than as 'compliant at vN'."""
     version = VERSION_FILE.read_text().strip()
-    found = re.findall(pattern, path.read_text(), re.M)
+    found = re.findall(pattern, path.read_text(), re.MULTILINE)
     assert found, f"{path.name} has no match for {pattern!r}"
     stale = sorted({v for v in found if v != version})
     assert not stale, (
@@ -363,7 +362,8 @@ def test_upgrade_guide_reaches_current_version():
     version = int(VERSION_FILE.read_text().strip())
     text = UPGRADE_GUIDE.read_text()
     pairs = [
-        (int(a), int(b)) for a, b in re.findall(r"^## v(\d+) → v(\d+) ", text, re.M)
+        (int(a), int(b))
+        for a, b in re.findall(r"^## v(\d+) → v(\d+) ", text, re.MULTILINE)
     ]
     assert pairs, "upgrade-guide.md has no '## vN → vN' migration sections"
     assert all(b == a + 1 for a, b in pairs), f"non-adjacent migration step in {pairs}"
@@ -372,7 +372,9 @@ def test_upgrade_guide_reaches_current_version():
         f"expected v1..v{version} (VERSION = {version})"
     )
     newest = re.search(
-        rf"^## v{version - 1} → v{version} .*?(?=^## |\Z)", text, re.M | re.S
+        rf"^## v{version - 1} → v{version} .*?(?=^## |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
     )
     assert newest is not None
     assert f'DEV_ENV_VERSION = "{version}"' in newest.group(0), (
@@ -462,7 +464,7 @@ def test_herb_template_enables_linter():
     """v17: the Ruby stack ships a .herb.yml (herb ERB-linter config) with the linter on."""
     assert HERB_TEMPLATE.exists(), "templates/herb.ruby.yml is missing"
     text = HERB_TEMPLATE.read_text()
-    assert re.search(r"^linter:\n\s+enabled: true$", text, re.M), (
+    assert re.search(r"^linter:\n\s+enabled: true$", text, re.MULTILINE), (
         "herb.ruby.yml must enable the linter (`linter:` → `enabled: true`)"
     )
 

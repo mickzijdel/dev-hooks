@@ -5,7 +5,6 @@ import json
 import re
 
 import pytest
-
 from conftest import ROOT
 
 ENTRIES = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())[

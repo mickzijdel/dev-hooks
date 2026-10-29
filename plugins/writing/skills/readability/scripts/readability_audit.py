@@ -291,6 +291,7 @@ def main(argv):
             ["git", "show", f"{options.branch}:{file}"],
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             baseline = ReadabilityAudit(result.stdout).metrics()

@@ -9,7 +9,6 @@ import json
 import subprocess
 
 import pytest
-
 from conftest import ONBOARDING
 
 SKILL = ONBOARDING / "skills" / "getting-started"

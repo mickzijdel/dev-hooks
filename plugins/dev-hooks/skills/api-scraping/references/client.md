@@ -61,12 +61,13 @@ paste blind: fill in the minimized headers, the real endpoint, and the paginatio
 import json, time, pathlib, httpx
 
 BASE = "https://api.example.com/v2/listings/search"
-HEADERS = {                      # ONLY the headers the minimize step proved necessary
+HEADERS = {  # ONLY the headers the minimize step proved necessary
     "User-Agent": "Mozilla/5.0 (research; contact you@example.com)",
     "Accept": "application/json",
     # "Authorization": f"Bearer {token}",
 }
 OUT = pathlib.Path("listings.jsonl")
+
 
 def fetch(client, cursor):
     params = {"limit": 100}
@@ -75,12 +76,13 @@ def fetch(client, cursor):
     for attempt in range(6):
         r = client.get(BASE, params=params, headers=HEADERS, timeout=30)
         if r.status_code == 429:
-            wait = float(r.headers.get("Retry-After", 2 ** attempt))
+            wait = float(r.headers.get("Retry-After", 2**attempt))
             time.sleep(wait)
             continue
         r.raise_for_status()
         return r.json()
     raise RuntimeError("giving up after repeated 429s")
+
 
 def main():
     seen = sum(1 for _ in OUT.open()) if OUT.exists() else 0
@@ -93,10 +95,11 @@ def main():
                 sink.write(json.dumps(row) + "\n")
             seen += len(rows)
             print(f"{seen} rows")
-            cursor = page.get("next_cursor")     # <-- the API's own next-pointer
+            cursor = page.get("next_cursor")  # <-- the API's own next-pointer
             if not cursor or not rows:
                 break
-            time.sleep(1)                          # be polite
+            time.sleep(1)  # be polite
+
 
 if __name__ == "__main__":
     main()

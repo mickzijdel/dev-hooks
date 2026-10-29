@@ -10,8 +10,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta, timezone
-
+from datetime import UTC, datetime, timedelta
 
 from conftest import ROOT, requires_jq
 
@@ -30,7 +29,7 @@ NUL_BLOCK = b"\x00" * 64  # crash-time zero padding, as observed in a real log
 
 
 def _ts(days_ago):
-    when = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    when = datetime.now(UTC) - timedelta(days=days_ago)
     return when.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

@@ -12,7 +12,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from conftest import DEV_HOOKS, init_git_repo, parse_kv
 
 SETUP = DEV_HOOKS / "skills" / "worktree-setup" / "scripts" / "setup-worktree.sh"

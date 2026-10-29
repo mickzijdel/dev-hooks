@@ -16,7 +16,6 @@ import subprocess
 import textwrap
 
 import pytest
-
 from conftest import DEV_HOOKS
 
 SCRIPT = (
@@ -925,8 +924,10 @@ def test_other_version_file_contents_are_compared(tmp_path):
         ),
         (
             {"pyproject.toml": '[project]\nrequires-python = ">=3.10"\n'},
-            "- uses: actions/setup-python@0000000000000000000000000000000000000000 # v6\n"
-            "  with:\n    python-version-file: pyproject.toml",
+            (
+                "- uses: actions/setup-python@0000000000000000000000000000000000000000 # v6\n"
+                "  with:\n    python-version-file: pyproject.toml"
+            ),
         ),
     ],
 )
@@ -944,8 +945,10 @@ def test_tool_versions_line_is_compared(tmp_path):
             ".tool-versions": "nodejs 24.11.0\nruby 3.3.0\n",
             ".github/workflows/ci.yml": workflow(
                 [
-                    "- uses: ruby/setup-ruby@0000000000000000000000000000000000000000 # v1\n"
-                    "  with:\n    ruby-version: .tool-versions"
+                    (
+                        "- uses: ruby/setup-ruby@0000000000000000000000000000000000000000 # v1\n"
+                        "  with:\n    ruby-version: .tool-versions"
+                    )
                 ]
             ),
         },
@@ -1050,8 +1053,10 @@ def test_block_scalar_install_args_are_read(tmp_path):
             "mise.toml": '[tools]\npython = "latest"\nuv = "latest"\n',
             ".github/workflows/ci.yml": workflow(
                 [
-                    "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4\n"
-                    "  with:\n    install_args: >-\n      python\n      uv",
+                    (
+                        "- uses: jdx/mise-action@0000000000000000000000000000000000000000 # v4\n"
+                        "  with:\n    install_args: >-\n      python\n      uv"
+                    ),
                     SETUP_UV,
                 ]
             ),
@@ -1184,8 +1189,10 @@ def test_setup_bun_reading_package_manager_passes(tmp_path):
             "package.json": '{"packageManager": "bun@1.2.3"}\n',
             ".github/workflows/ci.yml": workflow(
                 [
-                    "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
-                    "  with:\n    bun-version-file: package.json"
+                    (
+                        "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
+                        "  with:\n    bun-version-file: package.json"
+                    )
                 ]
             ),
         },
@@ -1271,8 +1278,10 @@ def test_setup_bun_reads_the_package_json_it_names(tmp_path):
             "web/package.json": '{"packageManager": "bun@1.1.38"}\n',
             ".github/workflows/ci.yml": workflow(
                 [
-                    "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
-                    "  with:\n    bun-version-file: web/package.json"
+                    (
+                        "- uses: oven-sh/setup-bun@0000000000000000000000000000000000000000 # v2\n"
+                        "  with:\n    bun-version-file: web/package.json"
+                    )
                 ]
             ),
         },

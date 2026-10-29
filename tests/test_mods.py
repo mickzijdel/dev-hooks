@@ -9,7 +9,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from conftest import DEV_HOOKS
 
 CLAUDE = shutil.which("claude")

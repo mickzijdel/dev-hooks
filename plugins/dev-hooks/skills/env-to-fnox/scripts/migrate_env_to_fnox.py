@@ -98,7 +98,7 @@ def render_fnox_toml(values: dict[str, str], project_id: str) -> str:
         "",
         "[secrets]",
     ]
-    for key, _ in values.items():
+    for key in values:
         lines.append(
             f"{key} = {{ provider = {_toml_string(PROVIDER_NAME)}, "
             f"value = {_toml_string(bws_key_name(key))} }}"
@@ -119,6 +119,7 @@ def run_bws_secret_create(key_name, value, project_id, bws_bin="bws"):
         [bws_bin, "secret", "create", key_name, value, project_id],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -129,6 +130,7 @@ def run_fnox_get(env_key, config_path, fnox_bin="fnox"):
         [fnox_bin, "get", "-c", str(config_path), env_key],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
