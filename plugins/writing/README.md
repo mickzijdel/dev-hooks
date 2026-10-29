@@ -20,7 +20,8 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 > adapted from the same source (credit to Nate; each `SKILL.md` links back to its source).
 > `humanizer`'s examples are reworked to add no facts the input lacks, and it is based on
 > [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)
-> (WikiProject AI Cleanup). `voice-profile` is original to this plugin.
+> (WikiProject AI Cleanup), plus one original pattern (Glued-Phrase Headlines) not from either
+> source. `voice-profile` is original to this plugin.
 
 ## Hooks
 
