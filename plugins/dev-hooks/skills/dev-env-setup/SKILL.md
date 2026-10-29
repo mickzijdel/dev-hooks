@@ -18,13 +18,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v28)
+## The standard (v29)
 
-A repo is **compliant at v28** when it has all of:
+A repo is **compliant at v29** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "28"`. The config may live wherever mise reads it
+  `[env]` version stamp `DEV_ENV_VERSION = "29"`. The config may live wherever mise reads it
   (`mise/config.toml`, `.config/mise/config.toml`, `.config/mise.toml`, `.mise.toml`), with
   `[tools.<tool>]` tables allowed; the checker, the roster and the version-sync gate all follow.
 - **`mise.lock`** (committed, beside the config: `mise/mise.lock` for `mise/config.toml`) —

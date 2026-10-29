@@ -1163,6 +1163,108 @@ Steps:
 
 ---
 
+## v28 → v29 (mise-action v5, vulture skips worktrees, mise config outside the root)
+
+**Every stack**, except step 2 (only where `hk.pkl` runs vulture: the Python and shell
+templates) and step 4 (only a repo whose mise config is not a root `mise.toml`).
+
+- **mise-action v5.** The CI templates move `jdx/mise-action` from v4.2.0 to v5.2.3. Its one
+  breaking change (v5.0.0): without a `version` input the action now installs the newest mise
+  release that is **at least 24 hours old** (`minimum_release_age` defaults to `24h`), so a mise
+  binary published in the last day is not used yet. It applies to the mise binary only, not to
+  the tools mise installs, which still come from `mise.lock`. Also from v5.1.1 the action no
+  longer exports `MISE_GITHUB_TOKEN` to later steps, so a tool a later step installs lazily is
+  fetched without a token; and the cache key format changed (v5.2.0, v5.2.3), so the first run
+  after the bump misses the cache once.
+- **vulture skips in-repo worktrees.** vulture collects every `*.py` under `.` and ignores
+  `.gitignore`; only `--exclude` filters it. Neither `.worktrees/` (the default worktree spot)
+  nor `.claude/worktrees/` (where `EnterWorktree` and the Agent tool's worktree isolation put
+  one) was excluded, so the main checkout's pre-commit scanned every worktree's copy of the
+  code, and dead code in one agent's unfinished work failed another session's commit. jscpd
+  needs no change: `.jscpd.json`'s `"gitignore": true` skips both, as long as git ignores them.
+- **mise config outside a root `mise.toml`.** mise also reads `.mise.toml`, `mise/config.toml`,
+  `.config/mise.toml` and `.config/mise/config.toml`, and writes the lock beside the config
+  (`mise/mise.lock`, `.config/mise/mise.lock`, `.config/mise.lock`; a root `mise.lock` for
+  `.mise.toml`). The checker read only the root files and reported such a repo `needs-setup`
+  at `repo_version=0`, the fleet roster never listed it, and the version-sync gate skipped
+  `[tools.ruby]`-style tables and read only a root `mise.lock`. The checker now also accepts
+  `AGENTS.md` in place of `CLAUDE.md`.
+
+Steps:
+
+1. **Bump mise-action to v5.2.3.** List the pins first:
+   `grep -rn 'jdx/mise-action@' .github/`.
+   - **Every line already reads `jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e #
+     v5.2.3`** (most repos, after the 2026-10-29 dependency sweep): change nothing here; go to
+     step 2. A newer v5 pin that is out of its 4-day cooldown is fine too; keep it.
+   - **Any v4 pin:** replace the SHA and tag on every `jdx/mise-action` line with
+     `82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3`, keeping any text after the tag in the
+     comment. Do not add `minimum_release_age: 0s`; the 24-hour wait is the point.
+   - **Either way, check what v5 stopped exporting.** For each job with a mise-action step that
+     has `install_args:`, or where the mise config marks a tool `lazy = true`: if a later step in
+     that job runs `mise exec`, `mise x`, `mise run` or a mise shim for a tool the action step did
+     not install, add that tool to the step's `install_args` (for example
+     `install_args: "actionlint zizmor"`). zizmor's install checks its attestations through the
+     GitHub API, so a lazy zizmor install there can fail. The templates' `mise exec -- gitleaks`
+     follows a mise-action step with no `install_args`, which installs every non-lazy tool, so
+     it needs nothing.
+   - While the file is open, bring the other pins up to date as usual (the templates now pin
+     `actions/checkout` v7.0.1, `ruby/setup-ruby` v1.335.0 and `actions/cache` v6.1.0), then run
+     `bash "$CLAUDE_PLUGIN_ROOT/skills/dev-env-setup/scripts/check_action_refs.sh"
+     .github/workflows`: it must report `0 unresolved` and no `FAIL` line.
+2. **Exclude both worktree directories from vulture** (only where `hk.pkl` has a `["vulture"]`
+   step). Change the `--exclude` value's single quotes to `\"` (a double quote inside the Pkl
+   string, so the shell expands `$(pwd -P)`) and append two patterns that start at the
+   checkout. The template form, as it appears in `hk.pkl`:
+   ```
+   --exclude \"*/.venv/*,.venv,build,dist,$(pwd -P)/.worktrees/*,$(pwd -P)/.claude/worktrees/*\" .
+   ```
+   Keep any entries the repo added. Do **not** append a bare `.worktrees`: vulture matches
+   `--exclude` against absolute paths, and a pattern without `*` matches anywhere in them, so in a
+   checkout that is itself a worktree (`<repo>/.worktrees/<branch>`, where the fleet's agents
+   work) it matches every file and vulture silently scans nothing. CI needs no change: its
+   vulture step reads `git ls-files`, which never lists a worktree.
+3. **Make sure git ignores both worktree directories** (every stack; jscpd skips them only
+   through this). `git check-ignore -v .worktrees/x .claude/worktrees/x` must print two lines.
+   For each path it leaves out, add `.worktrees/` or `.claude/worktrees/` to `.gitignore`. A
+   `.claude/*` rule from v28 already covers `.claude/worktrees/`.
+4. **Mise config outside a root `mise.toml`** (skip this step when the config is `mise.toml`).
+   - Keep the `DEV_ENV_VERSION` stamp in that config file's `[env]`, and commit the lock beside
+     it (`mise/mise.lock` for `mise/config.toml`).
+   - In `hk.pkl`'s `["versions"]` step, the glob must name that config file, for example
+     `"mise/config.toml"` in place of `"mise.toml"`, or an edit to it never runs the gate.
+5. **Re-copy the version-sync script** (every stack: it now also reads `[tools.<tool>]` tables
+   and the lock beside the config). `references/templates/check_version_sync.sh` →
+   `scripts/check_version_sync.sh`, then `shfmt -w` it in a repo without an `.editorconfig`.
+   A repo that carried its own patch for these two cases (BlackLightning did) drops the patch:
+   the template now does the same.
+6. **Bump the stamp.** Set `DEV_ENV_VERSION = "29"` in the mise config that carries it.
+7. **Verify, including the negative tests.**
+   - The checker reports `status=compliant` with `repo_version=29`, `has_mise=1`,
+     `has_lockfile=1` and `has_claude=1` (this is the check that read `needs-setup` before for a
+     repo with `mise/config.toml`).
+   - `bash scripts/check_version_sync.sh` exits 0. With a non-root config or a
+     `[tools.<tool>]` table, the Toolchain lines name the config and the lock, for example
+     `✓ ruby 4.0.9 — .ruby-version, mise/config.toml ruby, mise/mise.lock ruby, Dockerfile ARG
+     RUBY_VERSION`. Negative test: change that tool's `version` in the config by one patch
+     release and confirm it exits 1 with a `✗ … != …` line naming the config. Restore.
+   - vulture (only where step 2 applied). In the checkout you upgrade (normally a worktree
+     itself, which is the case a bare pattern breaks), write the same dead code in three places:
+     ```bash
+     mkdir -p .worktrees/v29-probe .claude/worktrees/v29-probe
+     printf 'def probe():\n    return 1\n    print("dead")\n' |
+       tee .worktrees/v29-probe/probe.py .claude/worktrees/v29-probe/probe.py >v29_probe.py
+     hk run check --all -S vulture
+     ```
+     The step must fail on `v29_probe.py:3: unreachable code after 'return'` and name neither
+     worktree file. A pass with no finding means the patterns are not anchored. Use unreachable
+     code, not an unused function: vulture rates an unused function at 60% confidence, below
+     the step's `--min-confidence 80`, so it is never reported anywhere and proves nothing.
+     Delete the three files and both `v29-probe` directories before you commit, or the
+     pre-commit vulture step fails on `v29_probe.py`.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the
