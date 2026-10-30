@@ -4044,11 +4044,11 @@ def test_comment_brief_guard_opt_out():
 
 
 # ── private-email-guard.sh (PreToolUse Bash, web, file and MCP tools) ────────────────
-PRIVATE = "me@private.example, Other@Mail.example"
+ALLOWED = "bot@public-alias.org, Git@Public-Alias.org"
 
 
 def _email_guard(tool, tool_input, **env):
-    env.setdefault("DEV_HOOKS_PRIVATE_EMAILS", PRIVATE)
+    env.setdefault("DEV_HOOKS_ALLOWED_EMAILS", ALLOWED)
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "e1"}
     return run_hook(
         "private-email-guard.sh", stdin=json.dumps(payload), env=base_env(**env)
@@ -4072,43 +4072,53 @@ def _asked(r):
         (
             "Bash",
             {
-                "command": 'UA="research/0.1 (contact: me@private.example)"\n'
+                "command": 'UA="research/0.1 (contact: me@private-mail.net)"\n'
                 'curl -sS -A "$UA" https://forum.example.org/graphql'
             },
         ),
-        ("Bash", {"command": "curl -H 'From: me@private.example' https://example.org"}),
+        (
+            "Bash",
+            {"command": "curl -H 'From: me@private-mail.net' https://example.org"},
+        ),
         (
             "Bash",
             {
                 "command": 'python3 -c "import urllib.request as u; u.urlopen(u.Request(x, '
-                "headers={'User-Agent': 'bot (me@private.example)'}))\""
+                "headers={'User-Agent': 'bot (me@private-mail.net)'}))\""
             },
         ),
         (
             "Bash",
             {
-                "command": "curl 'https://api.example.org/works?mailto=me%40private.example'"
+                "command": "curl 'https://api.example.org/works?mailto=me%40private-mail.net'"
             },
         ),
         (
             "Bash",
-            {"command": "wget -U 'bot (contact OTHER@mail.example)' example.org/a"},
+            {"command": "wget -U 'bot (contact OTHER@Mail-Host.org)' example.org/a"},
         ),
         (
             "Bash",
-            {"command": 'gh issue create --body "Reach me at me@private.example"'},
+            {"command": 'gh issue create --body "Reach me at me@private-mail.net"'},
+        ),
+        # An allowed address beside one that isn't still asks.
+        (
+            "Bash",
+            {
+                "command": 'curl -A "bot (bot@public-alias.org, me@private-mail.net)" https://x.org'
+            },
         ),
         (
             "WebFetch",
-            {"url": "https://example.org/?email=me@private.example", "prompt": "x"},
+            {"url": "https://example.org/?email=me@private-mail.net", "prompt": "x"},
         ),
-        ("WebSearch", {"query": '"me@private.example"'}),
+        ("WebSearch", {"query": '"me@private-mail.net"'}),
         (
             "Write",
             {
                 "file_path": "/repo/client.py",
                 "content": 'USER_AGENT = (\n    "analysis/0.1 (research; "\n'
-                '    "contact: me@private.example)"\n)\n',
+                '    "contact: me@private-mail.net)"\n)\n',
             },
         ),
         (
@@ -4116,7 +4126,7 @@ def _asked(r):
             {
                 "file_path": "/repo/fetch.py",
                 "old_string": "x",
-                "new_string": "headers = {'User-Agent': 'bot me@private.example'}",
+                "new_string": "headers = {'User-Agent': 'bot me@private-mail.net'}",
             },
         ),
         (
@@ -4126,15 +4136,16 @@ def _asked(r):
                 "edits": [
                     {
                         "old_string": "a",
-                        "new_string": 'curl -A "me@private.example" "$1"',
+                        "new_string": 'curl -A "me@private-mail.net" "$1"',
                     }
                 ],
             },
         ),
-        ("mcp__crm__createContact", {"name": "Me", "emails": ["me@private.example"]}),
+        # Anyone's address counts, not only the person's own.
+        ("mcp__crm__createContact", {"name": "Jo", "emails": ["jo@friend-mail.com"]}),
     ],
 )
-def test_email_guard_asks_before_a_private_address_leaves(tool, tool_input):
+def test_email_guard_asks_before_an_address_leaves(tool, tool_input):
     reason = _asked(_email_guard(tool, tool_input))
     assert reason is not None
     assert "@" in reason
@@ -4144,82 +4155,86 @@ def test_email_guard_asks_before_a_private_address_leaves(tool, tool_input):
     "tool,tool_input",
     [
         # Local work that names the address: no network.
-        ("Bash", {"command": "rg -i 'me@private.example' ~/notes"}),
+        ("Bash", {"command": "rg -i 'me@private-mail.net' ~/notes"}),
         # Git identity: commits are meant to carry it, even next to a URL or a push.
         (
             "Bash",
             {
                 "command": "cat > defaults/main.yml <<'E'\nrepo: https://example.org/x.git\n"
-                "agent_git_email: me@private.example\nE"
+                "agent_git_email: me@private-mail.net\nE"
             },
         ),
         (
             "Bash",
             {
-                "command": 'git -c user.email="me@private.example" commit -m "Fix https://example.org/1"'
+                "command": 'git -c user.email="me@private-mail.net" commit -m "Fix https://example.org/1"'
                 " && git push"
             },
         ),
         (
             "Bash",
             {
-                "command": "GIT_AUTHOR_EMAIL=me@private.example git commit -m x && git push"
+                "command": "GIT_AUTHOR_EMAIL=me@private-mail.net git commit -m x && git push"
             },
         ),
         (
             "Bash",
             {
-                "command": 'git commit --author="Me <me@private.example>" -m "See https://x.org"'
+                "command": 'git commit --author="Me <me@private-mail.net>" -m "See https://x.org"'
             },
         ),
         (
             "Bash",
-            {"command": "git config user.email me@private.example && gh repo view"},
+            {"command": "git config user.email me@private-mail.net && gh repo view"},
         ),
-        # A public alias the person is happy to hand out is not on the list.
+        # An ssh/scp login (user@host:path) is not an email.
+        (
+            "Bash",
+            {"command": "git clone git@github.com:o/r.git && curl -sI https://x.org"},
+        ),
+        # The allowed addresses, in any case.
         (
             "Bash",
             {
-                "command": 'curl -A "bot (contact: alias@public.example)" https://example.org'
+                "command": 'curl -A "bot (contact: BOT@public-alias.org)" https://example.org'
+            },
+        ),
+        ("WebSearch", {"query": "git@public-alias.org commits"}),
+        # Reserved documentation and test domains never reach anyone.
+        (
+            "Bash",
+            {
+                "command": 'curl -A "x (a@example.com, b@site.test, c@host.invalid)" https://x.org'
             },
         ),
         ("Bash", {"command": "curl https://example.org"}),
         (
             "WebFetch",
-            {"url": "https://example.org/docs", "prompt": "me@private.example?"},
+            {"url": "https://example.org/docs", "prompt": "me@private-mail.net?"},
         ),
         # Package metadata names the author; it isn't a request header.
         (
             "Write",
             {
                 "file_path": "/repo/x.gemspec",
-                "content": 'spec.email = ["me@private.example"]\n',
+                "content": 'spec.email = ["me@private-mail.net"]\n',
             },
         ),
-        ("mcp__crm__search", {"query": "alias@public.example"}),
+        ("mcp__crm__search", {"query": "bot@public-alias.org"}),
     ],
 )
 def test_email_guard_silent_otherwise(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
 
 
-def test_email_guard_defaults_to_the_global_git_address(tmp_path):
-    gitconfig = tmp_path / "gitconfig"
-    gitconfig.write_text("[user]\n\temail = me@private.example\n")
-    command = {"command": 'curl -A "bot (me@private.example)" https://example.org'}
-    env = {
-        "DEV_HOOKS_PRIVATE_EMAILS": None,
-        "GIT_CONFIG_GLOBAL": str(gitconfig),
-        "GIT_CONFIG_NOSYSTEM": "1",
-    }
-    assert _asked(_email_guard("Bash", command, **env)) is not None
-    env["GIT_CONFIG_GLOBAL"] = str(tmp_path / "missing")
-    assert _asked(_email_guard("Bash", command, **env)) is None
+def test_email_guard_without_an_allowlist_asks_about_every_address():
+    command = {"command": 'curl -A "bot (bot@public-alias.org)" https://example.org'}
+    assert _asked(_email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=None))
 
 
 def test_email_guard_opt_out():
     r = _email_guard(
-        "WebSearch", {"query": "me@private.example"}, DEV_HOOKS_EMAIL_GUARD="false"
+        "WebSearch", {"query": "me@private-mail.net"}, DEV_HOOKS_EMAIL_GUARD="false"
     )
     assert _asked(r) is None
 

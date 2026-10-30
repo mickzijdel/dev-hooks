@@ -1,19 +1,22 @@
 #!/bin/bash
-# bet: none (L4 — consent boundary on handing the person's private address to outside services)
+# bet: none (L4 — consent boundary on handing an email address to outside services)
 # sunset: never (privacy)
 # PreToolUse(Bash|WebFetch|WebSearch|Write|Edit|MultiEdit|NotebookEdit|mcp__*): ask the
-# person before a tool call sends one of their private email addresses off the machine.
-# Agents sign a scraper politely, a User-Agent or From header "with a contact address", and
-# fill in the person's own address, which then sits in the logs of every site fetched.
+# person before a tool call sends an email address off the machine, unless it is on their
+# allowlist. Agents sign a scraper politely, a User-Agent or From header "with a contact
+# address", and fill in the person's own address, which then sits in the logs of every site
+# fetched; other people's addresses leak the same way.
 #
-# The addresses are DEV_HOOKS_PRIVATE_EMAILS (comma- or space-separated, in .claude settings
-# "env"), else the global git user.email. A public alias meant for this stays off the list.
+# Allowed addresses are DEV_HOOKS_ALLOWED_EMAILS (comma- or space-separated, in .claude
+# settings "env"), such as a public alias for bots; with none set, every address asks.
+# Reserved documentation and test domains (example.com/.org/.net, *.example, *.test,
+# *.invalid, *.localhost) never count, and nor does an ssh or scp login (user@host:path).
 #
-# What counts as sending, per tool (case-insensitive; an address also counts as %40):
+# What counts as sending, per tool (case-insensitive; %40 counts as @):
 #   Bash      — an address outside git's identity settings (user.email, GIT_*_EMAIL, a
-#               git_email key, --author, commit trailers) in a command that reaches the network: curl,
-#               wget, gh, an HTTP library, a URL. The whole command is judged, since the
-#               address is often set in a variable that a later curl uses.
+#               git_email key, --author, commit trailers) in a command that reaches the
+#               network: curl, wget, gh, an HTTP library, a URL. The whole command is judged,
+#               since the address is often set in a variable that a later curl uses.
 #   WebFetch  — the URL. WebSearch — the query. MCP tools — any argument.
 #   Write, Edit, MultiEdit, NotebookEdit — a line that puts an address in a request: a
 #               User-Agent, a From header, a contact string, a mailto=/email= parameter,
@@ -42,40 +45,42 @@ TOOL=${COMMAND%%$'\n'*}
 TEXT=${COMMAND#*$'\n'}
 case "$TEXT" in *@* | *%40*) ;; *) exit 0 ;; esac
 
-LIST=${DEV_HOOKS_PRIVATE_EMAILS:-$(git config --global user.email 2>/dev/null)}
-IFS=$', \t\n' read -r -d '' -a ADDRS <<<"$LIST"
-[ "${#ADDRS[@]}" -gt 0 ] || exit 0
-
-if [ "$TOOL" = Bash ]; then
-  # Git's identity settings name the address on purpose; drop them before looking.
-  TEXT=$(printf '%s' "$TEXT" | sed -E "s/(user\\.email|git_email|_EMAIL)[[:space:]=:]+[\"']?[^\"'[:space:]]+//g; s/(--author[= ]|[Cc]o-[Aa]uthored-[Bb]y:|[Ss]igned-[Oo]ff-[Bb]y:)[^<]*<[^>]*>//g")
-fi
-
-shopt -s nocasematch
-FOUND=""
-GREP_ARGS=()
-for addr in "${ADDRS[@]}"; do
-  GREP_ARGS+=(-e "$addr" -e "${addr/@/%40}")
-  [ -z "$FOUND" ] && [[ "$TEXT" == *"$addr"* || "$TEXT" == *"${addr/@/%40}"* ]] && FOUND=$addr
-done
-[ -n "$FOUND" ] || exit 0
-
-TAIL="Allow only if you asked for this. If a site needs a contact address, use a public alias instead of your own."
 case "$TOOL" in
   Bash)
+    # Git's identity settings name the address on purpose; drop them before looking.
+    TEXT=$(printf '%s' "$TEXT" | sed -E "s/(user\\.email|git_email|_EMAIL)[[:space:]=:]+[\"']?[^\"'[:space:]]+//g; s/(--author[= ]|[Cc]o-[Aa]uthored-[Bb]y:|[Ss]igned-[Oo]ff-[Bb]y:)[^<]*<[^>]*>//g")
     NET_RE='https?://|(^|[^[:alnum:]_.-])(curl|wget|xh|http|https|httpie|aria2c|nc|ncat|socat|telnet|sendmail|mailx|swaks|gh|glab)([^[:alnum:]_.-]|$)|requests\.|httpx|urllib|aiohttp|http\.client|fetch\(|axios|Net::HTTP|Faraday|HTTParty|open-uri|URI\.open|URLSession'
     printf '%s' "$TEXT" | grep -Eiq "$NET_RE" || exit 0
-    WHAT="This command sends your private address $FOUND over the network, where the receiving site keeps it in its logs."
     ;;
   Write | Edit | MultiEdit | NotebookEdit)
     LINE_RE="user.?agent|(^|[^[:alnum:]_])ua[[:space:]]*[:=]|from:|[\"']from[\"']|contact|mailto|[?&]email=|headers|curl|wget|requests\\.|httpx|urllib|fetch\\("
-    printf '%s\n' "$TEXT" | grep -iF "${GREP_ARGS[@]}" | grep -Eiq "$LINE_RE" || exit 0
-    WHAT="This edit writes your private address $FOUND into a request (a User-Agent, header or contact field), so every request that code makes will carry it."
+    TEXT=$(printf '%s\n' "$TEXT" | grep -Ei "$LINE_RE")
     ;;
-  WebFetch) WHAT="This fetch puts your private address $FOUND in the URL it requests." ;;
-  WebSearch) WHAT="This search sends your private address $FOUND to the search provider." ;;
-  mcp__*) WHAT="This call hands your private address $FOUND to the $TOOL service." ;;
+  WebFetch | WebSearch | mcp__*) ;;
   *) exit 0 ;;
 esac
 
-reminder_emit_decision ask "dev-hooks guard — please confirm: $WHAT $TAIL"
+IFS=$', \t\n' read -r -d '' -a ALLOWED <<<"${DEV_HOOKS_ALLOWED_EMAILS:-}"
+FOUND=""
+while IFS= read -r addr; do
+  case "$addr" in *:) continue ;; esac
+  addr=${addr/\%40/@}
+  addr=${addr,,}
+  case "${addr#*@}" in
+    example.com | example.org | example.net | *.example.com | *.example.org | *.example.net | *.example | *.test | *.invalid | *.localhost) continue ;;
+  esac
+  for ok in "${ALLOWED[@]}"; do [ "$addr" = "${ok,,}" ] && continue 2; done
+  FOUND=$addr
+  break
+done < <(printf '%s\n' "$TEXT" | grep -oiE '[[:alnum:]._%+-]+(@|%40)[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}:?')
+[ -n "$FOUND" ] || exit 0
+
+case "$TOOL" in
+  Bash) WHAT="This command sends the email address $FOUND over the network, where the receiving site keeps it in its logs." ;;
+  WebFetch) WHAT="This fetch puts the email address $FOUND in the URL it requests." ;;
+  WebSearch) WHAT="This search sends the email address $FOUND to the search provider." ;;
+  mcp__*) WHAT="This call hands the email address $FOUND to the $TOOL service." ;;
+  *) WHAT="This edit writes the email address $FOUND into a request (a User-Agent, header or contact field), so every request that code makes will carry it." ;;
+esac
+
+reminder_emit_decision ask "dev-hooks guard — please confirm: $WHAT It isn't on your allowed list (DEV_HOOKS_ALLOWED_EMAILS). Allow only if you asked for this; if a site needs a contact address, use an allowed one."
