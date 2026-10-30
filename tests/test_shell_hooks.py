@@ -4047,8 +4047,12 @@ def test_comment_brief_guard_opt_out():
 ALLOWED = "bot@public-alias.org, Git@Public-Alias.org"
 
 
+PRIVATE_TERMS = "jodoe, Jo Doe"
+
+
 def _email_guard(tool, tool_input, **env):
     env.setdefault("DEV_HOOKS_ALLOWED_EMAILS", ALLOWED)
+    env.setdefault("DEV_HOOKS_PRIVATE_TERMS", PRIVATE_TERMS)
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "e1"}
     return run_hook(
         "private-email-guard.sh", stdin=json.dumps(payload), env=base_env(**env)
@@ -4777,6 +4781,70 @@ def test_email_guard_does_not_block_outside_those_headers(tool, tool_input):
 def test_email_guard_asks_rather_than_blocks_an_address_in_a_request_body():
     command = {"command": "curl -d 'email=jo@friend-mail.com' https://api.x.org"}
     assert _asked(_email_guard("Bash", command))
+
+
+def test_email_guard_block_advice_names_no_personal_details():
+    reason = _denied(
+        _email_guard(
+            "Bash", {"command": "curl -A 'bot (jo@friend-mail.com)' https://x.org"}
+        )
+    )
+    assert "no personal details" in reason
+    assert "github.com" not in reason and "project URL of the person" in reason
+
+
+# A name, user name or domain of the person in a User-Agent or From header asks first.
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        (
+            "Bash",
+            {
+                "command": "curl -A 'radar/1.0 (+https://github.com/JoDoe/radar)' https://x.org"
+            },
+        ),
+        ("Bash", {"command": "curl -H 'From: Jo Doe' https://x.org"}),
+        (
+            "Write",
+            {
+                "file_path": "/w/config.py",
+                "content": 'UA = "radar/dev (+https://github.com/jodoe/radar)"\n',
+            },
+        ),
+        ("Bash", {"command": "wget -U 'crawler (jodoe.dev)' https://x.org"}),
+    ],
+)
+def test_email_guard_asks_before_personal_details_go_in_a_header(tool, tool_input):
+    reason = _asked(_email_guard(tool, tool_input))
+    assert reason is not None
+    assert "personal details" in reason
+    # Allow covers this call only: no session-wide button.
+    assert EMAIL_DEST_MARK not in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "curl -A 'research-script/1.0' https://x.org",
+        # Outside a header the name is not this check's business.
+        "cd /home/jodoe/src && curl -A 'research-script/1.0' https://x.org",
+    ],
+)
+def test_email_guard_silent_on_headers_without_personal_details(command):
+    assert _email_guard("Bash", {"command": command}).stdout.strip() == ""
+
+
+def test_email_guard_takes_the_git_name_when_no_terms_are_set(tmp_path):
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\tname = Jo Doe\n")
+    env = {
+        "DEV_HOOKS_PRIVATE_TERMS": None,
+        "GIT_CONFIG_GLOBAL": str(gitconfig),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    assert _asked(
+        _email_guard("Bash", {"command": "curl -H 'From: Jo Doe' https://x.org"}, **env)
+    )
 
 
 def test_email_guard_opt_out():

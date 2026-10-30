@@ -35,7 +35,9 @@
 # An address set as a User-Agent or HTTP From header value (curl -A, wget -U, -H 'User-Agent: …',
 # -H 'From: …', a user_agent/UA variable or constant, a "User-Agent"/"From" key in a headers map)
 # is blocked outright, allowed addresses included: the person never wants one there. Placeholder
-# domains and noreply addresses aside. Elsewhere the rules above apply.
+# domains and noreply addresses aside. Other personal details in those headers (the person's
+# name, user name, domain: DEV_HOOKS_PRIVATE_TERMS, comma-separated, else the global git
+# user.name) ask every time, never covered by a session-wide Allow. Elsewhere the rules above apply.
 #
 # The ask carries the guard prefix, so the dev-hooks mod puts it to the person in a dialog
 # rather than letting auto mode answer it. It names every address it asks about after
@@ -55,14 +57,19 @@ source "$SELF_DIR/lib/reminder-common.sh"
 
 # COMMAND is the call's arguments as JSON text; most hold no address and stop here.
 reminder_pre_init DEV_HOOKS_EMAIL_GUARD '.tool_input | tostring'
-case "$COMMAND" in *@* | *%40*) ;; *) exit 0 ;; esac
+# A call with neither an address nor a User-Agent/From header stops here.
+case "$COMMAND" in
+  *@* | *%40* | *[Uu][Ss][Ee][Rr][-_\ ][Aa][Gg][Ee][Nn][Tt]* | *[Uu][Ss][Ee][Rr][Aa][Gg][Ee][Nn][Tt]* | *From* | *-A\ * | *-U\ * | *[Uu][Aa]=* | *[Uu][Aa]\ =*) ;;
+  *) exit 0 ;;
+esac
 
 reminder_mktemp
 printf '%s' "$INPUT" >"$REPLY"
 REASON=$(
-  python3 - "$REPLY" "$SELF_DIR/lib" "${DEV_HOOKS_ALLOWED_EMAILS:-}" <<'PYEOF'
+  python3 - "$REPLY" "$SELF_DIR/lib" "${DEV_HOOKS_ALLOWED_EMAILS:-}" "${DEV_HOOKS_PRIVATE_TERMS:-}" <<'PYEOF'
 import json
 import re
+import subprocess
 import sys
 from urllib.parse import unquote, urlparse
 
@@ -155,19 +162,36 @@ def header_value(text, at):
     return quoted.group(0) if quoted else re.split(r"""["'\n]""", rest[i:])[0]
 
 
-def in_headers(text):
+def header_values(text):
+    return [header_value(text, token.end()) for pattern in (HEADER_NAMES, HEADER_FLAGS) for token in pattern.finditer(text)]
+
+
+def in_headers(values):
     """Addresses set as a User-Agent or HTTP From header value; placeholders and noreply aside."""
     out = []
-    for pattern in (HEADER_NAMES, HEADER_FLAGS):
-        for token in pattern.finditer(text):
-            for m in EMAIL.finditer(header_value(text, token.end())):
-                address = m.group(0).replace("%40", "@").lower()
-                local, _, domain = address.rpartition("@")
-                if RESERVED.search(domain) or UNIT.search(domain) or local.startswith(("noreply", "no-reply")):
-                    continue
-                if address not in out:
-                    out.append(address)
+    for value in values:
+        for m in EMAIL.finditer(value):
+            address = m.group(0).replace("%40", "@").lower()
+            local, _, domain = address.rpartition("@")
+            if RESERVED.search(domain) or UNIT.search(domain) or local.startswith(("noreply", "no-reply")):
+                continue
+            if address not in out:
+                out.append(address)
     return out
+
+
+def private_terms():
+    """The person's name, user name, domain...: DEV_HOOKS_PRIVATE_TERMS (comma-separated), else
+    the global git user.name."""
+    raw = sys.argv[4]
+    if not raw.strip():
+        try:
+            raw = subprocess.run(
+                ["git", "config", "--global", "user.name"], capture_output=True, text=True, timeout=5
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            raw = ""
+    return [term.strip() for term in raw.split(",") if len(term.strip()) >= 3]
 
 
 def readable(text):
@@ -200,11 +224,7 @@ def addresses(text, skip=()):
     return counted(m.group(0) for m in EMAIL.finditer(text) if m.start() not in skip)
 
 
-def bash(command):
-    text = readable(GIT_IDENTITY.sub(" ", command)).replace("file://", " ")
-    blocked = in_headers(text)
-    if blocked:
-        return blocked
+def bash(text):
     logins = {m.start(1) for m in SSH_LOGIN.finditer(text)}
     for segment in COPY_SEGMENT.finditer(text):
         logins |= {segment.start() + m.start(1) for m in COPY_LOGIN.finditer(segment.group(0))}
@@ -223,10 +243,6 @@ def bash(command):
 
 
 def written(path, text):
-    text = readable(text)
-    blocked = in_headers(text)
-    if blocked:
-        return blocked
     if PROSE.search(path) or MANIFEST.search(path):
         lines = [line for line in text.splitlines() if REQUEST.search(line)]
     elif is_test_path(path) and not REQUEST.search(text):
@@ -238,12 +254,16 @@ def written(path, text):
     return (found, what, "file: " + path if path else None) if found else None
 
 
+headers = []
 if tool == "Bash":
-    result = bash(args.get("command") or "")
+    text = readable(GIT_IDENTITY.sub(" ", args.get("command") or "")).replace("file://", " ")
+    headers = header_values(text)
+    result = bash(text)
 elif tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
     parts = [args.get(k) for k in ("content", "new_string", "new_source")]
     parts += [e.get("new_string") for e in args.get("edits") or [] if isinstance(e, dict)]
-    text = "\n".join(p for p in parts if isinstance(p, str))
+    text = readable("\n".join(p for p in parts if isinstance(p, str)))
+    headers = header_values(text)
     result = written(args.get("file_path") or args.get("notebook_path") or "", text)
 elif tool == "WebFetch":
     url = args.get("url") or ""
@@ -259,21 +279,34 @@ elif tool.startswith("mcp__"):
 else:
     result = None
 
-if isinstance(result, list):
+blocked = in_headers(headers)
+personal = []
+if headers and not blocked:
+    personal = [term for term in private_terms() if any(term.lower() in value.lower() for value in headers)]
+if blocked:
     print(
         "deny\nBLOCKED: dev-hooks guard — no email address goes in a User-Agent or From header, not even an "
-        f"allowed one: {', '.join(result)}. Name the client and its project URL instead, e.g. "
-        "`myproject/1.0 (+https://github.com/owner/repo)`. If an API refuses requests without a contact "
-        "address, stop and ask the person."
+        f"allowed one: {', '.join(blocked)}. Use a header with no personal details: no name, user name, "
+        "email, domain or project URL of the person (a tool's default, or a neutral name such as "
+        "`research-script/1.0`). If an API refuses requests without a contact, stop and ask the person."
     )
-elif result:
-    found, what, destination = result
-    noun = "an email address" if len(found) == 1 else "email addresses"
-    reason = (
-        f"{what.format(noun)} {MARK}{', '.join(found)}. "
-        "Allow only if you asked for this; if a site needs a contact address, use an allowed one."
-    )
-    print("ask\n" + reason + (f" {DEST_MARK}{destination}" if destination else ""))
+elif personal or result:
+    parts = []
+    if personal:
+        # A personal detail asks every time, so it never rides on a session-wide Allow.
+        parts.append(
+            f"This puts personal details ({', '.join(personal)}) in a User-Agent or From header, where "
+            "every site it reaches logs them. Allow only if you agreed to that."
+        )
+    if result:
+        found, what, destination = result
+        noun = "an email address" if len(found) == 1 else "email addresses"
+        parts.append(
+            f"{what.format(noun)} {MARK}{', '.join(found)}. "
+            "Allow only if you asked for this; if a site needs a contact address, use an allowed one."
+        )
+    destination = None if personal or not result else result[2]
+    print("ask\n" + " ".join(parts) + (f" {DEST_MARK}{destination}" if destination else ""))
 PYEOF
 )
 case "$REASON" in
