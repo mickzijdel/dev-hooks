@@ -4221,10 +4221,48 @@ def test_email_guard_asks_before_an_address_leaves(tool, tool_input):
             },
         ),
         ("mcp__crm__search", {"query": "bot@public-alias.org"}),
+        # A request to this machine stays on it.
+        (
+            "Bash",
+            {
+                "command": "curl -s -X POST localhost:3000/api/session "
+                '-d \'{"email":"jo@friend-mail.com"}\''
+            },
+        ),
+        (
+            "Bash",
+            {"command": "curl http://127.0.0.1:8080/users -d email=jo@friend-mail.com"},
+        ),
+        (
+            "Bash",
+            {
+                "command": "playwright-cli goto http://localhost:3000/sign_in; "
+                'playwright-cli fill e21 "jo@friend-mail.com"'
+            },
+        ),
     ],
 )
 def test_email_guard_silent_otherwise(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
+
+
+def test_email_guard_still_asks_when_a_local_call_sits_beside_a_remote_one():
+    command = {
+        "command": "curl -d 'email=jo@friend-mail.com' https://api.remote-site.org; "
+        "curl localhost:3000/health"
+    }
+    assert _asked(_email_guard("Bash", command))
+
+
+def test_email_guard_names_every_address_it_asks_about():
+    # The mod's session-wide Allow covers exactly the addresses named here, so none may be
+    # left out; the allowed one and the repeat are.
+    command = {
+        "command": 'curl -A "a (one@mail-a.org, bot@public-alias.org, Two@Mail-B.org, '
+        'one@mail-a.org)" https://x.org'
+    }
+    reason = _asked(_email_guard("Bash", command))
+    assert f"{EMAIL_ASK_MARK}one@mail-a.org, two@mail-b.org. " in reason
 
 
 def test_email_guard_without_an_allowlist_asks_about_every_address():
@@ -6665,6 +6703,16 @@ def test_every_guard_ask_carries_the_mod_prefix(tmp_path, secret_tree):
 def test_guard_prefix_matches_the_mod():
     source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
     assert f"export const GUARD_PREFIX = '{GUARD_PREFIX}'" in source
+
+
+# The email guard lists its addresses after this marker; the mod reads them from there to
+# offer "Allow for this session" (register.tsx EMAIL_ASK_MARK).
+EMAIL_ASK_MARK = "Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): "
+
+
+def test_email_ask_marker_matches_the_mod():
+    source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
+    assert f"export const EMAIL_ASK_MARK = '{EMAIL_ASK_MARK}'" in source
 
 
 # ── The directory a git command actually runs in ─────────────────────────────────────

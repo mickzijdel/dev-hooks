@@ -85,6 +85,7 @@ declare module 'claude-code' {
       contextBarShown: boolean
       contextBarSnapshot: Snapshot | null
       guardTimedOut: Record<string, string>
+      emailsAllowed: string[]
       statusPane: Shaped<StatusPaneState>
     }
   }

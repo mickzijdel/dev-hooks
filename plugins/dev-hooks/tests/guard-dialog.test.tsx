@@ -2,7 +2,16 @@ import type { On, PreToolUseResult, ToolCallEnvelope } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 
-import { commandTimeout, guardQuestion, guardSubject, guardTimeoutReason, isGuardAsk } from '../hooks/register'
+import {
+  askedEmails,
+  commandTimeout,
+  EMAIL_ASK_MARK,
+  guardQuestion,
+  guardSubject,
+  guardTimeoutReason,
+  isGuardAsk,
+  SESSION_ALLOW,
+} from '../hooks/register'
 
 const GUARD_ASK = "dev-hooks guard — please confirm: You're about to push the `main` branch directly."
 const COMMAND = 'git push origin main'
@@ -160,6 +169,74 @@ test('guardSubject shows a command as typed, and another tool by name and target
   expect(guardSubject({ tool: 'mcp__crm__create', tool_use_id: 't', name: 'Me' } as ToolCallEnvelope)).toBe(
     'mcp__crm__create {"name":"Me"}',
   )
+})
+
+const emailAsk = (addresses: string[]) =>
+  `dev-hooks guard — please confirm: This fetch puts an email address in the URL it requests. ${EMAIL_ASK_MARK}${addresses.join(', ')}. Allow only if you asked for this; if a site needs a contact address, use an allowed one.`
+
+// Stands in for the email guard: it asks about every address in the URL being fetched.
+function emailWorld(on: On, answer: string) {
+  const seen = { options: [] as string[][], fetched: 0 }
+  on('classic.PreToolUse', (_$, e) => {
+    const addresses = e.tool === 'WebFetch' ? (e.url.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) ?? []) : []
+    return addresses.length > 0 ? { ask: emailAsk(addresses) } : {}
+  })
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = e.questions[0]?.question ?? ''
+    seen.options.push((e.questions[0]?.options ?? []).map(o => o.label))
+    return { result: { questions: e.questions, answers: { [question]: answer } }, text: answer }
+  })
+  on('tool.call', { tool: 'WebFetch' }, () => {
+    seen.fetched += 1
+    return { deny: 'stand-in for the fetch' }
+  })
+  return seen
+}
+
+const fetchUrl = ($: Engine, url: string) => $.tool.call({ tool: 'WebFetch', url, prompt: 'x' })
+
+test('askedEmails reads the addresses the email guard names, and none from other questions', async () => {
+  expect(askedEmails(emailAsk(['jo@mail-a.org', 'sam@mail-b.org']))).toEqual(['jo@mail-a.org', 'sam@mail-b.org'])
+  expect(askedEmails(GUARD_ASK)).toEqual([])
+})
+
+test('Allow for this session lets those addresses through from then on, and a new one still asks', async ($, on) => {
+  const seen = emailWorld(on, SESSION_ALLOW)
+
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org')
+  await fetchUrl($, 'https://x.org/?again=jo@mail-a.org')
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org&cc=sam@mail-b.org')
+  await fetchUrl($, 'https://x.org/?cc=sam@mail-b.org')
+
+  expect(seen.fetched).toBe(4)
+  expect(seen.options).toEqual([
+    ['Allow', SESSION_ALLOW, 'Deny'],
+    ['Allow', SESSION_ALLOW, 'Deny'],
+  ])
+})
+
+test('a plain Allow covers that one call', async ($, on) => {
+  const seen = emailWorld(on, 'Allow')
+
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org')
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org')
+
+  expect(seen.options).toHaveLength(2)
+  expect(seen.fetched).toBe(2)
+})
+
+test('other guard questions offer only Allow and Deny', async ($, on) => {
+  const options: string[][] = []
+  on('classic.PreToolUse', () => ({ ask: GUARD_ASK }))
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = e.questions[0]?.question ?? ''
+    options.push((e.questions[0]?.options ?? []).map(o => o.label))
+    return { result: { questions: e.questions, answers: { [question]: 'Deny' } }, text: 'Deny' }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: COMMAND })
+
+  expect(options).toEqual([['Allow', 'Deny']])
 })
 
 const MAIN_ASK =
@@ -398,4 +475,22 @@ test('a late Deny or a typed reply reaches Claude', async ($, on) => {
   await clock.advance(0)
   expect(w.prompts.at(-1)).toContain('Put it on a branch called fix-typo please')
   expect(w.prompts.at(-1)).toContain('git commit -m two')
+})
+
+test('a late Allow for this session lets those addresses through from then on', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.env(on, {})
+  const command = 'curl -A "bot (jo@mail-a.org)" https://x.org'
+  const w = answeredLate(on, { ask: emailAsk(['jo@mail-a.org']) })
+
+  await timeOut($, clock, command)
+  w.answer(SESSION_ALLOW)
+  await clock.advance(0)
+  expect(w.prompts.at(-1)).toContain(SESSION_ALLOW)
+
+  const asked = w.asked
+  await $.tool.call({ tool: 'Bash', command })
+  await $.tool.call({ tool: 'Bash', command })
+  expect(w.asked).toBe(asked)
+  expect(w.ran).toEqual([command, command])
 })

@@ -373,6 +373,21 @@ export const guardSubject = (e: ToolCallEnvelope): string => {
   return `${tool} ${typeof target === 'string' ? target : JSON.stringify(args)}`
 }
 
+// private-email-guard.sh names every address it asks about after this marker (pinned by
+// test_email_ask_marker_matches_the_mod). The dialog then offers to allow them for the rest of
+// the session, kept in $.state; a later ask whose addresses are all allowed is not put to the
+// person again.
+export const EMAIL_ASK_MARK = 'Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): '
+export const SESSION_ALLOW = 'Allow for this session'
+const EMAILS_ALLOWED = { plugin: 'dev-hooks', key: 'emailsAllowed' } as const
+
+export const askedEmails = (ask: string): string[] => {
+  const at = ask.indexOf(EMAIL_ASK_MARK)
+  if (at < 0) return []
+  const list = ask.slice(at + EMAIL_ASK_MARK.length).split('. ')[0] ?? ''
+  return list.split(', ').map(address => address.trim().toLowerCase()).filter(Boolean)
+}
+
 const COMMAND_SHOWN = 300
 
 const waitLabel = (seconds: number) => (seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`)
@@ -431,6 +446,8 @@ export const lateAnswerNote = (command: string, answer: string): string => {
   const head = `[dev-hooks guard] The person answered the guard question about \`${command}\` after it had timed out:`
   if (answer === 'Allow')
     return `${head} Allow. If you still want it, run that exact command again — it will go through once without asking (for the next 10 minutes).`
+  if (answer === SESSION_ALLOW)
+    return `${head} ${SESSION_ALLOW}. If you still want it, run it again — those email addresses no longer ask in this session.`
   if (answer === 'Deny') return `${head} Deny. Don't run it.`
   return `${head} "${answer}"`
 }
@@ -809,8 +826,14 @@ async function guardNow($: EngineInterface): Promise<number> {
   return $.clock.now().catch(() => Date.now())
 }
 
-async function lateGuardAnswer($: EngineInterface, command: string, answer: string) {
+async function allowEmails($: EngineInterface, emails: string[]) {
+  const allowed = (await $.state.get(EMAILS_ALLOWED)).value ?? []
+  await $.state.set(EMAILS_ALLOWED, [...new Set([...allowed, ...emails])])
+}
+
+async function lateGuardAnswer($: EngineInterface, command: string, answer: string, emails: string[]) {
   if (answer === 'Allow') lateAllowed.set(command, (await guardNow($)) + LATE_ALLOW_MS)
+  if (answer === SESSION_ALLOW) await allowEmails($, emails).catch(() => undefined)
   await $.prompt.submit({ text: lateAnswerNote(command, answer) }).catch(() => undefined)
 }
 
@@ -1165,6 +1188,14 @@ export const register: Register = on => {
   on('classic.PreToolUse', async ($, e, next) => {
     const decided = await next(e)
     if (!isGuardAsk(decided.ask)) return decided
+    const emails = askedEmails(decided.ask)
+    if (emails.length > 0) {
+      const allowed = (await $.state.get(EMAILS_ALLOWED)).value ?? []
+      if (emails.every(address => allowed.includes(address))) {
+        const { ask: _allowedThisSession, ...rest } = decided
+        return rest
+      }
+    }
     const subject = guardSubject(e)
     const allowedUntil = lateAllowed.get(subject)
     if (allowedUntil !== undefined) {
@@ -1179,7 +1210,7 @@ export const register: Register = on => {
     await setAsking($, true)
     const asked = $.ui.ask(question, {
       header: 'dev-hooks',
-      options: ['Allow', 'Deny'],
+      options: emails.length > 0 ? ['Allow', SESSION_ALLOW, 'Deny'] : ['Allow', 'Deny'],
     })
     let answer: string
     try {
@@ -1189,7 +1220,7 @@ export const register: Register = on => {
       const first = await Promise.race([asked, timedOut])
       if (first === undefined) {
         asked.then(
-          answer => lateGuardAnswer($, subject, answer),
+          answer => lateGuardAnswer($, subject, answer, emails),
           () => undefined,
         )
         const reason = guardTimeoutReason(decided.ask, seconds)
@@ -1208,7 +1239,8 @@ export const register: Register = on => {
     } finally {
       await setAsking($, false)
     }
-    if (answer === 'Allow') {
+    if (answer === SESSION_ALLOW) await allowEmails($, emails)
+    if (answer === 'Allow' || answer === SESSION_ALLOW) {
       const { ask: _withdrawn, ...rest } = decided
       return rest
     }
