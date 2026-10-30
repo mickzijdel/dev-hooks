@@ -119,22 +119,24 @@ A one-page Markdown report:
 - **False positives, by name.** Items you'd have rejected that the system passed.
 - **Inversions.** For rankers: pairs where an item you rejected outranks one you accepted.
 - **Code checks on 100% of outputs.** The output parses, required fields are present, length limits hold, and forbidden content or actions are absent. The domain pack supplies the specific checks.
+- **Input coverage.** Every input source that `spec.md` lists shows up in the trace, and nothing was cut off: no truncation markers, no context-limit warnings, no tool result clipped at a size limit. A missing or truncated input is flagged `[NOT SEEN]`, before anyone reads the reasoning.
 - **Grounding check.** Each factual claim in the output or reasoning is matched against the input and tool results by plain string matching, and unmatched claims are flagged `[NOT FOUND]`.
 
 ### Step 3: Read the reasoning (≈15 min)
 
-A Markdown file with one section per case: the ~10 worst disagreements plus 2–3 random agreements. Random agreements catch cases where the system was right for the wrong reason. Each section shows your label, the system's output, and the full reasoning, with grounding flags inline. For agents it also shows the tool-call sequence, with the first failing step highlighted.
+A Markdown file with one section per case: the ~10 worst disagreements plus 2–3 random agreements. Random agreements catch cases where the system was right for the wrong reason. Each section shows your label, the system's output, and the full reasoning, with coverage and grounding flags inline. For agents it also shows the tool-call sequence, with the first failing step highlighted.
 
 You write **one plain line per case** about the first thing that went wrong, from the point of view of the person affected. For example: "recommended an option the tool result said was unavailable", not "hallucination".
 
 The checklist at the top of the file:
 
-1. **Grounded?** Every claim appears in the input or a tool result.
-2. **Consistent?** The reasoning's conclusion matches the output. "Clearly unsuitable" followed by a high score fails this.
-3. **On-spec?** It applies the criteria in `spec.md`, including the exclusions.
-4. **Right reason?** On agreements: would the output survive if an irrelevant but impressive signal were removed?
-5. **Unstated driver?** Something that seems to move the output without being mentioned. Note it as a hypothesis for the counterfactual module; a trace alone can't settle it.
-6. **First failure** (agents): which step went wrong first? Later errors are usually knock-on effects.
+1. **Saw everything?** The system loaded every input it needed, and none was cut off. Start with the `[NOT SEEN]` flags. A conclusion drawn from half the input is a failure even when it happens to be right.
+2. **Grounded?** Every claim appears in the input or a tool result.
+3. **Consistent?** The reasoning's conclusion matches the output. "Clearly unsuitable" followed by a high score fails this.
+4. **On-spec?** It applies the criteria in `spec.md`, including the exclusions.
+5. **Right reason?** On agreements: would the output survive if an irrelevant but impressive signal were removed?
+6. **Unstated driver?** Something that seems to move the output without being mentioned. Note it as a hypothesis for the counterfactual module; a trace alone can't settle it.
+7. **First failure** (agents): which step went wrong first? Later errors are usually knock-on effects.
 
 ### Step 4: Cluster, then reveal (≈10 min)
 
@@ -241,6 +243,7 @@ Swapping packs changes these rows, not the loop.
 
 ## Changelog
 
+- **v6.** Added an input-coverage check: a `[NOT SEEN]` flag in the Step 2 report and "Saw everything?" as the first item of the Step 3 checklist.
 - **v5.** Upstream added an Apache-2.0 license, so `eval-kit` copies the course skills (with their LICENSE, a NOTICE and change headers) instead of depending on an installed copy.
 - **v4.** Moved into dev-hooks `plans/evals/`. Cut the candidate-evaluation pack down to one row of an example table, next to tool-using-agent and generator packs. The decision scale in the review interface is a per-system setting (binary by default, tiers or per-criterion yes/no optional).
 - **v3.** Made generic. Removed the organisation-specific process, and the domain-pack interface is spelled out. Added agent-specific pieces: first-failure reading, trajectory checks, and adversarial and regression modules.
