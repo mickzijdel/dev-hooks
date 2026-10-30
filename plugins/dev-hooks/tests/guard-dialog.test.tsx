@@ -6,6 +6,7 @@ import {
   askedEmails,
   commandTimeout,
   EMAIL_ASK_MARK,
+  guardDestination,
   guardQuestion,
   guardSubject,
   guardTimeoutReason,
@@ -176,13 +177,14 @@ const emailAsk = (addresses: string[]) =>
 
 // Stands in for the email guard: it asks about every address in the URL being fetched.
 function emailWorld(on: On, answer: string) {
-  const seen = { options: [] as string[][], fetched: 0 }
+  const seen = { asked: [] as string[], options: [] as string[][], fetched: 0 }
   on('classic.PreToolUse', (_$, e) => {
     const addresses = e.tool === 'WebFetch' ? (e.url.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) ?? []) : []
     return addresses.length > 0 ? { ask: emailAsk(addresses) } : {}
   })
   on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
     const question = e.questions[0]?.question ?? ''
+    seen.asked.push(question)
     seen.options.push((e.questions[0]?.options ?? []).map(o => o.label))
     return { result: { questions: e.questions, answers: { [question]: answer } }, text: answer }
   })
@@ -213,6 +215,41 @@ test('Allow for this session lets those addresses through from then on, and a ne
     ['Allow', SESSION_ALLOW, 'Deny'],
     ['Allow', SESSION_ALLOW, 'Deny'],
   ])
+})
+
+test('Allow for this session covers that destination only: the same address elsewhere asks again', async ($, on) => {
+  const seen = emailWorld(on, SESSION_ALLOW)
+
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org')
+  await fetchUrl($, 'https://scraper.example-site.net/?ua=jo@mail-a.org')
+  await fetchUrl($, 'https://x.org/?to=jo@mail-a.org')
+
+  expect(seen.options).toHaveLength(2)
+  expect(seen.asked[1]).toContain('scraper.example-site.net')
+})
+
+test('guardDestination pins where a call sends its data, or nothing when it cannot tell', async () => {
+  const call = (e: Record<string, unknown>) => guardDestination({ tool_use_id: 't', ...e } as ToolCallEnvelope)
+  expect(call({ tool: 'Bash', command: 'curl -A x https://B.org/a && curl http://a.org:8080/b?c=d' })).toBe('a.org b.org')
+  expect(call({ tool: 'Bash', command: 'python3 send.py jo@mail-a.org' })).toBeUndefined()
+  expect(call({ tool: 'WebFetch', url: 'https://x.org/?e=jo@mail-a.org', prompt: 'p' })).toBe('x.org')
+  expect(call({ tool: 'WebSearch', query: 'q' })).toBe('web search')
+  expect(call({ tool: 'mcp__Mesh__createContact', name: 'Jo' })).toBe('mcp__Mesh')
+  expect(call({ tool: 'Write', file_path: '/repo/fetch.py', content: 'x' })).toBe('/repo/fetch.py')
+})
+
+test('no session button when the destination cannot be pinned', async ($, on) => {
+  const options: string[][] = []
+  on('classic.PreToolUse', () => ({ ask: emailAsk(['jo@mail-a.org']) }))
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = e.questions[0]?.question ?? ''
+    options.push((e.questions[0]?.options ?? []).map(o => o.label))
+    return { result: { questions: e.questions, answers: { [question]: 'Deny' } }, text: 'Deny' }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: 'python3 send.py jo@mail-a.org' })
+
+  expect(options).toEqual([['Allow', 'Deny']])
 })
 
 test('a plain Allow covers that one call', async ($, on) => {

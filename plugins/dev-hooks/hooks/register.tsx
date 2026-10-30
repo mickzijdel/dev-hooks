@@ -374,12 +374,13 @@ export const guardSubject = (e: ToolCallEnvelope): string => {
 }
 
 // private-email-guard.sh names every address it asks about after this marker (pinned by
-// test_email_ask_marker_matches_the_mod). The dialog then offers to allow them for the rest of
-// the session, kept in $.state; a later ask whose addresses are all allowed is not put to the
-// person again.
+// test_email_ask_marker_matches_the_mod). The dialog then offers to allow them, going to this
+// call's destination, for the rest of the session, kept in $.state; a later ask whose addresses
+// are all allowed for its destination is not put to the person again. Keyed by destination so
+// an address approved for one service can't then go to any other unasked.
 export const EMAIL_ASK_MARK = 'Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): '
 export const SESSION_ALLOW = 'Allow for this session'
-const EMAILS_ALLOWED = { plugin: 'dev-hooks', key: 'emailsAllowed' } as const
+const EMAILS_ALLOWED = { plugin: 'dev-hooks', key: 'emailsAllowedTo' } as const
 
 export const askedEmails = (ask: string): string[] => {
   const at = ask.indexOf(EMAIL_ASK_MARK)
@@ -388,15 +389,40 @@ export const askedEmails = (ask: string): string[] => {
   return list.split(', ').map(address => address.trim().toLowerCase()).filter(Boolean)
 }
 
+// Where a call sends its data: the hosts a Bash command's URLs name, a fetched URL's host, web
+// search, an MCP call's server, or the file an edit writes request code into. Undefined when a
+// command names no URL, since the address could then go anywhere.
+export const guardDestination = (e: ToolCallEnvelope): string | undefined => {
+  if (e.tool === 'Bash') {
+    const hosts = [...e.command.matchAll(/https?:\/\/([^/\s'"`:?#]+)/gi)].map(m => (m[1] ?? '').toLowerCase())
+    return hosts.length > 0 ? [...new Set(hosts)].sort().join(' ') : undefined
+  }
+  if (e.tool === 'WebFetch') {
+    try {
+      return new URL(e.url).hostname
+    } catch {
+      return undefined
+    }
+  }
+  if (e.tool === 'WebSearch') return 'web search'
+  if (e.tool.startsWith('mcp__')) return e.tool.split('__').slice(0, 2).join('__')
+  const { file_path: file, notebook_path: notebook } = e as { file_path?: unknown; notebook_path?: unknown }
+  const target = file ?? notebook
+  return typeof target === 'string' ? target : undefined
+}
+
 const COMMAND_SHOWN = 300
 
 const waitLabel = (seconds: number) => (seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`)
 
-export const guardQuestion = (ask: string, command: string, seconds = 0): string => {
+export const guardQuestion = (ask: string, command: string, seconds = 0, sessionTo?: string): string => {
   const reason = ask.slice(GUARD_PREFIX.length).replace(/^please confirm:\s*/i, '')
   const shown = command.length > COMMAND_SHOWN ? `${command.slice(0, COMMAND_SHOWN)}…` : command
+  const session = sessionTo
+    ? `\n\n"${SESSION_ALLOW}" stops asking about these addresses going to ${sessionTo}, until this session ends.`
+    : ''
   const wait = seconds > 0 ? `\n\n(No answer within ${waitLabel(seconds)} refuses it.)` : ''
-  return `${reason}\n\nCommand: ${shown}${wait}\n\nLet it run?`
+  return `${reason}\n\nCommand: ${shown}${session}${wait}\n\nLet it run?`
 }
 
 // An unanswered dialog refuses after this long, and tells Claude the safer route instead of
@@ -447,7 +473,7 @@ export const lateAnswerNote = (command: string, answer: string): string => {
   if (answer === 'Allow')
     return `${head} Allow. If you still want it, run that exact command again — it will go through once without asking (for the next 10 minutes).`
   if (answer === SESSION_ALLOW)
-    return `${head} ${SESSION_ALLOW}. If you still want it, run it again — those email addresses no longer ask in this session.`
+    return `${head} ${SESSION_ALLOW}. If you still want it, run it again — those email addresses no longer ask when sent to the same place in this session.`
   if (answer === 'Deny') return `${head} Deny. Don't run it.`
   return `${head} "${answer}"`
 }
@@ -826,14 +852,14 @@ async function guardNow($: EngineInterface): Promise<number> {
   return $.clock.now().catch(() => Date.now())
 }
 
-async function allowEmails($: EngineInterface, emails: string[]) {
-  const allowed = (await $.state.get(EMAILS_ALLOWED)).value ?? []
-  await $.state.set(EMAILS_ALLOWED, [...new Set([...allowed, ...emails])])
+async function allowEmails($: EngineInterface, destination: string, emails: string[]) {
+  const allowed = (await $.state.get(EMAILS_ALLOWED)).value ?? {}
+  await $.state.set(EMAILS_ALLOWED, { ...allowed, [destination]: [...new Set([...(allowed[destination] ?? []), ...emails])] })
 }
 
-async function lateGuardAnswer($: EngineInterface, command: string, answer: string, emails: string[]) {
+async function lateGuardAnswer($: EngineInterface, command: string, answer: string, emails: string[], destination?: string) {
   if (answer === 'Allow') lateAllowed.set(command, (await guardNow($)) + LATE_ALLOW_MS)
-  if (answer === SESSION_ALLOW) await allowEmails($, emails).catch(() => undefined)
+  if (answer === SESSION_ALLOW && destination !== undefined) await allowEmails($, destination, emails).catch(() => undefined)
   await $.prompt.submit({ text: lateAnswerNote(command, answer) }).catch(() => undefined)
 }
 
@@ -1189,8 +1215,9 @@ export const register: Register = on => {
     const decided = await next(e)
     if (!isGuardAsk(decided.ask)) return decided
     const emails = askedEmails(decided.ask)
-    if (emails.length > 0) {
-      const allowed = (await $.state.get(EMAILS_ALLOWED)).value ?? []
+    const destination = emails.length > 0 ? guardDestination(e) : undefined
+    if (destination !== undefined) {
+      const allowed = (await $.state.get(EMAILS_ALLOWED)).value?.[destination] ?? []
       if (emails.every(address => allowed.includes(address))) {
         const { ask: _allowedThisSession, ...rest } = decided
         return rest
@@ -1206,11 +1233,11 @@ export const register: Register = on => {
       }
     }
     const seconds = await guardTimeoutSeconds($, subject)
-    const question = guardQuestion(decided.ask, subject, seconds)
+    const question = guardQuestion(decided.ask, subject, seconds, destination)
     await setAsking($, true)
     const asked = $.ui.ask(question, {
       header: 'dev-hooks',
-      options: emails.length > 0 ? ['Allow', SESSION_ALLOW, 'Deny'] : ['Allow', 'Deny'],
+      options: destination !== undefined ? ['Allow', SESSION_ALLOW, 'Deny'] : ['Allow', 'Deny'],
     })
     let answer: string
     try {
@@ -1220,7 +1247,7 @@ export const register: Register = on => {
       const first = await Promise.race([asked, timedOut])
       if (first === undefined) {
         asked.then(
-          answer => lateGuardAnswer($, subject, answer, emails),
+          answer => lateGuardAnswer($, subject, answer, emails, destination),
           () => undefined,
         )
         const reason = guardTimeoutReason(decided.ask, seconds)
@@ -1239,7 +1266,7 @@ export const register: Register = on => {
     } finally {
       await setAsking($, false)
     }
-    if (answer === SESSION_ALLOW) await allowEmails($, emails)
+    if (answer === SESSION_ALLOW && destination !== undefined) await allowEmails($, destination, emails)
     if (answer === 'Allow' || answer === SESSION_ALLOW) {
       const { ask: _withdrawn, ...rest } = decided
       return rest
