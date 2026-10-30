@@ -32,6 +32,11 @@
 #               an address in a request: a User-Agent, From header, contact string, mailto=/email=
 #               parameter, curl call, HTTP library.
 #
+# An address set as a User-Agent or HTTP From header value (curl -A, wget -U, -H 'User-Agent: …',
+# -H 'From: …', a user_agent/UA variable or constant, a "User-Agent"/"From" key in a headers map)
+# is blocked outright, allowed addresses included: the person never wants one there. Placeholder
+# domains and noreply addresses aside. Elsewhere the rules above apply.
+#
 # The ask carries the guard prefix, so the dev-hooks mod puts it to the person in a dialog
 # rather than letting auto mode answer it. It names every address it asks about after
 # "Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): " and, when it can pin where the call
@@ -124,6 +129,47 @@ MANIFEST = re.compile(
 )
 
 
+# A User-Agent or HTTP From header never carries an address, allowed or not: a hard block.
+# HEADER_NAMES finds a User-Agent by name when a value follows it (not "User-Agents with …" in
+# a sentence); HEADER_FLAGS finds curl -A, wget -U and HTTP From
+# forms (a mailer's from: or an email draft's From: line is not one).
+HEADER_NAMES = re.compile(r"(?:user[-_ ]?agent|(?<![\w-])ua)(?=\s*[\"']?\s*[:=(]|\s+[\"'])", re.I)
+HEADER_FLAGS = re.compile(
+    r"(?<![\w.-])(?:curl\b[^\n|;&]*?\s-A|wget\b[^\n|;&]*?\s-U)\s|-H\s*[\"']?From:|--header[= ][\"']?From:|[\"']From[\"']\s*:"
+)
+
+
+def header_value(text, at):
+    """The value a header name or flag at `at` sets: a quoted string, a parenthesised (perhaps
+    multi-line) constant, or the rest of the line up to a quote."""
+    rest = text[at : at + 400]
+    i = re.match(r"""['"]?\s*[:=]?\s*""", rest).end()
+    if rest[i : i + 1] == "(":
+        depth = 0
+        for j, ch in enumerate(rest[i:], i):
+            depth += (ch == "(") - (ch == ")")
+            if depth == 0:
+                return rest[i : j + 1]
+        return rest[i:]
+    quoted = re.match(r"""f?(["'])(.*?)\1""", rest[i:], re.S)
+    return quoted.group(0) if quoted else re.split(r"""["'\n]""", rest[i:])[0]
+
+
+def in_headers(text):
+    """Addresses set as a User-Agent or HTTP From header value; placeholders and noreply aside."""
+    out = []
+    for pattern in (HEADER_NAMES, HEADER_FLAGS):
+        for token in pattern.finditer(text):
+            for m in EMAIL.finditer(header_value(text, token.end())):
+                address = m.group(0).replace("%40", "@").lower()
+                local, _, domain = address.rpartition("@")
+                if RESERVED.search(domain) or UNIT.search(domain) or local.startswith(("noreply", "no-reply")):
+                    continue
+                if address not in out:
+                    out.append(address)
+    return out
+
+
 def readable(text):
     """Percent-decoded text with each URL's user name and password dropped (the name kept apart
     only when it is itself an address), so neither reads as user@host."""
@@ -156,6 +202,9 @@ def addresses(text, skip=()):
 
 def bash(command):
     text = readable(GIT_IDENTITY.sub(" ", command)).replace("file://", " ")
+    blocked = in_headers(text)
+    if blocked:
+        return blocked
     logins = {m.start(1) for m in SSH_LOGIN.finditer(text)}
     for segment in COPY_SEGMENT.finditer(text):
         logins |= {segment.start() + m.start(1) for m in COPY_LOGIN.finditer(segment.group(0))}
@@ -175,6 +224,9 @@ def bash(command):
 
 def written(path, text):
     text = readable(text)
+    blocked = in_headers(text)
+    if blocked:
+        return blocked
     if PROSE.search(path) or MANIFEST.search(path):
         lines = [line for line in text.splitlines() if REQUEST.search(line)]
     elif is_test_path(path) and not REQUEST.search(text):
@@ -207,16 +259,24 @@ elif tool.startswith("mcp__"):
 else:
     result = None
 
-if result:
+if isinstance(result, list):
+    print(
+        "deny\nBLOCKED: dev-hooks guard — no email address goes in a User-Agent or From header, not even an "
+        f"allowed one: {', '.join(result)}. Name the client and its project URL instead, e.g. "
+        "`myproject/1.0 (+https://github.com/owner/repo)`. If an API refuses requests without a contact "
+        "address, stop and ask the person."
+    )
+elif result:
     found, what, destination = result
     noun = "an email address" if len(found) == 1 else "email addresses"
     reason = (
         f"{what.format(noun)} {MARK}{', '.join(found)}. "
         "Allow only if you asked for this; if a site needs a contact address, use an allowed one."
     )
-    print(reason + (f" {DEST_MARK}{destination}" if destination else ""))
+    print("ask\n" + reason + (f" {DEST_MARK}{destination}" if destination else ""))
 PYEOF
 )
-[ -n "$REASON" ] || exit 0
-
-reminder_emit_decision ask "dev-hooks guard — please confirm: $REASON"
+case "$REASON" in
+  deny$'\n'*) reminder_emit_decision deny "${REASON#*$'\n'}" ;;
+  ask$'\n'*) reminder_emit_decision ask "dev-hooks guard — please confirm: ${REASON#*$'\n'}" ;;
+esac
