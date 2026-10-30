@@ -34,7 +34,7 @@ This applies the workflow's own rule to this proposal. Answer these **in this fi
 
 ## 1. What the course skills cover, and what's missing
 
-The [course skills](https://github.com/ai-evals-course/evals-skills) by Shankar & Husain cover error discovery (a review app, diverse sampling, and turning your notes into failure modes), writing LLM judges, validating judges against human labels, synthetic data, and RAG. The workflow routes to them for all of that. Five gaps are why it needs its own layer:
+The [course skills](https://github.com/ai-evals-course/evals-skills) by Shankar & Husain cover error discovery (a review app, diverse sampling, and turning your notes into failure modes), writing LLM judges, validating judges against human labels, synthetic data, and RAG. `eval-kit` ships a copy of them and routes to them for all of that. Five gaps are why it needs its own layer:
 
 | Gap | Why it matters | What this workflow adds |
 |---|---|---|
@@ -44,7 +44,12 @@ The [course skills](https://github.com/ai-evals-course/evals-skills) by Shankar 
 | **Reasoning traces.** The course shows reasoning in the review app but gives no guidance on reading it | Models often leave out what actually drove an answer ([Turpin et al.](https://arxiv.org/abs/2305.04388); [Anthropic](https://www.anthropic.com/research/reasoning-models-dont-say-think), measured on hint tasks) | A reading checklist that treats reasoning as a place to find errors, plus counterfactual tests for unstated drivers |
 | **Feedback after a change.** The course compares versions on metrics | Metrics miss what error analysis hasn't found yet, and the person who designed a change is biased toward it | A blind before/after round in which your judgment comes before my explanation |
 
-**Licensing.** The course repo has **no license** (GitHub reports none), so attribution alone doesn't let us copy it. We depend on it instead, pinned to a tested commit, and describe it in our own words. If you'd rather vendor it, ask them to add a license first. I haven't opened that issue, because it would be a public post in your name.
+**Licensing.** The course repo is Apache-2.0 since 24 Sep 2026, so we copy its skills into `eval-kit`. Apache-2.0 asks for three things, and the plugin does all three:
+- it keeps their `LICENSE` file;
+- a `NOTICE` file credits Shreya Shankar and Hamel Husain;
+- every file we change carries a one-line "Modified from …" header.
+
+A copy goes stale, so an `UPSTREAM` file records the repo and commit it came from. Updating means diffing upstream since that commit.
 
 ---
 
@@ -218,9 +223,10 @@ Swapping packs changes these rows, not the loop.
 
    No review app and no plugin yet.
 2. **After two rounds on real systems:** the `eval-kit` plugin in this marketplace. It can't be named `evals`, because the course plugin already uses that name and both would claim the `evals:` namespace.
-   - `eval-kit:evals-workflow` runs the loop, loads domain packs through `references/domain-pack.md` (a synthetic example pack is validated by pytest), checks that the course plugin is installed at the tested commit, and degrades clearly if it isn't.
+   - `eval-kit:evals-workflow` runs the loop, loads domain packs through `references/domain-pack.md` (a synthetic example pack is validated by pytest), and replaces the course's `evals-start` router as the entry point.
    - `eval-kit:blind-review` is a **maintained** review-app template: a stdlib server, append-only labels, a server-side reveal gate that serves output only once the item is labelled, no localStorage, the reasoning checklist, and the blind feedback screen. Tested with pytest.
    - `eval-kit:scorer-evals` is the report script plus its metric guide.
+   - **The course skills, copied**: all nine of them under `skills/` with their upstream names (error discovery, the review interface, judge prompts, code evals, judge validation, synthetic data, RAG, the audit and the router), plus `LICENSE`, `NOTICE` and `UPSTREAM` as above.
    - The three example packs ship with the plugin, kept generic. Anything specific to one organisation's process goes in a private pack outside this repo.
 
 ---
@@ -230,12 +236,12 @@ Swapping packs changes these rows, not the loop.
 1. **The first system.** Which one, what goes in, what comes out, and who acts on it? This decides the first domain pack and adapter.
 2. **Where the traces come from.** Does the system keep its full output, including reasoning, or only extracted fields?
 3. **Scripted runs.** Can I run the system from a script (needed for repeat runs and version comparisons), or only through a UI?
-4. **The license issue.** Should I open one on ai-evals-course/evals-skills?
 
 ---
 
 ## Changelog
 
+- **v5.** Upstream added an Apache-2.0 license, so `eval-kit` copies the course skills (with their LICENSE, a NOTICE and change headers) instead of depending on an installed copy.
 - **v4.** Moved into dev-hooks `plans/evals/`. Cut the candidate-evaluation pack down to one row of an example table, next to tool-using-agent and generator packs. The decision scale in the review interface is a per-system setting (binary by default, tiers or per-criterion yes/no optional).
 - **v3.** Made generic. Removed the organisation-specific process, and the domain-pack interface is spelled out. Added agent-specific pieces: first-failure reading, trajectory checks, and adversarial and regression modules.
 - **v2.** Revised after a five-critic review. Headline numbers use blind labels only, with labels flagged by exposure. Added the rejected-side draw. Per-round stats became counts and names, with pooled stats behind minimum-n gates. Cut to a 45-minute core. The blind feedback round became a decision diff with decoys and a version guess. The sealed hash became an isolated subagent. Renamed the plugin to avoid the `evals` clash, and made the review app a maintained template.
