@@ -1,8 +1,8 @@
-import type { On, PreToolUseResult } from 'claude-code'
+import type { On, PreToolUseResult, ToolCallEnvelope } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 
-import { commandTimeout, guardQuestion, guardTimeoutReason, isGuardAsk } from '../hooks/register'
+import { commandTimeout, guardQuestion, guardSubject, guardTimeoutReason, isGuardAsk } from '../hooks/register'
 
 const GUARD_ASK = "dev-hooks guard — please confirm: You're about to push the `main` branch directly."
 const COMMAND = 'git push origin main'
@@ -109,6 +109,57 @@ test('in an interactive session a dismissed dialog refuses, not falls back to au
 
   expect(seen.ran).toBe(0)
   expect(String(ran.text ?? ran.deny)).toContain('dismissed')
+})
+
+const EMAIL_ASK =
+  'dev-hooks guard — please confirm: This fetch puts your private address me@private.example in the URL it requests.'
+const LEAKY_URL = 'https://example.org/?email=me@private.example'
+
+// A guard on a tool other than Bash: the private-email guard asks about WebFetch, file
+// writes and MCP calls too.
+function fetchWorld(on: On, answer: string) {
+  const seen = { asked: [] as string[], fetched: 0 }
+  on('classic.PreToolUse', () => ({ ask: EMAIL_ASK }))
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = e.questions[0]?.question ?? ''
+    seen.asked.push(question)
+    return { result: { questions: e.questions, answers: { [question]: answer } }, text: answer }
+  })
+  on('tool.call', { tool: 'WebFetch' }, () => {
+    seen.fetched += 1
+    return { deny: 'stand-in for the fetch' }
+  })
+  return seen
+}
+
+test('a guard question about another tool reaches the person, naming the tool and where it goes', async ($, on) => {
+  const seen = fetchWorld(on, 'Deny')
+
+  const ran = await $.tool.call({ tool: 'WebFetch', url: LEAKY_URL, prompt: 'summarise' })
+
+  expect(seen.asked).toHaveLength(1)
+  expect(seen.asked[0]).toContain(`WebFetch ${LEAKY_URL}`)
+  expect(seen.fetched).toBe(0)
+  expect(String(ran.text ?? ran.deny)).toContain('declined')
+})
+
+test('Allow lets the other tool run', async ($, on) => {
+  const seen = fetchWorld(on, 'Allow')
+
+  await $.tool.call({ tool: 'WebFetch', url: LEAKY_URL, prompt: 'summarise' })
+
+  expect(seen.fetched).toBe(1)
+})
+
+test('guardSubject shows a command as typed, and another tool by name and target', async () => {
+  expect(guardSubject({ tool: 'Bash', command: 'curl x', tool_use_id: 't' } as ToolCallEnvelope)).toBe('curl x')
+  expect(guardSubject({ tool: 'WebSearch', query: 'q', tool_use_id: 't' } as ToolCallEnvelope)).toBe('WebSearch q')
+  expect(guardSubject({ tool: 'Write', file_path: '/a.py', content: 'x', tool_use_id: 't' } as ToolCallEnvelope)).toBe(
+    'Write /a.py',
+  )
+  expect(guardSubject({ tool: 'mcp__crm__create', tool_use_id: 't', name: 'Me' } as ToolCallEnvelope)).toBe(
+    'mcp__crm__create {"name":"Me"}',
+  )
 })
 
 const MAIN_ASK =

@@ -99,7 +99,9 @@ enforces it) — one that doesn't would run twice. Don't stand hooks down by ski
 
 The module also routes **the guard's questions to the person**: its `classic.PreToolUse` hook
 takes a decision whose `ask` starts with `GUARD_PREFIX` (`dev-hooks guard — `, pinned on both
-sides by `test_guard_prefix_matches_the_mod`) and asks via `$.ui.ask`, which reaches the person
+sides by `test_guard_prefix_matches_the_mod`) from any tool (`private-email-guard.sh` asks about
+WebFetch, file writes and MCP calls; `guardSubject` names a non-Bash call as tool + target, and
+keys a late Allow by it) and asks via `$.ui.ask`, which reaches the person
 even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by the classifier).
 Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
 rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own

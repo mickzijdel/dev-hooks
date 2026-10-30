@@ -4043,6 +4043,187 @@ def test_comment_brief_guard_opt_out():
     assert r.stdout.strip() == ""
 
 
+# ── private-email-guard.sh (PreToolUse Bash, web, file and MCP tools) ────────────────
+PRIVATE = "me@private.example, Other@Mail.example"
+
+
+def _email_guard(tool, tool_input, **env):
+    env.setdefault("DEV_HOOKS_PRIVATE_EMAILS", PRIVATE)
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "e1"}
+    return run_hook(
+        "private-email-guard.sh", stdin=json.dumps(payload), env=base_env(**env)
+    )
+
+
+def _asked(r):
+    assert r.returncode == 0, r.stderr
+    if not r.stdout.strip():
+        return None
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "ask"
+    assert out["permissionDecisionReason"].startswith(GUARD_PREFIX)
+    return out["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # A contact address set once in a variable, then used by curl further down.
+        (
+            "Bash",
+            {
+                "command": 'UA="research/0.1 (contact: me@private.example)"\n'
+                'curl -sS -A "$UA" https://forum.example.org/graphql'
+            },
+        ),
+        ("Bash", {"command": "curl -H 'From: me@private.example' https://example.org"}),
+        (
+            "Bash",
+            {
+                "command": 'python3 -c "import urllib.request as u; u.urlopen(u.Request(x, '
+                "headers={'User-Agent': 'bot (me@private.example)'}))\""
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "curl 'https://api.example.org/works?mailto=me%40private.example'"
+            },
+        ),
+        (
+            "Bash",
+            {"command": "wget -U 'bot (contact OTHER@mail.example)' example.org/a"},
+        ),
+        (
+            "Bash",
+            {"command": 'gh issue create --body "Reach me at me@private.example"'},
+        ),
+        (
+            "WebFetch",
+            {"url": "https://example.org/?email=me@private.example", "prompt": "x"},
+        ),
+        ("WebSearch", {"query": '"me@private.example"'}),
+        (
+            "Write",
+            {
+                "file_path": "/repo/client.py",
+                "content": 'USER_AGENT = (\n    "analysis/0.1 (research; "\n'
+                '    "contact: me@private.example)"\n)\n',
+            },
+        ),
+        (
+            "Edit",
+            {
+                "file_path": "/repo/fetch.py",
+                "old_string": "x",
+                "new_string": "headers = {'User-Agent': 'bot me@private.example'}",
+            },
+        ),
+        (
+            "MultiEdit",
+            {
+                "file_path": "/repo/fetch.sh",
+                "edits": [
+                    {
+                        "old_string": "a",
+                        "new_string": 'curl -A "me@private.example" "$1"',
+                    }
+                ],
+            },
+        ),
+        ("mcp__crm__createContact", {"name": "Me", "emails": ["me@private.example"]}),
+    ],
+)
+def test_email_guard_asks_before_a_private_address_leaves(tool, tool_input):
+    reason = _asked(_email_guard(tool, tool_input))
+    assert reason is not None
+    assert "@" in reason
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # Local work that names the address: no network.
+        ("Bash", {"command": "rg -i 'me@private.example' ~/notes"}),
+        # Git identity: commits are meant to carry it, even next to a URL or a push.
+        (
+            "Bash",
+            {
+                "command": "cat > defaults/main.yml <<'E'\nrepo: https://example.org/x.git\n"
+                "agent_git_email: me@private.example\nE"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": 'git -c user.email="me@private.example" commit -m "Fix https://example.org/1"'
+                " && git push"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": "GIT_AUTHOR_EMAIL=me@private.example git commit -m x && git push"
+            },
+        ),
+        (
+            "Bash",
+            {
+                "command": 'git commit --author="Me <me@private.example>" -m "See https://x.org"'
+            },
+        ),
+        (
+            "Bash",
+            {"command": "git config user.email me@private.example && gh repo view"},
+        ),
+        # A public alias the person is happy to hand out is not on the list.
+        (
+            "Bash",
+            {
+                "command": 'curl -A "bot (contact: alias@public.example)" https://example.org'
+            },
+        ),
+        ("Bash", {"command": "curl https://example.org"}),
+        (
+            "WebFetch",
+            {"url": "https://example.org/docs", "prompt": "me@private.example?"},
+        ),
+        # Package metadata names the author; it isn't a request header.
+        (
+            "Write",
+            {
+                "file_path": "/repo/x.gemspec",
+                "content": 'spec.email = ["me@private.example"]\n',
+            },
+        ),
+        ("mcp__crm__search", {"query": "alias@public.example"}),
+    ],
+)
+def test_email_guard_silent_otherwise(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input)) is None
+
+
+def test_email_guard_defaults_to_the_global_git_address(tmp_path):
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\temail = me@private.example\n")
+    command = {"command": 'curl -A "bot (me@private.example)" https://example.org'}
+    env = {
+        "DEV_HOOKS_PRIVATE_EMAILS": None,
+        "GIT_CONFIG_GLOBAL": str(gitconfig),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    assert _asked(_email_guard("Bash", command, **env)) is not None
+    env["GIT_CONFIG_GLOBAL"] = str(tmp_path / "missing")
+    assert _asked(_email_guard("Bash", command, **env)) is None
+
+
+def test_email_guard_opt_out():
+    r = _email_guard(
+        "WebSearch", {"query": "me@private.example"}, DEV_HOOKS_EMAIL_GUARD="false"
+    )
+    assert _asked(r) is None
+
+
 # ── dangerous-command-guard.sh (PreToolUse Bash) ─────────────────────────────────────
 def _guard(command, *, cwd=None, **env_overrides):
     env_overrides.setdefault("DEV_HOOKS_BASH_GUARD", None)

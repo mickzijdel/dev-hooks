@@ -20,7 +20,7 @@
 //
 // CI watch: after a git push the module follows that push's GitHub Actions runs and
 // tells the person and Claude how they ended (the block marked below).
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, ToolCallEnvelope } from 'claude-code'
 
 import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
@@ -356,13 +356,22 @@ async function orchestrateStop(
 }
 
 // ── Guard dialog ─────────────────────────────────────────────────────────────────
-// When dangerous-command-guard.sh asks (its `ask` modes), the mod puts the question to
-// the person in Claude Code's own dialog: a PreToolUse `ask` is answered by the
-// auto-mode classifier, the dialog is not. Allow only withdraws the guard's question —
-// the normal permission flow still runs — and Deny refuses; a hard deny is never asked.
+// When a guard asks (dangerous-command-guard.sh's `ask` modes, private-email-guard.sh), the
+// mod puts the question to the person in Claude Code's own dialog: a PreToolUse `ask` is
+// answered by the auto-mode classifier, the dialog is not. Allow only withdraws the guard's
+// question — the normal permission flow still runs — and Deny refuses; a hard deny is never asked.
 export const GUARD_PREFIX = 'dev-hooks guard — '
 
 export const isGuardAsk = (ask: string | undefined): ask is string => !!ask && ask.startsWith(GUARD_PREFIX)
+
+// The call as the dialog shows it, and the key a late Allow is kept under: a Bash command as
+// typed, any other tool by its name and where the call goes.
+export const guardSubject = (e: ToolCallEnvelope): string => {
+  if (e.tool === 'Bash') return e.command
+  const { tool, tool_use_id: _id, ...args } = e as { tool: string; tool_use_id?: string } & Record<string, unknown>
+  const target = args.url ?? args.query ?? args.file_path ?? args.notebook_path
+  return `${tool} ${typeof target === 'string' ? target : JSON.stringify(args)}`
+}
 
 const COMMAND_SHOWN = 300
 
@@ -1155,17 +1164,18 @@ export const register: Register = on => {
 
   on('classic.PreToolUse', async ($, e, next) => {
     const decided = await next(e)
-    if (e.tool !== 'Bash' || !isGuardAsk(decided.ask)) return decided
-    const allowedUntil = lateAllowed.get(e.command)
+    if (!isGuardAsk(decided.ask)) return decided
+    const subject = guardSubject(e)
+    const allowedUntil = lateAllowed.get(subject)
     if (allowedUntil !== undefined) {
-      lateAllowed.delete(e.command)
+      lateAllowed.delete(subject)
       if (allowedUntil > (await guardNow($))) {
         const { ask: _answeredLate, ...rest } = decided
         return rest
       }
     }
-    const seconds = await guardTimeoutSeconds($, e.command)
-    const question = guardQuestion(decided.ask, e.command, seconds)
+    const seconds = await guardTimeoutSeconds($, subject)
+    const question = guardQuestion(decided.ask, subject, seconds)
     await setAsking($, true)
     const asked = $.ui.ask(question, {
       header: 'dev-hooks',
@@ -1179,13 +1189,13 @@ export const register: Register = on => {
       const first = await Promise.race([asked, timedOut])
       if (first === undefined) {
         asked.then(
-          answer => lateGuardAnswer($, e.command, answer),
+          answer => lateGuardAnswer($, subject, answer),
           () => undefined,
         )
         const reason = guardTimeoutReason(decided.ask, seconds)
         const notes = (await $.state.get(GUARD_TIMED_OUT)).value ?? {}
         const kept = Object.entries(notes).slice(-(TIMED_OUT_KEPT - 1))
-        await $.state.set(GUARD_TIMED_OUT, { ...Object.fromEntries(kept), [question]: timedOutNote(e.command, seconds, reason) })
+        await $.state.set(GUARD_TIMED_OUT, { ...Object.fromEntries(kept), [question]: timedOutNote(subject, seconds, reason) })
         return { deny: reason }
       }
       answer = first
