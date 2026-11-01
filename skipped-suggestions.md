@@ -1387,3 +1387,31 @@ PRs opened this run: [#3 feat: add commit-digest skill](https://github.com/mickz
 | Five tips for running Claude Opus autonomously for hours: auto-mode permissions, dynamic subagent workflows, /goal or /loop, Claude Code in cloud, self-verification tools | ai-productivity-digest item (2026-06-07), https://x.com/bcherny/status/2063792263067754658 | Duplicate / Out of scope | Auto-mode permissions → `fewer-permission-prompts` skill; subagent workflows → `board`; /loop → `weekly-automation-review`; self-verification → `verify-work.sh` + `but-for-real`. All angles already covered. |
 | Geoffrey Litt's personal agent for groceries, family budget, and move logistics — template for personal agent design | ai-productivity-digest item (2026-06-07), https://x.com/geoffreylitt/status/2063791754369765794 | Out of scope | Household/personal-task management; no bearing on dev workflow hooks. |
 | When prompting, instruct the model to ask clarifying questions one at a time | ai-productivity-digest item (2026-06-07), https://x.com/davis7/status/2063746062532395208 | Rejected | Prompting tip with no concrete hook/skill surface; too minor to warrant a standalone skill, and the existing skills (`premortem`, `board`) already surface ambiguities before committing. |
+
+---
+
+## 2026-11-01
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 7 days (about 25 commits, `4fd7030` back to `cd141b1`)
+- Feeds: ai-productivity-digest (14 items), Claude Code changelog (2.1.309–2.1.316). Unreachable: upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: none
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Refuse HEAD moves by agents in a shared checkout via a `reference-transaction` git hook, pushing sessions to `git worktree add` | dotfiles commit `dbec4e1` (#1018) | Deferred | Good idea (parallel sessions moving each other's branch), but keyed to Paseo's `PASEO_AGENT_ID` and a personal path. Revisit as an opt-in `worktree-setup` add-on keyed to `CLAUDE_CODE_*` session env. |
+| Autonomy rule: push the branch right away, never the default branch, open PRs only when asked | dotfiles commit `4b83a94` (#1025) | Duplicate | Matches the existing push/PR rules in the cloud-session guidance and the `ci-watch` hook. |
+| Run the fresh-install E2E on PRs that touch its inputs | dotfiles commit `8d15e86` (#1028) | Out of scope | Specific to dotfiles bootstrap CI. |
+| Plain-English SECURITY.md for the laptop; loopback-only OrbStack ports; disable AirPlay receiver and firewall signed auto-allow | dotfiles commits `c94ea9d`, `4fd7030`, `20eaef6` | Out of scope | Personal macOS hardening. |
+| Migrate Pi to Meridian; mise/Pi add-on upgrades; Paseo, `dotf` and homelab changes | dotfiles commits `9199813`, `ef8dee1`, `4c3cc3b`, `84faa25`, `14631e9`, `9ec7381` and the other Paseo/`dotf` commits | Out of scope | Personal agent and machine config. |
+| LLM graders: use pass/fail, run many times, aggregate, not numeric scales | digest item https://x.com/intellectronica/status/2116480671300341954 | Duplicate | Covered by the independent-grader work on branch `claude/self-rate-independent-grader`. |
+| Disable Claude Code's built-in deep research skill so "research" doesn't spawn ~100 subagents | digest item https://x.com/kr0der/status/2116531135824158984 | Rejected | One-line user setting, not a hook or skill; `loop-oversight` already covers unbounded fan-out. |
+| Plugin that has Codex review every plan read-only; Gemini subagent for second opinions | digest items https://x.com/cathrynlavery/status/2116540974427951112, https://x.com/thdxr/status/2116364728666821022 | Duplicate | `board` provides independent critique; cross-vendor models are user-specific tooling. |
+| Agent harness has 8 parts (loop, sandbox, subagents, context, memory, guardrails, verification, tracing) | digest item https://x.com/Saboo_Shubham_/status/2116013734359703554 | Rejected | Evaluation framing, no implementable surface. |
+| Remaining digest items (Google Docs split, dictation, read-only connectors, Gmail spend scan, reconnect calendar block, Remotion kit, Codex task renaming, design.md from a theme, output overload) | digest items 2026-10-31 | Out of scope | Personal productivity or non-dev tips. `design.md` from a theme overlaps `design-process`. |
+| `permissions.blockWritesOutsideWorkingDirectories`, `CLAUDE_CODE_SUBAGENT_EFFORT`, `CLAUDE_CODE_DISABLE_ULTRATHINK`, hook concurrency cap (24/session) | Claude Code changelog 2.1.314, 2.1.316, 2.1.312 | Deferred | Worth a mention in `fewer-permission-prompts`/`update-config` guidance, but those are Anthropic-owned skills here; nothing for dev-hooks to change. The 24-hook cap applies to prompt/agent hooks only, and dev-hooks uses command hooks. |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
