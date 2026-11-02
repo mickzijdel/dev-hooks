@@ -1,6 +1,6 @@
 ---
 name: data-before-design
-description: Use before building a view of stored data (card, panel, table, dashboard, report, profile page), and when a stakeholder says what to show, a field looks obviously useful, layouts for the same records compete, or several cards or charts cover the same categories. Not for pure looks (design-process).
+description: Use before building a view of stored data (card, panel, table, dashboard, report, profile page), and when a stakeholder says what to show, a field looks obviously useful, layouts for the same records compete, or several cards or charts cover the same categories. Not for pure looks (design-process) or how a posted chart reads (practical-charts).
 ---
 
 # Data before design
@@ -18,6 +18,10 @@ and is wrong.
 - You are choosing between two ways to lay out the same information
 
 Skip when the data is your own fixture, or the view is one value you already printed.
+
+A chart or table that will be posted, shared or put in a report still starts here when it shows
+records you did not author. Once the data is settled, `practical-charts` covers how it reads:
+the headline title, honest axes, one highlighted series, the source inside the image.
 
 ## Step 0: name the decision
 
@@ -114,6 +118,7 @@ Grep the markup or stylesheet for the colour values, not the rendered screenshot
   fills it. An empty state a user meets on day one is onboarding, and is worth designing.
 - **Numbers in a table:** right-align, tabular figures (`font-variant-numeric: tabular-nums`),
   one precision for the whole column, units in the header rather than repeated in each cell.
+  `practical-charts` rule 13 has the rest: no grid, a tinted key row, inline bars.
 - **The default sort is a design decision.** Records arriving in primary-key order is the
   absence of one.
 
