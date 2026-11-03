@@ -5770,6 +5770,14 @@ def test_dcg_guard_passes_a_failing_exit_through(tmp_path):
     assert "dcg: blocked" in r.stderr
 
 
+def test_dcg_guard_turns_off_dcg_self_heal(tmp_path):
+    # dcg's self-heal (on by default) writes its own hook into ~/.claude/settings.json
+    # whenever it runs as a Claude hook, so every command would then be checked twice.
+    r = _dcg(tmp_path, f'printf %s "${{DCG_NO_SELF_HEAL-unset}}" >"{tmp_path}/heal"')
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "heal").read_text() == "1"
+
+
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
 BIG_CHANGE_SENTINEL = "[big-change] large unreviewed change this session"
 

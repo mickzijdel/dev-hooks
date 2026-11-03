@@ -16,9 +16,10 @@
 # (set DCG_FAIL_CLOSED=1 to change that), so this hook does too: no dcg on PATH, or a dcg
 # that exits oddly, lets the command through to the normal permission flow.
 #
-# Running `dcg install` as well adds a second copy of this hook to ~/.claude/settings.json
-# and every command is checked twice; drop that entry, or opt out of this one with
-# DEV_HOOKS_DCG=false (in .claude settings "env").
+# dcg runs with DCG_NO_SELF_HEAL=1: its self-heal (on by default) re-adds dcg's own hook to
+# ~/.claude/settings.json on every run, and every command would then be checked twice.
+# Running `dcg install` adds that second copy anyway; drop the settings.json entry, or opt out
+# of this one with DEV_HOOKS_DCG=false (in .claude settings "env").
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=lib/reminder-common.sh
@@ -28,7 +29,7 @@ DCG=$(command -v dcg) || exit 0
 # Sets INPUT, COMMAND, CWD, SESSION (or exits 0 when there is no command).
 reminder_pre_init DEV_HOOKS_DCG
 
-OUT=$(printf '%s' "$INPUT" | "$DCG")
+OUT=$(printf '%s' "$INPUT" | DCG_NO_SELF_HEAL=1 "$DCG")
 rc=$?
 [ "$rc" -eq 0 ] || exit "$rc"
 [ -n "$OUT" ] || exit 0
