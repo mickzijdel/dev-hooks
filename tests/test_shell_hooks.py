@@ -5680,6 +5680,96 @@ def test_guard_silent_on_credential_neighbours(command, credential_tree):
     assert r.stdout.strip() == "", r.stdout
 
 
+# ── dcg-guard.sh (PreToolUse Bash) ───────────────────────────────────────────────────
+# A stub `dcg` on PATH stands in for the real binary, so CI needs no dcg installed.
+DCG_PAYLOAD = {
+    "tool_input": {"command": "psql -c 'DROP TABLE users'"},
+    "session_id": "d1",
+}
+DCG_REASON = "BLOCKED by dcg\n\nRule: database.postgresql:drop-table"
+
+
+def _path_without_dcg():
+    return os.pathsep.join(
+        d
+        for d in os.environ.get("PATH", "").split(os.pathsep)
+        if d and not os.access(os.path.join(d, "dcg"), os.X_OK)
+    )
+
+
+def _dcg(tmp_path, stub_body=None, **env_overrides):
+    """Run dcg-guard.sh with a stub dcg (a shell body; it saves its stdin to `seen`) on
+    PATH, or with none at all when stub_body is None."""
+    path = _path_without_dcg()
+    if stub_body is not None:
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        stub = bin_dir / "dcg"
+        stub.write_text(f'#!/bin/bash\ncat >"{tmp_path}/seen"\n{stub_body}\n')
+        stub.chmod(0o755)
+        path = f"{bin_dir}{os.pathsep}{path}"
+    env_overrides.setdefault("DEV_HOOKS_DCG", None)
+    return run_hook(
+        "dcg-guard.sh",
+        stdin=json.dumps(DCG_PAYLOAD),
+        env=base_env(PATH=path, **env_overrides),
+    )
+
+
+def _dcg_says(decision):
+    out = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": DCG_REASON,
+            "ruleId": "database.postgresql:drop-table",
+        }
+    }
+    return f"printf '%s\\n' {json.dumps(json.dumps(out))}"
+
+
+def test_dcg_guard_silent_without_dcg(tmp_path):
+    r = _dcg(tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+
+
+@pytest.mark.parametrize("value", ["false", "off", "0"])
+def test_dcg_guard_opt_out(tmp_path, value):
+    r = _dcg(tmp_path, _dcg_says("deny"), DEV_HOOKS_DCG=value)
+    assert r.returncode == 0
+    assert r.stdout == ""
+    assert not (tmp_path / "seen").exists(), "dcg ran despite the opt-out"
+
+
+def test_dcg_guard_relays_a_deny(tmp_path):
+    r = _dcg(tmp_path, _dcg_says("deny"))
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+    assert out["permissionDecisionReason"] == DCG_REASON
+    assert json.loads((tmp_path / "seen").read_text()) == DCG_PAYLOAD
+
+
+def test_dcg_guard_silent_when_dcg_is(tmp_path):
+    r = _dcg(tmp_path, "exit 0")
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+
+def test_dcg_guard_never_relays_allow(tmp_path):
+    # An `allow` would skip the person's own permission rules.
+    r = _dcg(tmp_path, _dcg_says("allow"))
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+
+def test_dcg_guard_passes_a_failing_exit_through(tmp_path):
+    r = _dcg(tmp_path, "echo 'dcg: blocked' >&2; exit 2")
+    assert r.returncode == 2
+    assert "dcg: blocked" in r.stderr
+
+
 # ── big-change-reminder.sh (Stop) ────────────────────────────────────────────────────
 BIG_CHANGE_SENTINEL = "[big-change] large unreviewed change this session"
 
