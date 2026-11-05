@@ -1620,6 +1620,21 @@ def test_skill_candidate_reminder_fires_on_substantial_session(tmp_path):
     assert reason.startswith(SKILL_SENTINEL)
     assert str(tmp_path / "data" / "dev-hooks" / "skill-candidates.md") in reason
     assert "nothing to propose" in reason
+    assert "repeat in another session or repo" in reason
+    assert "memory" in reason
+
+
+def _bash_call(command):
+    return json.dumps(
+        {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "name": "Bash", "input": {"command": command}}
+                ],
+            }
+        }
+    )
 
 
 @pytest.mark.parametrize(
@@ -1642,6 +1657,19 @@ def test_skill_candidate_reminder_silent_when_off(tmp_path, kwargs):
         (5, []),  # too short to have worked anything out
         (6, [SKILL_SENTINEL]),  # already asked this session
         (6, [_memory_write(QUEUE)]),  # already proposed this session
+        # ... or appended through Bash, as most sessions do
+        (6, [_bash_call(f"cat >> {QUEUE} <<'EOF'\n## 2026-11-05 · x\nEOF")]),
+        (6, [_bash_call(f"cat <<'EOF' >>'{QUEUE}'\n## x\nEOF")]),
+        (6, [_bash_call(f"printf '%s' \"$E\" | tee -a {QUEUE} >/dev/null")]),
+        (
+            6,
+            [
+                _bash_call(
+                    'printf "%s\\n" "$E" >> '
+                    '"${XDG_DATA_HOME:-$HOME/.local/share}/dev-hooks/skill-candidates.md"'
+                )
+            ],
+        ),
     ],
 )
 def test_skill_candidate_reminder_silent(tmp_path, turns, extra):
@@ -1661,6 +1689,38 @@ def test_skill_candidate_reminder_counts_a_proposal_a_subagent_wrote(tmp_path):
     )
     r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=str(facts))
     assert stop_allowed(r)
+
+
+def test_skill_candidate_reminder_counts_a_bash_append_a_subagent_ran(tmp_path):
+    transcript = make_transcript(tmp_path / "t.jsonl", human_turns=6)
+    facts = tmp_path / "facts.json"
+    facts.write_text(
+        json.dumps({"repos": [], "bashNamed": {"/dev-hooks/skill-candidates.md": 1}})
+    )
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=str(facts))
+    assert stop_allowed(r)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat >> /repo/plans/skill-candidates.md <<EOF\nEOF",  # another file
+        # only reading the queue is not proposing
+        f"cat {QUEUE}",
+        f"rg -n 'Status: open' {QUEUE}",
+        f"sed -n 1,40p {QUEUE} > /tmp/q.txt",
+        f"cat {QUEUE} | tee /tmp/q.txt",
+        f"cp {QUEUE} {QUEUE}.bak && echo x >> {QUEUE}.bak",
+    ],
+)
+def test_skill_candidate_reminder_fires_when_bash_does_not_write_the_queue(
+    tmp_path, command
+):
+    transcript = make_transcript(
+        tmp_path / "t.jsonl", human_turns=6, extra_lines=[_bash_call(command)]
+    )
+    r = _run_skill_candidate(tmp_path, transcript, DEV_HOOKS_FACTS_FILE=None)
+    assert stop_blocked(r)
 
 
 # ── plan-reminder.sh ────────────────────────────────────────────────────────────────

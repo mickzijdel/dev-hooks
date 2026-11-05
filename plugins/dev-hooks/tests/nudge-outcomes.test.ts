@@ -99,6 +99,15 @@ test('skill-candidate-reminder: a queue write acts, the escape-hatch phrase decl
     evidence: 'proposed in skill-candidates.md',
   })
 
+  // Most sessions append the entry through Bash: `cat >> …/skill-candidates.md <<EOF`.
+  const appended = facts({ bashNamed: { '/dev-hooks/skill-candidates.md': T + 1 } })
+  expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(appended))).toEqual({
+    outcome: 'acted',
+    evidence: 'proposed in skill-candidates.md (via Bash)',
+  })
+  const before = facts({ bashNamed: { '/dev-hooks/skill-candidates.md': T - 1 } })
+  expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(before)).outcome).toBe('ignored')
+
   const elsewhere = facts({ lastEdit: { '/repo/plans/skill-candidates.md': T + 1 } })
   expect(resolveNudge(nudge('skill-candidate-reminder'), atStop(elsewhere)).outcome).toBe('ignored')
 
