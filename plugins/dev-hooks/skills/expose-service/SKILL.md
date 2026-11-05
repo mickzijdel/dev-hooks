@@ -9,6 +9,9 @@ Four decisions, in order: **who may reach it**, **how you avoid locking yourself
 proves it works**, and **what happens on reboot**. Skipping the second and fourth is how a
 five-minute change turns into a trip to the server room.
 
+A whole-machine or account security pass is `dev-hooks:personal-security`'s; this skill fixes the
+exposed services that pass turns up.
+
 ## 1. Pick the exposure
 
 Pick the narrowest row that satisfies the audience. Widening later is cheap; narrowing after

@@ -21,6 +21,9 @@ approve. One ask can cover a batch they see in full. Past these limits, ask rath
   supports, not upstream's full matrix.
 - **Privacy**: public artifacts carry no credentials, private prompts, private code, or
   identifying diagnostics — the reproduction is synthetic and self-contained.
+- **Security bugs** go through the project's private channel (its `SECURITY.md`, a GitHub
+  private vulnerability report), never a public issue, and the repro stays out of public
+  artifacts until a fix ships.
 - **No scheduled automation** in a fork. Disable or delete inherited scheduled workflows before
   enabling Actions.
 
