@@ -261,9 +261,12 @@ def _split_needles(needles):
 # global (~/.claude/memory/). A repo's own "memory" folder is not it.
 MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
 SKILL_QUEUE_RE = re.compile(r"/dev-hooks/skill-candidates\.md$")
-# The queue named inside a Bash command (`cat >> ~/.local/share/dev-hooks/skill-candidates.md
-# <<EOF`); its match is a path SKILL_QUEUE_RE accepts.
-SKILL_QUEUE_CMD_RE = re.compile(r"/dev-hooks/skill-candidates\.md\b")
+# A Bash command that writes to the queue: a `>`/`>>` redirect into it (`cat >> … <<EOF`) or
+# `tee` onto it. A read (`cat`, `rg`, `sed -n`) is not a proposal. Group 1, the path as typed,
+# is one SKILL_QUEUE_RE accepts.
+SKILL_QUEUE_WRITE_RE = re.compile(
+    r"""(?:>>?\|?\s*|\btee(?:\s+[^\s|;&<>]+)*?\s+)["']?([^\s"'<>|;&]*/dev-hooks/skill-candidates\.md)(?![\w.])"""
+)
 _WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 

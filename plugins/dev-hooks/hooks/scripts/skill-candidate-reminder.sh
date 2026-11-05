@@ -15,8 +15,8 @@
 #      weekly review are in use).
 #   2. Substantial session: >= DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS (default 6) human turns.
 #   3. Once per session: the sentinel embedded in the reminder isn't in the transcript yet.
-#   4. Nothing proposed yet: no Write/Edit to the queue, nor a Bash command naming it (as
-#      `cat >> … <<EOF`), this session (a subagent's via the mod's DEV_HOOKS_FACTS_FILE).
+#   4. Nothing proposed yet: no Write/Edit to the queue, nor a Bash redirect or tee into it
+#      (as `cat >> … <<EOF`), this session (a subagent's via the mod's DEV_HOOKS_FACTS_FILE).
 # Opt out with DEV_HOOKS_SKILL_CANDIDATES=false.
 
 MIN_TURNS="${DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS:-6}"
@@ -40,10 +40,10 @@ import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
-from hook_helpers import SKILL_QUEUE_CMD_RE, SKILL_QUEUE_RE, human_turns, path_written
+from hook_helpers import SKILL_QUEUE_RE, SKILL_QUEUE_WRITE_RE, human_turns, path_written
 
 n = human_turns(sys.argv[1], sys.argv[2])
-queued = path_written(sys.argv[1], sys.argv[4] or None, SKILL_QUEUE_RE, SKILL_QUEUE_CMD_RE)
+queued = path_written(sys.argv[1], sys.argv[4] or None, SKILL_QUEUE_RE, SKILL_QUEUE_WRITE_RE)
 print("skip" if n is None or queued else n)
 PYEOF
 )

@@ -129,7 +129,7 @@ test('an Edit records when the file was last touched, the evidence window for St
   expect(w.facts().lastEdit?.['/repo/a.ts']).toBeGreaterThanOrEqual(before)
 })
 
-test('a Bash command that names the skill-candidate queue is recorded; others are not', async ($, on) => {
+test('a Bash command that writes to the skill-candidate queue is recorded; a read or a failure is not', async ($, on) => {
   const w = world(on)
   on('tool.call', (_$, e) =>
     e.tool === 'Bash' && e.command.startsWith('false') ? { result: {}, text: '', isError: true as const } : { result: {}, text: '' },
@@ -137,11 +137,13 @@ test('a Bash command that names the skill-candidate queue is recorded; others ar
   const before = Date.now()
 
   await $.tool.call({ tool: 'Bash', command: 'ls ~/.local/share/dev-hooks' })
+  await $.tool.call({ tool: 'Bash', command: 'cat ~/.local/share/dev-hooks/skill-candidates.md' })
+  await $.tool.call({ tool: 'Bash', command: "rg -n 'Status: open' ~/.local/share/dev-hooks/skill-candidates.md > /tmp/q" })
   await $.tool.call({ tool: 'Bash', command: 'false; cat >> /x/dev-hooks/skill-candidates.md <<EOF\nEOF' })
   expect(w.facts()?.bashNamed).toBeUndefined()
 
   await $.tool.call({ tool: 'Bash', command: "cat >> ~/.local/share/dev-hooks/skill-candidates.md <<'EOF'\n## entry\nEOF" })
-  expect(w.facts().bashNamed?.['/dev-hooks/skill-candidates.md']).toBeGreaterThanOrEqual(before)
+  expect(w.facts().bashNamed?.['~/.local/share/dev-hooks/skill-candidates.md']).toBeGreaterThanOrEqual(before)
 })
 
 const pendingReview = (at: number): Facts => ({

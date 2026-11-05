@@ -38,8 +38,9 @@ export const REVIEW_NEEDLES = ['code-review', 'code_review', 'requesting-code-re
 export const MEMORY_DIR_RE = /\/\.claude\/(?:projects\/[^/]+\/)?memory\//
 // Mirrors hook_helpers.SKILL_QUEUE_RE.
 export const SKILL_QUEUE_RE = /\/dev-hooks\/skill-candidates\.md$/
-// Mirrors hook_helpers.SKILL_QUEUE_CMD_RE: the queue named inside a Bash command.
-export const SKILL_QUEUE_CMD_RE = /\/dev-hooks\/skill-candidates\.md\b/
+// Mirrors hook_helpers.SKILL_QUEUE_WRITE_RE: a Bash redirect or tee into the queue, never a
+// read; group 1 is the path as typed.
+export const SKILL_QUEUE_WRITE_RE = /(?:>>?\|?\s*|\btee(?:\s+[^\s|;&<>]+)*?\s+)["']?([^\s"'<>|;&]*\/dev-hooks\/skill-candidates\.md)(?![\w.])/
 
 // Mirrors hook_helpers._AGENT_DOER_RE and _agent_job_re: "Review task 8" is a review,
 // "Add product review form" is not.
@@ -94,7 +95,7 @@ type Resolution = { outcome: NudgeOutcome; evidence: string }
 // What counts as acting on each hook's reason. A hook without a remedy the facts can show
 // is "unknown", never guessed. The facts see Edit/Write only, so a remedy done through
 // Bash (a test file made by a generator, a memory file written with cat) reads as ignored;
-// the one exception is a Bash command naming the skill-candidate queue (`bashNamed`).
+// the one exception is a Bash command writing to the skill-candidate queue (`bashNamed`).
 export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
   const acted = (evidence: string): Resolution => ({ outcome: 'acted', evidence })
   const missed = (what: string): Resolution =>

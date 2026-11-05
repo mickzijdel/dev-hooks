@@ -45,16 +45,19 @@ def test_skill_queue_rule_matches_hook_helpers():
     )
 
 
-def test_skill_queue_command_rule_matches_hook_helpers():
+def test_skill_queue_write_rule_matches_hook_helpers():
     sys.path.insert(0, str(HOOKS / "lib"))
     sys.dont_write_bytecode = True
-    from hook_helpers import SKILL_QUEUE_CMD_RE, SKILL_QUEUE_RE
+    from hook_helpers import SKILL_QUEUE_RE, SKILL_QUEUE_WRITE_RE
 
-    ts = _ts_regex_source("SKILL_QUEUE_CMD_RE").replace("\\/", "/")
-    assert ts == SKILL_QUEUE_CMD_RE.pattern
+    ts = _ts_regex_source("SKILL_QUEUE_WRITE_RE").replace("\\/", "/")
+    assert ts == SKILL_QUEUE_WRITE_RE.pattern
     # The mod records the command's match and scores it with SKILL_QUEUE_RE.
     cmd = "cat >> ~/.local/share/dev-hooks/skill-candidates.md <<'EOF'"
-    assert SKILL_QUEUE_RE.search(SKILL_QUEUE_CMD_RE.search(cmd).group(0))
+    assert SKILL_QUEUE_RE.search(SKILL_QUEUE_WRITE_RE.search(cmd).group(1))
+    assert not SKILL_QUEUE_WRITE_RE.search(
+        "cat ~/.local/share/dev-hooks/skill-candidates.md"
+    )
 
 
 def test_compress_comments_needle_matches_its_hook():

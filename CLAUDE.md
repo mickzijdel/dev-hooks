@@ -135,9 +135,9 @@ live `claude -p --plugin-dir` run. Such a run's mod keeps the inline store, and 
 its records into the one export (`exportedRecords`) rather than replacing it: `$.plugin` carries
 only `name` and `root`, and the marketplace install's root is this working copy, so no copy can
 tell which one it is. The review needles, the memory-dir and skill-queue regexes and the probe rule are mirrors of
-`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE`/`SKILL_QUEUE_RE`/`SKILL_QUEUE_CMD_RE` and `reminder_is_probe_session`,
+`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE`/`SKILL_QUEUE_RE`/`SKILL_QUEUE_WRITE_RE` and `reminder_is_probe_session`,
 pinned by `tests/test_nudge_parity.py`. The facts' `bashNamed` (the CI-watch Bash hook records a
-command naming the skill-candidate queue) is the one Bash-made remedy the nudges see.
+redirect or `tee` into the skill-candidate queue, never a read) is the one Bash-made remedy the nudges see.
 
 The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
 push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported

@@ -51,7 +51,7 @@ import {
   NUDGE_LOG_KEY,
   nudgeExport,
   resolvePending,
-  SKILL_QUEUE_CMD_RE,
+  SKILL_QUEUE_WRITE_RE,
   toRecord,
 } from './nudge-outcomes'
 import {
@@ -1172,7 +1172,7 @@ export const register: Register = on => {
     if (ran.deny !== undefined || ran.isError || e.tool !== 'Bash') return ran
     await recordGit($, e.command, ran.text ?? '').catch(() => undefined)
     // Sessions append skill candidates with `cat >> … <<EOF`, which the Edit/Write facts miss.
-    const queue = e.command.match(SKILL_QUEUE_CMD_RE)?.[0]
+    const queue = e.command.match(SKILL_QUEUE_WRITE_RE)?.[1]
     if (queue !== undefined) {
       const at = Date.now()
       await changeFacts($, f => ({ ...f, bashNamed: { ...f.bashNamed, [queue]: at } })).catch(() => undefined)
