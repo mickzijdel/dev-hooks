@@ -1,0 +1,36 @@
+# .github/dependabot.yml (dev-env standard v31). One entry per ecosystem the repo uses
+# (bundler, npm, uv, pip, gomod, github-actions); each keeps its own cooldown and both groups.
+# The <eco> group lands every minor/patch bump in one PR (majors keep their own); the
+# <eco>-security group lands all security fixes together, so a one-gem PR can't fail
+# bundler-audit on the other vulnerable gems still on main. The security group only acts
+# where Dependabot security updates are switched on in the repo settings.
+version: 2
+updates:
+- package-ecosystem: bundler
+  directory: "/"
+  schedule:
+    interval: daily
+  cooldown:
+    default-days: 3
+  open-pull-requests-limit: 10
+  groups:
+    gems:
+      patterns: ["*"]
+      update-types: [minor, patch]
+    gems-security:
+      applies-to: security-updates
+      patterns: ["*"]
+- package-ecosystem: github-actions
+  directory: "/"
+  schedule:
+    interval: daily
+  cooldown:
+    default-days: 3
+  open-pull-requests-limit: 10
+  groups:
+    actions:
+      patterns: ["*"]
+      update-types: [minor, patch]
+    actions-security:
+      applies-to: security-updates
+      patterns: ["*"]

@@ -1,4 +1,4 @@
-# The standard (v30) — full specification
+# The standard (v31) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,15 +6,15 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v30** when it has all of:
+A repo is **compliant at v31** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
   shell, Ruby/Rails, **and JS/TypeScript**) `node` (to run jscpd via `npx`; for JS it also serves
-  as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
+  as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "3d"` (3-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "30"`. Any config path mise reads works (v29): `mise.toml`,
+  stamp `DEV_ENV_VERSION = "31"`. Any config path mise reads works (v29): `mise.toml`,
   `.mise.toml`, `mise/config.toml`, `.config/mise.toml` or `.config/mise/config.toml`, with a pin
   written inline (`ruby = "4.0.9"`) or as a `[tools.ruby]` table with `version = "4.0.9"`. The
   checker, `fleet_roster.sh` and the version-sync gate read the first that exists (the checker
@@ -139,13 +139,24 @@ A repo is **compliant at v30** when it has all of:
   checker (`has_session_url_off`) also fails a gitignored `.claude/`, since the file has to reach
   the clone a cloud session works in. Remote Control sessions read the user's
   `~/.claude/settings.json`, so set the same key there.
-- **Dependency cooldown** (added in v6) — a Python repo pins a 4-day uv cooldown in
+- **Dependency cooldown** (added in v6) — a Python repo pins a 3-day uv cooldown in
   `pyproject.toml` (`[tool.uv] exclude-newer`), so newly-published deps aren't resolved until
   they've been public long enough for a malicious release to be caught and yanked. The checker
   enforces this on Python stacks, and beside each JS lockfile at the root or one directory down
   the npm (`.npmrc`), pnpm (`pnpm-workspace.yaml`) or yarn Berry (`.yarnrc.yml`) setting; Ruby
-  repos get the same window via Bundler (recommended, not gated) — see "Dependency cooldown
-  (supply-chain)" in `../SKILL.md`.
+  repos get the same window via Bundler and bun repos via `bunfig.toml` (recommended, not
+  gated) — see "Dependency cooldown (supply-chain)" in `../SKILL.md`. From v31 the checker
+  also reads the machine-wide guard of each package manager on PATH (`has_machine_cooldown`,
+  advisory like `suggests_fnox`: it reports the machine and never affects status).
+- **Dependabot grouping** (v31, for a repo with a `.github/dependabot.yml`) — every
+  `package-ecosystem` entry keeps its own `cooldown: default-days: 3` and has two groups: `<eco>`
+  (`gems`, `npm`, `python`, `actions`, …) with `patterns: ["*"]` and `update-types: [minor,
+  patch]`, so majors keep their own PR, and `<eco>-security` with `applies-to: security-updates`
+  and `patterns: ["*"]`, so related security fixes land in one PR. The cooldown only delays
+  version updates; security updates skip it. The security group does nothing where the repo
+  has Dependabot security updates switched off (Settings → Advanced Security). Template:
+  `templates/dependabot.yml`. The checker reports a gap as `has_dependabot_groups=0`
+  (advisory, never affects status).
 
 ## Per-stack checks
 
@@ -186,10 +197,10 @@ duplication audits — runs on pre-commit (each glob-gated) and again in `check`
 > **jscpd version policy (pre-commit + CI):** the gate neither pins a fixed version nor calls
 > `@latest` blindly. Since v14 the whole policy lives in one place — `scripts/run-jscpd.sh` —
 > which both the hk step and CI's audit job call, so the two can't drift. It tracks latest with
-> a **4-day cooldown** — the same supply-chain seasoning as the dependency cooldowns (see
-> "Dependency cooldown (supply-chain)" in `../SKILL.md`) — via `npx --before=<4 days ago>`, which
-> resolves the newest release that has existed at least 4 days. It's **floored at v5** (the major
-> `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <4 days
+> a **3-day cooldown** — the same supply-chain seasoning as the dependency cooldowns (see
+> "Dependency cooldown (supply-chain)" in `../SKILL.md`) — via `npx --before=<3 days ago>`, which
+> resolves the newest release that has existed at least 3 days. It's **floored at v5** (the major
+> `.jscpd.json` targets) so the cooldown can't regress to v4 while the v5 line is still <3 days
 > old; if the cooldown pick is below the floor the script falls back to `latest`. It also
 > **degrades gracefully offline**: when the registry is unreachable it runs the cached jscpd, and
 > when nothing is cached it warns and passes rather than blocking the commit — unless invoked

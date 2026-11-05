@@ -5,9 +5,10 @@ where to find the changelog/migration guide for a major bump. Always **regenerat
 through the package manager** — never hand-edit it. Every command runs inside the repo on the
 upgrade worktree/branch.
 
-The 4-day cooldown is already encoded in each repo's manifest (dev-env-setup), so these commands
-will hold back releases younger than 4 days. That's intended — don't disable it to grab a fresher
-version unless the user explicitly asks (e.g. an urgent CVE).
+The 3-day cooldown is already encoded in each repo's manifest (dev-env-setup), so these commands
+will hold back releases younger than 3 days. That's intended. For an urgent CVE the user asks
+for, exempt that one package (SKILL.md "Cooldown bypass for one package"); never disable the
+window.
 
 ## JavaScript — npm / pnpm / yarn
 
@@ -49,7 +50,7 @@ Pick the manager by lockfile (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, e
   is past the cooldown:
   ```bash
   v=$(curl -s https://rubygems.org/api/v1/versions/bundler.json \
-    | jq -r '(now - 4*86400 | todate) as $cut
+    | jq -r '(now - 3*86400 | todate) as $cut
              | [.[] | select(.prerelease | not) | select(.created_at < $cut)][0].number')
   bundle update --bundler="$v"
   ```
@@ -79,7 +80,7 @@ Pick the manager by lockfile/manifest (`uv.lock` or `[tool.uv]` → uv; `poetry.
 
 - For a **major**, raise the version constraint in `pyproject.toml`/`requirements.txt`, then
   re-lock and `uv sync` / `poetry install`.
-- `exclude-newer = "4 days"` in `[tool.uv]` is the cooldown — it gates new resolutions, leaving
+- `exclude-newer = "3 days"` in `[tool.uv]` is the cooldown — it gates new resolutions, leaving
   already-locked versions untouched.
 - Changelogs: the project's PyPI page → "Release notes" / project links → GitHub **Releases** or
   `CHANGELOG.md`; many projects ship an `UPGRADING`/migration doc.

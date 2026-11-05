@@ -1462,6 +1462,79 @@ Steps:
 
 ---
 
+## v30 → v31 (3-day cooldown, Dependabot groups, bun row, machine-wide guard check, sfw)
+
+**Every repo shortens its cooldowns from 4 days to 3 and bumps the stamp.** v31 changes the
+window and the comments in the templates, and no gate: a repo still on 4 days passes the checker
+(4 ≥ 3), so nothing turns red before the backfill reaches it.
+
+- **The window is 3 days, not 4.** GitHub's review of 21 supply-chain incidents found poisoned
+  versions pulled within hours, and Dependabot's own default cooldown is 3 days
+  ([GitHub blog](https://github.blog/security/supply-chain-security/the-case-for-a-cooldown-why-dependabot-now-waits-before-issuing-version-updates/)).
+  The fourth day bought little, and an urgent security fix now takes dependency-upgrade's
+  one-package bypass instead of waiting or turning the window off.
+- The laptop had per-repo cooldowns but no machine-wide npm or uv one, so every ad-hoc
+  `npx`/`uvx` took same-day releases. The checker now reports `has_machine_cooldown` and an
+  advisory line naming each package manager on PATH whose user config lacks the window. It
+  never affects status.
+- The cooldown tables had no bun row. bun reads `minimumReleaseAge` (seconds) under `[install]`
+  in `bunfig.toml`, and globally in `~/.bunfig.toml`.
+- The obvious Socket Firewall install, `npm i -g sfw`, is a launcher that fetches the newest
+  binary at run time. The skill now has a short sfw section (mise github backend).
+
+Steps per repo:
+
+1. **Bump the stamp** to `DEV_ENV_VERSION = "31"`.
+2. **Shorten every cooldown the repo sets**, in each tool's own unit (skip the rows the repo
+   doesn't have):
+
+   | File | From | To |
+   |------|------|----|
+   | mise config `[settings]` | `minimum_release_age = "4d"` | `minimum_release_age = "3d"` |
+   | `pyproject.toml` `[tool.uv]` | `exclude-newer = "4 days"` | `exclude-newer = "3 days"` |
+   | `Gemfile` source line | `cooldown: 4` | `cooldown: 3` |
+   | `.npmrc` | `min-release-age=4` | `min-release-age=3` |
+   | `pnpm-workspace.yaml` | `minimumReleaseAge: 5760` | `minimumReleaseAge: 4320` |
+   | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` | `npmMinimalAgeGate: 4320` |
+   | `bunfig.toml` `[install]` | `minimumReleaseAge = 345600` | `minimumReleaseAge = 259200` |
+   | `.github/dependabot.yml` `cooldown:` | `default-days: 7` (or 4) | `default-days: 3` |
+
+   Then run `uv lock` in a uv repo: `uv.lock` records the window (`exclude-newer-span =
+   "P3D"`), and `uv sync --locked` fails until it matches. Only that line should change.
+3. **Re-copy `scripts/run-jscpd.sh`** from `templates/run-jscpd.sh` (its cutoff is now
+   `3 days ago`), and change "4-day" to "3-day" in the hk and CI comments that mention it.
+4. **bun repo** (a `bun.lock` or `bun.lockb`): add to `bunfig.toml` at the repo root, creating
+   it if needed, and commit it:
+   ```toml
+   [install]
+   minimumReleaseAge = 259200 # 3 days, in seconds (dev-env cooldown)
+   ```
+5. **Group Dependabot's PRs** (a repo with `.github/dependabot.yml`). In jambook, spotify-tools
+   and booking-overview each one-gem Dependabot PR failed bundler-audit, because the other
+   vulnerable gems were still on main: about 12 red PRs at once. Grouping lands them together.
+   Give every `package-ecosystem` entry the two groups from `templates/dependabot.yml`, named
+   for its ecosystem (`gems`, `npm`, `python`, `actions`):
+   ```yaml
+     groups:
+       gems:
+         patterns: ["*"]
+         update-types: [minor, patch]
+       gems-security:
+         applies-to: security-updates
+         patterns: ["*"]
+   ```
+   Majors keep a PR each. The security group only acts where Dependabot security updates are
+   switched on; they were off in booking-overview and spotify-tools on 2026-10-28. Report such a
+   repo to the user (Settings → Advanced Security → Dependabot security updates); don't switch
+   it on yourself. The checker's `has_dependabot_groups=0` names each entry still missing a group
+   or the 3-day cooldown.
+6. **Run the checker.** If it prints `has_machine_cooldown=0`, put the advisory line and the
+   matching "Global guard" commands from SKILL.md in the report for the user. Machine config is
+   not part of a repo backfill: don't run them yourself. A machine still on 4 days passes; tell
+   the user the global settings can drop to 3 too.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

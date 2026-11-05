@@ -414,9 +414,9 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
 
 # Each JS lockfile and the setting its manager needs beside it (SKILL.md's cooldown table).
 JS_COOLDOWN = {
-    "package-lock.json": (".npmrc", "min-release-age=4"),
-    "pnpm-lock.yaml": ("pnpm-workspace.yaml", "minimumReleaseAge: 5760"),
-    "yarn.lock": (".yarnrc.yml", "npmMinimalAgeGate: 5760"),
+    "package-lock.json": (".npmrc", "min-release-age=3"),
+    "pnpm-lock.yaml": ("pnpm-workspace.yaml", "minimumReleaseAge: 4320"),
+    "yarn.lock": (".yarnrc.yml", "npmMinimalAgeGate: 4320"),
 }
 
 
@@ -429,7 +429,7 @@ def _js_repo(path, lock, *, at=".", setting=None):
     (path / at / "package.json").write_text("{}\n")
     (path / at / lock).write_text("")
     if setting is not None:
-        (path / at / JS_COOLDOWN[lock][0]).write_text(f"# 4-day cooldown\n{setting}\n")
+        (path / at / JS_COOLDOWN[lock][0]).write_text(f"# 3-day cooldown\n{setting}\n")
 
 
 @pytest.mark.parametrize("at", [".", "frontend"])
@@ -470,13 +470,13 @@ def test_checker_needs_upgrade_with_js_cooldown_under_four_days(
     _js_repo(tmp_path, lock, setting=setting)
     assert run_checker(tmp_path)["has_cooldown"] == "0"
     config, want = JS_COOLDOWN[lock]
-    assert f"cooldown under 4 days ({config} {want})" in _needs_upgrade_line(tmp_path)
+    assert f"cooldown under 3 days ({config} {want})" in _needs_upgrade_line(tmp_path)
 
 
 def test_checker_needs_upgrade_when_npmrc_gitignored(tmp_path):
     # .npmrc often holds a registry token and gets gitignored; then no clone or CI run
     # has the cooldown.
-    _js_repo(tmp_path, "package-lock.json", setting="min-release-age=4")
+    _js_repo(tmp_path, "package-lock.json", setting="min-release-age=3")
     init_git_repo(tmp_path)
     (tmp_path / ".gitignore").write_text(".npmrc\n")
     assert run_checker(tmp_path)["has_cooldown"] == "0"
@@ -489,6 +489,140 @@ def test_checker_does_not_gate_a_yarn_1_lockfile(tmp_path):
     out = run_checker(tmp_path)
     assert out["has_cooldown"] == "1"
     assert out["status"] == "compliant"
+
+
+# The machine-wide guard per manager: file under HOME, its content. Mirrors SKILL.md's
+# "Global guard" table.
+MACHINE_GUARD = {
+    "npm": (".npmrc", "min-release-age=3"),
+    "uv": (".config/uv/uv.toml", 'exclude-newer = "3 days"'),
+    "bundle": (".bundle/config", '---\nBUNDLE_COOLDOWN: "3"'),
+    "pnpm": (".config/pnpm/config.yaml", "minimumReleaseAge: 4320"),
+    "bun": (".bunfig.toml", "[install]\nminimumReleaseAge = 259200"),
+}
+
+
+ALL_GUARDS = {name: setting for name, (_, setting) in MACHINE_GUARD.items()}
+
+
+def _run_checker_on_machine(tmp_path, tools, guards):
+    """Run the checker on a compliant repo with a fake HOME holding `guards` (manager:
+    setting) in each manager's global config, and a PATH of only the tools the checker runs plus stub `tools`: no real home
+    config, package manager or logged-in gh can answer."""
+    repo, home, bin_dir = (tmp_path / d for d in ("repo", "home", "bin"))
+    for d in (repo, home, bin_dir):
+        d.mkdir()
+    make_compliant_repo(repo)
+    for name in ("bash", "cat", "dirname", "find", "git", "grep", "head", "sed"):
+        (bin_dir / name).symlink_to(shutil.which(name, path="/usr/bin:/bin"))
+    for name in ("sort", "tail", "tr", "xargs"):
+        (bin_dir / name).symlink_to(shutil.which(name, path="/usr/bin:/bin"))
+    for name in tools:
+        (bin_dir / name).write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / name).chmod(0o755)
+    for name, setting in guards.items():
+        config = MACHINE_GUARD[name][0]
+        (home / config).parent.mkdir(parents=True, exist_ok=True)
+        (home / config).write_text(f"{setting}\n")
+    env = {"HOME": str(home), "PATH": str(bin_dir), "GIT_CONFIG_NOSYSTEM": "1"}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(repo)], capture_output=True, text=True, env=env
+    )
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    advisory = [ln for ln in r.stdout.splitlines() if "machine-wide" in ln]
+    return parse_kv(r.stdout), advisory
+
+
+def test_checker_advises_a_missing_machine_wide_cooldown(tmp_path):
+    # The laptop had per-repo cooldowns but no global npm or uv one, so every ad-hoc
+    # npx/uvx took same-day releases until a security pass noticed.
+    out, advisory = _run_checker_on_machine(tmp_path, MACHINE_GUARD, {})
+    assert out["has_machine_cooldown"] == "0"
+    assert out["status"] == "compliant", "the machine-wide check must never gate"
+    assert len(advisory) == 1 and advisory[0].startswith("# Advisory:"), advisory
+    for name, (config, setting) in MACHINE_GUARD.items():
+        assert f"{name} (~/{config} {setting.splitlines()[-1]})" in advisory[0]
+
+
+def test_checker_is_quiet_when_the_machine_wide_cooldowns_are_set(tmp_path):
+    out, advisory = _run_checker_on_machine(tmp_path, MACHINE_GUARD, ALL_GUARDS)
+    assert out["has_machine_cooldown"] == "1"
+    assert advisory == []
+
+
+def test_checker_skips_the_machine_guard_of_a_manager_not_installed(tmp_path):
+    out, advisory = _run_checker_on_machine(tmp_path, [], {})
+    assert out["has_machine_cooldown"] == "1"
+    assert advisory == []
+
+
+def test_checker_advises_a_machine_wide_cooldown_under_four_days(tmp_path):
+    out, advisory = _run_checker_on_machine(
+        tmp_path, ["npm"], {"npm": "min-release-age=1"}
+    )
+    assert out["has_machine_cooldown"] == "0"
+    assert "npm (~/.npmrc min-release-age=3)" in advisory[0]
+
+
+DEPENDABOT_TEMPLATE = (
+    DEV_HOOKS
+    / "skills"
+    / "dev-env-setup"
+    / "references"
+    / "templates"
+    / "dependabot.yml"
+)
+
+
+def _dependabot_advisory(repo):
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(repo)], capture_output=True, text=True
+    )
+    return parse_kv(r.stdout), [
+        ln for ln in r.stdout.splitlines() if ln.startswith("# ") and "dependabot" in ln
+    ]
+
+
+def test_checker_accepts_the_dependabot_template(tmp_path):
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        DEPENDABOT_TEMPLATE.read_text()
+    )
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "1"
+    assert advisory == []
+
+
+def test_checker_advises_ungrouped_dependabot(tmp_path):
+    # jambook, spotify-tools and booking-overview: one-gem security PRs each failed
+    # bundler-audit on the other vulnerable gems still on main, ~12 red PRs at once.
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        "version: 2\nupdates:\n- package-ecosystem: bundler\n  directory: /\n"
+        "  cooldown:\n    default-days: 7\n"
+        '- package-ecosystem: "npm"\n  cooldown:\n    default-days: 3\n  groups:\n'
+        "    npm:\n      patterns: ['*']\n      update-types: [minor, patch]\n"
+    )
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "0"
+    assert out["status"] == "compliant", "the Dependabot check must never gate"
+    assert len(advisory) == 1 and advisory[0].startswith("# Advisory:"), advisory
+    for gap in (
+        "bundler cooldown default-days 3",
+        "bundler minor/patch group",
+        "bundler security group",
+        "npm security group",
+    ):
+        assert gap in advisory[0]
+    assert "npm cooldown" not in advisory[0] and "npm minor" not in advisory[0]
+
+
+def test_checker_leaves_a_repo_without_dependabot_alone(tmp_path):
+    make_compliant_repo(tmp_path)
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "1"
+    assert advisory == []
 
 
 def test_checker_js_cooldown_leaves_a_repo_without_js_lockfile_alone(tmp_path):
@@ -689,7 +823,7 @@ def test_inventory_python_manager_uv_from_lock(tmp_path):
 
 def test_inventory_python_manager_uv_from_tool_table(tmp_path):
     (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname='x'\n[tool.uv]\nexclude-newer = \"4 days\"\n"
+        "[project]\nname='x'\n[tool.uv]\nexclude-newer = \"3 days\"\n"
     )
     out, _ = run_inventory(tmp_path)
     assert out["python_manager"] == "uv"
@@ -710,7 +844,7 @@ def test_inventory_python_manager_pip_fallback(tmp_path):
 
 
 def _gemfile_lock(tmp_path, bundled_with):
-    (tmp_path / "Gemfile").write_text('source "https://rubygems.org", cooldown: 4\n')
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org", cooldown: 3\n')
     (tmp_path / "Gemfile.lock").write_text(
         f"GEM\n  remote: https://rubygems.org/\n  specs:\n\nBUNDLED WITH\n  {bundled_with}\n"
     )

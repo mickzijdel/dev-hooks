@@ -63,7 +63,7 @@ local linters = new Mapping<String, Step> {
     // resolves but the mise npm backend does not). Config in `.jscpd.json` (ai + threshold
     // reporters; threshold 0 = fail on any clone). `-f python` scopes to code (no config
     // equivalent) so docs/configs aren't flagged. (See SKILL.md › jscpd note.)
-    // The version-cooldown policy (latest on a 4-day cooldown, floored at v5) and the
+    // The version-cooldown policy (latest on a 3-day cooldown, floored at v5) and the
     // offline fallback live in scripts/run-jscpd.sh, shared with the CI audit job so the
     // local and CI gates can't drift.
     ["jscpd"] {
