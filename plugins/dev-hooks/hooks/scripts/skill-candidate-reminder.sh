@@ -2,8 +2,9 @@
 # bet: model won't stop to ask whether a session's work should become, or improve, a skill
 # sunset: model proposes skill changes unprompted after working out a repeatable procedure
 # Stop hook: once per substantial session, ask Claude whether the session worked out a
-# repeatable procedure or hit a mistake an existing skill should have prevented, and if so
-# to append a proposal to the skill-candidate queue, which weekly-automation-review triages.
+# procedure it expects to repeat in another session or repo, or hit a mistake an existing
+# skill should have prevented, and if so to append a proposal to the skill-candidate queue,
+# which weekly-automation-review triages. A one-off's facts go to a memory instead.
 # The queue lives outside ~/.claude, whose files Claude Code always asks before writing, even
 # with an allow rule; an allow rule for the queue's folder makes the write prompt-free.
 # It only proposes: creating or editing the skill is the weekly review's call, so the queue
@@ -51,7 +52,7 @@ case "$RESULT" in
 esac
 [ "$RESULT" -lt "$MIN_TURNS" ] && exit 0
 
-MSG="${SENTINEL}. Before finishing, ask: did this session work out a repeatable multi-step procedure, or hit a mistake that an existing skill should have prevented? If so, append one entry per candidate to $QUEUE with the Write or Edit tool (create the file if it's missing), in this shape:
+MSG="${SENTINEL}. Before finishing, ask: did this session work out a procedure you expect to repeat in another session or repo, or hit a mistake that an existing skill should have prevented? If so, append one entry per candidate to $QUEUE with the Write or Edit tool (create the file if it's missing), in this shape:
 
 ## <YYYY-MM-DD> · <repo or folder> · amend <plugin:skill> | new <name>
 - Trigger: <when it should fire, in the words a user would type>
@@ -60,6 +61,6 @@ MSG="${SENTINEL}. Before finishing, ask: did this session work out a repeatable 
 - Evidence: <what this session did or got wrong that the skill would capture>
 - Status: open
 
-Prefer amending an existing skill to a new one. Propose only: do NOT create or edit a skill now, the weekly review decides. If nothing qualifies, say 'nothing to propose' in one line and stop."
+Prefer amending an existing skill to a new one. A one-off errand is not a candidate: save its facts as a memory instead. Propose only: do NOT create or edit a skill now, the weekly review decides. If nothing qualifies, say 'nothing to propose' in one line and stop."
 
 reminder_emit_stop "$MSG"

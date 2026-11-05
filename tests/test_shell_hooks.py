@@ -1620,6 +1620,8 @@ def test_skill_candidate_reminder_fires_on_substantial_session(tmp_path):
     assert reason.startswith(SKILL_SENTINEL)
     assert str(tmp_path / "data" / "dev-hooks" / "skill-candidates.md") in reason
     assert "nothing to propose" in reason
+    assert "repeat in another session or repo" in reason
+    assert "memory" in reason
 
 
 @pytest.mark.parametrize(
