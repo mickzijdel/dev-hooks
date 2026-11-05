@@ -12,6 +12,9 @@ export type Facts = {
   stops: { at: number; block: string | null }[]
   // Per file, when an Edit/Write last touched it: the evidence window for Stop nudges.
   lastEdit?: Record<string, number>
+  // Per path a Bash command named (the skill-candidate queue, as SKILL_QUEUE_CMD_RE matched
+  // it), when last: the queue writes `cat >> … <<EOF` makes, which lastEdit never sees.
+  bashNamed?: Record<string, number>
   // Stop nudges this session: one per hook reason the Stop orchestration returned.
   nudges?: Nudge[]
 }

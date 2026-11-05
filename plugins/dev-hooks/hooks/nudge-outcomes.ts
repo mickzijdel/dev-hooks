@@ -38,6 +38,8 @@ export const REVIEW_NEEDLES = ['code-review', 'code_review', 'requesting-code-re
 export const MEMORY_DIR_RE = /\/\.claude\/(?:projects\/[^/]+\/)?memory\//
 // Mirrors hook_helpers.SKILL_QUEUE_RE.
 export const SKILL_QUEUE_RE = /\/dev-hooks\/skill-candidates\.md$/
+// Mirrors hook_helpers.SKILL_QUEUE_CMD_RE: the queue named inside a Bash command.
+export const SKILL_QUEUE_CMD_RE = /\/dev-hooks\/skill-candidates\.md\b/
 
 // Mirrors hook_helpers._AGENT_DOER_RE and _agent_job_re: "Review task 8" is a review,
 // "Add product review form" is not.
@@ -91,7 +93,8 @@ type Resolution = { outcome: NudgeOutcome; evidence: string }
 
 // What counts as acting on each hook's reason. A hook without a remedy the facts can show
 // is "unknown", never guessed. The facts see Edit/Write only, so a remedy done through
-// Bash (a test file made by a generator, a memory file written with cat) reads as ignored.
+// Bash (a test file made by a generator, a memory file written with cat) reads as ignored;
+// the one exception is a Bash command naming the skill-candidate queue (`bashNamed`).
 export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
   const acted = (evidence: string): Resolution => ({ outcome: 'acted', evidence })
   const missed = (what: string): Resolution =>
@@ -119,6 +122,8 @@ export const resolveNudge = (n: Nudge, ev: NudgeEvidence): Resolution => {
     }
     case 'skill-candidate-reminder': {
       if (editedSince(ev.facts, n.at, f => SKILL_QUEUE_RE.test(f))) return acted('proposed in skill-candidates.md')
+      if (Object.entries(ev.facts.bashNamed ?? {}).some(([f, t]) => t > n.at && SKILL_QUEUE_RE.test(f)))
+        return acted('proposed in skill-candidates.md (via Bash)')
       // The reason's own escape hatch: "say 'nothing to propose' in one line and stop."
       if (/nothing to propose/i.test(ev.lastMessage ?? '')) {
         return { outcome: 'declined', evidence: "said 'nothing to propose'" }

@@ -135,8 +135,9 @@ live `claude -p --plugin-dir` run. Such a run's mod keeps the inline store, and 
 its records into the one export (`exportedRecords`) rather than replacing it: `$.plugin` carries
 only `name` and `root`, and the marketplace install's root is this working copy, so no copy can
 tell which one it is. The review needles, the memory-dir and skill-queue regexes and the probe rule are mirrors of
-`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE`/`SKILL_QUEUE_RE` and `reminder_is_probe_session`,
-pinned by `tests/test_nudge_parity.py`.
+`review-reminder.sh`, `hook_helpers.MEMORY_DIR_RE`/`SKILL_QUEUE_RE`/`SKILL_QUEUE_CMD_RE` and `reminder_is_probe_session`,
+pinned by `tests/test_nudge_parity.py`. The facts' `bashNamed` (the CI-watch Bash hook records a
+command naming the skill-candidate queue) is the one Bash-made remedy the nudges see.
 
 The module **watches CI after a push** (the `CI watch` block of `register.tsx`; its pure half —
 push detection, push-output parsing, run verdicts, the texts — is `hooks/ci-watch.ts`, imported
@@ -320,8 +321,8 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
   `scan_script_dirs()` for the recursive script-index inventory, `memory_written()` for "did this
   session write a memory file?" (transcript Write/Edit into a memory dir, plus the facts file;
-  `path_written()` is the same check for any path regex, as skill-candidate-reminder uses for its
-  queue), `human_turns()` for the "substantial session" turn count with the sentinel guard, `authored_scripts()` for the
+  `path_written()` is the same check for any path regex, plus an optional command regex for a
+  Bash append, as skill-candidate-reminder uses for its queue), `human_turns()` for the "substantial session" turn count with the sentinel guard, `authored_scripts()` for the
   save-script-reminder transcript scan, and `transcript_invoked()` for "did this skill/agent
   actually run?" — a tool_use walk, NEVER a bare-name transcript grep: the transcript's
   skill_listing attachment names every installed skill, so a plain grep for a skill name

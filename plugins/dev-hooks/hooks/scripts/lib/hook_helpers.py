@@ -261,28 +261,39 @@ def _split_needles(needles):
 # global (~/.claude/memory/). A repo's own "memory" folder is not it.
 MEMORY_DIR_RE = re.compile(r"/\.claude/(?:projects/[^/]+/)?memory/")
 SKILL_QUEUE_RE = re.compile(r"/dev-hooks/skill-candidates\.md$")
+# The queue named inside a Bash command (`cat >> ~/.local/share/dev-hooks/skill-candidates.md
+# <<EOF`); its match is a path SKILL_QUEUE_RE accepts.
+SKILL_QUEUE_CMD_RE = re.compile(r"/dev-hooks/skill-candidates\.md\b")
 _WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def path_written(transcript_path, facts_path, pattern):
+def path_written(transcript_path, facts_path, pattern, command_pattern=None):
     """True when this session wrote a file whose path matches `pattern`: a Write/Edit tool
     call in the transcript, or — via the dev-hooks mod's session facts — such an edit made
-    by a subagent, which the parent transcript never records."""
+    by a subagent, which the parent transcript never records. With `command_pattern`, a
+    Bash command it matches counts too (the facts' `bashNamed` for a subagent's)."""
     if facts_path:
         try:
             with open(facts_path, encoding="utf-8") as f:
-                repos = (json.load(f) or {}).get("repos") or []
+                facts = json.load(f) or {}
+            repos = facts.get("repos") or []
+            named = list(facts.get("bashNamed") or {}) if command_pattern else []
         except (OSError, ValueError, TypeError, AttributeError):
-            repos = []
-        for repo in repos:
-            if any(pattern.search(str(p)) for p in (repo or {}).get("files") or []):
-                return True
+            repos, named = [], []
+        files = [p for repo in repos for p in (repo or {}).get("files") or []]
+        if any(pattern.search(str(p)) for p in files + named):
+            return True
     for line in _transcript_lines(transcript_path):
         for block in _tool_use_blocks(line):
+            given = block.get("input") or {}
             if block.get("name") in _WRITE_TOOLS:
-                path = str((block.get("input") or {}).get("file_path") or "")
-                if pattern.search(path):
-                    return True
+                text, rule = given.get("file_path"), pattern
+            elif block.get("name") == "Bash" and command_pattern:
+                text, rule = given.get("command"), command_pattern
+            else:
+                continue
+            if rule.search(str(text or "")):
+                return True
     return False
 
 
