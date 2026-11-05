@@ -30,6 +30,10 @@
 #                    min-release-age >= 4), pnpm's (pnpm-workspace.yaml minimumReleaseAge >= 5760)
 #                    or yarn Berry's (.yarnrc.yml npmMinimalAgeGate >= 5760), in a file git
 #                    doesn't ignore. 1 when none applies; Bundler's cooldown is not gated.
+#   has_machine_cooldown  1 if every package manager on PATH (npm, uv, bundle, pnpm, bun) has the
+#                    4-day cooldown in its user-level config (~/.npmrc, ~/.config/uv/uv.toml,
+#                    ~/.bundle/config, ~/.config/pnpm/config.yaml, ~/.bunfig.toml). Advisory from
+#                    v31 (mirrors suggests_fnox): it reports the machine, never affects status.
 #   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
 #                    shared jscpd runner both the hk step and CI's audit job call).
 #   has_version_sync 1 if scripts/check_version_sync.sh present (required from standard v23 — the
@@ -180,6 +184,27 @@ while IFS= read -r lock; do
 done < <(cd "$DIR" && find . -mindepth 1 -maxdepth 2 -type f \( -name package-lock.json -o -name pnpm-lock.yaml -o -name yarn.lock \) 2>/dev/null | sort)
 has_cooldown=1
 [ ${#cooldown_gaps[@]} -gt 0 ] && has_cooldown=0
+
+# Machine-wide cooldowns (v31, advisory, never gates status): the Global guard table, for each
+# manager on PATH, so an ad-hoc npx/uvx and a repo without its own setting still wait 4 days.
+# shortcut: reads only each manager's default user config, not env overrides or system files.
+machine_gaps=()
+# machine_guard COMMAND FILE SETTING ERE [MINIMUM]: ERE captures the value; no MINIMUM = presence.
+machine_guard() {
+  command -v "$1" >/dev/null 2>&1 || return 0
+  local v=""
+  [ -f "$2" ] && v="$(sed -nE "s/$4/\1/p" "$2" | tail -n1)"
+  [ -n "$v" ] && { [ -z "${5:-}" ] || [ "$v" -ge "$5" ]; } && return 0
+  machine_gaps+=("$1 (${2/#"$HOME"/\~} $3)")
+}
+xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}"
+machine_guard npm "$HOME/.npmrc" "min-release-age=4" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 4
+machine_guard uv "$xdg_config/uv/uv.toml" 'exclude-newer = "4 days"' '^[[:space:]]*exclude-newer[[:space:]]*=[[:space:]]*(.+)$'
+machine_guard bundle "$HOME/.bundle/config" 'BUNDLE_COOLDOWN: "4"' '^BUNDLE_COOLDOWN:[[:space:]]*"?([0-9]+)"?[[:space:]]*$' 4
+machine_guard pnpm "$xdg_config/pnpm/config.yaml" "minimumReleaseAge: 5760" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760
+machine_guard bun "$HOME/.bunfig.toml" "minimumReleaseAge = 345600" '^[[:space:]]*minimumReleaseAge[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 345600
+has_machine_cooldown=1
+[ ${#machine_gaps[@]} -gt 0 ] && has_machine_cooldown=0
 
 # Shared jscpd runner (v14): the version-cooldown policy lives in scripts/run-jscpd.sh,
 # called by both the hk step and CI's audit job so the two gates can't drift.
@@ -332,6 +357,7 @@ has_lockfile=$has_lockfile
 has_readme=$has_readme
 has_claude=$has_claude
 has_cooldown=$has_cooldown
+has_machine_cooldown=$has_machine_cooldown
 has_jscpd_runner=$has_jscpd_runner
 has_version_sync=$has_version_sync
 has_exec_bit=$has_exec_bit
@@ -360,6 +386,11 @@ esac
 
 if [ "$suggests_fnox" = 1 ]; then
   echo "# Advisory: plaintext secrets detected and no fnox.toml — consider the env-to-fnox skill to migrate them out of the repo."
+fi
+
+if [ "$has_machine_cooldown" = 0 ]; then
+  printf -v machine_list '%s, ' "${machine_gaps[@]}"
+  echo "# Advisory: no machine-wide 4-day cooldown for ${machine_list%, }, so ad-hoc npx/uvx/bunx runs and repos without their own setting take same-day releases. See 'Global guard' in the SKILL.md 'Dependency cooldown' section; this machine's config is the user's to change."
 fi
 
 if [ "$has_devcontainer" = 1 ] && [ "$devcontainer_mise_driven" = 0 ]; then

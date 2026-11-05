@@ -489,6 +489,80 @@ def test_checker_does_not_gate_a_yarn_1_lockfile(tmp_path):
     assert out["status"] == "compliant"
 
 
+# The machine-wide guard per manager: file under HOME, its content. Mirrors SKILL.md's
+# "Global guard" table.
+MACHINE_GUARD = {
+    "npm": (".npmrc", "min-release-age=4"),
+    "uv": (".config/uv/uv.toml", 'exclude-newer = "4 days"'),
+    "bundle": (".bundle/config", '---\nBUNDLE_COOLDOWN: "4"'),
+    "pnpm": (".config/pnpm/config.yaml", "minimumReleaseAge: 5760"),
+    "bun": (".bunfig.toml", "[install]\nminimumReleaseAge = 345600"),
+}
+
+
+ALL_GUARDS = {name: setting for name, (_, setting) in MACHINE_GUARD.items()}
+
+
+def _run_checker_on_machine(tmp_path, tools, guards):
+    """Run the checker on a compliant repo with a fake HOME holding `guards` (manager:
+    setting) in each manager's global config, and a PATH of only the tools the checker runs plus stub `tools`: no real home
+    config, package manager or logged-in gh can answer."""
+    repo, home, bin_dir = (tmp_path / d for d in ("repo", "home", "bin"))
+    for d in (repo, home, bin_dir):
+        d.mkdir()
+    make_compliant_repo(repo)
+    for name in ("bash", "cat", "dirname", "find", "git", "grep", "head", "sed"):
+        (bin_dir / name).symlink_to(shutil.which(name, path="/usr/bin:/bin"))
+    for name in ("sort", "tail", "tr", "xargs"):
+        (bin_dir / name).symlink_to(shutil.which(name, path="/usr/bin:/bin"))
+    for name in tools:
+        (bin_dir / name).write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / name).chmod(0o755)
+    for name, setting in guards.items():
+        config = MACHINE_GUARD[name][0]
+        (home / config).parent.mkdir(parents=True, exist_ok=True)
+        (home / config).write_text(f"{setting}\n")
+    env = {"HOME": str(home), "PATH": str(bin_dir), "GIT_CONFIG_NOSYSTEM": "1"}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(repo)], capture_output=True, text=True, env=env
+    )
+    assert r.returncode == 0 and not r.stderr, r.stderr
+    advisory = [ln for ln in r.stdout.splitlines() if "machine-wide" in ln]
+    return parse_kv(r.stdout), advisory
+
+
+def test_checker_advises_a_missing_machine_wide_cooldown(tmp_path):
+    # The laptop had per-repo cooldowns but no global npm or uv one, so every ad-hoc
+    # npx/uvx took same-day releases until a security pass noticed.
+    out, advisory = _run_checker_on_machine(tmp_path, MACHINE_GUARD, {})
+    assert out["has_machine_cooldown"] == "0"
+    assert out["status"] == "compliant", "the machine-wide check must never gate"
+    assert len(advisory) == 1 and advisory[0].startswith("# Advisory:"), advisory
+    for name, (config, setting) in MACHINE_GUARD.items():
+        assert f"{name} (~/{config} {setting.splitlines()[-1]})" in advisory[0]
+
+
+def test_checker_is_quiet_when_the_machine_wide_cooldowns_are_set(tmp_path):
+    out, advisory = _run_checker_on_machine(tmp_path, MACHINE_GUARD, ALL_GUARDS)
+    assert out["has_machine_cooldown"] == "1"
+    assert advisory == []
+
+
+def test_checker_skips_the_machine_guard_of_a_manager_not_installed(tmp_path):
+    out, advisory = _run_checker_on_machine(tmp_path, [], {})
+    assert out["has_machine_cooldown"] == "1"
+    assert advisory == []
+
+
+def test_checker_advises_a_machine_wide_cooldown_under_four_days(tmp_path):
+    out, advisory = _run_checker_on_machine(
+        tmp_path, ["npm"], {"npm": "min-release-age=1"}
+    )
+    assert out["has_machine_cooldown"] == "0"
+    assert "npm (~/.npmrc min-release-age=4)" in advisory[0]
+
+
 def test_checker_js_cooldown_leaves_a_repo_without_js_lockfile_alone(tmp_path):
     # A package.json with no lockfile resolves nothing to gate (and make_compliant_repo's
     # Python repo with the uv cooldown stays compliant).

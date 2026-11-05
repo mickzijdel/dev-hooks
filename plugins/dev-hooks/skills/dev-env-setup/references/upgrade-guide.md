@@ -1462,6 +1462,35 @@ Steps:
 
 ---
 
+## v30 → v31 (bun cooldown row, machine-wide guard check, Socket Firewall)
+
+**Every repo bumps the stamp; a bun repo also adds its cooldown.** v31 changes no template and
+no gate. It closes three supply-chain holes found in one week:
+
+- The laptop had per-repo cooldowns but no machine-wide npm or uv one, so every ad-hoc
+  `npx`/`uvx` took same-day releases. The checker now reports `has_machine_cooldown` and an
+  advisory line naming each package manager on PATH whose user config lacks the 4-day window.
+  It never affects status.
+- The cooldown tables had no bun row. bun reads `minimumReleaseAge` (seconds) under `[install]`
+  in `bunfig.toml`, and globally in `~/.bunfig.toml`.
+- The obvious Socket Firewall install, `npm i -g sfw`, is a launcher that fetches the newest
+  binary at run time. The skill now has a short sfw section (mise github backend).
+
+Steps per repo:
+
+1. **Bump the stamp** to `DEV_ENV_VERSION = "31"`.
+2. **bun repo** (a `bun.lock` or `bun.lockb`): add to `bunfig.toml` at the repo root, creating
+   it if needed, and commit it:
+   ```toml
+   [install]
+   minimumReleaseAge = 345600 # 4 days, in seconds (dev-env cooldown)
+   ```
+3. **Run the checker.** If it prints `has_machine_cooldown=0`, put the advisory line and the
+   matching "Global guard" commands from SKILL.md in the report for the user. Machine config is
+   not part of a repo backfill: don't run them yourself.
+
+---
+
 ## Adding a future version
 
 When the standard changes, bump `../VERSION`, then add a `## vN-1 → vN` section here listing the

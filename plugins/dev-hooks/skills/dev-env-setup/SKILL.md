@@ -18,13 +18,13 @@ allowed-tools:
 Bring a repo up to **an opinionated dev-environment standard** and keep it there. It covers
 both Python and Rails (Ruby) project types.
 
-## The standard (v30)
+## The standard (v31)
 
-A repo is **compliant at v30** when it has all of:
+A repo is **compliant at v31** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
   `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
-  `[env]` version stamp `DEV_ENV_VERSION = "30"`. The config may live wherever mise reads it
+  `[env]` version stamp `DEV_ENV_VERSION = "31"`. The config may live wherever mise reads it
   (`mise/config.toml`, `.config/mise/config.toml`, `.config/mise.toml`, `.mise.toml`), with
   `[tools.<tool>]` tables allowed; the checker, the roster and the version-sync gate all follow.
 - **`mise.lock`** (committed, beside the config: `mise/mise.lock` for `mise/config.toml`) —
@@ -99,7 +99,8 @@ A repo is **compliant at v30** when it has all of:
   Checker-enforced (`has_session_url_off`).
 - **Dependency cooldown** — a 4-day window via the package manager. Checker-enforced for uv in
   Python repos and for npm, pnpm and yarn Berry beside each JS lockfile (root or one directory
-  down); Bundler's is recommended. See "Dependency cooldown (supply-chain)".
+  down); Bundler's and bun's are recommended, and the machine-wide guards are reported
+  (`has_machine_cooldown`, advisory). See "Dependency cooldown (supply-chain)".
 
 **Recommended, advisory:** a **mise-driven dev container**. Having a `.devcontainer/`
 is optional and never gates compliance — but *if* a repo ships one, it must be mise-driven (the
@@ -232,6 +233,9 @@ proposing additions.
    drifted from the mise toolchain — hardcoded base, nodesource, global pnpm, …), surface that in
    the report and offer to fix it per the v18 → v19 upgrade-guide steps. Advisory only — it never
    blocks compliance.
+
+   If it reports `has_machine_cooldown=0`, list the managers its advisory line names and the
+   "Global guard" commands for them, for the user to run. Don't change the machine config yourself.
 
 8. **Verify** (do this, don't assume):
 
@@ -451,12 +455,13 @@ disturbs already-locked versions — it only gates *new* resolutions.
 | **npm** (≥ 11.10.0) | `.npmrc` | `min-release-age=4` |
 | **pnpm** (11+) | `pnpm-workspace.yaml` | `minimumReleaseAge: 5760` (minutes) |
 | **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
+| bun | `bunfig.toml` `[install]` | `minimumReleaseAge = 345600` (seconds) |
 | pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
 
 The checker enforces **uv** in Python repos and **npm, pnpm and yarn Berry** beside each JS
 lockfile at the root or one directory down (`frontend/package-lock.json` needs
 `frontend/.npmrc`), in a file git doesn't ignore; a yarn 1 lockfile is exempt, having no such
-setting. Bundler and pip are recommended and applied by the setup/upgrade flow when the matching
+setting. Bundler, bun and pip are recommended and applied by the setup/upgrade flow when the matching
 lockfile is present. `exclude-newer` accepts
 a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
 so the window moves forward with the current date.
@@ -471,11 +476,35 @@ floor:
 | npm | `npm config set min-release-age 4 --location=user` | `~/.npmrc` |
 | pnpm | `pnpm config set minimumReleaseAge 5760 --global` | `~/.config/pnpm/config.yaml` (pnpm 11 moved global settings to YAML) |
 | yarn | `yarn config set --home npmMinimalAgeGate 5760` | `~/.yarnrc.yml` |
+| bun | add `[install]` `minimumReleaseAge = 345600` to `~/.bunfig.toml` | user bunfig |
 
-The per-repo setting takes precedence over the global one, so a repo can still override it — e.g.
-drop to `0` (or `cooldown: 0`, `exclude-newer` unset) to take a fresh release immediately during an
-urgent upgrade. For one-off exceptions *inside* the window, uv has `exclude-newer-package`, pnpm
-`minimumReleaseAgeExclude`, and yarn `npmPreapprovedPackages` (npm has no per-package exclude yet).
+The checker reports a missing global guard as `has_machine_cooldown=0` with an advisory line, for
+each manager on PATH. It never affects status: the machine's config is the user's, so show them
+the commands and let them run them.
+
+The per-repo setting takes precedence over the global one. Never drop a repo's window to `0` to
+take one urgent release: that opens it for every package the run resolves. Exempt the one package
+for one command instead; dependency-upgrade's "Cooldown bypass for one package" has the form per
+manager.
+
+**Socket Firewall (optional, machine-wide).** `sfw` puts a proxy in front of the package
+registries that refuses versions Socket has confirmed as malware. The free tier covers npm, yarn,
+pnpm, pip, uv and cargo (bun's traffic too, in practice), not RubyGems. It blocks only confirmed
+malware: an unscanned same-day release passes, so it adds to the cooldown and does not replace it.
+- **Install the binary through mise**, never `npm i -g sfw`: that package is a launcher that
+  downloads the newest binary at run time (no cooldown) and has `*` dependency ranges. In
+  `~/.config/mise/config.toml` `[tools]`: `"github:SocketDev/sfw-free" = { version = "latest", bin
+  = "sfw" }`, which `minimum_release_age` covers.
+- **Wrap only the subcommands that fetch** (`npm install`/`ci`/`update`, `npx`, `pnpm add`/
+  `install`, `bun add`/`install`, `bunx`, `uv add`/`sync`/`lock`/`pip install`, `uvx`, `pip
+  install`) in shell functions that call `sfw <tool> …`. sfw sets proxy and CA variables
+  (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`, `PIP_CERT`), which must not reach `npm run` or
+  `uv run`.
+- **Hand the shell-rc change to the user.** Auto mode refuses agent edits to `~/.bashrc`; print
+  the functions for them to add.
+- **Prove it blocks:** in an empty directory, `sfw npm pack lodahs` must exit 1 with "blocked npm
+  package … malware" (it fetches the tarball and runs no code). `SFW_VERBOSE=true` prints
+  "Protected by Socket Firewall" on a routed command.
 
 **Sources:** [RubyGems blog, Jun 2026](https://blog.rubygems.org/2026/06/03/cooldown-let-new-gems-be-vetted.html) ·
 [uv `exclude-newer`](https://docs.astral.sh/uv/concepts/resolution/) ·

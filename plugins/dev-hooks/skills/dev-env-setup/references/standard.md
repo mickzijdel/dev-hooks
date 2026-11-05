@@ -1,4 +1,4 @@
-# The standard (v30) — full specification
+# The standard (v31) — full specification
 
 The detailed per-artifact requirements behind the summary in `../SKILL.md`. Read this before
 writing or editing any of the standard's files. The version here tracks `../VERSION` (guarded
@@ -6,7 +6,7 @@ by the test suite).
 
 ## Required artifacts
 
-A repo is **compliant at v30** when it has all of:
+A repo is **compliant at v31** when it has all of:
 
 - **`mise.toml`** — `[tools]` pins `hk`, `pkl`, the stack tool (`uv` for Python), `gitleaks`,
   `zizmor` + `actionlint` (GitHub Actions security + correctness checks, added in v18), and (all stacks that run jscpd — Python,
@@ -14,7 +14,7 @@ A repo is **compliant at v30** when it has all of:
   as the stack tool); `[settings] lockfile = true` and `minimum_release_age = "4d"` (4-day
   supply-chain cooldown on `mise upgrade`; `mise install` always reproduces `mise.lock` exactly
   — see "Lockfile & supply-chain verification" in `../SKILL.md`); `[env]` carries the version
-  stamp `DEV_ENV_VERSION = "30"`. Any config path mise reads works (v29): `mise.toml`,
+  stamp `DEV_ENV_VERSION = "31"`. Any config path mise reads works (v29): `mise.toml`,
   `.mise.toml`, `mise/config.toml`, `.config/mise.toml` or `.config/mise/config.toml`, with a pin
   written inline (`ruby = "4.0.9"`) or as a `[tools.ruby]` table with `version = "4.0.9"`. The
   checker, `fleet_roster.sh` and the version-sync gate read the first that exists (the checker
@@ -144,8 +144,10 @@ A repo is **compliant at v30** when it has all of:
   they've been public long enough for a malicious release to be caught and yanked. The checker
   enforces this on Python stacks, and beside each JS lockfile at the root or one directory down
   the npm (`.npmrc`), pnpm (`pnpm-workspace.yaml`) or yarn Berry (`.yarnrc.yml`) setting; Ruby
-  repos get the same window via Bundler (recommended, not gated) — see "Dependency cooldown
-  (supply-chain)" in `../SKILL.md`.
+  repos get the same window via Bundler and bun repos via `bunfig.toml` (recommended, not
+  gated) — see "Dependency cooldown (supply-chain)" in `../SKILL.md`. From v31 the checker
+  also reads the machine-wide guard of each package manager on PATH (`has_machine_cooldown`,
+  advisory like `suggests_fnox`: it reports the machine and never affects status).
 
 ## Per-stack checks
 
