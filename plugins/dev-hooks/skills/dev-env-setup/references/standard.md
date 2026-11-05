@@ -148,6 +148,15 @@ A repo is **compliant at v31** when it has all of:
   gated) — see "Dependency cooldown (supply-chain)" in `../SKILL.md`. From v31 the checker
   also reads the machine-wide guard of each package manager on PATH (`has_machine_cooldown`,
   advisory like `suggests_fnox`: it reports the machine and never affects status).
+- **Dependabot grouping** (v31, for a repo with a `.github/dependabot.yml`) — every
+  `package-ecosystem` entry keeps its own `cooldown: default-days: 3` and has two groups: `<eco>`
+  (`gems`, `npm`, `python`, `actions`, …) with `patterns: ["*"]` and `update-types: [minor,
+  patch]`, so majors keep their own PR, and `<eco>-security` with `applies-to: security-updates`
+  and `patterns: ["*"]`, so related security fixes land in one PR. The cooldown only delays
+  version updates; security updates skip it. The security group does nothing where the repo
+  has Dependabot security updates switched off (Settings → Advanced Security). Template:
+  `templates/dependabot.yml`. The checker reports a gap as `has_dependabot_groups=0`
+  (advisory, never affects status).
 
 ## Per-stack checks
 

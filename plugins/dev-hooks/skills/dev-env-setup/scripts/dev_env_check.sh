@@ -34,6 +34,10 @@
 #                    3-day cooldown in its user-level config (~/.npmrc, ~/.config/uv/uv.toml,
 #                    ~/.bundle/config, ~/.config/pnpm/config.yaml, ~/.bunfig.toml). Advisory from
 #                    v31 (mirrors suggests_fnox): it reports the machine, never affects status.
+#   has_dependabot_groups  1 unless .github/dependabot.yml exists and a package-ecosystem entry
+#                    lacks `cooldown: default-days: 3`, a minor/patch group (update-types) or a
+#                    security group (applies-to: security-updates). Advisory from v31; 1 when
+#                    the repo has no dependabot.yml.
 #   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
 #                    shared jscpd runner both the hk step and CI's audit job call).
 #   has_version_sync 1 if scripts/check_version_sync.sh present (required from standard v23 — the
@@ -206,6 +210,32 @@ machine_guard bun "$HOME/.bunfig.toml" "minimumReleaseAge = 259200" '^[[:space:]
 has_machine_cooldown=1
 [ ${#machine_gaps[@]} -gt 0 ] && has_machine_cooldown=0
 
+# Dependabot grouping (v31, advisory, never gates status): in a .github/dependabot.yml, each
+# package-ecosystem entry needs `cooldown: default-days: 3`, a minor/patch group and a
+# security-updates group, so related fixes land in one PR instead of a dozen red ones.
+dependabot_gaps=""
+for f in "$DIR/.github/dependabot.yml" "$DIR/.github/dependabot.yaml"; do
+  [ -f "$f" ] || continue
+  dependabot_gaps="$(awk '
+    function report() {
+      if (!cd) printf "%s cooldown default-days 3, ", eco
+      if (!vg) printf "%s minor/patch group, ", eco
+      if (!sg) printf "%s security group, ", eco
+    }
+    /^[[:space:]]*-[[:space:]]*package-ecosystem:/ {
+      if (eco != "") report()
+      eco = $NF; gsub(/["\047]/, "", eco); cd = vg = sg = 0; next
+    }
+    eco != "" && /^[[:space:]]*default-days:[[:space:]]*3[[:space:]]*(#.*)?$/ { cd = 1 }
+    eco != "" && /^[[:space:]]*update-types:/ { vg = 1 }
+    eco != "" && /^[[:space:]]*applies-to:[[:space:]]*["\047]?security-updates/ { sg = 1 }
+    END { if (eco != "") report() }' "$f")"
+  break
+done
+dependabot_gaps="${dependabot_gaps%, }"
+has_dependabot_groups=1
+[ -n "$dependabot_gaps" ] && has_dependabot_groups=0
+
 # Shared jscpd runner (v14): the version-cooldown policy lives in scripts/run-jscpd.sh,
 # called by both the hk step and CI's audit job so the two gates can't drift.
 has_jscpd_runner=0
@@ -358,6 +388,7 @@ has_readme=$has_readme
 has_claude=$has_claude
 has_cooldown=$has_cooldown
 has_machine_cooldown=$has_machine_cooldown
+has_dependabot_groups=$has_dependabot_groups
 has_jscpd_runner=$has_jscpd_runner
 has_version_sync=$has_version_sync
 has_exec_bit=$has_exec_bit
@@ -391,6 +422,10 @@ fi
 if [ "$has_machine_cooldown" = 0 ]; then
   printf -v machine_list '%s, ' "${machine_gaps[@]}"
   echo "# Advisory: no machine-wide 3-day cooldown for ${machine_list%, }, so ad-hoc npx/uvx/bunx runs and repos without their own setting take same-day releases. See 'Global guard' in the SKILL.md 'Dependency cooldown' section; this machine's config is the user's to change."
+fi
+
+if [ "$has_dependabot_groups" = 0 ]; then
+  echo "# Advisory: .github/dependabot.yml is missing: $dependabot_gaps. See templates/dependabot.yml and the Dependabot rule in references/standard.md."
 fi
 
 if [ "$has_devcontainer" = 1 ] && [ "$devcontainer_mise_driven" = 0 ]; then

@@ -563,6 +563,66 @@ def test_checker_advises_a_machine_wide_cooldown_under_four_days(tmp_path):
     assert "npm (~/.npmrc min-release-age=3)" in advisory[0]
 
 
+DEPENDABOT_TEMPLATE = (
+    DEV_HOOKS
+    / "skills"
+    / "dev-env-setup"
+    / "references"
+    / "templates"
+    / "dependabot.yml"
+)
+
+
+def _dependabot_advisory(repo):
+    r = subprocess.run(
+        ["bash", str(CHECKER), str(repo)], capture_output=True, text=True
+    )
+    return parse_kv(r.stdout), [
+        ln for ln in r.stdout.splitlines() if ln.startswith("# ") and "dependabot" in ln
+    ]
+
+
+def test_checker_accepts_the_dependabot_template(tmp_path):
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        DEPENDABOT_TEMPLATE.read_text()
+    )
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "1"
+    assert advisory == []
+
+
+def test_checker_advises_ungrouped_dependabot(tmp_path):
+    # jambook, spotify-tools and booking-overview: one-gem security PRs each failed
+    # bundler-audit on the other vulnerable gems still on main, ~12 red PRs at once.
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        "version: 2\nupdates:\n- package-ecosystem: bundler\n  directory: /\n"
+        "  cooldown:\n    default-days: 7\n"
+        '- package-ecosystem: "npm"\n  cooldown:\n    default-days: 3\n  groups:\n'
+        "    npm:\n      patterns: ['*']\n      update-types: [minor, patch]\n"
+    )
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "0"
+    assert out["status"] == "compliant", "the Dependabot check must never gate"
+    assert len(advisory) == 1 and advisory[0].startswith("# Advisory:"), advisory
+    for gap in (
+        "bundler cooldown default-days 3",
+        "bundler minor/patch group",
+        "bundler security group",
+        "npm security group",
+    ):
+        assert gap in advisory[0]
+    assert "npm cooldown" not in advisory[0] and "npm minor" not in advisory[0]
+
+
+def test_checker_leaves_a_repo_without_dependabot_alone(tmp_path):
+    make_compliant_repo(tmp_path)
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "1"
+    assert advisory == []
+
+
 def test_checker_js_cooldown_leaves_a_repo_without_js_lockfile_alone(tmp_path):
     # A package.json with no lockfile resolves nothing to gate (and make_compliant_repo's
     # Python repo with the uv cooldown stays compliant).

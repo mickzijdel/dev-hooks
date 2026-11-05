@@ -1462,7 +1462,7 @@ Steps:
 
 ---
 
-## v30 → v31 (3-day cooldown, bun row, machine-wide guard check, Socket Firewall)
+## v30 → v31 (3-day cooldown, Dependabot groups, bun row, machine-wide guard check, sfw)
 
 **Every repo shortens its cooldowns from 4 days to 3 and bumps the stamp.** v31 changes the
 window and the comments in the templates, and no gate: a repo still on 4 days passes the checker
@@ -1497,7 +1497,7 @@ Steps per repo:
    | `pnpm-workspace.yaml` | `minimumReleaseAge: 5760` | `minimumReleaseAge: 4320` |
    | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` | `npmMinimalAgeGate: 4320` |
    | `bunfig.toml` `[install]` | `minimumReleaseAge = 345600` | `minimumReleaseAge = 259200` |
-   | `.github/dependabot.yml` `cooldown:` | `default-days: 4` | `default-days: 3` |
+   | `.github/dependabot.yml` `cooldown:` | `default-days: 7` (or 4) | `default-days: 3` |
 
    Then run `uv lock` in a uv repo: `uv.lock` records the window (`exclude-newer-span =
    "P3D"`), and `uv sync --locked` fails until it matches. Only that line should change.
@@ -1509,7 +1509,26 @@ Steps per repo:
    [install]
    minimumReleaseAge = 259200 # 3 days, in seconds (dev-env cooldown)
    ```
-5. **Run the checker.** If it prints `has_machine_cooldown=0`, put the advisory line and the
+5. **Group Dependabot's PRs** (a repo with `.github/dependabot.yml`). In jambook, spotify-tools
+   and booking-overview each one-gem Dependabot PR failed bundler-audit, because the other
+   vulnerable gems were still on main: about 12 red PRs at once. Grouping lands them together.
+   Give every `package-ecosystem` entry the two groups from `templates/dependabot.yml`, named
+   for its ecosystem (`gems`, `npm`, `python`, `actions`):
+   ```yaml
+     groups:
+       gems:
+         patterns: ["*"]
+         update-types: [minor, patch]
+       gems-security:
+         applies-to: security-updates
+         patterns: ["*"]
+   ```
+   Majors keep a PR each. The security group only acts where Dependabot security updates are
+   switched on; they were off in booking-overview and spotify-tools on 2026-10-28. Report such a
+   repo to the user (Settings → Advanced Security → Dependabot security updates); don't switch
+   it on yourself. The checker's `has_dependabot_groups=0` names each entry still missing a group
+   or the 3-day cooldown.
+6. **Run the checker.** If it prints `has_machine_cooldown=0`, put the advisory line and the
    matching "Global guard" commands from SKILL.md in the report for the user. Machine config is
    not part of a repo backfill: don't run them yourself. A machine still on 4 days passes; tell
    the user the global settings can drop to 3 too.
