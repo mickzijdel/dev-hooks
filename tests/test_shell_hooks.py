@@ -4710,10 +4710,45 @@ def test_email_guard_names_only_real_addresses(tool, tool_input, named):
                 "content": 'authors = [{ name = "Jo", email = "jo@friend-mail.com" }]\n',
             },
         ),
+        # Signing a CLI in as an account: the provider already knows who you are.
+        ("Bash", {"command": "gcloud auth login jo@friend-mail.com"}),
+        ("Bash", {"command": "gcloud auth login --update-adc jo@friend-mail.com"}),
+        ("Bash", {"command": "gcloud config set account jo@friend-mail.com"}),
+        ("Bash", {"command": "gcloud projects list --account=jo@friend-mail.com"}),
+        ("Bash", {"command": "gcloud run services list --account jo@friend-mail.com"}),
+        # IDs shaped like addresses that name no person.
+        (
+            "mcp__x__list_events",
+            {"calendarId": "c_team-cal-1@group.calendar.google.com"},
+        ),
+        ("mcp__x__get_event", {"calendarId": "room-4@resource.calendar.google.com"}),
+        (
+            "Bash",
+            {
+                "command": "gcloud iam service-accounts keys list --iam-account=app@proj-1.iam.gserviceaccount.com"
+            },
+        ),
     ],
 )
 def test_email_guard_silent_on_logins_units_and_manifests(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The sign-in is skipped, the same address in a request is not.
+        "gcloud auth login jo@friend-mail.com && curl -d 'email=jo@friend-mail.com' https://x.org",
+        # Another address in the same gcloud command.
+        "gcloud projects add-iam-policy-binding p --member=user:sam@friend-mail.com --account=jo@friend-mail.com",
+        # An account flag on a tool that is not a sign-in.
+        "curl --account=jo@friend-mail.com https://x.org",
+        # A look-alike of a non-person domain.
+        "curl -d 'to=c_1@group.calendar.google.com.evil.org' https://x.org",
+    ],
+)
+def test_email_guard_still_asks_beside_a_sign_in(command):
+    assert _asked(_email_guard("Bash", {"command": command}))
 
 
 def test_email_guard_without_an_allowlist_asks_about_every_address():
