@@ -4,7 +4,7 @@ description: |
   Bring a repo's dependencies (JavaScript, Ruby, Python, GitHub Actions) up to their latest
   versions. Use when the user wants to "update my packages", "upgrade dependencies", "bump
   deps to latest", "check for outdated packages", or do this across all their repos (fleet
-  mode), or when the latest-deps-reminder hook flags stale versions.
+  mode), "triage my open PRs", or when the latest-deps-reminder hook flags stale versions.
 allowed-tools:
   - Read
   - Write
@@ -175,6 +175,11 @@ session) — but **one isolated agent per repo** so they never share state:
    above. Pass each agent its **exclude / push / deploy disposition** from steps 2–3.
 5. **Report** a one-line summary per repo at the end — upgraded / deferred, push state (pushed /
    PR #), and deploy state (deployed / not).
+
+**Open-PR triage** — when the user wants a merge-or-close verdict on every open PR across their
+repos (mostly Dependabot's), follow [references/pr-triage.md](references/pr-triage.md): scope,
+one bulk fetch, stale-fork and Dependabot-slot checks, a failing check compared with the default
+branch, and nothing closed until they approve.
 
 ## Guardrails
 
