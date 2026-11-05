@@ -212,11 +212,18 @@ has_machine_cooldown=1
 
 # Dependabot grouping (v31, advisory, never gates status): in a .github/dependabot.yml, each
 # package-ecosystem entry needs `cooldown: default-days: 3`, a minor/patch group and a
-# security-updates group, so related fixes land in one PR instead of a dozen red ones.
+# security-updates group, so related fixes land in one PR instead of a dozen red ones. zizmor's
+# dependabot-cooldown audit fails anything under 7 days, so 3 days also needs .github/zizmor.yml
+# lowering that minimum (templates/zizmor.yml).
 dependabot_gaps=""
+zizmor_days_ok=0
+for z in "$DIR/.github/zizmor.yml" "$DIR/.github/zizmor.yaml" "$DIR/zizmor.yml" "$DIR/zizmor.yaml"; do
+  [ -f "$z" ] && grep -q 'dependabot-cooldown' "$z" &&
+    grep -Eq '^[[:space:]]*days:[[:space:]]*[0-3][[:space:]]*(#.*)?$' "$z" && zizmor_days_ok=1 && break
+done
 for f in "$DIR/.github/dependabot.yml" "$DIR/.github/dependabot.yaml"; do
   [ -f "$f" ] || continue
-  dependabot_gaps="$(awk '
+  dependabot_gaps="$(awk -v zok="$zizmor_days_ok" '
     function report() {
       if (!cd) printf "%s cooldown default-days 3, ", eco
       if (!vg) printf "%s minor/patch group, ", eco
@@ -224,12 +231,16 @@ for f in "$DIR/.github/dependabot.yml" "$DIR/.github/dependabot.yaml"; do
     }
     /^[[:space:]]*-[[:space:]]*package-ecosystem:/ {
       if (eco != "") report()
-      eco = $NF; gsub(/["\047]/, "", eco); cd = vg = sg = 0; next
+      eco = $0; sub(/^[^:]*:[[:space:]]*/, "", eco); sub(/[[:space:]]*#.*$/, "", eco)
+      gsub(/["\047[:space:]]/, "", eco); cd = vg = sg = 0; next
     }
-    eco != "" && /^[[:space:]]*default-days:[[:space:]]*3[[:space:]]*(#.*)?$/ { cd = 1 }
+    eco != "" && /^[[:space:]]*default-days:[[:space:]]*3[[:space:]]*(#.*)?$/ { cd = 1; three = 1 }
     eco != "" && /^[[:space:]]*update-types:/ { vg = 1 }
     eco != "" && /^[[:space:]]*applies-to:[[:space:]]*["\047]?security-updates/ { sg = 1 }
-    END { if (eco != "") report() }' "$f")"
+    END {
+      if (eco != "") report()
+      if (three && !zok) printf ".github/zizmor.yml lowering dependabot-cooldown to 3 days, "
+    }' "$f")"
   break
 done
 dependabot_gaps="${dependabot_gaps%, }"

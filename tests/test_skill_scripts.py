@@ -584,14 +584,51 @@ def _dependabot_advisory(repo):
     ]
 
 
+ZIZMOR_TEMPLATE = DEPENDABOT_TEMPLATE.with_name("zizmor.yml")
+
+
 def test_checker_accepts_the_dependabot_template(tmp_path):
     make_compliant_repo(tmp_path)
     (tmp_path / ".github" / "dependabot.yml").write_text(
         DEPENDABOT_TEMPLATE.read_text()
     )
+    (tmp_path / ".github" / "zizmor.yml").write_text(ZIZMOR_TEMPLATE.read_text())
     out, advisory = _dependabot_advisory(tmp_path)
     assert out["has_dependabot_groups"] == "1"
     assert advisory == []
+
+
+def test_checker_wants_zizmor_config_beside_a_3_day_cooldown(tmp_path):
+    # zizmor's dependabot-cooldown audit fails anything under 7 days, so the template's
+    # 3 days alone turned hk and CI red in the v31 backfill (2026-11-05).
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        DEPENDABOT_TEMPLATE.read_text()
+    )
+    out, advisory = _dependabot_advisory(tmp_path)
+    assert out["has_dependabot_groups"] == "0"
+    assert len(advisory) == 1 and ".github/zizmor.yml" in advisory[0], advisory
+
+
+def test_checker_reads_an_ecosystem_with_a_trailing_comment(tmp_path):
+    make_compliant_repo(tmp_path)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        'version: 2\nupdates:\n- package-ecosystem: "bundler" # gems\n  directory: /\n'
+    )
+    _, advisory = _dependabot_advisory(tmp_path)
+    assert "bundler minor/patch group" in advisory[0], advisory
+
+
+@pytest.mark.skipif(shutil.which("zizmor") is None, reason="zizmor not installed")
+def test_zizmor_passes_the_dependabot_template_with_its_config(tmp_path):
+    gh = tmp_path / ".github"
+    gh.mkdir()
+    (gh / "dependabot.yml").write_text(DEPENDABOT_TEMPLATE.read_text())
+    (gh / "zizmor.yml").write_text(ZIZMOR_TEMPLATE.read_text())
+    r = subprocess.run(
+        ["zizmor", "--offline", "."], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_checker_advises_ungrouped_dependabot(tmp_path):

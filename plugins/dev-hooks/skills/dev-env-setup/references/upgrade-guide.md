@@ -1526,8 +1526,15 @@ Steps per repo:
    Majors keep a PR each. The security group only acts where Dependabot security updates are
    switched on; they were off in booking-overview and spotify-tools on 2026-10-28. Report such a
    repo to the user (Settings → Advanced Security → Dependabot security updates); don't switch
-   it on yourself. The checker's `has_dependabot_groups=0` names each entry still missing a group
-   or the 3-day cooldown.
+   it on yourself. Copy `templates/zizmor.yml` to `.github/zizmor.yml` too: zizmor's
+   `dependabot-cooldown` audit (the hk `zizmor` step and CI's actions-lint job) fails any cooldown
+   under 7 days, so `default-days: 3` alone turns both red. The checker's
+   `has_dependabot_groups=0` names each entry still missing a group or the 3-day cooldown, and a
+   missing zizmor config.
+
+   *Correction after the 2026-11-05 backfill:* this step first shipped without the zizmor config.
+   The repos swept that day kept `default-days: 7` and got only the groups. Move them to 3 days,
+   with `.github/zizmor.yml`, at their next upgrade.
 6. **Run the checker.** If it prints `has_machine_cooldown=0`, put the advisory line and the
    matching "Global guard" commands from SKILL.md in the report for the user. Machine config is
    not part of a repo backfill: don't run them yourself. A machine still on 4 days passes; tell

@@ -154,8 +154,10 @@ A repo is **compliant at v31** when it has all of:
   patch]`, so majors keep their own PR, and `<eco>-security` with `applies-to: security-updates`
   and `patterns: ["*"]`, so related security fixes land in one PR. The cooldown only delays
   version updates; security updates skip it. The security group does nothing where the repo
-  has Dependabot security updates switched off (Settings → Advanced Security). Template:
-  `templates/dependabot.yml`. The checker reports a gap as `has_dependabot_groups=0`
+  has Dependabot security updates switched off (Settings → Advanced Security). zizmor's
+  `dependabot-cooldown` audit fails a cooldown under 7 days, so the repo also carries
+  `.github/zizmor.yml` lowering that minimum to 3. Templates: `templates/dependabot.yml` and
+  `templates/zizmor.yml`. The checker reports a gap as `has_dependabot_groups=0`
   (advisory, never affects status).
 
 ## Per-stack checks

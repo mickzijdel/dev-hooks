@@ -102,8 +102,9 @@ A repo is **compliant at v31** when it has all of:
   down); Bundler's and bun's are recommended, and the machine-wide guards are reported
   (`has_machine_cooldown`, advisory). See "Dependency cooldown (supply-chain)".
 - **Dependabot grouping** — where a repo has `.github/dependabot.yml`, each ecosystem gets a
-  3-day cooldown, a minor/patch group and a security group (`templates/dependabot.yml`; rule in
-  `references/standard.md`). Advisory (`has_dependabot_groups`).
+  3-day cooldown, a minor/patch group and a security group (`templates/dependabot.yml`), plus
+  `.github/zizmor.yml` (`templates/zizmor.yml`), since zizmor fails a cooldown under 7 days; rule
+  in `references/standard.md`. Advisory (`has_dependabot_groups`).
 
 **Recommended, advisory:** a **mise-driven dev container**. Having a `.devcontainer/`
 is optional and never gates compliance — but *if* a repo ships one, it must be mise-driven (the
@@ -240,7 +241,8 @@ proposing additions.
    If it reports `has_machine_cooldown=0`, list the managers its advisory line names and the
    "Global guard" commands for them, for the user to run. Don't change the machine config yourself.
    If it reports `has_dependabot_groups=0`, offer to bring `.github/dependabot.yml` in line with
-   `templates/dependabot.yml` (it is commit-tracked, so ask first).
+   `templates/dependabot.yml` and add `templates/zizmor.yml` as `.github/zizmor.yml` (both are
+   commit-tracked, so ask first).
 
 8. **Verify** (do this, don't assume):
 
