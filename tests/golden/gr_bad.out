@@ -4,7 +4,7 @@ Word count: 49
 [FAIL] Exactly one H1 — 2 found
 [FAIL] Installation section — Missing
 [FAIL] Usage section — Missing
-[FAIL] License section — Missing
+[FAIL] License section — Missing (private personal repo: see SKILL.md)
 [PASS] Lead paragraph length — 45 words
 [FAIL] Setup command example — Missing in fenced code block
 [FAIL] Usage command example — Missing in fenced code block

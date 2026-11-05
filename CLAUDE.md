@@ -188,6 +188,11 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   thorough") — a vague criterion invites stopping early.
 - Push material only some runs need into `references/*.md` (progressive disclosure); keep
   what every run needs in SKILL.md.
+- **A new or changed description ships with a headless trigger probe**, run from an empty
+  scratch dir (the turn cap and the dir keep the probe from doing the task in the repo):
+  `DEV_HOOKS_PROBE=1 claude -p --no-session-persistence --max-turns 3 --plugin-dir <abs path>/plugins/<plugin> --output-format stream-json --verbose "<realistic prompt>" | jq -rc 'select(.type=="assistant") | .message.content[]? | select(.type=="tool_use" and .name=="Skill") | .input.skill'`.
+  Run it for should-fire and should-not-fire prompts (no output = no skill picked); exit 1
+  only means the turn cap ended the run.
 
 ## Authoring hooks (`plugins/dev-hooks/hooks/scripts/*.sh`)
 

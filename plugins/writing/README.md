@@ -86,6 +86,8 @@ $ claude
   `python3` is missing it falls back to a once-per-session nudge. Point
   `WRITING_README_AUDIT_SCRIPT` at another checker to override the path; set
   `WRITING_README=false` to silence the hook entirely.
+- The audit skips its License rule for a README that carries `<!-- readme-audit: private -->`,
+  the marker for a small private personal repo (snippets, dotfiles, config).
 
 ## License
 

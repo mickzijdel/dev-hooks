@@ -8,7 +8,7 @@ Use this checklist after drafting a README.
 - One-paragraph value proposition near the top
 - Installation steps with runnable commands
 - Quickstart or usage section with examples
-- License section
+- License section (a private personal repo can skip it, see SKILL.md)
 
 ## Should-have
 

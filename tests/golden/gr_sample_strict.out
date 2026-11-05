@@ -7,6 +7,6 @@ Word count: 95
 [PASS] License section — Found
 [PASS] Lead paragraph length — 35 words
 [PASS] Setup command example — Found in fenced code block
-[FAIL] Usage command example — Missing in fenced code block
+[PASS] Usage command example — Found in fenced code block
 [WARN] Contributing section — Missing
 [PASS] Features/capabilities section — Found

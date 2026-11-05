@@ -46,6 +46,11 @@ Fill these in order. `METHOD` is usually the smallest box — often empty.
 Note the strong version says nothing about *how* — but it's checkable, and the agent can
 self-correct against it before handing back.
 
+**One route worth fixing: exact data off the web.** When the agent must copy keys, prices,
+quotes or table rows from web pages, say in CONTEXT that WebFetch returns a model's summary of
+the page, not the page: fetch it raw (`curl`, the site's JSON API, an archive.org copy behind a
+bot wall) and parse that. Ask in PROVE IT for the method used per source.
+
 ## The habit that compounds
 
 When an agent does the wrong thing, patch the **brief**, not that one instance — the missing
