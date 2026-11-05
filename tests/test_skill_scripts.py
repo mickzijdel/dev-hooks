@@ -5,7 +5,9 @@ captured from the original Ruby scripts before they were removed; these tests as
 Python ports reproduce that output byte for byte (and match the recorded exit codes).
 gr_modern post-dates the port — it covers heading/command spellings the Python audit
 recognises beyond the Ruby original (Install heading, /plugin and uv/mise commands) and
-its golden was captured from the Python script.
+its golden was captured from the Python script. gr_sample/gr_sample_strict were re-captured
+when script runs (`ruby scripts/sample.rb`) began counting as usage commands, and gr_bad*
+when the License failure began naming the private-repo marker.
 Plus subprocess tests for the dev-env-setup skill's dev_env_check.sh compliance checker
 (harness lives in conftest).
 """
@@ -1418,3 +1420,41 @@ def test_voice_audit_runs_via_uv_shebang(tmp_path):
         text=True,
     )
     assert r.returncode == 0
+
+
+# ── github_readme_audit.py: script invocations and private personal repos ───────────
+def run_readme_audit(path):
+    return subprocess.run(
+        [sys.executable, str(GR), str(path)], cwd=ROOT, capture_output=True, text=True
+    )
+
+
+def test_readme_audit_counts_script_invocations_as_usage():
+    """`./pull.sh` and `python3 test_check.py` are commands, no `$ ` prompt needed."""
+    out = run_readme_audit(FIXTURES / "private_readme.md").stdout
+    assert "[PASS] Usage command example" in out
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["./pull.sh", "python3 test_check.py", "ruby bin/sync.rb", "bash setup.sh"],
+)
+def test_readme_audit_counts_each_script_form_as_setup(tmp_path, command):
+    readme = tmp_path / "README.md"
+    readme.write_text(f"# x\n\nA tool.\n\n## Install\n\n```sh\n{command}\n```\n")
+    assert "[PASS] Setup command example" in run_readme_audit(readme).stdout
+
+
+def test_readme_audit_private_marker_drops_the_license_rule():
+    result = run_readme_audit(FIXTURES / "private_readme.md")
+    assert "[PASS] License section — Not required (private repo)" in result.stdout
+    assert result.returncode == 0, result.stdout
+
+
+def test_readme_audit_still_demands_a_license_without_the_marker(tmp_path):
+    readme = tmp_path / "README.md"
+    text = (FIXTURES / "private_readme.md").read_text()
+    readme.write_text(text.replace("<!-- readme-audit: private -->\n", ""))
+    result = run_readme_audit(readme)
+    assert "[FAIL] License section" in result.stdout
+    assert result.returncode == 2

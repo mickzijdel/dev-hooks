@@ -69,9 +69,11 @@ The script checks for:
 - H1 presence
 - Core onboarding sections (installation, usage/quickstart)
 - License section
-- Command code blocks for setup/use
+- Command code blocks for setup/use (a direct script run such as `./pull.sh` or `python3 test_check.py` counts; no `$ ` prompt needed)
 - Intro length guardrail
 - Optional table-of-contents reminder on very long files
+
+A small private personal repo (snippets, dotfiles, a config repo) has no one to license it to. Put `<!-- readme-audit: private -->` in its README (GitHub does not render it) and the audit stops asking for a License section. Never add it to a public or shared repo.
 
 ## Output expectations
 

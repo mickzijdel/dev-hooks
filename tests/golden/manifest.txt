@@ -1,5 +1,5 @@
-gr_sample	2
-gr_sample_strict	2
+gr_sample	0
+gr_sample_strict	0
 gr_bad	2
 gr_bad_strict	2
 gr_missing	1

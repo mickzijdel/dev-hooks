@@ -30,19 +30,29 @@ SECTION_PATTERNS = {
     "license": [r"^#{1,6}\s+license\b"],
 }
 
+# A script run directly: `./pull.sh`, `./bin/setup`, `python3 test_check.py`, `bash setup.sh`.
+SCRIPT_RUN_HINTS = [
+    r"(?m)(?:^|&&|;|\$)\s*\./[\w.-]+",
+    r"\b(?:python3?|ruby|bash|sh)\s+(?:-\S+\s+)*[\w./-]+\.(?:py|rb|sh)\b",
+]
+
+# A small private personal repo (snippets, dotfiles, config) declares itself with this
+# comment, which GitHub doesn't render; the audit then stops asking for a License section.
+PRIVATE_MARKER = re.compile(r"<!--\s*readme-audit:\s*private\s*-->", re.IGNORECASE)
+
 SETUP_COMMAND_HINTS = [
     r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|uv|mise)\s+(?:install|add|get|sync)\b",
     r"\bgit\s+clone\b",
     r"\b(?:make|rake|just)\s+\w+",
     r"\b(?:docker|docker-compose|compose)\b",
     r"/plugin\s+(?:marketplace\s+add|install)\b",
-    r"\./bin/[\w-]+\b",
+    *SCRIPT_RUN_HINTS,
 ]
 
 USAGE_COMMAND_HINTS = [
-    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|ruby|python|uv|mise)\s+(?:run|exec|test|start|serve)\b",
+    r"\b(?:npm|pnpm|yarn|bundle|pip|cargo|go|ruby|python3?|uv|mise)\s+(?:run|exec|test|start|serve)\b",
     r"\b(?:make|rake|just)\s+\w+",
-    r"\./bin/[\w-]+\b",
+    *SCRIPT_RUN_HINTS,
     r"^\$\s+.+",
 ]
 
@@ -127,11 +137,19 @@ def main(argv):
     else:
         results.append(check("fail", "Exactly one H1", f"{h1_count} found"))
 
+    private = PRIVATE_MARKER.search(text) is not None
     for name, patterns in SECTION_PATTERNS.items():
+        label = f"{name.capitalize()} section"
         if heading_match(headings, patterns):
-            results.append(check("pass", f"{name.capitalize()} section", "Found"))
+            results.append(check("pass", label, "Found"))
+        elif name == "license" and private:
+            results.append(check("pass", label, "Not required (private repo)"))
+        elif name == "license":
+            results.append(
+                check("fail", label, "Missing (private personal repo: see SKILL.md)")
+            )
         else:
-            results.append(check("fail", f"{name.capitalize()} section", "Missing"))
+            results.append(check("fail", label, "Missing"))
 
     lead_words = len(words(first_paragraph))
     if lead_words <= 80:
