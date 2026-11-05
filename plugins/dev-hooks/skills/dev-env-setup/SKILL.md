@@ -479,6 +479,7 @@ floor:
 | Manager | Command | Writes |
 |---------|---------|--------|
 | uv | add `exclude-newer = "3 days"` to `~/.config/uv/uv.toml` | user uv config |
+| pip (≥ 26.1, no uv) | `[global]` `uploaded-prior-to = P3D` | `~/.config/pip/pip.conf` |
 | Bundler | `bundle config set --global cooldown 3` | `~/.bundle/config` (`BUNDLE_COOLDOWN`) |
 | npm | `npm config set min-release-age 3 --location=user` | `~/.npmrc` |
 | pnpm | `pnpm config set minimumReleaseAge 4320 --global` | `~/.config/pnpm/config.yaml` (pnpm 11 moved global settings to YAML) |
