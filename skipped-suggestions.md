@@ -1415,3 +1415,33 @@ PRs opened this run: none
 | Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+
+---
+
+## 2026-11-05
+
+Sources scanned:
+- `nateberkopec/dotfiles` — commits since 2026-11-01 (`5c89ca6` to `9eb8ab9`)
+- Feeds: ai-productivity-digest (items 2026-11-02 to 2026-11-04), Claude Code changelog (2.1.317, 2.1.318). Unreachable: upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: [dev-hooks#43 pip row in the machine-wide cooldown table](https://github.com/mickzijdel/dev-hooks/pull/43)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Enforce the release-age gate in pip (`pip.conf` `uploaded-prior-to = P3D`) and uv (`uv.toml`) instead of Socket Firewall wrappers | dotfiles commit `3cf692f` (#1046) | Implement | Opened dev-hooks#43: the global-guard table had no pip row. |
+| Add an `AI-assisted` trailer to every agent commit via a global `commit-msg` hook | dotfiles commit `43fc9c1` (#1054) | Out of scope | Keyed to Pi's `PI_MODEL`; Claude Code already appends its own attribution lines. |
+| Reach GitHub over HTTPS with the keychain credential instead of `gh` | dotfiles commits `34531c8`, `63f908f` | Out of scope | Personal macOS credential setup. |
+| Forget mise configs in idle repos before pruning; activity-recall MCP; Pi/Paseo/Meridian model and provider changes | dotfiles commits `d9816e4`, `88538ca`, `ba8f343`, `2297070`, `55a16bd`, `5c89ca6`, `c669749`, `3774f68`, `cd441d6`, `0f24264` | Out of scope | Personal agent and machine config. |
+| Have the agent audit its own routines in a report-only stage | digest item https://x.com/chasing_next/status/2117697521967681992 | Duplicate | `weekly-automation-review` already does a report-only pass. |
+| Build security and codebase audit skills and run them weekly | digest item https://x.com/chasing_next/status/2118087640469934267 | Duplicate | `repo-review` and `personal-security` cover this; scheduling is `commit-digest` / `weekly-automation-review`. |
+| Give agents good CI, preview deploys and keyless dev setups so they self-validate | digest item https://x.com/davis7/status/2117069521144172599 | Duplicate | `dev-env-setup` and `github-actions` encode this; the CI-watch hook closes the loop. |
+| Interview me and flag blind spots before writing a structured prompt | digest item https://x.com/chasing_next/status/2118027988549910994 | Duplicate | `grill` and `brief-back`. |
+| Classifier that loads only relevant skills and MCP tools per prompt | digest item https://x.com/championswimmer/status/2117377892187299903 | Rejected | Harness-level concern; no hook surface. |
+| Dispatch agent work from chat bots on a phone; agents handing tasks to each other | digest items https://x.com/davis7/status/2117067466388197643, https://x.com/cathrynlavery/status/2118063604037513536 | Out of scope | Personal infrastructure. |
+| Test voice features with generated speech as fake Chrome mic input | digest item https://x.com/_philschmid/status/2118039309534072849 | Deferred | Niche; revisit if a browser-testing skill appears. |
+| Remaining digest items (meeting transcripts to agents, phone agent for bills, support reply bank, domain/trademark checks, OCR benchmarks, academic review, Exa Monitors, video editing, Figma PM skills repo) | digest items 2026-11-02 to 2026-11-04 | Out of scope | Personal productivity or non-dev. |
+| Changelog 2.1.317/2.1.318: `onFailure: "block"` for SDK hook callbacks; email-address-to-network check; `$.model.fork` effort option; removed Read "unchanged" stub | Claude Code changelog | Deferred | Nothing in dev-hooks to change today. The email-address check overlaps `private-email-guard.sh`, so worth a look if it double-asks. |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
