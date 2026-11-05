@@ -60,9 +60,10 @@ ecosystem**.
 
 3. **Respect the 4-day cooldown.** The manifests already encode dev-env-setup's supply-chain
    window (`exclude-newer`/`cooldown`/`min-release-age`), so the package manager will hold back
-   releases younger than 4 days — that's intended. Don't disable it to grab a fresher release
-   unless the user asks (e.g. an urgent security fix). See the cooldown table in
-   [[dev-env-setup]].
+   releases younger than 4 days — that's intended. When the user wants one release inside the
+   window (an urgent security fix), exempt that package for that one command (see "Cooldown
+   bypass for one package" below); never turn the cooldown off for the run. See the cooldown
+   table in [[dev-env-setup]].
 
 4. **Patch/minor pass — batch per ecosystem.** For each ecosystem, list outdated (step 1's
    command), apply the **patch + minor** upgrades together, and **regenerate the lockfile via the
@@ -109,6 +110,37 @@ ecosystem**.
    deploy intent before deploying** (a single repo upgraded on its own counts too, not just fleet
    runs).
 
+## Cooldown bypass for one package
+
+Only when the user asks for a release still inside the window. Name the package and its exact
+version, and exempt only that package, so its new dependencies and every other package still
+resolve under the 4-day window. Never set the window to `0` or edit the repo's setting for it:
+past bypasses did, and opened the whole run (`--cooldown 0`, a bare `--bundler`).
+
+| Manager | One-package form |
+|---------|------------------|
+| npm (≥ 11.17) | `npm install <pkg>@<version> --min-release-age-exclude=<pkg>` |
+| bun | `bun add <pkg>@<version> --minimum-release-age-excludes=<pkg>` |
+| uv | `uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=false` |
+| pnpm | add `<pkg>` to `minimumReleaseAgeExclude:` in `pnpm-workspace.yaml`, run `pnpm update <pkg>@<version>`, then remove the entry before you commit |
+| yarn Berry | add `<pkg>` to `npmPreapprovedPackages:` in `.yarnrc.yml`, run `yarn up <pkg>@<version>`, then remove the entry before you commit |
+| Bundler | `bundle update <gem> --conservative --cooldown=0` |
+
+Bundler has no per-gem exemption. `--cooldown=0` opens the window for the whole resolution, and
+`--conservative` with the gem named keeps every other gem, its dependencies included, where it
+is. Check `git diff Gemfile.lock` shows only that gem (and any dependency it had to move). Below
+Bundler 4.0.13 there is no cooldown to bypass (references/ecosystems.md).
+
+On npm older than 11.17 there is no exclude flag: upgrade npm, or ask the user before a one-command
+`--min-release-age=0` with the exact version.
+
+The lockfile keeps the exempted version after the entry is gone. Say in the commit body that the
+cooldown was bypassed, for which package and version, and why (the advisory id).
+
+**A shorter window does not remove the need.** Any window blocks a fix published today, so a
+same-day security release needs this bypass at 1 day as much as at 4. Shortening the window only
+weakens the guard for every other package. Dependabot security PRs already skip the cooldown.
+
 ## Fleet mode ("update all my repos")
 
 To sweep every repo, follow the [[github-actions]] fleet bump's cadence (the whole fleet in one
@@ -149,6 +181,7 @@ session) — but **one isolated agent per repo** so they never share state:
 - `gh`/`pinact`/a package manager missing or unauthenticated → stop and surface it; never guess a
   version or a SHA.
 - A repo with a deliberately bespoke/pinned setup → flag it, don't force upgrades.
-- Never disable the cooldown or commit a red tree to "make progress" — defer instead.
+- Never disable the cooldown or commit a red tree to "make progress" — defer instead. An urgent
+  release takes the one-package bypass above, not a window of `0`.
 - Don't auto-run from a hook; this writes commit-tracked changes. It's invoked by the user (the
   `latest-deps-reminder` hook only nudges that deps may be stale).

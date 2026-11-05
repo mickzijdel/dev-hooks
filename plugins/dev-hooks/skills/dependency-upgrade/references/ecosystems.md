@@ -6,8 +6,9 @@ through the package manager** — never hand-edit it. Every command runs inside 
 upgrade worktree/branch.
 
 The 4-day cooldown is already encoded in each repo's manifest (dev-env-setup), so these commands
-will hold back releases younger than 4 days. That's intended — don't disable it to grab a fresher
-version unless the user explicitly asks (e.g. an urgent CVE).
+will hold back releases younger than 4 days. That's intended. For an urgent CVE the user asks
+for, exempt that one package (SKILL.md "Cooldown bypass for one package"); never disable the
+window.
 
 ## JavaScript — npm / pnpm / yarn
 
