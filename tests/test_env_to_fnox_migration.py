@@ -1,15 +1,15 @@
 """Tests for the env-to-fnox skill's migrate_env_to_fnox.py automation.
 
 Every case runs the script as a real subprocess (this repo's convention -- see
-conftest.py), never by importing internals. `--dry-run` cases run with PATH stripped
-of `bws`/`fnox` entirely, which itself proves no subprocess call is made. The
-non-dry-run cases stub `bws`/`fnox` with tiny Python scripts under a fake bin dir
-prepended to PATH -- `fake_bws` logs the exact argv of each `secret create` call (one
-line per call, fields separated by a control character) so tests can assert the
-parsed dotenv values reached `bws` unchanged, without a real Bitwarden account.
+conftest.py), never by importing internals. `--dry-run` cases run with an empty PATH,
+which itself proves no subprocess call is made. The other cases put a fake `fnox` on a
+PATH that holds no real `fnox` or `bws` (the real ones are mise shims), under a temp
+HOME, so no test can reach Bitwarden, the keychain or the network. The fake logs each
+call (argv, whether BWS_ACCESS_TOKEN was in its env, and stdin for `set`) as one JSON
+line, and answers `get` from FNOX_VALUES.
 """
 
-import os
+import json
 import shutil
 import stat
 import subprocess
@@ -20,7 +20,41 @@ from conftest import DEV_HOOKS
 
 SCRIPT = DEV_HOOKS / "skills" / "env-to-fnox" / "scripts" / "migrate_env_to_fnox.py"
 
-SEP = "\x1e"  # unit separator: joins one call's argv into a single log line
+FAKE_TOKEN = "fake-bws-token-6c1d9e"  # stands in for the keychain's BWS token
+
+FAKE_FNOX = f"""#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+rest = list(argv)
+config = None
+if rest[:1] == ["-c"]:
+    config, rest = rest[1], rest[2:]
+cmd = rest[0]
+if cmd == "get" and rest[1:2] == ["-c"]:
+    config, rest = rest[2], ["get", *rest[3:]]
+entry = {{"argv": argv, "cmd": cmd, "config": config,
+          "token": os.environ.get("BWS_ACCESS_TOKEN")}}
+if cmd == "set":
+    entry["stdin"] = sys.stdin.read()
+with open(os.environ["FNOX_CALL_LOG"], "a") as f:
+    f.write(json.dumps(entry) + "\\n")
+if cmd == "get":
+    key = rest[-1]
+    if key == "BWS_ACCESS_TOKEN":
+        if os.environ.get("FNOX_NO_TOKEN"):
+            print("Error: secret not found", file=sys.stderr)
+            sys.exit(1)
+        print({FAKE_TOKEN!r})
+        sys.exit(0)
+    values = json.loads(os.environ.get("FNOX_VALUES", "{{}}"))
+    if key not in values:
+        sys.exit(1)
+    print(values[key])
+    sys.exit(0)
+if cmd == "set":
+    sys.exit(int(os.environ.get("FNOX_SET_EXIT", "0")))
+sys.exit(3)
+"""
 
 
 def _run(*args, cwd, env=None, input_text=None):
@@ -34,40 +68,34 @@ def _run(*args, cwd, env=None, input_text=None):
     )
 
 
-def _make_stub(path, body):
-    path.write_text(body)
-    path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-
-FAKE_BWS = f"""#!/usr/bin/env python3
-import os, sys
-with open(os.environ["BWS_CALL_LOG"], "a") as f:
-    f.write({SEP!r}.join(sys.argv[1:]) + "\\n")
-sys.exit(int(os.environ.get("BWS_EXIT_CODE", "0")))
-"""
-
-FAKE_FNOX_GET = """#!/usr/bin/env python3
-import os, sys
-key = sys.argv[-1]
-if key in os.environ.get("FNOX_FAIL_KEYS", "").split(","):
-    sys.exit(1)
-print(f"resolved-{key}")
-"""
-
-
 @pytest.fixture
-def fake_bin(tmp_path):
-    """A bin/ dir with stub bws + fnox on it; returns (bin_dir, call_log_path)."""
+def fake_env(tmp_path):
+    """Env for a run against the fake fnox: temp HOME, a PATH proven free of the real
+    fnox/bws. Returns (env, call_log); add keys to env for per-test behaviour."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _make_stub(bin_dir / "bws", FAKE_BWS)
-    _make_stub(bin_dir / "fnox", FAKE_FNOX_GET)
-    return bin_dir, tmp_path / "bws_calls.log"
+    stub = bin_dir / "fnox"
+    stub.write_text(FAKE_FNOX)
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    home = tmp_path / "home"
+    home.mkdir()
+    path = f"{bin_dir}:/usr/bin:/bin"
+    assert shutil.which("fnox", path=path) == str(stub)
+    assert shutil.which("bws", path=path) is None
+    call_log = tmp_path / "fnox_calls.log"
+    env = {"PATH": path, "HOME": str(home), "FNOX_CALL_LOG": str(call_log)}
+    return env, call_log
+
+
+def _calls(call_log):
+    if not call_log.exists():
+        return []
+    return [json.loads(line) for line in call_log.read_text().splitlines()]
 
 
 @pytest.fixture
 def bare_path(tmp_path):
-    """A PATH with no bws/fnox at all -- proves --dry-run makes zero subprocess calls."""
+    """A PATH with no fnox at all -- proves --dry-run makes zero subprocess calls."""
     empty = tmp_path / "empty_bin"
     empty.mkdir()
     return str(empty)
@@ -76,9 +104,21 @@ def bare_path(tmp_path):
 # ── dotenv parsing (via --dry-run, which is pure parse + summary, no subprocess) ────
 
 
+def _dry(tmp_path, bare_path, *extra, project="proj-123"):
+    return _run(
+        "--env-file",
+        str(tmp_path / ".env"),
+        "--project-id",
+        project,
+        "--dry-run",
+        *extra,
+        cwd=tmp_path,
+        env={"PATH": bare_path},
+    )
+
+
 def test_dry_run_parses_bare_single_and_double_quoted_values(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text(
+    (tmp_path / ".env").write_text(
         "# a comment, and a blank line above\n"
         "\n"
         "BARE_VALUE=hello\n"
@@ -86,15 +126,7 @@ def test_dry_run_parses_bare_single_and_double_quoted_values(tmp_path, bare_path
         'DOUBLE_QUOTED="hello \\"world\\""\n'
         "EMPTY_VALUE=\n"
     )
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    r = _dry(tmp_path, bare_path)
     assert r.returncode == 0, r.stderr
     assert "Would migrate 4 variable(s):" in r.stdout
     for key in ("BARE_VALUE", "SINGLE_QUOTED", "DOUBLE_QUOTED", "EMPTY_VALUE"):
@@ -103,101 +135,68 @@ def test_dry_run_parses_bare_single_and_double_quoted_values(tmp_path, bare_path
 
 
 def test_dry_run_rejects_unsupported_syntax(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("export FOO=bar\n")  # `export ` prefix isn't supported
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    (tmp_path / ".env").write_text("export FOO=bar\n")  # `export ` prefix unsupported
+    r = _dry(tmp_path, bare_path)
     assert r.returncode == 1
     assert "Unsupported dotenv syntax on line 1" in r.stderr
 
 
 def test_dry_run_rejects_unterminated_double_quote(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text('BROKEN="unterminated\n')
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    (tmp_path / ".env").write_text('BROKEN="unterminated\n')
+    r = _dry(tmp_path, bare_path)
     assert r.returncode == 1
     assert "Unsupported dotenv value syntax on line 1" in r.stderr
 
 
 def test_dry_run_rejects_empty_env_file(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("# only a comment\n\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    (tmp_path / ".env").write_text("# only a comment\n\n")
+    r = _dry(tmp_path, bare_path)
     assert r.returncode == 1
     assert "no dotenv assignments found" in r.stderr
 
 
 def test_dry_run_missing_env_file(tmp_path, bare_path):
-    r = _run(
-        "--env-file",
-        str(tmp_path / "nope.env"),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    r = _dry(tmp_path, bare_path)
     assert r.returncode == 1
     assert "no such file" in r.stderr
 
 
 def test_dry_run_rejects_bad_project_id(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "not valid!",
-        "--dry-run",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    (tmp_path / ".env").write_text("FOO=bar\n")
+    r = _dry(tmp_path, bare_path, project="not valid!")
     assert r.returncode == 1
     assert "--project-id may contain only" in r.stderr
 
 
 def test_dry_run_makes_no_subprocess_calls(tmp_path, bare_path):
-    # PATH has neither bws nor fnox; a real call would fail with "command not found"
-    # via FileNotFoundError inside subprocess.run. A clean exit 0 here is the proof.
+    # PATH has no fnox; a real call would fail with FileNotFoundError inside
+    # subprocess.run. A clean exit 0 here is the proof.
     env_file = tmp_path / ".env"
     env_file.write_text("A=1\nB=2\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-123",
-        "--dry-run",
-        "--verify",
-        "--delete-source",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
-    )
+    r = _dry(tmp_path, bare_path, "--verify", "--delete-source")
     assert r.returncode == 0, r.stderr
     assert env_file.exists()  # --delete-source is a no-op under --dry-run
+
+
+def test_dry_run_shows_the_plan_without_values(tmp_path, bare_path):
+    (tmp_path / ".env").write_text(
+        "CLIENT_SECRET=val-cs-1\nPORT=val-port-3000\nREGISTRY=val-reg-77\n"
+    )
+    r = _dry(
+        tmp_path,
+        bare_path,
+        "--key-prefix",
+        "my-app-",
+        "--config",
+        "PORT",
+        "--shared",
+        "REGISTRY=kamal-registry-password",
+    )
+    assert r.returncode == 0, r.stderr
+    assert "CLIENT_SECRET -> my-app-client-secret" in r.stdout
+    assert "PORT" in r.stdout
+    assert "REGISTRY -> kamal-registry-password" in r.stdout
+    assert "val-" not in r.stdout + r.stderr
 
 
 # ── --help / argument validation (argparse) ─────────────────────────────────────────
@@ -207,8 +206,8 @@ def test_help_runs_clean(tmp_path):
     r = _run("--help", cwd=tmp_path)
     assert r.returncode == 0
     assert "usage" in r.stdout.lower()
-    assert "--env-file" in r.stdout
-    assert "--project-id" in r.stdout
+    for flag in ("--env-file", "--project-id", "--key-prefix", "--config", "--shared"):
+        assert flag in r.stdout
 
 
 def test_missing_required_arguments_is_usage_error(tmp_path):
@@ -218,171 +217,231 @@ def test_missing_required_arguments_is_usage_error(tmp_path):
     assert "--project-id" in r.stderr
 
 
-# ── real migration flow (stubbed bws/fnox) ──────────────────────────────────────────
+def test_config_var_missing_from_env_file_is_an_error(tmp_path, bare_path):
+    (tmp_path / ".env").write_text("FOO=bar\n")
+    r = _dry(tmp_path, bare_path, "--config", "NOPE")
+    assert r.returncode == 1
+    assert "--config NOPE is not in" in r.stderr
 
 
-def _bin_env(bin_dir, call_log, **extra):
-    env = {
-        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
-        "BWS_CALL_LOG": str(call_log),
-    }
-    env.update(extra)
-    return env
+def test_malformed_shared_is_an_error(tmp_path, bare_path):
+    (tmp_path / ".env").write_text("FOO=bar\n")
+    r = _dry(tmp_path, bare_path, "--shared", "FOO")
+    assert r.returncode == 1
+    assert "--shared takes VAR=key-name" in r.stderr
 
 
-def test_migration_creates_secrets_and_writes_fnox_toml(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
-    env_file = tmp_path / ".env"
-    env_file.write_text(
-        "DATABASE_URL=placeholder-db-value\nSTRIPE_KEY=placeholder-not-a-real-key\n"
-    )
-    output = tmp_path / "fnox.toml"
-    r = _run(
+def test_var_both_config_and_shared_is_an_error(tmp_path, bare_path):
+    (tmp_path / ".env").write_text("FOO=bar\n")
+    r = _dry(tmp_path, bare_path, "--config", "FOO", "--shared", "FOO=foo-key")
+    assert r.returncode == 1
+    assert "FOO is both --config and --shared" in r.stderr
+
+
+# ── the real migration flow (fake fnox) ─────────────────────────────────────────────
+
+
+def _migrate(tmp_path, env, *extra, input_text=None):
+    return _run(
         "--env-file",
-        str(env_file),
+        str(tmp_path / ".env"),
         "--project-id",
         "proj-abc-123",
         "--output",
-        str(output),
+        str(tmp_path / "fnox.toml"),
+        *extra,
         cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log),
+        env=env,
+        input_text=input_text,
     )
+
+
+def test_token_reaches_only_the_fnox_set_child(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text("DATABASE_URL=val-db-4e2f\n")
+    env["FNOX_VALUES"] = json.dumps({"DATABASE_URL": "val-db-4e2f"})
+    r = _migrate(tmp_path, env, "--verify")
     assert r.returncode == 0, r.stderr
 
-    # bws was invoked once per variable, with the documented positional shape:
-    # `bws secret create <key-name> <value> <project-id>`.
-    # (split on "\n", not str.splitlines() -- the latter also breaks on \x1e, our SEP)
-    calls = [line.split(SEP) for line in call_log.read_text().split("\n") if line]
-    assert [
-        "secret",
-        "create",
-        "database-url",
-        "placeholder-db-value",
-        "proj-abc-123",
-    ] in calls
-    assert [
-        "secret",
-        "create",
-        "stripe-key",
-        "placeholder-not-a-real-key",
-        "proj-abc-123",
-    ] in calls
+    calls = _calls(call_log)
+    token_get = calls[0]
+    assert token_get["cmd"] == "get"
+    assert token_get["argv"][-1] == "BWS_ACCESS_TOKEN"
+    assert token_get["config"] == f"{env['HOME']}/.config/fnox/config.toml"
 
-    # fnox.toml holds only references -- the provider/project-id and key NAMES, never
-    # a secret value.
-    toml = output.read_text()
+    sets = [c for c in calls if c["cmd"] == "set"]
+    assert len(sets) == 1
+    assert sets[0]["token"] == FAKE_TOKEN
+    # Every other child (the token fetch, the verify reads) runs without it.
+    assert all(c["token"] is None for c in calls if c["cmd"] != "set")
+    assert FAKE_TOKEN not in r.stdout
+    assert FAKE_TOKEN not in r.stderr
+    assert FAKE_TOKEN not in (tmp_path / "fnox.toml").read_text()
+
+
+def test_set_passes_the_value_on_stdin_never_argv(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=val-db-4e2f\nSTRIPE_KEY='val stripe 8a'\n"
+    )
+    r = _migrate(tmp_path, env)
+    assert r.returncode == 0, r.stderr
+    sets = {c["argv"][3]: c for c in _calls(call_log) if c["cmd"] == "set"}
+    output = str(tmp_path / "fnox.toml")
+    assert sets["DATABASE_URL"]["argv"] == [
+        "-c",
+        output,
+        "set",
+        "DATABASE_URL",
+        "-p",
+        "bws",
+        "-k",
+        "database-url",
+    ]
+    assert sets["DATABASE_URL"]["stdin"] == "val-db-4e2f"
+    assert sets["STRIPE_KEY"]["stdin"] == "val stripe 8a"
+    for c in sets.values():
+        assert not {"val-db-4e2f", "val stripe 8a"} & set(c["argv"])
+    assert "val-" not in r.stdout + r.stderr
+
+
+def test_fnox_toml_holds_references_only(tmp_path, fake_env):
+    env, _ = fake_env
+    (tmp_path / ".env").write_text(
+        "DATABASE_URL=val-db-4e2f\nSTRIPE_KEY=val-stripe-8a\n"
+    )
+    r = _migrate(tmp_path, env)
+    assert r.returncode == 0, r.stderr
+    toml = (tmp_path / "fnox.toml").read_text()
     assert "[providers]" in toml
     assert 'type = "bitwarden-sm"' in toml
     assert 'project_id = "proj-abc-123"' in toml
-    assert "[secrets]" in toml
     assert 'DATABASE_URL = { provider = "bws", value = "database-url" }' in toml
     assert 'STRIPE_KEY = { provider = "bws", value = "stripe-key" }' in toml
-    assert "placeholder-db-value" not in toml
-    assert "placeholder-not-a-real-key" not in toml
-
-    mode = output.stat().st_mode & 0o777
-    assert mode == 0o600
+    assert "val-" not in toml
+    assert (tmp_path / "fnox.toml").stat().st_mode & 0o777 == 0o600
 
 
-def test_migration_reports_bws_failure(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-1",
-        cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log, BWS_EXIT_CODE="1"),
+def test_key_prefix_names_every_new_key(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text("CLIENT_SECRET=val-cs-1\n")
+    r = _migrate(tmp_path, env, "--key-prefix", "basecamp-sp-proxy-")
+    assert r.returncode == 0, r.stderr
+    (set_call,) = [c for c in _calls(call_log) if c["cmd"] == "set"]
+    assert set_call["argv"][-1] == "basecamp-sp-proxy-client-secret"
+    toml = (tmp_path / "fnox.toml").read_text()
+    assert (
+        'CLIENT_SECRET = { provider = "bws", value = "basecamp-sp-proxy-client-secret" }'
+        in toml
     )
-    assert r.returncode == 1
-    assert "bws secret create failed" in r.stderr
-    assert not (tmp_path / "fnox.toml").exists()
 
 
-def test_migration_missing_bws_binary(tmp_path, bare_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-1",
-        cwd=tmp_path,
-        env={"PATH": bare_path},
+def test_config_vars_become_plain_defaults(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text(
+        'SECRET=val-s-1\nPORT=3000\nBASE_URL="https://example.test/a"\n'
     )
-    assert r.returncode == 1
-    assert "bws CLI not found" in r.stderr
+    r = _migrate(tmp_path, env, "--config", "PORT", "BASE_URL")
+    assert r.returncode == 0, r.stderr
+    toml = (tmp_path / "fnox.toml").read_text()
+    assert 'PORT = { default = "3000" }' in toml
+    assert 'BASE_URL = { default = "https://example.test/a" }' in toml
+    assert [c["argv"][3] for c in _calls(call_log) if c["cmd"] == "set"] == ["SECRET"]
 
 
-def test_migration_verify_success(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-1",
-        "--verify",
-        cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log),
+def test_shared_vars_reference_an_existing_key(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text("SECRET=val-s-1\nKAMAL_REGISTRY_PASSWORD=val-k\n")
+    r = _migrate(
+        tmp_path, env, "--shared", "KAMAL_REGISTRY_PASSWORD=kamal-registry-password"
     )
     assert r.returncode == 0, r.stderr
-    assert "Verified 1 secret(s) resolve via fnox." in r.stdout
+    toml = (tmp_path / "fnox.toml").read_text()
+    assert (
+        'KAMAL_REGISTRY_PASSWORD = { provider = "bws", '
+        'value = "kamal-registry-password" }' in toml
+    )
+    assert [c["argv"][3] for c in _calls(call_log) if c["cmd"] == "set"] == ["SECRET"]
 
 
-def test_migration_verify_failure_blocks_success(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=bar\n")
+def test_verify_prints_only_same_or_different(tmp_path, fake_env):
+    env, _ = fake_env
+    (tmp_path / ".env").write_text(
+        "SAME_ONE=val-same-1\nCLASHED=val-mine-2\nPORT=val-port-3\nGONE=val-gone-4\n"
+    )
+    env["FNOX_VALUES"] = json.dumps(
+        {"SAME_ONE": "val-same-1", "CLASHED": "val-theirs-2", "PORT": "val-port-3"}
+    )
+    r = _migrate(tmp_path, env, "--config", "PORT", "--verify")
+    assert r.returncode == 1
+    assert "SAME_ONE: same" in r.stdout
+    assert "CLASHED: different" in r.stdout
+    assert "PORT: same" in r.stdout
+    assert "GONE: unresolved" in r.stdout
+    assert "verification failed for: CLASHED, GONE" in r.stderr
+    assert "val-" not in r.stdout + r.stderr
+
+
+def test_verify_success(tmp_path, fake_env):
+    env, _ = fake_env
+    (tmp_path / ".env").write_text("FOO=val-foo-1\n")
+    env["FNOX_VALUES"] = json.dumps({"FOO": "val-foo-1"})
+    r = _migrate(tmp_path, env, "--verify")
+    assert r.returncode == 0, r.stderr
+    assert "FOO: same" in r.stdout
+    assert "Verified 1 variable(s) match" in r.stdout
+
+
+def test_missing_token_stops_before_anything_is_written(tmp_path, fake_env):
+    env, call_log = fake_env
+    (tmp_path / ".env").write_text("FOO=val-foo-1\n")
+    env["FNOX_NO_TOKEN"] = "1"
+    r = _migrate(tmp_path, env)
+    assert r.returncode == 1
+    assert "could not read BWS_ACCESS_TOKEN" in r.stderr
+    assert not (tmp_path / "fnox.toml").exists()
+    assert not [c for c in _calls(call_log) if c["cmd"] == "set"]
+
+
+def test_set_failure_names_the_variable(tmp_path, fake_env):
+    env, _ = fake_env
+    (tmp_path / ".env").write_text("FOO=val-foo-1\n")
+    env["FNOX_SET_EXIT"] = "1"
+    r = _migrate(tmp_path, env)
+    assert r.returncode == 1
+    assert "fnox set failed for FOO (foo)" in r.stderr
+    assert FAKE_TOKEN not in r.stderr
+
+
+def test_missing_fnox_binary(tmp_path, bare_path):
+    (tmp_path / ".env").write_text("FOO=bar\n")
     r = _run(
         "--env-file",
-        str(env_file),
+        str(tmp_path / ".env"),
         "--project-id",
         "proj-1",
-        "--verify",
         cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log, FNOX_FAIL_KEYS="FOO"),
+        env={"PATH": bare_path, "HOME": str(tmp_path)},
     )
     assert r.returncode == 1
-    assert "verification failed for: FOO" in r.stderr
+    assert "fnox CLI not found" in r.stderr
 
 
-def test_migration_delete_source_with_correct_confirmation(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
+def test_delete_source_with_correct_confirmation(tmp_path, fake_env):
+    env, _ = fake_env
     env_file = tmp_path / ".env"
     env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-1",
-        "--delete-source",
-        cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log),
-        input_text="DELETE\n",
-    )
+    r = _migrate(tmp_path, env, "--delete-source", input_text="DELETE\n")
     assert r.returncode == 0, r.stderr
     assert not env_file.exists()
     assert "Removed" in r.stdout
 
 
-def test_migration_delete_source_wrong_confirmation_keeps_file(tmp_path, fake_bin):
-    bin_dir, call_log = fake_bin
+def test_delete_source_wrong_confirmation_keeps_file(tmp_path, fake_env):
+    env, _ = fake_env
     env_file = tmp_path / ".env"
     env_file.write_text("FOO=bar\n")
-    r = _run(
-        "--env-file",
-        str(env_file),
-        "--project-id",
-        "proj-1",
-        "--delete-source",
-        cwd=tmp_path,
-        env=_bin_env(bin_dir, call_log),
-        input_text="yes\n",
-    )
+    r = _migrate(tmp_path, env, "--delete-source", input_text="yes\n")
     assert r.returncode == 1
     assert env_file.exists()
     assert "confirmation did not match" in r.stderr
