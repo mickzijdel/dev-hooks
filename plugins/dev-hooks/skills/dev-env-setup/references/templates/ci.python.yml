@@ -132,7 +132,7 @@ jobs:
       - name: Duplication (jscpd)
         # -f scopes to code formats (no config equivalent); .jscpd.json carries
         # minTokens/threshold/reporters/gitignore/ignore globs.
-        # Runner + version policy (latest on a 4-day cooldown, floored at v5 — see
+        # Runner + version policy (latest on a 3-day cooldown, floored at v5 — see
         # SKILL.md › jscpd version policy) are shared with the hk pre-commit gate via
         # scripts/run-jscpd.sh; --require keeps CI strict (unrunnable jscpd fails the job).
         run: bash scripts/run-jscpd.sh --require python

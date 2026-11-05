@@ -23,7 +23,7 @@ both Python and Rails (Ruby) project types.
 A repo is **compliant at v31** when it has all of:
 
 - **`mise.toml`** — tools pinned (`hk`, `pkl`, stack tool, `gitleaks`, `zizmor`, `actionlint`,
-  `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "4d"`, and the
+  `node` for jscpd), `[settings] lockfile = true` and `minimum_release_age = "3d"`, and the
   `[env]` version stamp `DEV_ENV_VERSION = "31"`. The config may live wherever mise reads it
   (`mise/config.toml`, `.config/mise/config.toml`, `.config/mise.toml`, `.mise.toml`), with
   `[tools.<tool>]` tables allowed; the checker, the roster and the version-sync gate all follow.
@@ -97,7 +97,7 @@ A repo is **compliant at v31** when it has all of:
   otherwise links its transcript from every commit and PR it makes; once that session is set
   to Public, any signed-in claude.ai account can read it. The Co-Authored-By line stays.
   Checker-enforced (`has_session_url_off`).
-- **Dependency cooldown** — a 4-day window via the package manager. Checker-enforced for uv in
+- **Dependency cooldown** — a 3-day window via the package manager. Checker-enforced for uv in
   Python repos and for npm, pnpm and yarn Berry beside each JS lockfile (root or one directory
   down); Bundler's and bun's are recommended, and the machine-wide guards are reported
   (`has_machine_cooldown`, advisory). See "Dependency cooldown (supply-chain)".
@@ -422,23 +422,23 @@ versions. **Commit `mise.lock`** alongside `mise.toml`.
 
 **Gap:** this covers only mise-managed tools. The `npx` jscpd audit step isn't mise-pinned (jscpd
 5.x ships only as npm-distributed Rust platform packages — no clean mise backend); instead it
-tracks latest on a 4-day cooldown floored at v5 (see the jscpd version-policy note in
+tracks latest on a 3-day cooldown floored at v5 (see the jscpd version-policy note in
 `references/standard.md`). Project deps lock separately via `uv.lock` / `Gemfile.lock`.
 
-**Tool-upgrade cooldown:** `minimum_release_age = "4d"` in `[settings]` extends the 4-day
+**Tool-upgrade cooldown:** `minimum_release_age = "3d"` in `[settings]` extends the 3-day
 supply-chain window to `mise upgrade`. When re-resolving `"latest"`, mise only considers tool
-versions published at least 4 days ago, giving the community time to catch and yank a malicious
+versions published at least 3 days ago, giving the community time to catch and yank a malicious
 release before it lands here. `mise install` is unaffected — it always reproduces the exact
 version pinned in `mise.lock`.
 
 ## Dependency cooldown (supply-chain)
 
-Hold off on freshly-published package versions for **4 days** before resolving them. Most malicious
+Hold off on freshly-published package versions for **3 days** before resolving them. Most malicious
 releases (the 2026 Shai-Hulud npm waves, the axios / litellm incidents) are detected and yanked
 within hours-to-days of publication, so a short cooldown means you are never the one who installs a
 compromised version in the window before the community catches it. The standard already applies this
-to its own tooling — the jscpd audit step resolves via `npx --before=<4 days ago>` (see the jscpd
-version policy in `references/standard.md`) — and this section extends the same 4-day window to a
+to its own tooling — the jscpd audit step resolves via `npx --before=<3 days ago>` (see the jscpd
+version policy in `references/standard.md`) — and this section extends the same 3-day window to a
 repo's own runtime / dev dependencies.
 
 Set it **per repo** so every developer and CI run enforce the same window, and (if not already set)
@@ -448,22 +448,22 @@ disturbs already-locked versions — it only gates *new* resolutions.
 
 **Repo guard** — pick the row matching the repo's package manager (detect by lockfile):
 
-| Manager | Where | Setting (4-day window) |
+| Manager | Where | Setting (3-day window) |
 |---------|-------|------------------------|
-| **uv** (Python, ≥ 0.9.17) | `pyproject.toml` `[tool.uv]` | `exclude-newer = "4 days"` |
-| **Bundler** (Ruby, ≥ 4.0.13) | `Gemfile` source line | `source "https://rubygems.org", cooldown: 4` |
-| **npm** (≥ 11.10.0) | `.npmrc` | `min-release-age=4` |
-| **pnpm** (11+) | `pnpm-workspace.yaml` | `minimumReleaseAge: 5760` (minutes) |
-| **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 5760` (minutes — use a raw count; the `4d` suffix has a parse bug) |
-| bun | `bunfig.toml` `[install]` | `minimumReleaseAge = 345600` (seconds) |
-| pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P4D` (or `pip.conf` `[install]`/`[global]`) |
+| **uv** (Python, ≥ 0.9.17) | `pyproject.toml` `[tool.uv]` | `exclude-newer = "3 days"` |
+| **Bundler** (Ruby, ≥ 4.0.13) | `Gemfile` source line | `source "https://rubygems.org", cooldown: 3` |
+| **npm** (≥ 11.10.0) | `.npmrc` | `min-release-age=3` |
+| **pnpm** (11+) | `pnpm-workspace.yaml` | `minimumReleaseAge: 4320` (minutes) |
+| **yarn** (Berry 4.10+) | `.yarnrc.yml` | `npmMinimalAgeGate: 4320` (minutes — use a raw count; the `3d` suffix has a parse bug) |
+| bun | `bunfig.toml` `[install]` | `minimumReleaseAge = 259200` (seconds) |
+| pip (≥ 26.1, no uv) | per install | `--uploaded-prior-to=P3D` (or `pip.conf` `[install]`/`[global]`) |
 
 The checker enforces **uv** in Python repos and **npm, pnpm and yarn Berry** beside each JS
 lockfile at the root or one directory down (`frontend/package-lock.json` needs
 `frontend/.npmrc`), in a file git doesn't ignore; a yarn 1 lockfile is exempt, having no such
 setting. Bundler, bun and pip are recommended and applied by the setup/upgrade flow when the matching
 lockfile is present. `exclude-newer` accepts
-a rolling duration (`"4 days"` / `"P4D"`) or an absolute date — a duration is the right choice here
+a rolling duration (`"3 days"` / `"P3D"`) or an absolute date — a duration is the right choice here
 so the window moves forward with the current date.
 
 **Global guard (if missing)** — a machine-wide default so a repo that hasn't opted in still gets a
@@ -471,12 +471,12 @@ floor:
 
 | Manager | Command | Writes |
 |---------|---------|--------|
-| uv | add `exclude-newer = "4 days"` to `~/.config/uv/uv.toml` | user uv config |
-| Bundler | `bundle config set --global cooldown 4` | `~/.bundle/config` (`BUNDLE_COOLDOWN`) |
-| npm | `npm config set min-release-age 4 --location=user` | `~/.npmrc` |
-| pnpm | `pnpm config set minimumReleaseAge 5760 --global` | `~/.config/pnpm/config.yaml` (pnpm 11 moved global settings to YAML) |
-| yarn | `yarn config set --home npmMinimalAgeGate 5760` | `~/.yarnrc.yml` |
-| bun | add `[install]` `minimumReleaseAge = 345600` to `~/.bunfig.toml` | user bunfig |
+| uv | add `exclude-newer = "3 days"` to `~/.config/uv/uv.toml` | user uv config |
+| Bundler | `bundle config set --global cooldown 3` | `~/.bundle/config` (`BUNDLE_COOLDOWN`) |
+| npm | `npm config set min-release-age 3 --location=user` | `~/.npmrc` |
+| pnpm | `pnpm config set minimumReleaseAge 4320 --global` | `~/.config/pnpm/config.yaml` (pnpm 11 moved global settings to YAML) |
+| yarn | `yarn config set --home npmMinimalAgeGate 4320` | `~/.yarnrc.yml` |
+| bun | add `[install]` `minimumReleaseAge = 259200` to `~/.bunfig.toml` | user bunfig |
 
 The checker reports a missing global guard as `has_machine_cooldown=0` with an advisory line, for
 each manager on PATH. It never affects status: the machine's config is the user's, so show them

@@ -412,9 +412,9 @@ def test_checker_cooldown_defaults_one_for_non_python(tmp_path):
 
 # Each JS lockfile and the setting its manager needs beside it (SKILL.md's cooldown table).
 JS_COOLDOWN = {
-    "package-lock.json": (".npmrc", "min-release-age=4"),
-    "pnpm-lock.yaml": ("pnpm-workspace.yaml", "minimumReleaseAge: 5760"),
-    "yarn.lock": (".yarnrc.yml", "npmMinimalAgeGate: 5760"),
+    "package-lock.json": (".npmrc", "min-release-age=3"),
+    "pnpm-lock.yaml": ("pnpm-workspace.yaml", "minimumReleaseAge: 4320"),
+    "yarn.lock": (".yarnrc.yml", "npmMinimalAgeGate: 4320"),
 }
 
 
@@ -427,7 +427,7 @@ def _js_repo(path, lock, *, at=".", setting=None):
     (path / at / "package.json").write_text("{}\n")
     (path / at / lock).write_text("")
     if setting is not None:
-        (path / at / JS_COOLDOWN[lock][0]).write_text(f"# 4-day cooldown\n{setting}\n")
+        (path / at / JS_COOLDOWN[lock][0]).write_text(f"# 3-day cooldown\n{setting}\n")
 
 
 @pytest.mark.parametrize("at", [".", "frontend"])
@@ -468,13 +468,13 @@ def test_checker_needs_upgrade_with_js_cooldown_under_four_days(
     _js_repo(tmp_path, lock, setting=setting)
     assert run_checker(tmp_path)["has_cooldown"] == "0"
     config, want = JS_COOLDOWN[lock]
-    assert f"cooldown under 4 days ({config} {want})" in _needs_upgrade_line(tmp_path)
+    assert f"cooldown under 3 days ({config} {want})" in _needs_upgrade_line(tmp_path)
 
 
 def test_checker_needs_upgrade_when_npmrc_gitignored(tmp_path):
     # .npmrc often holds a registry token and gets gitignored; then no clone or CI run
     # has the cooldown.
-    _js_repo(tmp_path, "package-lock.json", setting="min-release-age=4")
+    _js_repo(tmp_path, "package-lock.json", setting="min-release-age=3")
     init_git_repo(tmp_path)
     (tmp_path / ".gitignore").write_text(".npmrc\n")
     assert run_checker(tmp_path)["has_cooldown"] == "0"
@@ -492,11 +492,11 @@ def test_checker_does_not_gate_a_yarn_1_lockfile(tmp_path):
 # The machine-wide guard per manager: file under HOME, its content. Mirrors SKILL.md's
 # "Global guard" table.
 MACHINE_GUARD = {
-    "npm": (".npmrc", "min-release-age=4"),
-    "uv": (".config/uv/uv.toml", 'exclude-newer = "4 days"'),
-    "bundle": (".bundle/config", '---\nBUNDLE_COOLDOWN: "4"'),
-    "pnpm": (".config/pnpm/config.yaml", "minimumReleaseAge: 5760"),
-    "bun": (".bunfig.toml", "[install]\nminimumReleaseAge = 345600"),
+    "npm": (".npmrc", "min-release-age=3"),
+    "uv": (".config/uv/uv.toml", 'exclude-newer = "3 days"'),
+    "bundle": (".bundle/config", '---\nBUNDLE_COOLDOWN: "3"'),
+    "pnpm": (".config/pnpm/config.yaml", "minimumReleaseAge: 4320"),
+    "bun": (".bunfig.toml", "[install]\nminimumReleaseAge = 259200"),
 }
 
 
@@ -560,7 +560,7 @@ def test_checker_advises_a_machine_wide_cooldown_under_four_days(tmp_path):
         tmp_path, ["npm"], {"npm": "min-release-age=1"}
     )
     assert out["has_machine_cooldown"] == "0"
-    assert "npm (~/.npmrc min-release-age=4)" in advisory[0]
+    assert "npm (~/.npmrc min-release-age=3)" in advisory[0]
 
 
 def test_checker_js_cooldown_leaves_a_repo_without_js_lockfile_alone(tmp_path):
@@ -761,7 +761,7 @@ def test_inventory_python_manager_uv_from_lock(tmp_path):
 
 def test_inventory_python_manager_uv_from_tool_table(tmp_path):
     (tmp_path / "pyproject.toml").write_text(
-        "[project]\nname='x'\n[tool.uv]\nexclude-newer = \"4 days\"\n"
+        "[project]\nname='x'\n[tool.uv]\nexclude-newer = \"3 days\"\n"
     )
     out, _ = run_inventory(tmp_path)
     assert out["python_manager"] == "uv"
@@ -782,7 +782,7 @@ def test_inventory_python_manager_pip_fallback(tmp_path):
 
 
 def _gemfile_lock(tmp_path, bundled_with):
-    (tmp_path / "Gemfile").write_text('source "https://rubygems.org", cooldown: 4\n')
+    (tmp_path / "Gemfile").write_text('source "https://rubygems.org", cooldown: 3\n')
     (tmp_path / "Gemfile.lock").write_text(
         f"GEM\n  remote: https://rubygems.org/\n  specs:\n\nBUNDLED WITH\n  {bundled_with}\n"
     )

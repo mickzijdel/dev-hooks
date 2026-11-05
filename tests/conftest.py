@@ -183,7 +183,7 @@ def make_compliant_repo(
     # Python stack; from v6 a Python repo must pin the uv cooldown in pyproject.toml.
     pyproject = "[project]\nname='x'\n"
     if cooldown:
-        pyproject += '\n[tool.uv]\nexclude-newer = "4 days"\n'
+        pyproject += '\n[tool.uv]\nexclude-newer = "3 days"\n'
     (path / "pyproject.toml").write_text(pyproject)
     (path / "mise.toml").write_text(
         f'[settings]\nlockfile = true\n[env]\nDEV_ENV_VERSION = "{version}"\n'

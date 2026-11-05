@@ -58,7 +58,7 @@ local linters = new Mapping<String, Step> {
     // (`-f python,bash`): this plugin's only non-code files are CI/skill template scaffolding
     // and doc tables that are duplicative by design, and jscpd 5.x (Rust) ignores the config
     // `ignore` list, so format restriction is how we scope it to real code.
-    // The version-cooldown policy (latest on a 4-day cooldown, floored at v5) and the
+    // The version-cooldown policy (latest on a 3-day cooldown, floored at v5) and the
     // offline fallback live in scripts/run-jscpd.sh, shared with the CI audit job so the
     // local and CI gates can't drift.
     ["jscpd"] {

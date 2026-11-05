@@ -24,14 +24,14 @@
 #   has_readme       1 if a README (README.md/README/…) is present (required from standard v3)
 #   has_claude       1 if CLAUDE.md, or AGENTS.md in its place, is present (required from
 #                    standard v3)
-#   has_cooldown     1 if every gated 4-day dependency cooldown is set (required from standard
+#   has_cooldown     1 if every gated 3-day dependency cooldown is set (required from standard
 #                    v6): uv's for Python (pyproject.toml [tool.uv] exclude-newer), and beside
 #                    each JS lockfile at the root or one directory down, npm's (.npmrc
-#                    min-release-age >= 4), pnpm's (pnpm-workspace.yaml minimumReleaseAge >= 5760)
-#                    or yarn Berry's (.yarnrc.yml npmMinimalAgeGate >= 5760), in a file git
+#                    min-release-age >= 3), pnpm's (pnpm-workspace.yaml minimumReleaseAge >= 4320)
+#                    or yarn Berry's (.yarnrc.yml npmMinimalAgeGate >= 4320), in a file git
 #                    doesn't ignore. 1 when none applies; Bundler's cooldown is not gated.
 #   has_machine_cooldown  1 if every package manager on PATH (npm, uv, bundle, pnpm, bun) has the
-#                    4-day cooldown in its user-level config (~/.npmrc, ~/.config/uv/uv.toml,
+#                    3-day cooldown in its user-level config (~/.npmrc, ~/.config/uv/uv.toml,
 #                    ~/.bundle/config, ~/.config/pnpm/config.yaml, ~/.bunfig.toml). Advisory from
 #                    v31 (mirrors suggests_fnox): it reports the machine, never affects status.
 #   has_jscpd_runner 1 if scripts/run-jscpd.sh present (required from standard v14 — the
@@ -153,7 +153,7 @@ if find "$DIR" -maxdepth 1 -type f \( -iname 'claude.md' -o -iname 'agents.md' \
   has_claude=1
 fi
 
-# Dependency cooldown (v6): a 4-day window on new releases, one gap phrase per missing setting. A
+# Dependency cooldown (v6): a 3-day window on new releases, one gap phrase per missing setting. A
 # Python repo pins uv's in pyproject.toml ([tool.uv] exclude-newer). Each JS lockfile at the root
 # or one directory down (fringe-chat locks in frontend/) needs its manager's setting beside it, in
 # a file git doesn't ignore, so every clone and CI run has it. Bundler's cooldown is recommended,
@@ -170,23 +170,23 @@ js_cooldown() {
   if [ -z "$v" ]; then
     cooldown_gaps+=("$1 cooldown missing ($2 $3)")
   elif [ "$v" -lt "$5" ]; then
-    cooldown_gaps+=("$1 cooldown under 4 days ($2 $3)")
+    cooldown_gaps+=("$1 cooldown under 3 days ($2 $3)")
   fi
 }
 while IFS= read -r lock; do
   lock="${lock#./}" && at="${lock%"${lock##*/}"}"
   case "${lock##*/}" in
-    package-lock.json) js_cooldown npm "${at}.npmrc" "min-release-age=4" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 4 ;;
-    pnpm-lock.yaml) js_cooldown pnpm "${at}pnpm-workspace.yaml" "minimumReleaseAge: 5760" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760 ;;
+    package-lock.json) js_cooldown npm "${at}.npmrc" "min-release-age=3" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 3 ;;
+    pnpm-lock.yaml) js_cooldown pnpm "${at}pnpm-workspace.yaml" "minimumReleaseAge: 4320" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 4320 ;;
     # Yarn 1 (classic) has no cooldown setting; only a Berry lockfile is gated.
-    yarn.lock) grep -q '^# yarn lockfile v1' "$DIR/$lock" || js_cooldown yarn "${at}.yarnrc.yml" "npmMinimalAgeGate: 5760" '^npmMinimalAgeGate:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760 ;;
+    yarn.lock) grep -q '^# yarn lockfile v1' "$DIR/$lock" || js_cooldown yarn "${at}.yarnrc.yml" "npmMinimalAgeGate: 4320" '^npmMinimalAgeGate:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 4320 ;;
   esac
 done < <(cd "$DIR" && find . -mindepth 1 -maxdepth 2 -type f \( -name package-lock.json -o -name pnpm-lock.yaml -o -name yarn.lock \) 2>/dev/null | sort)
 has_cooldown=1
 [ ${#cooldown_gaps[@]} -gt 0 ] && has_cooldown=0
 
 # Machine-wide cooldowns (v31, advisory, never gates status): the Global guard table, for each
-# manager on PATH, so an ad-hoc npx/uvx and a repo without its own setting still wait 4 days.
+# manager on PATH, so an ad-hoc npx/uvx and a repo without its own setting still wait 3 days.
 # shortcut: reads only each manager's default user config, not env overrides or system files.
 machine_gaps=()
 # machine_guard COMMAND FILE SETTING ERE [MINIMUM]: ERE captures the value; no MINIMUM = presence.
@@ -198,11 +198,11 @@ machine_guard() {
   machine_gaps+=("$1 (${2/#"$HOME"/\~} $3)")
 }
 xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}"
-machine_guard npm "$HOME/.npmrc" "min-release-age=4" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 4
-machine_guard uv "$xdg_config/uv/uv.toml" 'exclude-newer = "4 days"' '^[[:space:]]*exclude-newer[[:space:]]*=[[:space:]]*(.+)$'
-machine_guard bundle "$HOME/.bundle/config" 'BUNDLE_COOLDOWN: "4"' '^BUNDLE_COOLDOWN:[[:space:]]*"?([0-9]+)"?[[:space:]]*$' 4
-machine_guard pnpm "$xdg_config/pnpm/config.yaml" "minimumReleaseAge: 5760" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 5760
-machine_guard bun "$HOME/.bunfig.toml" "minimumReleaseAge = 345600" '^[[:space:]]*minimumReleaseAge[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 345600
+machine_guard npm "$HOME/.npmrc" "min-release-age=3" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 3
+machine_guard uv "$xdg_config/uv/uv.toml" 'exclude-newer = "3 days"' '^[[:space:]]*exclude-newer[[:space:]]*=[[:space:]]*(.+)$'
+machine_guard bundle "$HOME/.bundle/config" 'BUNDLE_COOLDOWN: "3"' '^BUNDLE_COOLDOWN:[[:space:]]*"?([0-9]+)"?[[:space:]]*$' 3
+machine_guard pnpm "$xdg_config/pnpm/config.yaml" "minimumReleaseAge: 4320" '^minimumReleaseAge:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 4320
+machine_guard bun "$HOME/.bunfig.toml" "minimumReleaseAge = 259200" '^[[:space:]]*minimumReleaseAge[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$' 259200
 has_machine_cooldown=1
 [ ${#machine_gaps[@]} -gt 0 ] && has_machine_cooldown=0
 
@@ -390,7 +390,7 @@ fi
 
 if [ "$has_machine_cooldown" = 0 ]; then
   printf -v machine_list '%s, ' "${machine_gaps[@]}"
-  echo "# Advisory: no machine-wide 4-day cooldown for ${machine_list%, }, so ad-hoc npx/uvx/bunx runs and repos without their own setting take same-day releases. See 'Global guard' in the SKILL.md 'Dependency cooldown' section; this machine's config is the user's to change."
+  echo "# Advisory: no machine-wide 3-day cooldown for ${machine_list%, }, so ad-hoc npx/uvx/bunx runs and repos without their own setting take same-day releases. See 'Global guard' in the SKILL.md 'Dependency cooldown' section; this machine's config is the user's to change."
 fi
 
 if [ "$has_devcontainer" = 1 ] && [ "$devcontainer_mise_driven" = 0 ]; then

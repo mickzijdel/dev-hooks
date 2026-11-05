@@ -59,7 +59,7 @@ jobs:
       # own runner, so tests/test_mods.py needs the CLI: `claude plugin validate --strict` and
       # `claude plugin test`, neither of which needs a login. Pinned with integrity hashes in
       # .github/claude-cli/package-lock.json (mods need >= 2.1.287, the ci-watch tests >= 2.1.293 for mock.session; first taken on 2026-10-03, two days
-      # into its release, as a deliberate exception to the 4-day dependency cooldown — later bumps
+      # into its release, as a deliberate exception to the 3-day dependency cooldown — later bumps
       # follow the cooldown). --ignore-scripts skips the
       # wrapper's postinstall, which only copies the platform package's native binary into place,
       # so PATH gets that package's directory instead.
@@ -135,7 +135,7 @@ jobs:
           files=$( { git ls-files '*.py'; git ls-files | while IFS= read -r f; do head -n1 "$f" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\n' "$f"; done; } | sort -u )
           if [ -n "$files" ]; then uvx vulture --min-confidence 80 $files; else echo "no python files, skipping"; fi
       - name: Duplication (jscpd)
-        # Runner + version policy (latest on a 4-day cooldown, floored at v5 — see
+        # Runner + version policy (latest on a 3-day cooldown, floored at v5 — see
         # dev-env-setup SKILL.md › jscpd version policy) are shared with the hk
         # pre-commit gate via scripts/run-jscpd.sh so the two can't drift. --require
         # keeps CI strict: unlike pre-commit, an unrunnable jscpd fails the job.

@@ -24,7 +24,7 @@ per-ecosystem commits, each major in its own commit after reading the migration 
 **nothing committed unless the tests are green**. Covers JavaScript, Ruby, Python, and (by
 delegating to [[github-actions]]) GitHub Actions. This skill does the *upgrade* work that
 [[dev-env-setup]] deliberately leaves alone — dev-env-setup pins the *tooling* and sets the
-4-day cooldown; this skill moves the *project's own dependencies* forward within that policy.
+3-day cooldown; this skill moves the *project's own dependencies* forward within that policy.
 
 Per-ecosystem commands (list-outdated, upgrade, regenerate lockfile, where changelogs live)
 are in [references/ecosystems.md](references/ecosystems.md) — **read it before upgrading any
@@ -58,9 +58,9 @@ ecosystem**.
    test` works) so you can actually verify the upgrade, and tell the user what was missing. Don't
    push an unverified bump on a boot check alone.
 
-3. **Respect the 4-day cooldown.** The manifests already encode dev-env-setup's supply-chain
+3. **Respect the 3-day cooldown.** The manifests already encode dev-env-setup's supply-chain
    window (`exclude-newer`/`cooldown`/`min-release-age`), so the package manager will hold back
-   releases younger than 4 days — that's intended. When the user wants one release inside the
+   releases younger than 3 days — that's intended. When the user wants one release inside the
    window (an urgent security fix), exempt that package for that one command (see "Cooldown
    bypass for one package" below); never turn the cooldown off for the run. See the cooldown
    table in [[dev-env-setup]].
@@ -114,7 +114,7 @@ ecosystem**.
 
 Only when the user asks for a release still inside the window. Name the package and its exact
 version, and exempt only that package, so its new dependencies and every other package still
-resolve under the 4-day window. Never set the window to `0` or edit the repo's setting for it:
+resolve under the 3-day window. Never set the window to `0` or edit the repo's setting for it:
 past bypasses did, and opened the whole run (`--cooldown 0`, a bare `--bundler`).
 
 | Manager | One-package form |
