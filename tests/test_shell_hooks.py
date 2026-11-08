@@ -6485,6 +6485,7 @@ REDACT_CASES = [
     ("github_pat_11ABCDEFG0" + _FILL + "ABCD", "github fine-grained"),
     ("sk-ant-api03-" + _FILL + "-_", "anthropic"),
     ("sk-" + _FILL, "openai"),
+    ("sk-proj-" + _FILL, "openai project"),
     ("xoxb-111111111111-2222222222222-" + _FILL, "slack bot"),  # gitleaks:allow
     ("AKIAIOSFODNN7EXAMPLE", "aws access key id"),
     ("glpat-" + _FILL, "gitlab pat"),

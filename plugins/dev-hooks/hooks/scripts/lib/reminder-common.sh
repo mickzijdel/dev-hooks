@@ -584,7 +584,7 @@ reminder_redact_secrets() {
     -e 's|(gh[pousr]_)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
     -e 's|(ptr_)[A-Za-z0-9+/=_-]{20,}|\1[REDACTED]|g' \
     -e 's|(sk-ant-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
-    -e 's#(^|[^A-Za-z0-9_])(sk-)[A-Za-z0-9]{20,}#\1\2[REDACTED]#g' \
+    -e 's#(^|[^A-Za-z0-9_])(sk-)[A-Za-z0-9_-]{20,}#\1\2[REDACTED]#g' \
     -e 's|(xox[baprs]-)[A-Za-z0-9-]{10,}|\1[REDACTED]|g' \
     -e 's#AKIA[0-9A-Z]{16}([^A-Za-z0-9_]|$)#AKIA[REDACTED]\1#g' \
     -e 's|(glpat-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \

@@ -12,7 +12,7 @@
 #
 # Gates, all must pass or we stay silent (exit 0):
 #   1. The automation-review dir exists (~/.claude/automation-review: the prompt log and
-#      weekly review are in use).
+#      automation review are in use).
 #   2. Substantial session: >= DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS (default 6) human turns.
 #   3. Once per session: the sentinel embedded in the reminder isn't in the transcript yet.
 #   4. Nothing proposed yet: no Write/Edit to the queue, nor a Bash redirect or tee into it

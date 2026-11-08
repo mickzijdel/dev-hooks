@@ -123,18 +123,17 @@ def test_retire_pass_requires_a_mechanism_probe_before_delete():
     text = SKILL.read_text()
     section = text.split("## Retire pass")[1].split("\n## ")[0]
     assert "Mechanism probe, before any delete" in section
-    template = text.split("## Retire (Mondays")[1].split("\n## ")[0]
+    template = text.split("## Retire (first run of the week")[1].split("\n## ")[0]
     assert "mechanism:" in template
 
 
 def test_daily_run_counts_a_week_but_reports_only_what_is_new():
     """The review runs every weekday: repeat thresholds stay weekly (rolling 7 days) so they
     keep their meaning, but a report repeats nothing the previous one already said, and the
-    weekly-by-nature passes run on Mondays only."""
+    weekly-by-nature passes run once per ISO week, so a missed Monday doesn't skip them."""
     text = SKILL.read_text()
     assert "rolling 7 days" in text
     assert "new since the previous report" in text
     assert "now - 7*86400" in _documented_reader()
-    assert (
-        "**Mondays only:** the **Retire pass** and the **separate sub-reviews**" in text
-    )
+    assert "**First run of the ISO week only**" in text
+    assert "dated before today" in text
