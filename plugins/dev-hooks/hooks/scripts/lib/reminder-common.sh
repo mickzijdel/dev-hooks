@@ -351,10 +351,12 @@ _reminder_log_fire() {
     >>"$dir/hook-fires.jsonl" 2>/dev/null || true
 }
 
-# Emit an advisory PostToolUse reminder (additionalContext) and exit 0 — never blocks.
+# Emit an advisory reminder (additionalContext) and exit 0 — never blocks. The event is
+# PostToolUse unless $2 names another (PostToolUseFailure takes the same answer shape).
 reminder_emit() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
-  jq -cn --arg msg "$1" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $msg}}'
+  jq -cn --arg msg "$1" --arg event "${2:-PostToolUse}" \
+    '{hookSpecificOutput: {hookEventName: $event, additionalContext: $msg}}'
   exit 0
 }
 

@@ -512,6 +512,10 @@ malware: an unscanned same-day release passes, so it adds to the cooldown and do
 - **Prove it blocks:** in an empty directory, `sfw npm pack lodahs` must exit 1 with "blocked npm
   package … malware" (it fetches the tarball and runs no code). `SFW_VERBOSE=true` prints
   "Protected by Socket Firewall" on a routed command.
+- **A block or an AI-scan warning stops the agent.** dev-hooks' `sfw-alert-reminder.sh` reads
+  sfw's report in a Bash result and tells Claude to report the package to the user, not retry or
+  route round it. The free tier only warns on an AI-flagged package, so that one may already be
+  installed.
 
 **Sources:** [RubyGems blog, Jun 2026](https://blog.rubygems.org/2026/06/03/cooldown-let-new-gems-be-vetted.html) ·
 [uv `exclude-newer`](https://docs.astral.sh/uv/concepts/resolution/) ·

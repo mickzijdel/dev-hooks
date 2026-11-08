@@ -122,9 +122,11 @@ past bypasses did, and opened the whole run (`--cooldown 0`, a bare `--bundler`)
 | npm (≥ 11.17) | `npm install <pkg>@<version> --min-release-age-exclude=<pkg>` |
 | bun | `bun add <pkg>@<version> --minimum-release-age-excludes=<pkg>` |
 | uv | `uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=false` |
-| pnpm | add `<pkg>` to `minimumReleaseAgeExclude:` in `pnpm-workspace.yaml`, run `pnpm update <pkg>@<version>`, then remove the entry before you commit |
+| pnpm | add `<pkg>@<version>` (that version only) to `minimumReleaseAgeExclude:` in `pnpm-workspace.yaml`, run `pnpm update <pkg>@<version>`, then remove the entry before you commit |
 | yarn Berry | add `<pkg>` to `npmPreapprovedPackages:` in `.yarnrc.yml`, run `yarn up <pkg>@<version>`, then remove the entry before you commit |
 | Bundler | `bundle update <gem> --conservative --cooldown=0` |
+| mise (a tool) | name the exact version: `mise use <tool>@<version>`. `minimum_release_age` skips exact versions and `mise.lock` entries, so nothing else moves |
+| Dependabot | nothing to do: security-update PRs skip its cooldown |
 
 Bundler has no per-gem exemption. `--cooldown=0` opens the window for the whole resolution, and
 `--conservative` with the gem named keeps every other gem, its dependencies included, where it
@@ -139,7 +141,7 @@ cooldown was bypassed, for which package and version, and why (the advisory id).
 
 **A shorter window does not remove the need.** Any window blocks a fix published today, so a
 same-day security release needs this bypass at 1 day as much as at 4. Shortening the window only
-weakens the guard for every other package. Dependabot security PRs already skip the cooldown.
+weakens the guard for every other package.
 
 ## Fleet mode ("update all my repos")
 
