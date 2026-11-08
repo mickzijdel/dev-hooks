@@ -572,17 +572,21 @@ reminder_mktemp() {
 # readable — the log is only useful to the weekly review if ordinary text survives intact.
 # The vendor prefixes deliberately carry NO leading \b: a real leak in the log was typed
 # glued to the previous word ("…here api key to fix" + "ptr_845Hk…"), so requiring a word
-# boundary there silently missed it. Only the loose generic sk- rule keeps its \b.
+# boundary there silently missed it. Only the loose generic sk- rule keeps a left boundary.
 reminder_redact_secrets() {
+  # Portable to BSD (macOS) sed: the c\ text sits on its own line (one-line `c\text` is an
+  # error there, and the empty output blanked every prompt-log line), and word boundaries are
+  # spelled as character classes because BSD ERE has no \b.
   REPLY=$(printf '%s' "$1" | sed -E \
-    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\[REDACTED PRIVATE KEY]' \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
+[REDACTED PRIVATE KEY]' \
     -e 's|(github_pat_)[A-Za-z0-9_]{20,}|\1[REDACTED]|g' \
     -e 's|(gh[pousr]_)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
     -e 's|(ptr_)[A-Za-z0-9+/=_-]{20,}|\1[REDACTED]|g' \
     -e 's|(sk-ant-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
-    -e 's|\b(sk-)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
+    -e 's#(^|[^A-Za-z0-9_])(sk-)[A-Za-z0-9]{20,}#\1\2[REDACTED]#g' \
     -e 's|(xox[baprs]-)[A-Za-z0-9-]{10,}|\1[REDACTED]|g' \
-    -e 's|AKIA[0-9A-Z]{16}\b|AKIA[REDACTED]|g' \
+    -e 's#AKIA[0-9A-Z]{16}([^A-Za-z0-9_]|$)#AKIA[REDACTED]\1#g' \
     -e 's|(glpat-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
     -e 's|(bws_)[A-Za-z0-9._-]{20,}|\1[REDACTED]|g' \
     -e 's|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|[REDACTED JWT]|g' \
