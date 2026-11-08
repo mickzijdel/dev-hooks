@@ -892,6 +892,7 @@ def test_thinking_reminder_fires(tmp_path):
     assert r.returncode == 0
     assert_json_with(r.stdout, "thinking-tools:premortem")
     assert_json_with(r.stdout, "thinking-tools:brief-back")
+    assert_json_with(r.stdout, "thinking-tools:the-algorithm")
 
 
 def test_thinking_reminder_silent_when_opted_out(tmp_path):

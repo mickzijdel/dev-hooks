@@ -13,6 +13,7 @@ Part of the [dev-hooks marketplace](../../README.md), alongside `dev-hooks`,
 | Skill | Use when |
 |-------|----------|
 | `but-for-real` | About to claim something is done/fixed/working — forces re-reading the real code, running it, and separating verified from assumed. |
+| `the-algorithm` | Before the first edit of a change that is not fully specified — runs Musk's five steps in strict order (question every requirement with its owner and the case against it, delete, simplify, accelerate, automate last) and shows them as a short block before building. |
 | `premortem` | Before committing to a non-trivial plan — imagines it already failed and works backward to failure modes, hidden assumptions, and a revised plan. |
 | `board` | You want hard, independent critique — convenes a panel of real parallel advisor subagents, then a chairman synthesizes. |
 | `self-rate` | Before returning uncertain work — scores it on a calibrated scale, then tightens overclaims to match. For a subjective or high-stakes call (voice, tone, taste) it hands the grading to a separate subagent that sees only the work and the rubric. |
@@ -40,7 +41,7 @@ hook pushes it to reach for them on its own. It injects context only and blocks 
 
 | Hook | Fires on | Opt out |
 |------|----------|---------|
-| `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (handed a task → `brief-back`; before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
+| `thinking-tools-reminder` | `SessionStart` — reminds Claude to reach for these tools proactively at the moments they fit (handed a task → `brief-back`; before the first edit of an open-ended change → `the-algorithm`; before committing to a plan → `premortem`; before claiming done → `but-for-real`; when a plan/draft needs hard critique → `board`; …). | `THINKING_TOOLS=false` |
 
 ## Install
 
