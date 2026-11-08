@@ -7615,3 +7615,133 @@ def test_worktree_provision_silent_on_a_command_that_only_mentions_it(
         env=base_env(DEV_HOOKS_WORKTREE_PROVISION=None, TMPDIR=str(tmp_path)),
     )
     assert r.stdout.strip() == ""
+
+
+# ── sfw-alert-reminder.sh (PostToolUse / PostToolUseFailure Bash) ────────────────────
+# sfw-free 1.15.6's own report text: the block is a real `sfw npm pack lodahs` run
+# (2026-11-08); the warning layout is its free report's (`packageWarnMessage` + ` - id - url`).
+SFW_BLOCK = """npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/lodahs/-/lodahs-0.0.1-security.tgz
+
+=== Socket Firewall ===
+
+ - blocked npm package: name: lodahs; version: 0.0.1-security; reason: malware (critical) - https://socket.dev/npm/package/lodahs/alerts/0.0.1-security
+
+For more information, check https://socket.dev.
+"""
+SFW_WARN = """added 3 packages in 2s
+
+=== Socket Firewall ===
+ - 3 packages fetched successfully
+Potential malware detected with AI scan. Not blocked by sfw-free:
+ - left-padd@1.0.2 - https://socket.dev/npm/package/left-padd/alerts/1.0.2
+"""
+SFW_ENTERPRISE_BLOCK = """
+=== Socket Firewall ===
+
+  Blocked Packages:
+
+  BLOCKED: lodahs@0.0.1-security
+    Registry: npm
+"""
+
+
+def _sfw(event="PostToolUse", *, stdout="", stderr="", error=None, **env_overrides):
+    env_overrides.setdefault("DEV_HOOKS_SFW_ALERT", None)
+    payload = {
+        "hook_event_name": event,
+        "tool_name": "Bash",
+        "tool_input": {"command": "npm install left-padd"},
+        "cwd": "/tmp",
+        "session_id": "s1",
+    }
+    if event == "PostToolUseFailure":
+        payload["error"] = error if error is not None else "Exit code 1\n" + stderr
+    else:
+        payload["tool_response"] = {
+            "stdout": stdout, "stderr": stderr, "interrupted": False, "isImage": False,
+        }  # fmt: skip
+    return run_hook(
+        "sfw-alert-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(**env_overrides),
+    )
+
+
+def _sfw_context(r, event):
+    assert r.returncode == 0
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["hookEventName"] == event
+    return out["additionalContext"]
+
+
+def test_sfw_block_in_a_failed_command_says_stop():
+    # A block makes sfw exit 1, so the call arrives as PostToolUseFailure with the text in `error`.
+    msg = _sfw_context(
+        _sfw("PostToolUseFailure", stderr=SFW_BLOCK), "PostToolUseFailure"
+    )
+    assert "lodahs" in msg and "0.0.1-security" in msg and "malware (critical)" in msg
+    assert "Stop" in msg and "command npm" in msg and "Mick" in msg
+
+
+def test_sfw_block_seen_through_a_pipe_on_stdout():
+    # `… 2>&1 | tail` exits 0 and moves sfw's stderr into stdout.
+    msg = _sfw_context(_sfw(stdout=SFW_BLOCK), "PostToolUse")
+    assert "blocked a package" in msg and "lodahs" in msg
+
+
+def test_sfw_ai_warning_says_stop_and_names_the_package():
+    msg = _sfw_context(_sfw(stderr=SFW_WARN), "PostToolUse")
+    assert "left-padd@1.0.2" in msg and "AI scan" in msg
+    assert "may already be installed" in msg and "Stop" in msg
+    assert "blocked a package" not in msg
+
+
+def test_sfw_enterprise_block_wording_also_counts():
+    msg = _sfw_context(_sfw(stderr=SFW_ENTERPRISE_BLOCK), "PostToolUse")
+    assert "BLOCKED: lodahs@0.0.1-security" in msg
+
+
+def test_sfw_report_with_colour_codes_still_matches():
+    coloured = SFW_BLOCK.replace(
+        "=== Socket Firewall ===",
+        "\x1b[1m\x1b[32m=== Socket Firewall ===\x1b[39m\x1b[22m",
+    ).replace(" - blocked npm package:", " - \x1b[31mblocked npm package:\x1b[39m")
+    assert "lodahs" in _sfw_context(_sfw(stderr=coloured), "PostToolUse")
+
+
+SFW_QUIET = [
+    "added 12 packages in 1s\n",
+    # the verbose banner on a clean, routed run
+    "Protected by Socket Firewall\nadded 1 package in 1s\n",
+    # docs and searches that quote sfw's wording, without its report header on a line of its own
+    'must exit 1 with "blocked npm\n  package … malware" (it fetches the tarball)\n',
+    "SKILL.md:512:=== Socket Firewall ===\nSKILL.md:513: - blocked npm package: name: x\n",
+    # the report header with nothing blocked or flagged (a clean run with a summary line)
+    "\n=== Socket Firewall ===\n - 3 packages fetched successfully\n",
+]
+
+
+@pytest.mark.parametrize("stderr", SFW_QUIET)
+def test_sfw_silent_without_a_block_or_warning(stderr):
+    r = _sfw(stderr=stderr)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_sfw_silent_when_opted_out():
+    r = _sfw(stderr=SFW_BLOCK, DEV_HOOKS_SFW_ALERT="false")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_sfw_alert_registered_on_both_bash_result_events():
+    hooks = json.loads((DEV_HOOKS / "hooks" / "hooks.json").read_text())["hooks"]
+    for event in ("PostToolUse", "PostToolUseFailure"):
+        commands = [
+            h["command"]
+            for group in hooks.get(event, [])
+            if group.get("matcher") == "Bash"
+            for h in group["hooks"]
+        ]
+        assert any("sfw-alert-reminder.sh" in c for c in commands), event

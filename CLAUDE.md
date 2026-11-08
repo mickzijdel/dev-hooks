@@ -245,7 +245,10 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   reads `.tool_input.command` on its own so a multi-line command isn't truncated), followed —
   after the hook's own command-shape match — by `reminder_cwd_session` (CWD/SESSION in one jq
   pass). The split is deliberate: these hooks run on *every* Bash tool call, so the second jq
-  spawn isn't paid by a command the hook is about to ignore. **`reminder_cwd_session` is not
+  spawn isn't paid by a command the hook is about to ignore. A hook that judges the *result*
+  (`sfw-alert-reminder.sh`) also registers on PostToolUseFailure(Bash), since a non-zero exit
+  arrives there with the output in `.error`, and answers via `reminder_emit <msg> <event>`.
+  **`reminder_cwd_session` is not
   optional** — SESSION is what makes a fire attributable to a repo (a session id resolves to
   `~/.claude/projects/<dir>/<session>.jsonl`), and `test_every_emitting_hook_establishes_a_session`
   in `tests/test_hook_sunset_bets.py` fails any hook that emits without it. Stop hooks: `reminder_opt_out <OPT_VAR>`, `reminder_stop_init <sentinel>`
