@@ -11,8 +11,9 @@
 # settings "env"), such as a public alias for bots; with none set, every address asks. Never
 # counted: reserved documentation and test domains (example.com/.org/.net, *.example, *.test,
 # *.invalid, *.localhost), systemd unit names (name@instance.service), noreply addresses, git@
-# logins, a URL's user name and password, and in Bash an ssh/sftp/mosh target or an scp/rsync
-# user@host: path.
+# logins, Google Calendar and service-account IDs (*.calendar.google.com, *.gserviceaccount.com),
+# a URL's user name and password, and in Bash an ssh/sftp/mosh target, an scp/rsync user@host:
+# path, or the account gcloud signs in as (auth login, config set account, --account).
 #
 # What counts as sending, per tool (case-insensitive; text is percent-decoded first):
 #   Bash      — an address outside git's identity settings (user.email, GIT_*_EMAIL, a
@@ -95,6 +96,14 @@ GIT_IDENTITY = re.compile(
     r"""|--author[= ](?:"[^"]*"|'[^']*'|\S+)|^\s*[\w-]*git_email:\s*\S+""",
     re.M,
 )
+# Signing gcloud in as an account: the provider already knows who you are. Only the address
+# goes, so other addresses in the same command still count.
+SIGN_IN = re.compile(
+    r"""(?<![\w.-])gcloud\b[^\n|;&]*?(?:\bauth\s+login(?:\s+--[\w-]+(?:=\S+)?)*\s+|\bconfig\s+set\s+account\s+|--account[= ])"""
+    r"""["']?(?P<addr>[^"'\s]+)"""
+)
+# Calendar and service-account IDs look like addresses but name no person.
+NON_PERSON = re.compile(r"(?:^|\.)(?:calendar\.google\.com|gserviceaccount\.com)$")
 SSH_LOGIN = re.compile(r"(?<![\w.-])(?:ssh|mosh|sftp)(?:\s+-[\w-]+(?:\s+[^\s-]\S*)?)*\s+([\w.-]+@[\w.-]+)")
 COPY_SEGMENT = re.compile(r"(?<![\w.-])(?:scp|rsync)\b[^\n|;&]*")
 COPY_LOGIN = re.compile(r"(?<![\w.-])([\w.-]+@[\w.-]+):")
@@ -210,6 +219,7 @@ def counted(raw):
             address in allowed
             or RESERVED.search(domain)
             or UNIT.search(domain)
+            or NON_PERSON.search(domain)
             or local == "git"
             or local.startswith(("noreply", "no-reply"))
             or domain.endswith("noreply.github.com")
@@ -256,7 +266,8 @@ def written(path, text):
 
 headers = []
 if tool == "Bash":
-    text = readable(GIT_IDENTITY.sub(" ", args.get("command") or "")).replace("file://", " ")
+    command = SIGN_IN.sub(lambda m: m.group(0)[: m.start("addr") - m.start()], args.get("command") or "")
+    text = readable(GIT_IDENTITY.sub(" ", command)).replace("file://", " ")
     headers = header_values(text)
     result = bash(text)
 elif tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
