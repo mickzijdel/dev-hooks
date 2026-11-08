@@ -5,7 +5,7 @@ for a model weakness has to name that weakness (`# bet:`) and the observable tha
 it removable (`# sunset:`). Scaffolds that encode preference/fact/verification/safety instead
 say so with `bet: none (L1-L6)` and `sunset: never`. The point is that a NEW hook can't be
 added without its author consciously stating what capability bet it is making — the absence of
-a declared bet is the failure, so the pruning review (weekly-automation-review's Retire pass)
+a declared bet is the failure, so the pruning review (automation-review's Retire pass)
 always has something concrete to check against the current model.
 """
 
@@ -60,7 +60,7 @@ def test_fire_log_writes_only_when_opted_in(tmp_path):
 )
 def test_fire_log_skips_probe_sessions(tmp_path, lib, logger):
     # Made-up test ids, `claude -p` probes run from Claude's scratchpad, and replay harnesses
-    # (a disposable clone under ~/.cache, or DEV_HOOKS_PROBE=1) skew the weekly review's fire
+    # (a disposable clone under ~/.cache, or DEV_HOOKS_PROBE=1) skew the automation review's fire
     # counts; none is logged.
     log = tmp_path / ".claude" / "automation-review" / "hook-fires.jsonl"
     log.parent.mkdir(parents=True)

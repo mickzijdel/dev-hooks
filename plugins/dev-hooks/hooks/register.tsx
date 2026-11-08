@@ -493,7 +493,7 @@ async function guardTimeoutSeconds($: EngineInterface, command: string): Promise
 // Each reason the orchestration returns is a nudge in this session's facts; the next
 // Stop resolves the pending ones as acted/ignored/declined/unknown (nudge-outcomes.ts
 // holds the remedy per hook), and the resolved ones go to a cross-session log in the
-// store (`nudgeOutcomes`), exported for the weekly automation review.
+// store (`nudgeOutcomes`), exported for the automation review.
 
 type StopInput = { session_id: string; cwd: string; last_assistant_message?: string }
 

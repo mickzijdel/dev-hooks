@@ -8,7 +8,7 @@ plugins/*/.claude-plugin/types/
 plugins/*/tsconfig.json
 .github/claude-cli/node_modules/
 
-# Local-only weekly automation review reports (weekly-automation-review skill)
+# Local-only automation review reports (automation-review skill)
 plans/automation-reviews/
 
 # Python (dev tooling only — see pyproject.toml; mise.lock and uv.lock ARE committed)

@@ -293,7 +293,7 @@ here to do, and route to the skill that owns it:
   codebase, offer **[[dev-env-setup]]** to bring the repo up to the lint/test/CI/secrets
   standard; if it's a fresh idea, that's really "build something" → starting-a-project.
 - **Automate a repetitive task** (a chore they do by hand a lot) → help them name the task,
-  then route: **[[weekly-automation-review]]** to spot what's worth automating, and a hook or
+  then route: **[[automation-review]]** to spot what's worth automating, and a hook or
   skill to do it — the `dev-hooks` plugin for automatic guardrails, or **[[skill-creator]]** to
   package a repeatable workflow into a skill.
 - **Just exploring / not sure yet** → suggest a tiny first project (a one-page site or a small

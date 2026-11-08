@@ -323,11 +323,11 @@ reminder_is_nested_run() {
 }
 
 # Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
-# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so weekly-automation-
-# review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
+# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so automation-review's
+# Retire pass can see which hooks actually fire (and which never do). OFF by default —
 # no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
 # fails the hook. $1 = firing hook's basename.
-# A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
+# A throwaway session whose fires and prompts would skew automation-review's counts:
 # a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
 # scratchpad, a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
 # ~/.cache), or a nested run. Mirrored by _voice_log_fire in the writing plugin, which can't
@@ -569,7 +569,7 @@ reminder_mktemp() {
 # leak found in the log), then one assignment rule reusing the secret-name vocabulary from
 # dangerous-command-guard.sh. The assignment rule requires the value to start with an
 # alphanumeric, which is what keeps "$(cat …)" command substitutions and ../relative paths
-# readable — the log is only useful to the weekly review if ordinary text survives intact.
+# readable — the log is only useful to the automation review if ordinary text survives intact.
 # The vendor prefixes deliberately carry NO leading \b: a real leak in the log was typed
 # glued to the previous word ("…here api key to fix" + "ptr_845Hk…"), so requiring a word
 # boundary there silently missed it. Only the loose generic sk- rule keeps a left boundary.

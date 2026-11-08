@@ -127,7 +127,7 @@ pending ones with `resolveNudge`, one remedy per hook from facts recorded after 
 `session.start` resolve leftovers as `unknown` unless evidence says acted. Resolved nudges go to
 `nudgeOutcomes` in `$.store` (union by session+hook+time, 90 days, 3,000 max) and are exported
 to `~/.claude/automation-review/stop-nudges.json` when that directory exists — the file the
-weekly-automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
+automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
 `resolveNudge`; give it one only for a remedy the facts can show. A probe session
 (`isProbeSession`) adds no nudges at all, so its facts give session end and the sweep nothing
 to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
@@ -347,7 +347,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
 - **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
   telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq, `echo`,
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
-  weekly-automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
+  automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
   exit 0, shown to the user) < `reminder_emit`/`_session`/`_prompt` (additionalContext) <
   `reminder_emit_correction` (exit 2, fed back to Claude) and `reminder_emit_stop` (blocks the stop). `reminder_emit_decision`
   is its own thing (PreToolUse permission). `tests/test_hook_sunset_bets.py` gates all of it:

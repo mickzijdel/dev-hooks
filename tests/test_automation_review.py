@@ -1,4 +1,4 @@
-"""Tests for the weekly-automation-review skill's prompt-log reader.
+"""Tests for the automation-review skill's prompt-log reader.
 
 The reader command is documented *in the SKILL.md itself*, so these tests extract that
 exact command and run it against a deliberately corrupted log — guarding the property that
@@ -17,12 +17,7 @@ from conftest import ROOT, requires_jq
 pytestmark = requires_jq
 
 SKILL = (
-    ROOT
-    / "plugins"
-    / "thinking-tools"
-    / "skills"
-    / "weekly-automation-review"
-    / "SKILL.md"
+    ROOT / "plugins" / "thinking-tools" / "skills" / "automation-review" / "SKILL.md"
 )
 
 NUL_BLOCK = b"\x00" * 64  # crash-time zero padding, as observed in a real log
@@ -53,7 +48,7 @@ def _documented_reader():
         if "prompts.jsonl" in block and "jq" in block:
             return block
     raise AssertionError(
-        "no prompt-log reader block found in weekly-automation-review SKILL.md"
+        "no prompt-log reader block found in automation-review SKILL.md"
     )
 
 
@@ -128,5 +123,18 @@ def test_retire_pass_requires_a_mechanism_probe_before_delete():
     text = SKILL.read_text()
     section = text.split("## Retire pass")[1].split("\n## ")[0]
     assert "Mechanism probe, before any delete" in section
-    template = text.split("## Retire this week")[1].split("\n## ")[0]
+    template = text.split("## Retire (Mondays")[1].split("\n## ")[0]
     assert "mechanism:" in template
+
+
+def test_daily_run_counts_a_week_but_reports_only_what_is_new():
+    """The review runs every weekday: repeat thresholds stay weekly (rolling 7 days) so they
+    keep their meaning, but a report repeats nothing the previous one already said, and the
+    weekly-by-nature passes run on Mondays only."""
+    text = SKILL.read_text()
+    assert "rolling 7 days" in text
+    assert "new since the previous report" in text
+    assert "now - 7*86400" in _documented_reader()
+    assert (
+        "**Mondays only:** the **Retire pass** and the **separate sub-reviews**" in text
+    )

@@ -128,6 +128,6 @@ Report to the user at the end of each run:
 ## Scheduling
 
 Register as a recurring **weekly remote agent** via the [[schedule]] skill (`CronCreate`).
-A Monday-morning cadence pairs naturally with [[weekly-automation-review]] — one reviews
-the local repo's own history, the other reviews external repos for ideas to pull in. Each run
+A Monday-morning cadence pairs with [[automation-review]]'s Monday run — one reviews
+your own activity, the other reviews external repos for ideas to pull in. Each run
 appends to the skipped-suggestions log, so the history compounds over time.

@@ -216,7 +216,7 @@ voice_fire_once() {
   return 0
 }
 
-# Opt-in fire telemetry, mirroring dev-hooks' DEV_HOOKS_FIRE_LOG so weekly-automation-review
+# Opt-in fire telemetry, mirroring dev-hooks' DEV_HOOKS_FIRE_LOG so automation-review
 # can see these hooks at all. They previously hand-rolled their own jq emit and so never
 # reached hook-fires.jsonl — their "0 fires" was undecidable rather than informative.
 # OFF by default; best-effort, never fails the hook.

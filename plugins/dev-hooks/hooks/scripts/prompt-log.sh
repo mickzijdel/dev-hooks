@@ -1,8 +1,8 @@
 #!/bin/bash
-# bet: none (L2 — data capture feeding the weekly automation-review meta-loop)
+# bet: none (L2 — data capture feeding the automation-review meta-loop)
 # sunset: never (data capture, not a capability gap)
 # UserPromptSubmit hook: append one JSONL line per user prompt to the global
-# automation-review log, so thinking-tools' weekly-automation-review can cluster
+# automation-review log, so thinking-tools' automation-review can cluster
 # repeated requests across repos and suggest what to automate. Local-only —
 # nothing leaves the machine.
 #
