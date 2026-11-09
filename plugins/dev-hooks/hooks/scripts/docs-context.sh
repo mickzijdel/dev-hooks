@@ -27,9 +27,12 @@ for candidate in "$DIR/docs" "$DIR/doc"; do
 done
 [ -z "$DOCS_DIR" ] && exit 0
 
-# Collect .md files up to depth 2; skip hidden paths
-mapfile -t MD_FILES < <(find "$DOCS_DIR" -maxdepth 2 -name "*.md" -not -path "*/.*" 2>/dev/null | sort)
+# Collect .md files up to depth 2; skip hidden paths. The search runs from inside the docs
+# directory, so "hidden" is judged below it: the project itself may sit under a hidden
+# directory (.worktrees/<branch>, ~/.config/...).
+mapfile -t MD_FILES < <(cd "$DOCS_DIR" && find . -maxdepth 2 -name "*.md" -not -path "*/.*" 2>/dev/null | sort)
 [ "${#MD_FILES[@]}" -eq 0 ] && exit 0
+MD_FILES=("${MD_FILES[@]/#./"$DOCS_DIR"}")
 
 MAX_FILES=30
 TOTAL=${#MD_FILES[@]}

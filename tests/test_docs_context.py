@@ -178,3 +178,22 @@ def test_docs_context_no_truncation_note_at_exactly_30(tmp_path):
     ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "more files not shown" not in ctx
     assert ctx.count("  - ") == 30
+
+
+def test_docs_context_lists_docs_of_a_project_under_a_hidden_directory(tmp_path):
+    # A worktree lives in .worktrees/<branch>: the hidden-path filter must look below docs/ only.
+    project = tmp_path / ".worktrees" / "feature & more"
+    docs = project / "docs"
+    (docs / "guides").mkdir(parents=True)
+    (docs / ".drafts").mkdir()
+    (docs / "setup.md").write_text("# Setup\n")
+    (docs / "guides" / "deploy.md").write_text("# Deploying\n")
+    (docs / ".hidden.md").write_text("# Hidden File\n")
+    (docs / ".drafts" / "wip.md").write_text("# Hidden Dir\n")
+    (docs / "guides" / ".scratch.md").write_text("# Hidden Nested\n")
+    r = run_docs_context(project)
+    assert r.returncode == 0
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "Setup" in ctx
+    assert "Deploying" in ctx
+    assert "Hidden" not in ctx

@@ -82,11 +82,6 @@ Noticed 2026-10-22 during the dev-env v28 fleet backfill:
 
 Noticed 2026-10-25 while draining this backlog:
 
-- **docs-context lists no docs inside any `.worktrees/<branch>` worktree**.
-  Its `find "$DOCS_DIR" … -not -path '*/.*'` is meant to skip hidden files, but it tests the
-  whole path, so a project under any hidden directory (`.worktrees/x/docs/a.md`, a repo in
-  `~/.config/…`) has every doc filtered out. Match hidden names below `$DOCS_DIR` only (e.g.
-  `-not -path "$DOCS_DIR/*/.*" -not -name '.*'`), with a test in a `.worktrees/` checkout.
 - **verify-work never runs ESLint in a repo with only one config style**
   (found while capping the linters). Its gate is `ls .eslintrc* eslint.config.* >/dev/null 2>&1`, and
   `ls` exits non-zero when either glob matches nothing, so ESLint runs only where both a legacy
