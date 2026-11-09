@@ -29,10 +29,14 @@ voice_payload() {
 
 # A `claude` started from another session's shell, whose prompts a program wrote: a copy of
 # dev-hooks' reminder_is_nested_run, pinned equal by test_nested_run_checks_match.
-# shortcut: reads /proc, so on macOS a nested run still looks typed; read `ps eww` there if needed.
+# Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command.
 voice_is_nested_run() {
-  [ -r "/proc/${CLAUDE_PID:-none}/environ" ] &&
+  case "${CLAUDE_PID:-}" in '' | *[!0-9]*) return 1 ;; esac
+  if [ -r "/proc/$CLAUDE_PID/environ" ]; then
     grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
+  else
+    ps eww -o command= -p "$CLAUDE_PID" 2>/dev/null | grep -q ' CLAUDE_CODE_CHILD_SESSION='
+  fi
 }
 
 # Echo one jq field from INPUT ("" when absent).

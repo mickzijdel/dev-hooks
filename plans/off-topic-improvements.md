@@ -159,9 +159,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   move, but `resolveNudge`'s verify-work case only knows passed / still failing, so that reply
   scores as ignored. A remedy that reads the next reply for the failing check's name (from the
   block's `=== name ===` sections) would make the acted-on rate mean something again.
-- **Nested-run detection is Linux-only** (2026-10-29). `reminder_is_nested_run` and
-  `voice_is_nested_run` read `/proc/$CLAUDE_PID/environ`; on macOS a fan-out's `claude -p` runs
-  still log as typed prompts. `ps eww -p "$CLAUDE_PID"` shows the same environment there.
 - **reminder-common.sh's fire-telemetry comment sits on the wrong function** (2026-10-29). The
   "Opt-in fire telemetry" paragraph is above `reminder_is_probe_session`, not
   `_reminder_log_fire`, which it describes.

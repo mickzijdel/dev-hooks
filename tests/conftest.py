@@ -7,6 +7,7 @@ subprocess, asserting on real output — never by importing internals.
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,9 @@ def claude_pid():
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_CHILD_SESSION"}
         if nested:
             env["CLAUDE_CODE_CHILD_SESSION"] = "1"
-        procs.append(subprocess.Popen(["sleep", "60"], env=env))
+        # Not `sleep`: macOS hides the environment of Apple's own binaries from `ps e`.
+        sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+        procs.append(subprocess.Popen(sleeper, env=env))
         return str(procs[-1].pid)
 
     yield start

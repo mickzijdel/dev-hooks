@@ -318,7 +318,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   `reminder_is_nested_run` (a `claude` started from another session's shell, as a fan-out
   script does: it inherits that session's `CLAUDE_CODE_ENTRYPOINT`, and Claude Code gives
   every hook `CLAUDE_CODE_CHILD_SESSION`, so only the claude process's own environment,
-  `/proc/$CLAUDE_PID/environ`, tells; the mod reads the same through `$.env`; also empties
+  `/proc/$CLAUDE_PID/environ` (on macOS, `ps eww`), tells; the mod reads the same through `$.env`; also empties
   `reminder_prompt_typed`, silences `intent-check-reminder` (which reads the raw prompt) and
   counts as headless; copied as `voice_is_nested_run`, pinned by
   `test_nested_run_checks_match`),
