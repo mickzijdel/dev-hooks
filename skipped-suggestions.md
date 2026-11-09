@@ -1445,3 +1445,29 @@ PRs opened this run: [dev-hooks#43 pip row in the machine-wide cooldown table](h
 | Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+
+---
+
+## 2026-11-09
+
+Sources scanned:
+- `nateberkopec/dotfiles` — 7 days (18 commits, `8894693` back to `55a16bd`)
+- Feeds: ai-productivity-digest (items 2026-11-05 to 2026-11-09), Claude Code changelog (2.1.319). Unreachable: upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: none (no rails-toolkit candidates either)
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Dotfiles commits since 2026-11-05: Aube npm-workspace recursion guard, OrbStack CLI alignment, Meridian removal, Daybreak model sync, dependency refresh, Claude Code Pi fork pins | dotfiles commits `4dcc721`, `ad854ba`, `beabee0`, `e3ce8f5`, `8ebbb8a`, `8894693`, `5279353`, `3774f68` | Out of scope | Personal machine, Pi and package-manager config. |
+| Hide long AI-generated write-ups behind a collapsed `<details><summary>` so readers see a short summary first | digest item https://x.com/simonw/status/2119650353142747181 | Deferred | `upstream-bug` already uses `<details>` for reproductions; a general PR-body rule is marginal beside the end-report rule. Revisit if long PR bodies keep showing up in review. |
+| Second model reviews finished output and loops until it approves; plan with a long-context agent, review with a fresh one | digest items 2026-11-08/09 (Opus-review loop, fresh-agent review) | Duplicate | `board`, `self-rate` independent grader and `superpowers:requesting-code-review`. |
+| Strong model orchestrates cheap subagents, demands proof of work not summaries | digest item https://x.com/thdxr/status/2118755687274532893 | Duplicate | `agent-brief` and `loop-oversight` already ask for evidence over summaries. |
+| Autocompact around 400k on 1M-context models; cap subagent nesting at three levels | digest item https://x.com/dexhorthy/status/2119165267368698188 | Rejected | User setting, no hook or skill surface. |
+| Distill a good iteration into a reusable skill; set Concise output style; "put it on my clipboard" | digest items 2026-11-05 to 2026-11-07 | Duplicate / Out of scope | Skill capture is `skill-candidate-reminder`/`script-library`; the rest are one-line user settings. |
+| Start evals from ~100 real traces; a workday of logging missing access/context for agents | digest items 2026-11-06 | Deferred | Overlaps `weekly-automation-review`; no concrete surface yet. |
+| Remaining digest items (research library in Markdown, newsletter unsubscribe scans, meeting transcripts, voice-note drafting, conditional reminders, Resend email reports, team AI onboarding) | digest items 2026-11-05 to 2026-11-09 | Out of scope | Personal productivity or non-dev. |
+| Changelog 2.1.319: `permissions.denyInsteadOfPrompting`, MCP tasks backgrounded, `CLAUDE_CODE_DISABLE_FEATURE_FLAGS`, auto-mode change when telemetry or flags are off | Claude Code changelog | Deferred | `denyInsteadOfPrompting` suits unattended scheduled runs like this one, but it is a user setting. The auto-mode change may affect the guard's `$.ui.ask` path under gateways; recheck if guard dialogs misbehave. |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
