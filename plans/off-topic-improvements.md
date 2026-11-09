@@ -169,7 +169,12 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   Separately, jscpd run inside that worktree scanned 0 files in 130 ms and passed (a `git archive`
   copy found the real result, 0 clones of 1,428 files), so a worktree's jscpd pass can be vacuous.
   spotify-tools' worktree did scan normally, so check BL's `.jscpd.json` / gitignore handling. Make
-  `run-jscpd.sh` fail when it scanned 0 files.
+  `run-jscpd.sh` fail when it scanned 0 files. Checked 2026-11-09 (jscpd 5.4.3, a dev-hooks
+  worktree under `.claude/worktrees/`, which scanned all 90 files): the `ai` and `threshold`
+  reporters that `.jscpd.json` sets print no file count, so the runner needs one from elsewhere
+  (add the `console` reporter and read its "Files analyzed" total, or a second `-r json` run).
+  Passing `-r` overrides each repo's configured reporters, and the runner is a standard template,
+  so this lands with a standard version bump.
 - **`setup-worktree.sh` line ~149 prints "command substitution: ignored null byte in input"**
   (2026-10-29, seen provisioning a mick-zijdel-website worktree). A `$(…)` there reads a file or
   command output containing a NUL byte. Find which input (likely a binary file matched by a copy
@@ -194,5 +199,17 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **fringe-chat pins `exclude-newer` to an absolute date** (2026-11-05). `backend/pyproject.toml` has `exclude-newer = "2026-10-25T00:00:00Z"` under a comment saying uv's pyproject parser rejects durations; uv ≥ 0.9.17 accepts `"3 days"` (every other fleet repo uses it), so the window is stale and drifts further each day. Switch to `"3 days"` and relock.
 
 - **CI runs Linux only, so BSD breakage ships silently** (2026-11-08). plan-reminder's GNU-only
-  `stat -c %Y` never fired on macOS, and the suite has macOS-only failures of the same class
-  (`/proc`-based nested-run tests, GNU tool assumptions). Consider a macOS CI job.
+  `stat -c %Y` never fired on macOS, and nested-run detection read `/proc` only (both fixed
+  2026-11-09). Consider a macOS CI job.
+- **Six tests still fail on macOS** (2026-11-09, `uv run pytest -q` on the work laptop: 6 failed,
+  1,627 passed). (1) `setup-worktree.sh` (~line 210) runs WT_POST_SETUP through `timeout`, which
+  macOS does not ship, so post-setup always reports `failed` there
+  (`test_post_setup_runs_the_declared_command`, `test_post_setup_runs_inside_the_worktree`); run
+  it uncapped when `timeout` is missing, as `fleet_roster.sh`'s `bounded` does. (2)
+  `test_verify_work_caps_a_slow_linter[ruff|rubocop]`: verify-work's cap also needs `timeout`
+  and is skipped without it, so the test should skip too, or the cap needs a fallback. (3)
+  `test_checker_advises_a_missing_machine_wide_cooldown` and
+  `..._cooldown_under_four_days` in `tests/test_skill_scripts.py`: not looked into.
+- **lint-on-edit.sh's `find_root` loops forever on a relative `file_path`** (2026-11-09).
+  `dirname .` is `.`, never `/`. Claude Code sends absolute paths, so it has not bitten; stop when
+  `dirname` returns its input.
