@@ -159,9 +159,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   move, but `resolveNudge`'s verify-work case only knows passed / still failing, so that reply
   scores as ignored. A remedy that reads the next reply for the failing check's name (from the
   block's `=== name ===` sections) would make the acted-on rate mean something again.
-- **reminder-common.sh's fire-telemetry comment sits on the wrong function** (2026-10-29). The
-  "Opt-in fire telemetry" paragraph is above `reminder_is_probe_session`, not
-  `_reminder_log_fire`, which it describes.
 - **fleet_roster.sh misses repos that keep the stamp in `mise/config.toml`** (2026-10-29, found
   during the fleet dependency sweep). `plugins/dev-hooks/skills/dev-env-setup/scripts/fleet_roster.sh`
   finds repos by a `mise.toml` file (`find -name mise.toml`, line ~90) and reads `origin_version` from

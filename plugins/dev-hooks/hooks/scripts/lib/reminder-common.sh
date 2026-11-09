@@ -326,11 +326,6 @@ reminder_is_nested_run() {
   fi
 }
 
-# Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
-# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so automation-review's
-# Retire pass can see which hooks actually fire (and which never do). OFF by default —
-# no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
-# fails the hook. $1 = firing hook's basename.
 # A throwaway session whose fires and prompts would skew automation-review's counts:
 # a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
 # scratchpad, a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
@@ -345,6 +340,11 @@ reminder_is_probe_session() {
   return 1
 }
 
+# Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
+# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so automation-review's
+# Retire pass can see which hooks actually fire (and which never do). OFF by default —
+# no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
+# fails the hook. $1 = firing hook's basename.
 _reminder_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
   reminder_is_probe_session && return 0
