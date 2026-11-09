@@ -106,14 +106,14 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   checkout's cwd, with BL's `lockfile = true`. Reproduce with a scratch worktree and
   `git status` on main before and after.
 
-- **github_readme_audit.py counts shell comments as H1s** (2026-10-28, found while writing
-  vicinae-updater's README). `heading_lines()` in
-  `plugins/writing/skills/github-readme/scripts/github_readme_audit.py` matches `^#{1,6}\s+` on
-  every line, including inside fenced code blocks, so a `# step 1` comment in a ```sh block counts
-  as an extra H1 (5 found for a README with one). Strip fenced blocks before matching headings.
-  Also: SETUP/USAGE_COMMAND_HINTS only know package managers, so an ops README for a private tool
-  (systemd units, a CLI on PATH) always fails both. Either skip those checks when the README has
-  no package manifest next to it, or accept any fenced command under the Installation/Usage heading.
+- **github_readme_audit.py's command-example checks only know package managers** (2026-10-28,
+  found while writing vicinae-updater's README). SETUP/USAGE_COMMAND_HINTS in
+  `plugins/writing/skills/github-readme/scripts/github_readme_audit.py` match package managers and
+  script runs, so an ops README for a private tool (systemd units, a CLI on PATH) fails both
+  though its sections have ```sh blocks. Either skip those checks when the README has no package
+  manifest next to it, or accept any fenced command under the Installation/Usage heading, and say
+  in the failure which commands the checks look for. The PostToolUse hook re-raises these on
+  every README edit.
 
 - **lint-on-edit.sh reformats Python in repos that configure no formatter** (2026-10-28, found
   while patching HartreeWorks/skill--fact-check). The `*.py` branch of
@@ -194,11 +194,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   `mickzijdel/dev-hooks@75f605b` (the session cwd's repo and HEAD) instead of spotify-tools@d73a3ca.
   When the push output is empty, resolve the repo from the command's own `cd`/`-C` target (as
   `reminder_git_target_dir` does) and its pushed ref, or say nothing; never fall back to the cwd repo.
-- **README audit counts shell comments as H1s** (2026-10-29). `writing/skills/github-readme/scripts/github_readme_audit.py`
-  flagged vicinae-updater's README with "Exactly one H1: 6 found". Five of them were `# 1. ...` comments
-  inside a fenced `sh` block. It also failed "Setup/Usage command example missing in fenced code block"
-  though both sections have ```sh blocks. Skip lines inside fences when counting headings, and say which
-  commands the example checks look for. The PostToolUse hook re-raises these on every README edit.
 - **dev-env Ruby hk template: the `test` step bypasses the `t` queue** (2026-10-29, v29 backfill). In the Ruby repos' `hk.pkl` (booking-overview, spotify-tools, scav-hunt, from the Ruby template) the pre-commit `test` step runs `bin/rails test` directly, so a commit staging `.rb` files starts a full parallel suite outside `~/.local/bin/t`'s machine-wide queue. With parallel agents that swapped the laptop before. Make the template call `t` when it's on PATH (falling back to `bin/rails test` in CI).
 - **v28 → v29 guide step 5: the `shfmt -w` rule retabs 2-space repos** (2026-10-29). "Run `shfmt -w` in a repo without an `.editorconfig`" would reindent the whole re-copied script to tabs in repos with no shfmt gate whose committed copy is 2-space (booking-overview, spotify-tools, prose-arena, scav-hunt, impamp-3); the agents skipped it there. Say "where the repo lints shell with shfmt" instead.
 - **worktree-setup: a worktree shares the main checkout's uv venv when `UV_PROJECT_ENVIRONMENT` is set** (2026-10-29, readwise-digest v29 backfill). readwise-digest's `mise.toml` points `UV_PROJECT_ENVIRONMENT` at `~/.local/share/readwise-digest/venv`, the venv its live daily timer runs from, so `uv run` in a worktree re-pointed that venv's editable install at the worktree (repaired by `uv sync --frozen` from the main checkout). Have `setup-worktree.sh` give each worktree its own `UV_PROJECT_ENVIRONMENT` (e.g. `<worktree>/.venv`) in the env it writes, when the repo sets one outside the checkout.

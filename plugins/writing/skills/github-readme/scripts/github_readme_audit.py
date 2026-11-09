@@ -64,9 +64,15 @@ def usage_error(message):
 
 
 def heading_lines(text):
-    return [
-        line for line in text.splitlines(keepends=True) if re.match(r"#{1,6}\s+", line)
-    ]
+    """Heading lines outside fenced code blocks, where `# step 1` is a shell comment."""
+    headings, fence = [], None
+    for line in text.splitlines(keepends=True):
+        marker = re.match(r" {0,3}(```|~~~)", line)
+        if marker and fence in (None, marker.group(1)):
+            fence = None if fence else marker.group(1)
+        elif fence is None and re.match(r"#{1,6}\s+", line):
+            headings.append(line)
+    return headings
 
 
 def heading_match(headings, patterns):
@@ -129,7 +135,7 @@ def main(argv):
 
     results = []
 
-    h1_count = sum(1 for line in text.splitlines() if re.match(r"#\s+\S+", line))
+    h1_count = sum(1 for line in headings if re.match(r"#\s+\S+", line))
     if h1_count == 1:
         results.append(check("pass", "Exactly one H1", "1 found"))
     elif h1_count == 0:
