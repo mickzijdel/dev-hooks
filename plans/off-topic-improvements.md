@@ -159,14 +159,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   move, but `resolveNudge`'s verify-work case only knows passed / still failing, so that reply
   scores as ignored. A remedy that reads the next reply for the failing check's name (from the
   block's `=== name ===` sections) would make the acted-on rate mean something again.
-- **fleet_roster.sh misses repos that keep the stamp in `mise/config.toml`** (2026-10-29, found
-  during the fleet dependency sweep). `plugins/dev-hooks/skills/dev-env-setup/scripts/fleet_roster.sh`
-  finds repos by a `mise.toml` file (`find -name mise.toml`, line ~90) and reads `origin_version` from
-  `<upstream>:mise.toml` (line 76). EUTC black_lightning (`~/Stack/Programmeren/BlackLightning`) keeps
-  `DEV_ENV_VERSION` in `mise/config.toml`, so it never shows in the roster. It sat on v23 while the
-  standard reached v28, and no backfill noticed. Match `mise/config.toml` and `.mise.toml` too. Also
-  read the stamp from the remote that the repo pushes to (here `upstream`, since `origin` is a fork),
-  not from the tracking branch.
 - **The standards-sweep routine covers 6 of ~20 dev-env repos** (2026-10-29). Cloud routine
   "Maintain dev-hook standards" (`trig_01AShWmktsvqAUydEJWduzaN`) attaches only dev-hooks,
   black_lightning (now the EUTC repo, fixed 2026-10-29), vischeck, booking-overview, fringe-chat and
@@ -178,8 +170,7 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   deslop 300. Either the trim measured differently (quotes, folded YAML) or these regrew. Pick one
   measure, add it to `tests/test_marketplace.py` (or a skills test) as a hard cap, and trim these.
 - **dev-env-setup tooling assumes a root `mise.toml`/`mise.lock`** (2026-10-29, found upgrading EUTC
-  black_lightning from v23 to v28, which keeps both under `mise/`). Three gaps, besides the fleet_roster
-  one above: (1) the `check_version_sync.sh` template reads only inline `[tools]` entries, not
+  black_lightning from v23 to v28, which keeps both under `mise/`). Three gaps (fleet_roster.sh already reads all of these locations): (1) the `check_version_sync.sh` template reads only inline `[tools]` entries, not
   `[tools.ruby]` tables with `version =`, so BL carries its own patched reader. (2) The same template
   hardcodes a root `mise.lock`, so with `mise/config.toml` it silently skips `mise/mise.lock`, and v27's
   "mise.lock always joins the comparison" doesn't hold. (3) `dev_env_check.sh` reads neither
