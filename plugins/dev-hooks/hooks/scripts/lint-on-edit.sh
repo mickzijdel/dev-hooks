@@ -47,6 +47,20 @@ run_js() {
   fi
 }
 
+# Does this project configure the Python tool $1 (ruff|black)? Looks from the file's
+# directory up to the repo root, as the tool itself would.
+py_tool_configured() {
+  local d=$DIR parent
+  while :; do
+    if [ "$1" = ruff ] && { [ -f "$d/ruff.toml" ] || [ -f "$d/.ruff.toml" ]; }; then return 0; fi
+    grep -Eq "^\\[tool\\.$1[].]" "$d/pyproject.toml" 2>/dev/null && return 0
+    [ -e "$d/.git" ] && return 1
+    parent=$(dirname "$d")
+    [ "$parent" = "$d" ] && return 1
+    d=$parent
+  done
+}
+
 ROOT=$(find_root "$DIR")
 cd "$ROOT" || exit 0
 
@@ -100,6 +114,9 @@ case "$FILE" in
     ;;
 
   # ── Python (best-effort: tools are not global) ───────────────────────────────
+  # A tool in the project's .venv is the project's choice. One that is only on PATH runs
+  # where the project configures it; otherwise one edit would restyle a whole file in a
+  # repo that never chose a formatter.
   *.py)
     # Keep edit-time autofix from DELETING code the agent is mid-authoring: an
     # import/binding is often written a beat before the line that uses it, so F401
@@ -109,12 +126,12 @@ case "$FILE" in
     if [ -x "$ROOT/.venv/bin/ruff" ]; then
       "$ROOT/.venv/bin/ruff" check --fix ${RUFF_UNFIXABLE:+--unfixable "$RUFF_UNFIXABLE"} "$FILE" >/dev/null 2>&1
       "$ROOT/.venv/bin/ruff" format "$FILE" >/dev/null 2>&1
-    elif command -v ruff >/dev/null 2>&1; then
+    elif command -v ruff >/dev/null 2>&1 && py_tool_configured ruff; then
       ruff check --fix ${RUFF_UNFIXABLE:+--unfixable "$RUFF_UNFIXABLE"} "$FILE" >/dev/null 2>&1
       ruff format "$FILE" >/dev/null 2>&1
     elif [ -x "$ROOT/.venv/bin/black" ]; then
       "$ROOT/.venv/bin/black" "$FILE" >/dev/null 2>&1
-    elif command -v black >/dev/null 2>&1; then
+    elif command -v black >/dev/null 2>&1 && py_tool_configured black; then
       black "$FILE" >/dev/null 2>&1
     fi
     ;;

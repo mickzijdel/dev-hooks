@@ -115,16 +115,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   in the failure which commands the checks look for. The PostToolUse hook re-raises these on
   every README edit.
 
-- **lint-on-edit.sh reformats Python in repos that configure no formatter** (2026-10-28, found
-  while patching HartreeWorks/skill--fact-check). The `*.py` branch of
-  `plugins/dev-hooks/hooks/scripts/lint-on-edit.sh` falls back to the global `ruff check --fix`
-  and `ruff format` when the project has no `.venv/bin/ruff`, so one Edit to a third-party script
-  (no pyproject, no ruff config) rewrote the whole file into ruff style: 62 lines of noise around a
-  6-line fix, unusable as an upstream patch. The header says it uses "the linter that THIS project
-  actually configures". Gate the global fallback on a ruff/black config being present
-  (`pyproject.toml` with `[tool.ruff]`/`[tool.black]`, `ruff.toml`, `.ruff.toml`), as the Ruby
-  branch does with Gemfile.lock.
-
 - **The dev-env standard's floating jscpd breaks `audit` across ERB repos** (2026-10-28, found
   while triaging Dependabot PRs). `run-jscpd.sh` (root and the dev-env-setup template) runs the
   newest jscpd at least 4 days old. jscpd 5.4.2 (released 10-20, eligible from 10-24) finds ERB

@@ -1389,6 +1389,7 @@ def test_lint_on_edit_keeps_unused_imports_by_default(tmp_path):
     # fixes/formatting still apply, so `x=1` becomes `x = 1`.
     if not _ruff_on_path():
         pytest.skip("ruff not installed")
+    (tmp_path / "ruff.toml").write_text("")
     py = tmp_path / "snippet.py"
     py.write_text("import os\nx=1\n")
     r = run_hook(
@@ -1404,6 +1405,7 @@ def test_lint_on_edit_removes_unused_imports_when_override_empty(tmp_path):
     # DEV_HOOKS_RUFF_KEEP= (empty) restores full autofix, so F401 strips the import.
     if not _ruff_on_path():
         pytest.skip("ruff not installed")
+    (tmp_path / "ruff.toml").write_text("")
     py = tmp_path / "snippet.py"
     py.write_text("import os\nx = 1\n")
     r = run_hook(
@@ -1413,6 +1415,46 @@ def test_lint_on_edit_removes_unused_imports_when_override_empty(tmp_path):
     )
     assert r.returncode == 0
     assert "import os" not in py.read_text()
+
+
+def test_lint_on_edit_leaves_python_alone_without_a_ruff_config(tmp_path):
+    # A third-party script (no pyproject, no ruff.toml) must not be rewritten into ruff
+    # style by a ruff that merely happens to be on PATH.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    py = tmp_path / "snippet.py"
+    py.write_text("x=1\n")
+    r = run_hook(
+        "lint-on-edit.sh", stdin=json.dumps({"tool_input": {"file_path": str(py)}})
+    )
+    assert r.returncode == 0
+    assert py.read_text() == "x=1\n"
+
+
+@pytest.mark.parametrize(
+    "config, text",
+    [
+        ("ruff.toml", ""),
+        (".ruff.toml", ""),
+        ("pyproject.toml", "[tool.ruff]\nline-length = 100\n"),
+        ("pyproject.toml", "[tool.ruff.lint]\nselect = ['E']\n"),
+    ],
+)
+def test_lint_on_edit_formats_python_under_a_ruff_config(tmp_path, config, text):
+    # The config may sit above the file, anywhere up to the repo root.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / config).write_text(text)
+    py = tmp_path / "pkg" / "snippet.py"
+    py.parent.mkdir()
+    py.write_text("x=1\n")
+    run_hook(
+        "lint-on-edit.sh", stdin=json.dumps({"tool_input": {"file_path": str(py)}})
+    )
+    assert py.read_text() == "x = 1\n"
 
 
 def _fake_bundle(tmp_path, body):
