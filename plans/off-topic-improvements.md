@@ -228,8 +228,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **hk `bundler-audit` blocks a commit that only partly fixes the advisories** (2026-11-05, v31 Rails sweeps in jambook, spotify-tools, booking-overview). With the cooldown holding back a fix (Rails 8.1.4.1, nokogiri), every patch/minor `Gemfile.lock` commit failed on advisories already on main; two agents committed with `HK_SKIP_STEPS=bundler-audit`, and the auto-mode classifier denied the third. Candidate for v32: the pre-commit step fails only on advisories the staged lockfile adds compared with HEAD's, and the full check stays in CI's scan job. The one-package bypass (`bundle update <gems> --conservative --cooldown=0`) moved only the named gems and their Rails component gems in all three repos.
 - **fringe-chat pins `exclude-newer` to an absolute date** (2026-11-05). `backend/pyproject.toml` has `exclude-newer = "2026-10-25T00:00:00Z"` under a comment saying uv's pyproject parser rejects durations; uv ≥ 0.9.17 accepts `"3 days"` (every other fleet repo uses it), so the window is stale and drifts further each day. Switch to `"3 days"` and relock.
 
-- **plan-reminder never fires on macOS** (found 2026-11-08 by the automation-review branch's
-  reviewer): `plugins/dev-hooks/hooks/scripts/plan-reminder.sh:23` uses GNU-only `stat -c %Y`;
-  on BSD stat it fails into `|| exit 0`. Use `stat -f %m "$f" 2>/dev/null || stat -c %Y "$f"`.
-  The macOS-only test failures (`/proc`-based nested-run tests, GNU tool assumptions) are the
-  same class: CI runs Linux only, so BSD breakage ships silently. Consider a macOS CI job.
+- **CI runs Linux only, so BSD breakage ships silently** (2026-11-08). plan-reminder's GNU-only
+  `stat -c %Y` never fired on macOS, and the suite has macOS-only failures of the same class
+  (`/proc`-based nested-run tests, GNU tool assumptions). Consider a macOS CI job.
