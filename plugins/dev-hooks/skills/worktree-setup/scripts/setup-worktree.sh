@@ -206,8 +206,17 @@ if [ "$isolated" != no ] || [ -f "$WT/.worktree-isolate.conf" ]; then
     else
       runner=(bash -c "$POST_CMD")
     fi
+    # shortcut: uncapped where neither coreutils timeout nor Homebrew's gtimeout exists (a
+    # bare macOS); add a fallback if a hung seed there ever matters.
+    cap=()
+    for t in timeout gtimeout; do
+      if command -v "$t" >/dev/null 2>&1; then
+        cap=("$t" "${WT_POST_SETUP_TIMEOUT:-600}")
+        break
+      fi
+    done
     post_rc=0
-    (cd "$WT" && timeout "${WT_POST_SETUP_TIMEOUT:-600}" "${runner[@]}") || post_rc=$?
+    (cd "$WT" && ${cap[@]+"${cap[@]}"} "${runner[@]}") || post_rc=$?
     if [ "$post_rc" -eq 0 ]; then
       post_setup=ok
     else
