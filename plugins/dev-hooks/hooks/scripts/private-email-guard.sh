@@ -10,8 +10,9 @@
 # Allowed addresses are DEV_HOOKS_ALLOWED_EMAILS (comma- or space-separated, in .claude
 # settings "env"), such as a public alias for bots; with none set, every address asks. Never
 # counted: reserved documentation and test domains (example.com/.org/.net, *.example, *.test,
-# *.invalid, *.localhost), systemd unit names (name@instance.service), noreply addresses, git@
-# logins, Google Calendar and service-account IDs (*.calendar.google.com, *.gserviceaccount.com),
+# *.invalid, *.localhost), systemd unit names (name@instance.service), a versioned launchd
+# file (name@15.plist), noreply addresses, git@ logins, Google Calendar and service-account
+# IDs (*.calendar.google.com, *.gserviceaccount.com, a Cloud SQL IAM user's name@project.iam),
 # a URL's user name and password, and in Bash an ssh/sftp/mosh target, an scp/rsync user@host:
 # path, or the account gcloud signs in as (auth login, config set account, --account).
 #
@@ -25,10 +26,26 @@
 #               that a later curl uses. A command whose every target is this machine
 #               (localhost, 127.0.0.1, 0.0.0.0, [::1]) stays silent; one that also names
 #               another host, or uses a tool or library above, asks.
-#   WebFetch  — the URL. WebSearch — the query. MCP tools — any argument.
+#   WebFetch  — the URL. WebSearch — the query.
+#   MCP tools — any argument, with two exceptions the person sets up:
+#               DEV_HOOKS_EMAIL_TRUSTED_TOOLS (comma- or space-separated tool-name globs, such
+#               as "mcp__crm__*") names connectors that act as the person on a service that
+#               already holds the address. Never list a tool that runs commands, fetches URLs
+#               or drives a browser: it can send an address anywhere.
+#               DEV_HOOKS_EMAIL_TRUSTED_HOSTS (host globs, such as "*.my-team.org") names
+#               sites a browser may type an address into. It covers a `navigate` call, or a
+#               batch of actions that starts with one, when every page it names is this
+#               machine or a trusted host over https, it stays in one tab and runs no script.
+#               A glob on a shared hosting suffix ("*-my-team.some-host.app") trusts any
+#               project anyone registers under a matching name.
+#               shortcut: a browser call that names no page asks, since the hook can't see
+#               which page is open; a batch that opens a trusted page and then clicks or keys
+#               its way to another site is not seen. Upgrade when hooks are told the tab's URL.
 #   Write, Edit, MultiEdit, NotebookEdit — in code and config, any address (a constant on
 #               its own line still ends up in the requests the code makes), except in a test
-#               file with no request code; in prose (Markdown, HTML, ERB, text) and package
+#               file with no request code, or a session scratchpad file that can't send (no
+#               request code, network tool or subprocess); in prose (Markdown, HTML, ERB,
+#               text) and package
 #               manifests (package.json, pyproject.toml, *.gemspec, AUTHORS...) a line that puts
 #               an address in a request: a User-Agent, From header, contact string, mailto=/email=
 #               parameter, curl call, HTTP library.
@@ -67,7 +84,8 @@ esac
 reminder_mktemp
 printf '%s' "$INPUT" >"$REPLY"
 REASON=$(
-  python3 - "$REPLY" "$SELF_DIR/lib" "${DEV_HOOKS_ALLOWED_EMAILS:-}" "${DEV_HOOKS_PRIVATE_TERMS:-}" <<'PYEOF'
+  python3 - "$REPLY" "$SELF_DIR/lib" "${DEV_HOOKS_ALLOWED_EMAILS:-}" "${DEV_HOOKS_PRIVATE_TERMS:-}" \
+    "${DEV_HOOKS_EMAIL_TRUSTED_HOSTS:-}" "${DEV_HOOKS_EMAIL_TRUSTED_TOOLS:-}" <<'PYEOF'
 import json
 import re
 import subprocess
@@ -104,6 +122,15 @@ SIGN_IN = re.compile(
 )
 # Calendar and service-account IDs look like addresses but name no person.
 NON_PERSON = re.compile(r"(?:^|\.)(?:calendar\.google\.com|gserviceaccount\.com)$")
+# name@15.plist (a versioned launchd file) and name@project.iam (a Cloud SQL IAM user): the
+# whole domain, so a real address with .plist or .iam appended still counts.
+NOT_A_DOMAIN = re.compile(r"^(?:\d[\d.]*\.plist|[a-z][a-z0-9-]*\.iam)$")
+trusted_hosts = [h for h in re.split(r"[,\s]+", sys.argv[5]) if h]
+trusted_tools = [t for t in re.split(r"[,\s]+", sys.argv[6]) if t]
+SCRIPT = re.compile(r"script|eval", re.I)
+PAGE_KEYS = {"url", "urls", "href"}
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+SCRATCH = re.compile(r"^/(?:private/)?tmp/claude-[^/]+/(?:[^/]+/)*scratchpad/")
 SSH_LOGIN = re.compile(r"(?<![\w.-])(?:ssh|mosh|sftp)(?:\s+-[\w-]+(?:\s+[^\s-]\S*)?)*\s+([\w.-]+@[\w.-]+)")
 COPY_SEGMENT = re.compile(r"(?<![\w.-])(?:scp|rsync)\b[^\n|;&]*")
 COPY_LOGIN = re.compile(r"(?<![\w.-])([\w.-]+@[\w.-]+):")
@@ -137,6 +164,7 @@ REQUEST = re.compile(
     r"""|https?://|""" + LIBRARIES,
     re.I,
 )
+RUNS = re.compile(UNSEEN.pattern + r"|socket|subprocess|os\.system|page\.(?:fill|type|goto)", re.I)
 PROSE = re.compile(r"\.(?:md|markdown|txt|rst|html?|erb|haml|slim|liquid|eml|csv)$", re.I)
 # Package metadata names its authors; it makes no requests.
 MANIFEST = re.compile(
@@ -182,7 +210,12 @@ def in_headers(values):
         for m in EMAIL.finditer(value):
             address = m.group(0).replace("%40", "@").lower()
             local, _, domain = address.rpartition("@")
-            if RESERVED.search(domain) or UNIT.search(domain) or local.startswith(("noreply", "no-reply")):
+            if (
+                RESERVED.search(domain)
+                or UNIT.search(domain)
+                or NOT_A_DOMAIN.search(domain)
+                or local.startswith(("noreply", "no-reply"))
+            ):
                 continue
             if address not in out:
                 out.append(address)
@@ -220,6 +253,7 @@ def counted(raw):
             or RESERVED.search(domain)
             or UNIT.search(domain)
             or NON_PERSON.search(domain)
+            or NOT_A_DOMAIN.search(domain)
             or local == "git"
             or local.startswith(("noreply", "no-reply"))
             or domain.endswith("noreply.github.com")
@@ -257,11 +291,63 @@ def written(path, text):
         lines = [line for line in text.splitlines() if REQUEST.search(line)]
     elif is_test_path(path) and not REQUEST.search(text):
         lines = []
+    elif SCRATCH.search(path) and "/../" not in path and not (REQUEST.search(text) or RUNS.search(text)):
+        lines = []  # scratch data; a scratch script that can send is run, so it asks
     else:
         lines = text.splitlines()
     found = addresses("\n".join(lines))
     what = "This edit writes {} into a file, from where the code or page can send it out."
     return (found, what, "file: " + path if path else None) if found else None
+
+
+def matches(value, globs):
+    """`*` is the only wildcard, so a `[` or `?` in a glob is taken literally."""
+    return any(re.fullmatch(re.escape(g).replace(r"\*", ".*"), value, re.I) for g in globs)
+
+
+def pairs(node):
+    """Every (key, value) in nested arguments."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield key, value
+            yield from pairs(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from pairs(item)
+
+
+def trusted_page(url):
+    # A browser reads "\" as "/" and drops whitespace, so urlparse's host is not the browser's.
+    if not isinstance(url, str) or re.search(r"[\\\s]", url):
+        return False
+    try:
+        parts = urlparse(url if "://" in url else "//" + url)
+        host = parts.hostname or ""
+    except ValueError:
+        return False
+    if parts.scheme not in ("", "http", "https"):
+        return False
+    if host in LOCAL_HOSTS:
+        return True
+    return parts.scheme != "http" and bool(re.fullmatch(r"[a-z0-9.-]+", host)) and matches(host, trusted_hosts)
+
+
+def on_trusted_pages(tool, args):
+    """A `navigate` call, or a batch of actions that starts with one, whose every page is this
+    machine or a trusted host, in one tab, running no script."""
+    steps = args.get("actions")
+    if isinstance(steps, list):
+        if not steps or not all(isinstance(step, dict) for step in steps) or steps[0].get("name") != "navigate":
+            return False
+    elif tool.rsplit("__", 1)[-1] == "navigate":
+        steps = [{"name": "navigate", "input": args}]
+    else:
+        return False
+    tabs = {json.dumps((step.get("input") or {}).get("tabId")) for step in steps if isinstance(step.get("input"), dict)}
+    if len(tabs) > 1 or any(SCRIPT.search(str(step.get("name"))) for step in steps):
+        return False
+    urls = [value for key, value in pairs(args) if key.lower() in PAGE_KEYS]
+    return bool(urls) and all(trusted_page(url) for url in urls)
 
 
 headers = []
@@ -284,7 +370,7 @@ elif tool == "WebFetch":
 elif tool == "WebSearch":
     found = addresses(readable(args.get("query") or ""))
     result = (found, "This search sends {} to the search provider.", "web search") if found else None
-elif tool.startswith("mcp__"):
+elif tool.startswith("mcp__") and not matches(tool, trusted_tools) and not on_trusted_pages(tool, args):
     found = addresses(readable(json.dumps(args, ensure_ascii=False)))
     result = (found, "This call hands {} to the " + tool + " service.", "mcp: " + tool) if found else None
 else:

