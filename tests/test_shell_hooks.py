@@ -3220,7 +3220,8 @@ def test_verify_work_skips_herb_when_not_bundled(tmp_path):
 
 
 requires_timeout = pytest.mark.skipif(
-    shutil.which("timeout") is None, reason="needs coreutils `timeout`"
+    not any(shutil.which(tool) for tool in ("timeout", "gtimeout", "perl")),
+    reason="needs coreutils `timeout`, `gtimeout` or perl",
 )
 
 

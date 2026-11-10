@@ -201,15 +201,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **CI runs Linux only, so BSD breakage ships silently** (2026-11-08). plan-reminder's GNU-only
   `stat -c %Y` never fired on macOS, and nested-run detection read `/proc` only (both fixed
   2026-11-09). Consider a macOS CI job.
-- **Six tests still fail on macOS** (2026-11-09, `uv run pytest -q` on the work laptop: 6 failed,
-  1,627 passed). (1) `setup-worktree.sh` (~line 210) runs WT_POST_SETUP through `timeout`, which
-  macOS does not ship, so post-setup always reports `failed` there
-  (`test_post_setup_runs_the_declared_command`, `test_post_setup_runs_inside_the_worktree`); run
-  it uncapped when `timeout` is missing, as `fleet_roster.sh`'s `bounded` does. (2)
-  `test_verify_work_caps_a_slow_linter[ruff|rubocop]`: verify-work's cap also needs `timeout`
-  and is skipped without it, so the test should skip too, or the cap needs a fallback. (3)
-  `test_checker_advises_a_missing_machine_wide_cooldown` and
-  `..._cooldown_under_four_days` in `tests/test_skill_scripts.py`: not looked into.
 - **lint-on-edit.sh's `find_root` loops forever on a relative `file_path`** (2026-11-09).
   `dirname .` is `.`, never `/`. Claude Code sends absolute paths, so it has not bitten; stop when
   `dirname` returns its input.
