@@ -1027,6 +1027,50 @@ def test_nested_run_checks_match():
     assert "CLAUDE_CODE_CHILD_SESSION" in canon
 
 
+@pytest.mark.parametrize(
+    "lib, fn",
+    [
+        (HOOKS / "lib" / "reminder-common.sh", "reminder_is_nested_run"),
+        (WRITING_HOOKS / "lib" / "voice-common.sh", "voice_is_nested_run"),
+    ],
+)
+def test_an_argument_naming_the_variable_is_not_a_nested_run(lib, fn):
+    # macOS `ps e` prints arguments and environment as one string: a prompt that quotes the
+    # variable (`claude -p "... CLAUDE_CODE_CHILD_SESSION=1 ..."`) is not a nested run.
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_CHILD_SESSION"}
+    sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+    proc = subprocess.Popen(
+        [*sleeper, "why is CLAUDE_CODE_CHILD_SESSION=1 set?"], env=env
+    )
+    try:
+        r = subprocess.run(
+            ["bash", "-c", f'source "$1"; {fn}', "_", str(lib)],
+            env=base_env(CLAUDE_PID=str(proc.pid)),
+        )
+    finally:
+        proc.kill()
+        proc.wait()
+    assert r.returncode == 1
+
+
+def test_plan_reminder_falls_back_to_bsd_stat(tmp_path):
+    # BSD stat has no -c: the hook then asks it with -f %m. A fake stat pins that on Linux CI.
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    stat = fakebin / "stat"
+    stat.write_text(
+        "#!/bin/bash\n"
+        '[ "$1" = -f ] && [ "$2" = %m ] || exit 1\n'
+        "python3 -c 'import os, sys; print(int(os.stat(sys.argv[1]).st_mtime))' \"$3\"\n"
+    )
+    stat.chmod(0o755)
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    env["PATH"] = f"{fakebin}{os.pathsep}{env['PATH']}"
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in r.stdout
+
+
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
 def test_popover_reminder_fires_for_controller_filename(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"

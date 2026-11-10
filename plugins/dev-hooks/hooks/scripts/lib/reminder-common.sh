@@ -316,13 +316,17 @@ reminder_fire_once() {
 # starts CLAUDE_CODE_CHILD_SESSION, this hook included, so only the claude process's own
 # environment tells: one a person started has none. Mirrored by voice_is_nested_run and by the
 # mod, which reads that environment as $.env.
-# Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command.
+# Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command
+# line, which is cut off first: an argument may quote the variable.
 reminder_is_nested_run() {
   case "${CLAUDE_PID:-}" in '' | *[!0-9]*) return 1 ;; esac
   if [ -r "/proc/$CLAUDE_PID/environ" ]; then
     grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
   else
-    ps eww -o command= -p "$CLAUDE_PID" 2>/dev/null | grep -q ' CLAUDE_CODE_CHILD_SESSION='
+    local args all
+    args=$(ps ww -o command= -p "$CLAUDE_PID" 2>/dev/null) || return 1
+    all=$(ps eww -o command= -p "$CLAUDE_PID" 2>/dev/null)
+    [[ ${all#"$args"} == *' CLAUDE_CODE_CHILD_SESSION='* ]]
   fi
 }
 
