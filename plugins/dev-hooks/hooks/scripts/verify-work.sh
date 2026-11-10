@@ -108,8 +108,9 @@ run_check() {
 # whole process group, or a child holding the output pipe would keep the hook waiting.
 # shellcheck disable=SC2016
 PERL_TIMEOUT='my $t = shift; my $pid = fork();
-if (!$pid) { setpgrp(0, 0); exec @ARGV or exit 127 }
+if (!$pid) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
 $SIG{ALRM} = sub { kill "TERM", -$pid; exit 124 };
+$SIG{TERM} = $SIG{INT} = $SIG{HUP} = sub { kill "TERM", -$pid; exit 143 };
 alarm $t; waitpid $pid, 0;
 exit($? & 127 ? 128 + ($? & 127) : $? >> 8)'
 _capped() {
