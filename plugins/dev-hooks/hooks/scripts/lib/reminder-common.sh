@@ -318,6 +318,8 @@ reminder_fire_once() {
 # mod, which reads that environment as $.env.
 # Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command
 # line, which is cut off first: an argument may quote the variable.
+# The two copies must stay equal and can't be shared across plugins.
+# jscpd:ignore-start
 reminder_is_nested_run() {
   case "${CLAUDE_PID:-}" in '' | *[!0-9]*) return 1 ;; esac
   if [ -r "/proc/$CLAUDE_PID/environ" ]; then
@@ -329,6 +331,7 @@ reminder_is_nested_run() {
     [[ ${all#"$args"} == *' CLAUDE_CODE_CHILD_SESSION='* ]]
   fi
 }
+# jscpd:ignore-end
 
 # A throwaway session whose fires and prompts would skew automation-review's counts:
 # a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
