@@ -3861,12 +3861,47 @@ def test_swallow_fires_for_bare_except(tmp_path):
     assert_json_with(r.stdout, "bare `except:`")
 
 
-def test_swallow_fires_for_except_pass(tmp_path):
-    r = _swallow_run(
-        tmp_path, "e.py", "try:\n    f()\nexcept ValueError:\n    pass\n", "j2"
-    )
+@pytest.mark.parametrize(
+    "handler",
+    [
+        "except Exception:\n    pass",
+        "except BaseException as e:\n    pass",
+        "except (Exception):\n    pass",
+        "except (Exception, ValueError):\n    pass",
+        "except (ValueError, Exception):  # why\n    pass",
+        "except Exception: pass",
+        "except Exception:\n    ...",
+        "except* Exception:\n    pass",
+    ],
+)
+def test_swallow_fires_for_broad_except_pass(tmp_path, handler):
+    r = _swallow_run(tmp_path, "e.py", f"try:\n    f()\n{handler}\n", "j2")
     assert r.returncode == 0
     assert_json_with(r.stdout, "swallows")
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        # Catching the exact exception you expect is what the nudge itself asks for.
+        "except ValueError:\n    pass",
+        "except (IsADirectoryError, FileNotFoundError):\n    pass",
+        "except MyException:\n    pass",
+        # A deliberate catch-all, marked as one.
+        "except Exception:  # noqa: BLE001 - best effort\n    pass",
+    ],
+)
+def test_swallow_silent_for_narrow_or_marked_except_pass(tmp_path, handler):
+    r = _swallow_run(tmp_path, "e.py", f"try:\n    f()\n{handler}\n", "j6")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_swallow_silent_for_prose(tmp_path):
+    # A review or README that quotes `catch {}` is not code.
+    r = _swallow_run(tmp_path, "notes.md", "It fired on `catch {}` in prose.\n", "j7")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
 
 
 def test_swallow_fires_for_empty_js_catch(tmp_path):

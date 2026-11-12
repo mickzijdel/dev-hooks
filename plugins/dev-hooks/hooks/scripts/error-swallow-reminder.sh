@@ -2,7 +2,7 @@
 # bet: model writes silent error swallows (bare except / empty catch / empty rescue)
 # sunset: model reliably avoids blanket/empty exception handlers
 # PostToolUse(Write|Edit|MultiEdit): when Claude writes an exception handler that silently
-# swallows the error — a Python bare `except:` (or `except ...: pass`), an empty JS/TS
+# swallows the error — a Python bare `except:` (or `except Exception: pass`), an empty JS/TS
 # `catch {}`, or an empty Ruby `rescue ... end` — nudge it to handle, log, or re-raise rather
 # than discard. Advisory only — emits additionalContext and always exits 0, never blocks.
 #
@@ -18,6 +18,8 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SELF_DIR/lib/reminder-common.sh"
 # Sets INPUT, FILE, SESSION, TOOL, BASE (or exits 0 on opt-out / missing file_path).
 reminder_init DEV_HOOKS_ERROR_SWALLOW
+# Code only: a review or README that quotes `catch {}` is not a handler.
+reminder_is_code_file "$FILE" || exit 0
 
 reminder_content # sets CONTENT (Write content + Edit/MultiEdit new_strings)
 [ -z "$CONTENT" ] && exit 0
@@ -36,11 +38,18 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
 
 hits = []
 
-# Python: bare `except:`  OR  `except SomeError:` whose only body statement is `pass`.
+# Python: bare `except:`  OR  a handler naming Exception/BaseException (alone or in a tuple)
+# whose only body is `pass` or `...`, on its own line or after the colon. A narrow
+# `except FileNotFoundError: pass` is what the nudge asks for; a `# noqa: BLE001` marks a
+# deliberate catch-all.
+broad = re.compile(
+    r"(?m)^[ \t]*except\b[^:\n]*\b(?:Base)?Exception\b[^:\n]*:[ \t]*(?:#[^\n]*)?"
+    r"(?:\n[ \t]+)?(?:pass|\.\.\.)[ \t]*(?:#[^\n]*)?$"
+)
 if re.search(r"(?m)^\s*except\s*:", content):
     hits.append("a bare `except:` in Python")
-elif re.search(r"(?ms)^[ \t]*except\b[^\n:]*:\s*(?:#.*)?\n[ \t]+pass\b", content):
-    hits.append("an `except ...: pass` that swallows the error in Python")
+elif any("noqa" not in m.group() for m in broad.finditer(content)):
+    hits.append("an `except Exception: pass` that swallows the error in Python")
 
 # JS/TS: empty `catch { }` (whitespace/comments only between the braces).
 if re.search(r"(?s)\bcatch\s*(?:\([^)]*\))?\s*\{\s*(?://[^\n]*|/\*.*?\*/|\s)*\}", content):
