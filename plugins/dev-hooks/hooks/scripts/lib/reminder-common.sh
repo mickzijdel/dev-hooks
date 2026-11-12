@@ -724,6 +724,9 @@ reminder_session_files() {
   # shellcheck disable=SC2034
   SESSION_FILES=$(printf '%s\n%s\n%s\n' "$CHANGED" "$committed" "$untracked" |
     grep -v '^$' | sort -u)
+  # The half that is this session's by time; porcelain alone may be work it only found.
+  # shellcheck disable=SC2034
+  SESSION_OWN_FILES=$(printf '%s\n%s\n' "$committed" "$untracked" | grep -v '^$' | sort -u)
 }
 
 # Lines of code this session added, into $REPLY: the added side of one diff from the last

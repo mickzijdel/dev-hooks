@@ -1,11 +1,13 @@
 #!/bin/bash
-# bet: model won't pause on a huge uncommitted diff to suggest smaller commits / a review
+# bet: model won't pause on a huge session diff to suggest smaller commits / a review
 # sunset: model proactively proposes splitting large changes
 # Stop: when the session ends with a very large uncommitted change in the working tree,
 # nudge Claude (blocks the stop) to slow down — commit in smaller pieces, get a review, and consider
 # plan mode for the next chunk. Aimed at people new to coding, for whom a 2000-line
-# uncommitted diff is hard to review and easy to lose. (It measures the whole tree, so
-# pre-existing uncommitted work counts too — that diff is just as unreviewed.)
+# uncommitted diff is hard to review and easy to lose. (Once this session has changed the
+# repo, it measures the whole tree, so pre-existing uncommitted work counts too — that diff
+# is just as unreviewed. A session whose only changes are uncommitted files none of which it
+# modified, by any tool, stays silent.)
 #
 # Stays silent when a multi-session plan is already in progress (.claude/current_plan.md
 # exists) — that means the work is already being driven deliberately. Fires at most once per
@@ -32,8 +34,27 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 # Committed work counts too — see reminder_session_files.
 reminder_session_files
+PORCELAIN=$CHANGED
 CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
+# Only uncommitted changes: block only if this session touched one of them (modified since it
+# started, by any tool), not for dirt an earlier session left behind.
+if [ -z "$SESSION_OWN_FILES" ]; then
+  reminder_session_since
+  mapfile -t porcelain <<<"$PORCELAIN"
+  touched=$(
+    python3 - "$REMINDER_LIB_DIR" "$REPLY" "$(git rev-parse --show-toplevel)" "${porcelain[@]}" <<'PYEOF'
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from hook_helpers import changed_since
+
+print("\n".join(changed_since(sys.argv[2], sys.argv[4:], sys.argv[3])))
+PYEOF
+  ) || touched=unknown # a failed check over-reports rather than going quiet
+  [ -n "$touched" ] || exit 0
+fi
 
 # Both counts come from the session view, not the working tree: a session that committed
 # as it went has a clean tree, and counting only porcelain reported 0 files / 0 lines for

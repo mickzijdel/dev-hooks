@@ -108,16 +108,27 @@ def untracked_since(since, pathspecs=()):
     recoverable, silence is not."""
     epoch = session_start_epoch(since)
     files = untracked_files(pathspecs)
-    if epoch is None:
-        return files
+    return files if epoch is None else _modified_since(files, epoch)
+
+
+def _modified_since(paths, epoch, root=""):
     keep = []
-    for path in files:
+    for path in paths:
         try:
-            if os.stat(path).st_mtime >= epoch:
+            if os.stat(os.path.join(root, path)).st_mtime >= epoch:
                 keep.append(path)
         except OSError:
             continue
     return keep
+
+
+def changed_since(since, paths, root):
+    """Of `paths` (porcelain entries, relative to the repo `root`), those modified at or after
+    the session start: uncommitted work this session touched, by any tool, as against dirt an
+    earlier session left. All of them when the start is unknown; a deleted path has no mtime
+    and drops out."""
+    epoch = session_start_epoch(since)
+    return list(paths) if epoch is None else _modified_since(paths, epoch, root)
 
 
 # Skip an untracked file bigger than this when reading contents. A widened pathspec would

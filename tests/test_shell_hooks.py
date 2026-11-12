@@ -6008,6 +6008,72 @@ def test_big_change_counts_files_inside_untracked_dirs(tmp_path):
     assert_json_with(r.stdout, "[big-change]")
 
 
+def _big_change_dirty(tmp_path, *, touched_now=(), staged_new=(), cwd=""):
+    # page.md was committed before the session and edited in an earlier one (mtime before
+    # the session start), as in a wiki whose edits wait for the owner's review. Files in
+    # `touched_now` are then modified during the session, by any tool; `staged_new` are
+    # new files the session staged (porcelain `A`, so not untracked).
+    run = init_git_repo(tmp_path)
+    (tmp_path / "sub").mkdir()
+    for name in ("page.md", "sub/other.md"):
+        (tmp_path / name).write_text("old\n")
+    run("add", "-A")
+    old = {
+        "GIT_AUTHOR_DATE": "2020-01-01T00:00:00Z",
+        "GIT_COMMITTER_DATE": "2020-01-01T00:00:00Z",
+    }
+    subprocess.run(
+        ["git", "commit", "-qm", "earlier"],
+        cwd=tmp_path,
+        check=True,
+        env={**os.environ, **old},
+    )
+    for name in ("page.md", "sub/other.md"):
+        (tmp_path / name).write_text("edited in an earlier session\n")
+        os.utime(
+            tmp_path / name, (1590000000, 1590000000)
+        )  # 2020-05, before the session
+    for name in touched_now:
+        (tmp_path / name).write_text("edited this session\n")
+    for name in staged_new:
+        (tmp_path / name).write_text("generated\n")
+        run("add", name)
+    start = json.dumps({"type": "user", "timestamp": "2021-01-01T00:00:00.000Z"})
+    transcript = make_transcript(
+        tmp_path.parent / f"{tmp_path.name}.jsonl", extra_lines=[start]
+    )
+    return run_hook(
+        "big-change-reminder.sh",
+        cwd=tmp_path / cwd,
+        stdin=json.dumps({"transcript_path": str(transcript)}),
+        env=_big_change_env(),
+    )  # fmt: skip
+
+
+def test_big_change_silent_for_dirt_an_earlier_session_left(tmp_path):
+    r = _big_change_dirty(tmp_path)
+    assert stop_allowed(r)
+    assert r.stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        # sed, a formatter or a codemod: no Write/Edit in the transcript, but a new mtime
+        {"touched_now": ("page.md",)},
+        # a scaffold followed by `git add -A`
+        {"staged_new": ("gen.rb",)},
+        # porcelain paths are relative to the repo root, not to a subdirectory cwd
+        {"touched_now": ("page.md",), "cwd": "sub"},
+    ],
+    ids=["bash-edit", "staged-scaffold", "from-subdir"],
+)
+def test_big_change_fires_when_session_touched_the_dirt(tmp_path, case):
+    r = _big_change_dirty(tmp_path, **case)
+    assert stop_blocked(r)
+    assert_json_with(r.stdout, "[big-change]")
+
+
 def test_big_change_silent_with_plan_in_progress(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "a.txt").write_text("x\n")
