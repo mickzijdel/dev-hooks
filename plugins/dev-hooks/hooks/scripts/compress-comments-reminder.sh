@@ -7,7 +7,7 @@
 # rest compressed.
 #
 # Signal: added comment lines in one diff from the last commit before the session started
-# (the transcript's first-line timestamp) to the working tree, plus untracked code files —
+# (the transcript's first timestamp) to the working tree, plus untracked code files —
 # so commit-as-you-go sessions with a clean tree still trigger, and rewriting a comment
 # this session wrote is not growth. Shebangs and directive comments (shellcheck/eslint/noqa/...) don't count;
 # docstrings aren't counted either — the skill still reviews them; this hook only needs a

@@ -2204,6 +2204,74 @@ def test_session_since_rejects_non_date_timestamps(
     assert out == expected
 
 
+@pytest.mark.parametrize("use_python3", [True, False])
+@pytest.mark.parametrize(
+    "lead",
+    [
+        # Remote Control sessions open with these: 98 of 137 transcripts in Oct–Nov 2026.
+        ['{"type": "bridge-session", "sessionId": "s"}'],
+        ['{"type": "session-owner"}', '{"type": "ai-title", "title": "t"}'],
+        ["[1, 2, 3]", "not json"],
+    ],
+)
+def test_session_since_skips_leading_records_without_a_timestamp(
+    tmp_path, lead, use_python3
+):
+    t = tmp_path / "t.jsonl"
+    stamp = "2026-11-05T08:07:00.000Z"
+    later = json.dumps({"type": "user", "timestamp": "2026-11-05T09:00:00.000Z"})
+    t.write_text("\n".join([*lead, json.dumps({"timestamp": stamp}), later]) + "\n")
+    env = base_env()
+    if not use_python3:
+        shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+        env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    )
+    assert out == stamp
+
+
+@pytest.mark.parametrize("use_python3", [True, False])
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        # The scan's edge: a stamp on its last line is found, one past it is not.
+        (
+            ["{}"] * 49 + ['{"timestamp": "2026-11-05T08:00:00Z"}'],
+            "2026-11-05T08:00:00Z",
+        ),
+        (["{}"] * 50 + ['{"timestamp": "2026-11-05T08:00:00Z"}'], ""),
+        # A stamp holding a newline is rejected whole, not cut to its date.
+        (['{"timestamp": "2026-11-05\\nT09:00:00Z"}'], ""),
+        # A bare CR does not end a line, on either path.
+        (
+            ['{"type": "x", "note": "a\rb"}', '{"timestamp": "2026-11-05T08:00:00Z"}'],
+            "2026-11-05T08:00:00Z",
+        ),
+    ],
+    ids=["last-scanned-line", "past-the-scan", "newline-in-stamp", "bare-cr"],
+)
+def test_session_start_python_and_jq_agree_on_edges(
+    tmp_path, lines, expected, use_python3
+):
+    sys.path.insert(0, str(HOOKS / "lib"))
+    from hook_helpers import SESSION_START_SCAN
+
+    assert SESSION_START_SCAN == 50
+    lib = (HOOKS / "lib" / "reminder-common.sh").read_text()
+    assert f'head -n {SESSION_START_SCAN} "$TRANSCRIPT"' in lib
+    t = tmp_path / "t.jsonl"
+    t.write_bytes(("\n".join(lines) + "\n").encode())
+    env = base_env()
+    if not use_python3:
+        shim = _shim_dir(tmp_path, "python3", "#!/bin/sh\nexit 127\n")
+        env = base_env(PATH=f"{shim}:{os.environ['PATH']}")
+    out = _lib_probe(
+        tmp_path, t, 'reminder_session_since; printf "%s" "$REPLY"', env=env
+    )
+    assert out == expected  # fmt: skip
+
+
 # session_start needs .timestamp() to succeed, which underflows for instants within the
 # local UTC offset of datetime.min. Which stamps those are depends on the machine's
 # timezone, so the shell mirror cannot match portably; it over-accepts them, passing a

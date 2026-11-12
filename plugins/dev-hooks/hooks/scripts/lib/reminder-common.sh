@@ -90,15 +90,15 @@ reminder_stop_init() {
 }
 
 # Session start as a `git log --since` argument, in $REPLY (empty when unknown).
-# It is the transcript's first-line timestamp — git parses that ISO fractional-Z form
-# as-is. Needs $TRANSCRIPT, i.e. reminder_stop_init must have run first.
+# It is the transcript's first timestamp (hook_helpers.session_start) — git parses that ISO
+# fractional-Z form as-is. Needs $TRANSCRIPT, i.e. reminder_stop_init must have run first.
 #
 # Why every Stop hook that looks at "this session's work" needs it: CLAUDE.md mandates
 # incremental commits, so by the time Stop fires the tree is usually clean and
 # `git status --porcelain` / `git diff HEAD` see nothing. Without this, such a hook
 # measures only the sessions that forgot to commit.
 #
-# Cached per session in the state dir since the first line never changes. Keyed on a real session
+# Cached per session in the state dir since the transcript's head never changes. Keyed on a real session
 # id and checked against the transcript path, so a reused id or a rewritten transcript is
 # recomputed. Empty answers are not cached.
 reminder_session_since() {
@@ -151,7 +151,10 @@ PYEOF
   # anything let through is a wrong answer rather than an error — and anything wrongly
   # REJECTED blanks REPLY, which hides the session's commits just as quietly. The rules
   # below each cost a round of that.
-  REPLY=$(head -n1 "$TRANSCRIPT" | jq -r 'if (.timestamp | type) == "string" then .timestamp else empty end' 2>/dev/null)
+  # The first string timestamp in SESSION_START_SCAN (50) lines, as session_start reads it;
+  # first(), not `| head -n1`, so a stamp holding a newline reaches the shape check whole.
+  REPLY=$(head -n 50 "$TRANSCRIPT" |
+    jq -nRr 'first(inputs | fromjson? | select(type == "object" and (.timestamp | type) == "string") | .timestamp)' 2>/dev/null)
   # Anchored, with every field checked numerically: character classes cannot express month
   # lengths and leap years, or a UTC offset whose TOTAL must be under 24h (+02:99 is valid,
   # normalising to +03:39; +23:99 is not). Hour 24 is rejected, as session_start_epoch does.

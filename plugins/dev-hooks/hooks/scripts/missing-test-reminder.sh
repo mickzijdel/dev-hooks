@@ -5,7 +5,7 @@
 # nudge it to add one (TDD / "Always Works"). Advisory — feeds back by blocking the stop; never edits.
 #
 # Only newly-added files are considered — untracked `??`, staged-added `A`, and files added
-# by commits made since the session started (the transcript's first-line timestamp).
+# by commits made since the session started (the transcript's first timestamp).
 # That last source is what makes the hook work at all under the commit-as-you-go workflow:
 # with a clean tree at Stop time, porcelain status alone reports nothing. Files added and
 # then deleted again within the session don't count. Modifications

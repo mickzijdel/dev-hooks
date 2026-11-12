@@ -13,6 +13,7 @@ Import from a heredoc by passing this directory as an argv:
 
 import datetime
 import fnmatch
+import itertools
 import json
 import os
 import re
@@ -28,8 +29,14 @@ def git(args):
         return ""
 
 
+# How far session_start looks for the first timestamp; every Oct–Nov 2026 transcript had one
+# by line 50. The jq fallback in reminder-common.sh reads the same count.
+SESSION_START_SCAN = 50
+
+
 def session_start(transcript_path):
-    """The session's start timestamp (ISO) from the transcript's first line; "" if unknown.
+    """The session's start timestamp (ISO): the first record's within SESSION_START_SCAN
+    lines that has a string `timestamp`; "" if unknown.
 
     Why any of this exists: CLAUDE.md mandates commit-as-you-go, so by the time a Stop hook
     runs the working tree is usually clean and `git status` sees nothing. The session start
@@ -37,18 +44,26 @@ def session_start(transcript_path):
     if not transcript_path:
         return ""
     try:
-        with open(transcript_path, encoding="utf-8", errors="replace") as fh:
-            first = fh.readline()
+        # newline="\n": a line ends only at \n, as it does for `head -n` in the jq fallback.
+        with open(
+            transcript_path, encoding="utf-8", errors="replace", newline="\n"
+        ) as fh:
+            head = list(itertools.islice(fh, SESSION_START_SCAN))
     except OSError:
         return ""
-    # Broad on purpose: the first line is not always a message object — it can be a
-    # `queue-operation` record, or a list — and a `timestamp` is not always a string.
-    # Anything unreadable means "session start unknown", never a traceback.
-    try:
-        stamp = json.loads(first).get("timestamp")
-    except Exception:  # noqa: BLE001 - any unreadable first line means "start unknown"
-        return ""
-    if not isinstance(stamp, str):
+    # Not just line 1: a Remote Control session opens with a `bridge-session` record (and
+    # others with `session-owner` or `ai-title`) that has no timestamp. Lines that are not a
+    # JSON object, or whose `timestamp` is not a string, are skipped.
+    stamp = None
+    for line in head:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and isinstance(rec.get("timestamp"), str):
+            stamp = rec["timestamp"]
+            break
+    if stamp is None:
         return ""
     # A string is not enough: `git log --since="hello world"` exits 0 with zero commits, so
     # an unparseable stamp reads as "the session did nothing". Only return what a date

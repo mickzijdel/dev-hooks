@@ -274,7 +274,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   in — following `cd` segments and `-C` — in `$REPLY`; use it, never `$CWD`, for "the repo this
   git command acts on", since `cd other && git commit` acts on `other`),
   `reminder_session_since` (session start as a `git log --since` argument in `$REPLY`, from
-  the transcript's first-line timestamp; cached per session in the state dir, so call it freely
+  the transcript's first timestamp, past a Remote Control session's leading `bridge-session` record; cached per session in the state dir, so call it freely
   rather than threading the value through — and pass that value to python rather than
   having a heredoc re-derive it with `session_start`), `reminder_changed_files`
   (CHANGED from porcelain status), `reminder_state_file <name> [extra]` (per-session
