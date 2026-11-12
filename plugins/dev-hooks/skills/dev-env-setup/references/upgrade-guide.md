@@ -1527,8 +1527,8 @@ Steps per repo:
    switched on; they were off in booking-overview and spotify-tools on 2026-10-28. Report such a
    repo to the user (Settings → Advanced Security → Dependabot security updates); don't switch
    it on yourself. Copy `templates/zizmor.yml` to `.github/zizmor.yml` too: zizmor's
-   `dependabot-cooldown` audit (the hk `zizmor` step and CI's actions-lint job) fails any cooldown
-   under 7 days, so `default-days: 3` alone turns both red. The checker's
+   `dependabot-cooldown` audit fails any cooldown under 7 days, so `default-days: 3` alone turns
+   the hk `zizmor` step red (CI's actions-lint job scans only `.github/workflows/`). The checker's
    `has_dependabot_groups=0` names each entry still missing a group or the 3-day cooldown, and a
    missing zizmor config.
 
