@@ -6044,10 +6044,7 @@ def test_big_change_counts_files_inside_untracked_dirs(tmp_path):
 
 
 def _big_change_dirty(tmp_path, *, touched_now=(), staged_new=(), cwd=""):
-    # page.md was committed before the session and edited in an earlier one (mtime before
-    # the session start), as in a wiki whose edits wait for the owner's review. Files in
-    # `touched_now` are then modified during the session, by any tool; `staged_new` are
-    # new files the session staged (porcelain `A`, so not untracked).
+    # page.md, sub/other.md: dirt from an earlier session, mtime before the start
     run = init_git_repo(tmp_path)
     (tmp_path / "sub").mkdir()
     for name in ("page.md", "sub/other.md"):

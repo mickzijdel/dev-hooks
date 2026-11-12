@@ -29,8 +29,7 @@ def git(args):
         return ""
 
 
-# How far session_start looks for the first timestamp; every Oct–Nov 2026 transcript had one
-# by line 50. The jq fallback in reminder-common.sh reads the same count.
+# every Oct-Nov 2026 transcript had a timestamp by line 50; the jq fallback reads as many
 SESSION_START_SCAN = 50
 
 
@@ -51,9 +50,7 @@ def session_start(transcript_path):
             head = list(itertools.islice(fh, SESSION_START_SCAN))
     except OSError:
         return ""
-    # Not just line 1: a Remote Control session opens with a `bridge-session` record (and
-    # others with `session-owner` or `ai-title`) that has no timestamp. Lines that are not a
-    # JSON object, or whose `timestamp` is not a string, are skipped.
+    # not line 1: bridge-session, session-owner and ai-title records carry no timestamp
     stamp = None
     for line in head:
         try:

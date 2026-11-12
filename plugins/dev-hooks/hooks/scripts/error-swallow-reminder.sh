@@ -18,7 +18,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SELF_DIR/lib/reminder-common.sh"
 # Sets INPUT, FILE, SESSION, TOOL, BASE (or exits 0 on opt-out / missing file_path).
 reminder_init DEV_HOOKS_ERROR_SWALLOW
-# Code only: a review or README that quotes `catch {}` is not a handler.
+# prose quoting `catch {}` is not a handler
 reminder_is_code_file "$FILE" || exit 0
 
 reminder_content # sets CONTENT (Write content + Edit/MultiEdit new_strings)
@@ -38,10 +38,7 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
 
 hits = []
 
-# Python: bare `except:`  OR  a handler naming Exception/BaseException (alone or in a tuple)
-# whose only body is `pass` or `...`, on its own line or after the colon. A narrow
-# `except FileNotFoundError: pass` is what the nudge asks for; a `# noqa: BLE001` marks a
-# deliberate catch-all.
+# Python: only broad handlers; a narrow `except X: pass` is what the nudge asks for
 broad = re.compile(
     r"(?m)^[ \t]*except\b[^:\n]*\b(?:Base)?Exception\b[^:\n]*:[ \t]*(?:#[^\n]*)?"
     r"(?:\n[ \t]+)?(?:pass|\.\.\.)[ \t]*(?:#[^\n]*)?$"

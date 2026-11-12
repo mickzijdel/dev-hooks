@@ -151,8 +151,7 @@ PYEOF
   # anything let through is a wrong answer rather than an error — and anything wrongly
   # REJECTED blanks REPLY, which hides the session's commits just as quietly. The rules
   # below each cost a round of that.
-  # The first string timestamp in SESSION_START_SCAN (50) lines, as session_start reads it;
-  # first(), not `| head -n1`, so a stamp holding a newline reaches the shape check whole.
+  # first(), not head -n1: a stamp holding a newline must reach the shape check whole
   REPLY=$(head -n 50 "$TRANSCRIPT" |
     jq -nRr 'first(inputs | fromjson? | select(type == "object" and (.timestamp | type) == "string") | .timestamp)' 2>/dev/null)
   # Anchored, with every field checked numerically: character classes cannot express month
@@ -724,7 +723,7 @@ reminder_session_files() {
   # shellcheck disable=SC2034
   SESSION_FILES=$(printf '%s\n%s\n%s\n' "$CHANGED" "$committed" "$untracked" |
     grep -v '^$' | sort -u)
-  # The half that is this session's by time; porcelain alone may be work it only found.
+  # porcelain may be inherited; commits and new untracked files are this session's
   # shellcheck disable=SC2034
   SESSION_OWN_FILES=$(printf '%s\n%s\n' "$committed" "$untracked" | grep -v '^$' | sort -u)
 }

@@ -4,10 +4,8 @@
 # Stop: when the session ends with a very large uncommitted change in the working tree,
 # nudge Claude (blocks the stop) to slow down — commit in smaller pieces, get a review, and consider
 # plan mode for the next chunk. Aimed at people new to coding, for whom a 2000-line
-# uncommitted diff is hard to review and easy to lose. (Once this session has changed the
-# repo, it measures the whole tree, so pre-existing uncommitted work counts too — that diff
-# is just as unreviewed. A session whose only changes are uncommitted files none of which it
-# modified, by any tool, stays silent.)
+# uncommitted diff is hard to review and easy to lose. Inherited dirt counts once the
+# session has touched the repo; dirt alone stays silent.
 #
 # Stays silent when a multi-session plan is already in progress (.claude/current_plan.md
 # exists) — that means the work is already being driven deliberately. Fires at most once per
@@ -37,8 +35,7 @@ reminder_session_files
 PORCELAIN=$CHANGED
 CHANGED=$SESSION_FILES
 [ -z "$CHANGED" ] && exit 0
-# Only uncommitted changes: block only if this session touched one of them (modified since it
-# started, by any tool), not for dirt an earlier session left behind.
+# mtime, not the transcript: sed, formatters and scaffolds edit without Write/Edit
 if [ -z "$SESSION_OWN_FILES" ]; then
   reminder_session_since
   mapfile -t porcelain <<<"$PORCELAIN"
