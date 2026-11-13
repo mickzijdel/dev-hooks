@@ -29,6 +29,8 @@ const REMOTES: Record<string, string> = {
 function world(on: On, options: { env?: Record<string, string>; workflows?: string[]; pushRemote?: string } = {}) {
   const w = {
     runs: [] as Run[],
+    // The open PRs whose head is the pushed commit; null makes the lookup fail.
+    prs: [] as number[] | null,
     ghCalls: [] as string[][],
     statuses: [] as (string | undefined)[],
     toasts: [] as string[],
@@ -44,6 +46,9 @@ function world(on: On, options: { env?: Record<string, string>; workflows?: stri
     const argv = [...e.argv]
     if (argv[0] === 'gh') {
       w.ghCalls.push(argv)
+      if (argv[1] === 'api') {
+        return { value: w.prs === null ? failed : ok(JSON.stringify(w.prs.map(number => ({ number, state: 'open', head: { sha: SHA } })))) }
+      }
       return { value: ok(JSON.stringify(w.runs)) }
     }
     if (argv.includes('--show-toplevel')) return { value: ok('/repo\n') }
@@ -118,6 +123,62 @@ test('a failed run wakes the session with a prompt naming the failure', async ($
   expect(w.toasts).toEqual(['✗ CI failed · dev-hooks@762caa3: ci'])
   expect(w.prompts[0]).toContain('CI FAILED')
   expect(w.prompts[0]).toContain('gh run view 35830926133')
+  expect(w.appended()).toBe(false)
+  // No Auto-fix event named a PR, so GitHub is not asked for one.
+  expect(w.ghCalls.every(argv => argv[1] === 'run')).toBe(true)
+})
+
+// What the desktop app sends for a PR its Auto-fix watches.
+const autoFixEvent = (repo: string, pr: number) =>
+  `<ci-monitor-event>"Auto-fix pull requests" is watching ${repo} PR #${pr} and detected the following. CI failed.</ci-monitor-event>`
+
+test('a failed run on a PR that Auto-fix watches is noted without waking the session', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on)
+  push(on)
+  w.runs = [run({ conclusion: 'failure' })]
+  w.prs = [45]
+
+  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+
+  expect(w.ghCalls.at(-1)).toEqual(['gh', 'api', `repos/mickzijdel/dev-hooks/commits/${SHA}/pulls`])
+  expect(w.toasts).toEqual(['✗ CI failed · dev-hooks@762caa3: ci'])
+  expect(w.prompts.filter(p => p.includes('CI watch'))).toEqual([])
+  expect(w.appended()).toBe(true)
+})
+
+test('a failed run still wakes the session when Auto-fix watches another PR', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on)
+  push(on)
+  w.runs = [run({ conclusion: 'failure' })]
+  w.prs = [46]
+
+  // An event-shaped block inside other text is data and records nothing.
+  await $.prompt.submit({ text: `see ${autoFixEvent('mickzijdel/dev-hooks', 46)}`, wait: false, origin: { kind: 'sdk' } })
+  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+
+  expect(w.prompts.filter(p => p.includes('CI watch'))[0]).toContain('CI FAILED')
+  expect(w.appended()).toBe(false)
+})
+
+test('a failed run still wakes the session when the PR lookup fails', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on)
+  push(on)
+  w.runs = [run({ conclusion: 'failure' })]
+  w.prs = null
+
+  await $.prompt.submit({ text: autoFixEvent('MickZijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+
+  expect(w.ghCalls.at(-1)?.[1]).toBe('api')
+  expect(w.prompts.filter(p => p.includes('CI watch'))[0]).toContain('CI FAILED')
   expect(w.appended()).toBe(false)
 })
 

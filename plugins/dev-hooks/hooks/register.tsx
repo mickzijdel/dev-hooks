@@ -24,6 +24,8 @@ import type { EngineInterface, Register, ToolCallEnvelope } from 'claude-code'
 
 import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
+  autoFixKey,
+  autoFixPr,
   ciNote,
   ciStatusLine,
   ciToast,
@@ -33,6 +35,7 @@ import {
   isDryRun,
   isGitPush,
   isQuietPush,
+  parseHeadPrs,
   parsePushOutput,
   parseRuns,
   pushDir,
@@ -579,7 +582,8 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
 // ── CI watch ────────────────────────────────────────────────────────────────────────
 // After a successful `git push` the module watches that push's GitHub Actions runs:
 // progress in the status line, a toast when they end, and the outcome handed to Claude
-// (a pass as a conversation note, a failure as a prompt that wakes the session). It
+// (a pass as a conversation note, a failure as a prompt that wakes the session, or as a
+// note too on a PR the desktop app's Auto-fix watches). It
 // marks the session with DEV_HOOKS_CI_WATCH_SESSION so ci-watch-reminder.sh stands down;
 // DEV_HOOKS_CI_WATCH=false turns both off. Watches live in module variables: a reload
 // of the module drops them.
@@ -653,6 +657,25 @@ async function pushTargets($: EngineInterface, command: string, output: string):
   return [...targets.values()]
 }
 
+// The PRs the desktop app's Auto-fix has reported on in this session (`owner/repo#N`),
+// from its <ci-monitor-event> prompts. Auto-fix wakes the session for a failure there,
+// so the watch only notes it. A module variable, like the watches.
+const autoFixPrs = new Set<string>()
+
+function recordAutoFix(text: string) {
+  const pr = autoFixPr(text)
+  if (pr !== null) autoFixPrs.add(pr)
+}
+
+// The Auto-fix PR the commit is on, if any. gh is asked only when Auto-fix has reported
+// on a PR in this repo; a failed lookup reads as none, so the failure still wakes the session.
+async function autoFixPrOf($: EngineInterface, repo: string, sha: string): Promise<number | undefined> {
+  if (![...autoFixPrs].some(pr => pr.startsWith(`${repo.toLowerCase()}#`))) return undefined
+  const run = await $.process.run(['gh', 'api', `repos/${repo}/commits/${sha}/pulls`], { timeoutMs: 30_000 }).catch(() => null)
+  if (run?.exitCode !== 0) return undefined
+  return parseHeadPrs(run.stdout, sha).find(n => autoFixPrs.has(autoFixKey(repo, n)))
+}
+
 async function startCiWatch($: EngineInterface, target: { repo: string; sha: string }) {
   const key = `${target.repo}@${target.sha}`
   if (ciWatches.has(key)) return
@@ -688,10 +711,12 @@ async function pollCi($: EngineInterface, key: string) {
     ciWatches.delete(key)
     showCiStatus($)
     $.ui.toast(ciToast(w.repo, w.sha, verdict, mine), { timeoutMs: verdict === 'success' ? 8_000 : 20_000 })
-    const note = ciNote(w.repo, w.sha, verdict, mine, error)
-    // A failure needs Claude to act, so it starts a turn (once the session is idle);
-    // anything else is read with Claude's next request without waking it.
-    if (verdict === 'failure') await $.prompt.submit({ text: note })
+    const autoFix = verdict === 'failure' ? await autoFixPrOf($, w.repo, w.sha) : undefined
+    const note = ciNote(w.repo, w.sha, verdict, mine, error, autoFix)
+    // A failure needs Claude to act, so it starts a turn (once the session is idle),
+    // unless Auto-fix watches the PR and starts that turn itself; anything else is read
+    // with Claude's next request without waking it.
+    if (verdict === 'failure' && autoFix === undefined) await $.prompt.submit({ text: note })
     else await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: note }] } })
   } catch (err) {
     ciWatches.delete(key)
@@ -1114,6 +1139,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    recordAutoFix(e.text)
     if (e.turnId === undefined) nextOrigin = e.origin.kind
 
     return next(e)

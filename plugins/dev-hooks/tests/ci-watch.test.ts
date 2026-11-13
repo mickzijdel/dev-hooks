@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
+  autoFixPr,
   ciNote,
   ciStatusLine,
   ciToast,
@@ -10,6 +11,7 @@ import {
   isDryRun,
   isGitPush,
   isQuietPush,
+  parseHeadPrs,
   parsePushOutput,
   pushDir,
   pushRepositories,
@@ -166,6 +168,29 @@ test('a failure note names the failed run and how to read its log', async () => 
   const note = ciNote('mickzijdel/dev-hooks', SHA, 'failure', [failed])
   expect(note).toContain('CI FAILED')
   expect(note).toContain('gh run view 35830926133 --repo mickzijdel/dev-hooks --log-failed')
+
+  // On a PR that Auto-fix watches the note hands the fix to Auto-fix's own event.
+  const watched = ciNote('mickzijdel/dev-hooks', SHA, 'failure', [failed], undefined, 45)
+  expect(watched).toContain('CI FAILED')
+  expect(watched).toContain('Auto-fix watches PR #45')
+  expect(watched).toContain('--log-failed')
+})
+
+test('parseHeadPrs keeps only open PRs whose head is the commit', async () => {
+  const rows = [
+    { number: 45, state: 'open', head: { sha: SHA } },
+    { number: 46, state: 'open', head: { sha: 'f'.repeat(40) } },
+    { number: 47, state: 'closed', head: { sha: SHA } },
+  ]
+  expect(parseHeadPrs(JSON.stringify(rows), SHA)).toEqual([45])
+  expect(parseHeadPrs('not json', SHA)).toEqual([])
+})
+
+test('autoFixPr reads the PR an Auto-fix event opens with, and nothing else', async () => {
+  const event = '<ci-monitor-event>"Auto-fix pull requests" is watching Eighty-Thousand-Hours/artemis PR #357 and detected the following.'
+  expect(autoFixPr(event)).toBe('eighty-thousand-hours/artemis#357')
+  expect(autoFixPr(`quoted: ${event}`)).toBeNull()
+  expect(autoFixPr('<ci-monitor-event>"Auto-fix pull requests" was just enabled for this session.')).toBeNull()
 })
 
 test('a pass and a lookup error read as such', async () => {

@@ -127,6 +127,34 @@ export const parseRuns = (stdout: string): Run[] => {
   }
 }
 
+// The PR a desktop-app Auto-fix event reports on, as `owner/repo#N` in lower case. The
+// event's text is data: only its fixed opening is read, and only at the very start, so
+// an event quoted inside another prompt names nothing.
+const AUTO_FIX_EVENT = /^<ci-monitor-event>"Auto-fix pull requests" is watching ([\w.-]+\/[\w.-]+) PR #(\d+) /
+
+export const autoFixKey = (repo: string, pr: number): string => `${repo.toLowerCase()}#${pr}`
+
+export const autoFixPr = (text: string): string | null => {
+  const m = AUTO_FIX_EVENT.exec(text)
+  return m?.[1] && m[2] ? autoFixKey(m[1], Number(m[2])) : null
+}
+
+// The open PRs whose head is the commit, from `gh api repos/<repo>/commits/<sha>/pulls`.
+// Head only: Auto-fix reports a PR's head checks, so a PR that merely contains the
+// commit (a stacked PR, an older push) gets no Auto-fix event for it.
+export const parseHeadPrs = (stdout: string, sha: string): number[] => {
+  try {
+    const rows = JSON.parse(stdout) as unknown
+    if (!Array.isArray(rows)) return []
+    return (rows as { number?: unknown; state?: unknown; head?: { sha?: unknown } }[])
+      .filter(r => r.state === 'open' && r.head?.sha === sha)
+      .map(r => r.number)
+      .filter((n): n is number => typeof n === 'number')
+  } catch {
+    return []
+  }
+}
+
 export type Verdict = 'none' | 'pending' | 'success' | 'failure' | 'cancelled'
 
 const FAILED = new Set(['failure', 'timed_out', 'startup_failure', 'action_required'])
@@ -176,8 +204,10 @@ export const ciToast = (repo: string, sha: string, verdict: Verdict, runs: Run[]
   }
 }
 
-// What the model reads. A failure arrives as a prompt of its own, so it says what to do.
-export const ciNote = (repo: string, sha: string, verdict: Verdict, runs: Run[], error?: string): string => {
+// What the model reads. A failure arrives as a prompt of its own, so it says what to do;
+// on a PR the desktop app's Auto-fix watches (`autoFix`, its number) it is a note that
+// points at Auto-fix's own event first.
+export const ciNote = (repo: string, sha: string, verdict: Verdict, runs: Run[], error?: string, autoFix?: number): string => {
   const head = `[dev-hooks CI watch] ${repo}@${short(sha)}`
   const lines = runs.map(runLine)
   switch (verdict) {
@@ -188,6 +218,7 @@ export const ciNote = (repo: string, sha: string, verdict: Verdict, runs: Run[],
       return [
         `${head}: CI FAILED on the commit you pushed.`,
         ...lines,
+        ...(autoFix === undefined ? [] : [`Auto-fix watches PR #${autoFix} and reports this failure in its own event; act there. If no such event has come by your next turn:`]),
         `Find the cause (\`gh run view ${failed?.databaseId ?? '<id>'} --repo ${repo} --log-failed\`), fix it, and push the fix.`,
       ].join('\n')
     }

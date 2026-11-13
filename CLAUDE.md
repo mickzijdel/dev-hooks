@@ -149,7 +149,13 @@ outside the dispatch (a timer's closure keeps using the hook's `$`). Elapsed tim
 `$.clock.now()`, not `Date.now()`, so `mock.clock` drives it in tests. The outcome reaches Claude
 two ways, both verified live: `$.session.append` (a user-role note, read at the running turn's
 next request, starting no turn) for a pass, and `$.prompt.submit` (queued until idle, then a turn
-of its own, even under `claude -p`) for a failure. `session.start` sets
+of its own, even under `claude -p`) for a failure. A failure on a PR the desktop app's Auto-fix
+watches goes the append way instead, since Auto-fix starts that turn itself: the `prompt.submit`
+hook records the `owner/repo#N` each `<ci-monitor-event>` opens with (`autoFixPr`, anchored at the
+start, so a quoted event names nothing), and the watch asks `gh api repos/<repo>/commits/<sha>/pulls`
+which open PR has the commit as its head (`parseHeadPrs`). Recorded PRs are never dropped, so
+the note keeps the fix instruction for when no Auto-fix event follows. Not verified live: that the desktop app's events raise `prompt.submit`.
+`session.start` sets
 `DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
 down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.
 In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the plugin's own
