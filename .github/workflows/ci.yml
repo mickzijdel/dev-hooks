@@ -58,7 +58,8 @@ jobs:
       # The mods (plugins/dev-hooks/hooks/register.tsx and plugins/asks/hooks/register.tsx) only run under Claude Code's
       # own runner, so tests/test_mods.py needs the CLI: `claude plugin validate --strict` and
       # `claude plugin test`, neither of which needs a login. Pinned with integrity hashes in
-      # .github/claude-cli/package-lock.json (mods need >= 2.1.287, the ci-watch tests >= 2.1.293 for mock.session; first taken on 2026-10-03, two days
+      # .github/claude-cli/package-lock.json (mods need >= 2.1.287, the ci-watch tests >= 2.1.293 for mock.session, validate's
+      # TypeScript check of the modules >= 2.1.323; first taken on 2026-10-03, two days
       # into its release, as a deliberate exception to the 3-day dependency cooldown — later bumps
       # follow the cooldown). --ignore-scripts skips the
       # wrapper's postinstall, which only copies the platform package's native binary into place,
