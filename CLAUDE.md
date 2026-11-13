@@ -80,9 +80,13 @@ outside any repo), and the `classic.Stop` verdict. Rules learned building it:
   (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
   wrong call shape such as `$.process.run({ argv })`.
 
-The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_SESSION` to the
-session id (`$.env.set` reaches every command hook started afterwards), which makes
-`reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
+The module **orchestrates the Stop hooks**: its `classic.Stop` hook sets `DEV_HOOKS_MOD_SESSION`
+to the session id before it calls `next` (`markStopTakenOver`; `$.env.set` reaches every command
+hook started afterwards), which makes `reminder_stop_init` exit for the direct runs. The mark is
+made there and never in `session.start`, so it exists only where that hook runs: a plugin seated
+above can send `classic.*` past the module (the built-in `cc-plugin-sec-default` does in a team
+organization; Claude Code then logs "its classic.Stop hook was skipped"), and the command hooks
+must keep running there. The hook then runs each Stop
 command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
 answer the way Claude Code does (`stopReason`) and returns one merged `block`, closed once by
 the end-report footer (`mergeBlocks`; none when headless). It writes the
@@ -90,7 +94,7 @@ session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the p
 `DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
 `reminder_transcript_invoked` and gets subagent-aware answers for free. If orchestration throws, the
 module unsets the marker (the command hooks take Stop back from the next turn) and records the
-plugin version under `stopOrchestrationFailed` in `$.store`; `session.start` won't mark a
+plugin version under `stopOrchestrationFailed` in `$.store`; the hook won't mark a
 session on that version again, so only a version bump re-enables it. Every `--plugin-dir`
 copy named `dev-hooks` shares one inline store (`dev-hooks_inline-*.json`), separate from the
 marketplace install's — clear that key after fault-injection tests. So a new dev-hooks

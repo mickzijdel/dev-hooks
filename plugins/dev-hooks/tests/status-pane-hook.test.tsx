@@ -386,7 +386,7 @@ test("the pane's opening can't cut session start short", async ($, on) => {
     return { value: undefined }
   })
   on('env.set', (_$, e) => {
-    if (e.name === 'DEV_HOOKS_MOD_SESSION') marked.push(e.value)
+    if (e.name === 'DEV_HOOKS_CI_WATCH_SESSION') marked.push(e.value)
     return { value: {} }
   })
   on('command.register', (_$, e) => ({ value: { command: e.name } }))

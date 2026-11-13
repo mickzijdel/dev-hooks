@@ -235,3 +235,10 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   once the CI pin is at a version that knows the prop.
 - **Each plugin README names its siblings** ("alongside `dev-hooks`, …") and none names `asks`
   (2026-11-13). Left out of the asks commit, since each one-word edit costs a version bump.
+- **In a team organization the mod's `classic.PreToolUse` and `skill.prompt` hooks never run**
+  (2026-11-13): the built-in `cc-plugin-sec-default` sits in the outermost tier and sends
+  `classic.*` and `skill.prompt` past user-tier mods (debug log: `classic.Stop bypassed by
+  cc-plugin-sec-default`). Stop is fixed (the mark moved into `classic.Stop`). Still lost there:
+  the guard's `$.ui.ask` dialog (a guard `ask` falls back to the plain permission flow, which
+  auto mode answers by classifier) and skills in the session facts. Neither has a stand-down
+  marker, so nothing is silenced; a fix needs a route that does not pass through `classic.*`.

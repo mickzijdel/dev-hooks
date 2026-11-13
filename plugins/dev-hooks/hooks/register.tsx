@@ -10,10 +10,11 @@
 // the command hooks returned. The Stop orchestration below hands it to the Stop hooks.
 //
 // Stop orchestration: the module runs dev-hooks' own Stop command hooks itself and
-// returns their reasons as one block. It marks the session with DEV_HOOKS_MOD_SESSION,
-// which makes the copies Claude Code runs directly stand down (reminder_stop_init), and
-// runs its own copies with DEV_HOOKS_ORCHESTRATED set. Without this module (an older
-// Claude Code, mods off) nothing is marked and the command hooks run as before.
+// returns their reasons as one block. Its classic.Stop hook marks the session with
+// DEV_HOOKS_MOD_SESSION, which makes the copies Claude Code runs directly stand down
+// (reminder_stop_init), and runs its own copies with DEV_HOOKS_ORCHESTRATED set. Where
+// that hook doesn't run (an older Claude Code, mods off, a plugin above that sends the
+// event past it) nothing is marked and the command hooks run as before.
 //
 // Stop-nudge outcomes: each reason the orchestration returns is resolved at the next
 // Stop as acted on or not (nudge-outcomes.ts), shown by /session-facts nudges.
@@ -311,6 +312,27 @@ async function pluginVersion($: EngineInterface): Promise<string> {
   const manifest = JSON.parse(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)) as { version?: string }
   return manifest.version ?? 'unknown'
 }
+
+// Takes this session's Stop hooks over by marking it, once their config reads cleanly
+// and not on a version whose orchestration already failed. False leaves the session
+// unmarked, so the command hooks keep running directly.
+async function markStopTakenOver($: EngineInterface, sessionId: string): Promise<boolean> {
+  const willing = !stopHandedBack.has(sessionId) && (await stopTakeoverAllowed($).catch(() => false))
+  if (willing && (await $.env.set('DEV_HOOKS_MOD_SESSION', sessionId).then(() => true, () => false))) return true
+  // A mark left by an earlier Stop would silence the direct runs with nothing orchestrating.
+  const marked = await $.env.get('DEV_HOOKS_MOD_SESSION').catch(() => undefined)
+  if (marked === sessionId) await $.env.set('DEV_HOOKS_MOD_SESSION', undefined).catch(() => undefined)
+  return false
+}
+
+async function stopTakeoverAllowed($: EngineInterface): Promise<boolean> {
+  const failedOn = await $.store.get(ORCHESTRATION_FAILED)
+  return (await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))
+}
+
+// Sessions whose orchestration failed: Stop stays with their command hooks even if the
+// failure never reached the store.
+const stopHandedBack = new Set<string>()
 
 // Runs dev-hooks' Stop commands as Claude Code would and merges their reasons after
 // `below` (any block from hooks beneath the module).
@@ -911,13 +933,6 @@ export const register: Register = on => {
     const kept = await pruneFacts($)
     await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
-    // Only take the Stop hooks over once their config reads cleanly, and not on a
-    // version whose orchestration already failed; otherwise leave the session unmarked
-    // so the command hooks keep running directly.
-    const failedOn = await $.store.get(ORCHESTRATION_FAILED)
-    if ((await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))) {
-      await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
-    }
     await claimCiWatch($)
     await openPaneUnasked($, e.surface).catch(() => undefined)
 
@@ -1215,9 +1230,13 @@ export const register: Register = on => {
   // Sees the command hooks' Stop verdict folded last-write-wins: with several
   // blocking, only the last reason arrives here (Claude still gets them all).
   on('classic.Stop', async ($, e, next) => {
+    // Marked here, not at session start: a plugin seated above can send this event past
+    // the module, and a mark made earlier would then silence the command hooks with
+    // nothing running them. Before `next`, so this Stop's direct runs already stand down.
+    const takesOver = await markStopTakenOver($, e.session_id).catch(() => false)
     const below = await next(e)
     await recordBackground($, e).catch(() => undefined)
-    if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
+    if (!takesOver) return below
 
     try {
       const block = await orchestrateStop($, e, below.block)
@@ -1225,6 +1244,7 @@ export const register: Register = on => {
     } catch (error) {
       // The command hooks stood down for this session, so a failure here would
       // silence every later Stop too: hand Stop back to them from the next turn.
+      stopHandedBack.add(e.session_id)
       await $.env.set('DEV_HOOKS_MOD_SESSION', undefined)
       await $.store.set(ORCHESTRATION_FAILED, await pluginVersion($).catch(() => 'unknown')).catch(() => undefined)
       $.ui.log(`dev-hooks: Stop orchestration failed, the Stop hooks run directly from now on: ${String(error)}`)
