@@ -958,6 +958,18 @@ async function lateGuardAnswer(
   await $.prompt.submit({ text: lateAnswerNote(command, answer) }).catch(() => undefined)
 }
 
+// One run can arrive twice: as the Skill call and as its skill.prompt expansion. Either can be
+// the only one (a team organization skips skill.prompt; a slash command makes no Skill call).
+const SKILL_SEEN_TWICE_MS = 10_000
+
+async function recordSkill($: EngineInterface, skill: string) {
+  const at = Date.now()
+  await changeFacts($, f => {
+    const last = f.skills.findLast(s => s.skill === skill)
+    return last && at - last.at < SKILL_SEEN_TWICE_MS ? f : { ...f, skills: [...f.skills, { skill, at }].slice(-200) }
+  })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     isInteractive = e.isInteractive
@@ -1065,8 +1077,7 @@ export const register: Register = on => {
   })
 
   on('skill.prompt', async ($, e, next) => {
-    const at = Date.now()
-    await changeFacts($, f => ({ ...f, skills: [...f.skills, { skill: e.skill, at }].slice(-200) }))
+    await recordSkill($, e.skill)
 
     return next(e)
   })
@@ -1081,6 +1092,7 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const asks = e.agentId === undefined && e.tool === 'AskUserQuestion'
     if (asks) await setAsking($, true)
+    if (e.tool === 'Skill') await recordSkill($, e.skill).catch(() => undefined)
     const ran = await next(e)
     if (asks) await setAsking($, false)
     if (e.agentId === undefined) {

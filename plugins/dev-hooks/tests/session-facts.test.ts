@@ -102,6 +102,27 @@ test('a skill expansion is recorded by name', async ($, on) => {
   expect(w.facts().skills.map(s => s.skill)).toEqual(['dev-hooks:compress-comments'])
 })
 
+// Where a plugin seated above sends skill.prompt past the module, the Skill call still arrives.
+test('a Skill tool call is recorded by name', async ($, on) => {
+  const w = world(on)
+  on('tool.call', { tool: 'Skill' }, () => ({ result: { success: true, commandName: 'grill' }, text: 'ok' }))
+
+  await $.tool.call({ tool: 'Skill', skill: 'thinking-tools:grill' })
+
+  expect(w.facts().skills.map(s => s.skill)).toEqual(['thinking-tools:grill'])
+})
+
+test('a skill seen as a Skill call and as its expansion is recorded once', async ($, on) => {
+  const w = world(on)
+  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('tool.call', { tool: 'Skill' }, () => ({ result: { success: true, commandName: 'grill' }, text: 'ok' }))
+
+  await $.skill.prompt({ skill: 'thinking-tools:grill', text: 'body' })
+  await $.tool.call({ tool: 'Skill', skill: 'thinking-tools:grill' })
+
+  expect(w.facts().skills.map(s => s.skill)).toEqual(['thinking-tools:grill'])
+})
+
 test('session start prunes facts of sessions idle for over 30 days', async ($, on) => {
   const now = Date.now()
   const w = world(on, {

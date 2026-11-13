@@ -65,7 +65,11 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
 
 The module also records **session facts** (`facts:<session id>` in `$.store`, typed as `Facts` in
 `types/index.d.ts`): skills, subagent dispatches, per-repo edits with net growth (`root: null`
-outside any repo), and the `classic.Stop` verdict. Rules learned building it:
+outside any repo), and the `classic.Stop` verdict. A skill is recorded from both `skill.prompt`
+and the Skill `tool.call` (`recordSkill`, one entry when both arrive within 10 s): a plugin
+seated above can send `skill.prompt` past the module, and a slash command makes no Skill call.
+`tests/test_mod_bypass_live.py` (opt-in, `DEV_HOOKS_LIVE=1`, a real `claude -p` run) fails when
+an event outside its `KNOWN` list is sent past the module. Rules learned building it:
 - `$` is followed only into functions declared in `register.tsx`, never across an import — shared
   code in another file must be pure. One unmatched `on(event)` per event per module: add to the
   existing `session.start` hook rather than registering a second.
@@ -120,7 +124,10 @@ even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by th
 Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
 rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
 leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
-refuses), else the session env, else 120 s.
+refuses), else the session env, else 120 s. In a team organization this hook never runs (the
+built-in `cc-plugin-sec-default` sends `classic.*` past user mods) and the guard's `ask` goes to
+Claude Code's own permission prompt; `tool.check` is no way round it, since a user-tier hook
+there may only tighten a verdict (`plans/off-topic-improvements.md` has the probe results).
 A `$.ui.ask` can't be closed from the mod, so a timed-out dialog lingers, and the VS Code extension
 doesn't draw it through `ui.render` (the `guardTimedOut` redraw only helps surfaces that do). What
 works everywhere is the late answer: the abandoned `ask` promise still resolves, and

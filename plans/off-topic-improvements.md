@@ -233,10 +233,14 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **In a team organization the mod's `classic.PreToolUse` and `skill.prompt` hooks never run**
   (2026-11-13): the built-in `cc-plugin-sec-default` sits in the outermost tier and sends
   `classic.*` and `skill.prompt` past user-tier mods (debug log: `classic.Stop bypassed by
-  cc-plugin-sec-default`). Stop is fixed (the mark moved into `classic.Stop`). Still lost there:
-  the guard's `$.ui.ask` dialog (a guard `ask` falls back to the plain permission flow, which
-  auto mode answers by classifier) and skills in the session facts. Neither has a stand-down
-  marker, so nothing is silenced; a fix needs a route that does not pass through `classic.*`.
+  cc-plugin-sec-default`). Stop is fixed (the mark moved into `classic.Stop`), and skills are
+  recorded from the Skill tool call (`recordSkill`). Still lost there: the guard's `$.ui.ask`
+  dialog, so no "Allow for this session", timeout or late answer; the guard's `ask` goes to
+  Claude Code's own permission prompt. It can't move to `tool.check`: probed 2026-11-13, a
+  user-tier hook there sees the ask (`{ decision: 'ask', reason, hook: 'PreToolUse' }`) but may
+  only tighten it; answering `allow` gets the hook itself skipped, and handing up a
+  `$.tool.check` query's verdict leaves the ask standing. To give the session allow-list back
+  there, the shell guard would have to read a list the person fills (a slash command).
   `agent.spawn` is not affected: in a `claude -p` run that started one subagent the debug log has
   `dev-hooks@inline agent.spawn settled`, and the only bypass lines are `classic.PreToolUse` and
   `classic.Stop`, so subagent dispatches still reach the session facts.
