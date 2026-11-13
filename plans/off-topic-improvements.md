@@ -18,6 +18,30 @@ Noticed 2026-07-02 while reviewing mattpocock/skills for vendoring:
   issues (each slice cuts through all layers, demoable on its own) — useful language for
   plan-writing guidance.
 
+Noticed 2026-11-13 by the `one-fix` skill's two test runs on this repo (subagent findings,
+not verified by hand):
+
+- **Two parsers for "which git command, in which directory".** `reminder_runs_git` (awk
+  segments) and `git_target_dir` in `hook_helpers.py` (shlex) disagree: `timeout 5 git -C
+  /other push` matches in awk while `git_target_dir` returns the session cwd, and a `cd`
+  inside a quoted heredoc body moves the python answer. Proposal: `reminder_runs_git` also
+  tracks `cd`/`-C` and returns the directory and operands, so the python function, the
+  tokeniser in `worktree-provision-reminder.sh` and the loop in `dangerous-command-guard.sh`
+  go.
+- **python3 is required in practice but guarded as optional.** The jq mirror of
+  `session_start` and the over-report fallbacks in `reminder-common.sh` only run when
+  python3 is missing, while other paths fail silently without it. One check at source time
+  would let about 80 lines and `test_jq_stamp_mirror_agrees_with_python` go. Behaviour
+  change: Stop hooks go silent without python3.
+- **`timeout` → `gtimeout` → perl ladder exists once** (`verify-work.sh`), with weaker copies
+  in `worktree-setup/scripts/setup-worktree.sh` and none in
+  `dev-env-setup/scripts/fleet_roster.sh` (`bounded` has no fallback on a bare macOS).
+- **`github_readme_audit.py` has three fence readers**: `heading_lines` got a fix and a fix
+  to that fix; `fenced_code_blocks` and `first_non_heading_paragraph` still have the old
+  behaviour.
+- **No macOS CI job**: every job runs `ubuntu-latest`, and the recent portability fixes
+  (BSD sed, no `/proc`, no `timeout`, bash 3.2) are one class a macOS job would catch.
+
 Noticed 2026-09-22 while shipping the `deslop` skill:
 
 - **`slop_scan.py`'s `is_code()` miscounts C-family block comments.** A line inside a
