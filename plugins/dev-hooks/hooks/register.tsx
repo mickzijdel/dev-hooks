@@ -965,8 +965,12 @@ const SKILL_SEEN_TWICE_MS = 10_000
 async function recordSkill($: EngineInterface, skill: string) {
   const at = Date.now()
   await changeFacts($, f => {
-    const last = f.skills.findLast(s => s.skill === skill)
-    return last && at - last.at < SKILL_SEEN_TWICE_MS ? f : { ...f, skills: [...f.skills, { skill, at }].slice(-200) }
+    const last = f.skills.findLastIndex(s => s.skill === skill)
+    const seen = f.skills[last]
+    // The later time is kept, so a nudge fired between two close runs still sees the second.
+    return seen && at - seen.at < SKILL_SEEN_TWICE_MS
+      ? { ...f, skills: f.skills.with(last, { skill, at }) }
+      : { ...f, skills: [...f.skills, { skill, at }].slice(-200) }
   })
 }
 
@@ -1092,9 +1096,11 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const asks = e.agentId === undefined && e.tool === 'AskUserQuestion'
     if (asks) await setAsking($, true)
-    if (e.tool === 'Skill') await recordSkill($, e.skill).catch(() => undefined)
     const ran = await next(e)
     if (asks) await setAsking($, false)
+    if (e.tool === 'Skill' && typeof e.skill === 'string' && ran.deny === undefined && !ran.isError) {
+      await recordSkill($, e.skill).catch(() => undefined)
+    }
     if (e.agentId === undefined) {
       const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
       await changePane($, s =>

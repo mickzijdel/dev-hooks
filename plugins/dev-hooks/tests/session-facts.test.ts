@@ -112,6 +112,16 @@ test('a Skill tool call is recorded by name', async ($, on) => {
   expect(w.facts().skills.map(s => s.skill)).toEqual(['thinking-tools:grill'])
 })
 
+test('a refused Skill call is not recorded', async ($, on) => {
+  const w = world(on)
+  on('tool.call', { tool: 'Skill' }, () => ({ deny: 'not allowed' }))
+
+  await $.tool.call({ tool: 'Skill', skill: 'thinking-tools:grill' })
+
+  // Nothing was recorded, so the session may have no facts at all.
+  expect(w.facts()?.skills ?? []).toEqual([])
+})
+
 test('a skill seen as a Skill call and as its expansion is recorded once', async ($, on) => {
   const w = world(on)
   on('skill.prompt', (_$, e) => ({ text: e.text }))

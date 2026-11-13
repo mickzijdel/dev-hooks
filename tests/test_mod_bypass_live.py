@@ -31,6 +31,9 @@ KNOWN = {
 }
 
 BYPASS_RE = re.compile(r"\bdev-hooks: (\S+) bypassed by (\S+)")
+DELIVERED_RE = re.compile(r"dev-hooks@inline[^\n]*\btool\.call settled")
+# One Bash call: the run raises session.start, turn.start, PreToolUse, tool.call and Stop.
+# An event it never raises (skill.prompt, agent.spawn) can't show a bypass here.
 PROMPT = "Run exactly this one Bash command and report its output, nothing else: echo live-check"
 
 
@@ -51,6 +54,10 @@ def test_no_unknown_event_is_sent_past_the_mod(tmp_path):
     text = log.read_text(encoding="utf-8", errors="replace")
     assert "hooks module dev-hooks@inline loaded" in text, (
         "the dev-hooks mod did not load in the live run"
+    )
+    # Without a delivered-event line, a reworded log would pass with nothing found.
+    assert DELIVERED_RE.search(text), (
+        "no `dev-hooks@inline … tool.call settled` line: the debug log format changed"
     )
     unknown = {
         (event, by) for event, by in BYPASS_RE.findall(text) if event not in KNOWN

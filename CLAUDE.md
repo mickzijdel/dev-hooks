@@ -66,7 +66,7 @@ bundled examples use; call `$.state.get`/`$.state.set` directly.
 The module also records **session facts** (`facts:<session id>` in `$.store`, typed as `Facts` in
 `types/index.d.ts`): skills, subagent dispatches, per-repo edits with net growth (`root: null`
 outside any repo), and the `classic.Stop` verdict. A skill is recorded from both `skill.prompt`
-and the Skill `tool.call` (`recordSkill`, one entry when both arrive within 10 s): a plugin
+and a Skill `tool.call` that ran (`recordSkill`, one entry when both arrive within 10 s): a plugin
 seated above can send `skill.prompt` past the module, and a slash command makes no Skill call.
 `tests/test_mod_bypass_live.py` (opt-in, `DEV_HOOKS_LIVE=1`, a real `claude -p` run) fails when
 an event outside its `KNOWN` list is sent past the module. Rules learned building it:
@@ -89,7 +89,8 @@ to the session id before it calls `next` (`markStopTakenOver`; `$.env.set` reach
 hook started afterwards), which makes `reminder_stop_init` exit for the direct runs. The mark is
 made there and never in `session.start`, so it exists only where that hook runs: a plugin seated
 above can send `classic.*` past the module (the built-in `cc-plugin-sec-default` does in a team
-organization; Claude Code then logs "its classic.Stop hook was skipped"), and the command hooks
+organization; Claude Code then shows the notice "its classic.Stop hook was skipped", and its
+debug log has `dev-hooks: classic.Stop bypassed by cc-plugin-sec-default`), and the command hooks
 must keep running there. The mark is proof for one Stop only: `turn.start` (which does reach the
 module there) clears it on every main-loop turn (`clearStopMark`), so a later Stop that is sent
 past the module, or a session an older version marked at session start, finds the command hooks
