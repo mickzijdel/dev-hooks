@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  autoFixPr,
+  AUTO_FIX_ON,
+  autoFixEvent,
   ciNote,
   ciStatusLine,
   ciToast,
@@ -169,11 +170,17 @@ test('a failure note names the failed run and how to read its log', async () => 
   expect(note).toContain('CI FAILED')
   expect(note).toContain('gh run view 35830926133 --repo mickzijdel/dev-hooks --log-failed')
 
-  // On a PR that Auto-fix watches the note hands the fix to Auto-fix's own event.
-  const watched = ciNote('mickzijdel/dev-hooks', SHA, 'failure', [failed], undefined, 45)
+  // With Auto-fix on, the note hands the fix to Auto-fix's own event and says what happens without one.
+  const watched = ciNote('mickzijdel/dev-hooks', SHA, 'failure', [failed], undefined, { pr: 45 })
   expect(watched).toContain('CI FAILED')
-  expect(watched).toContain('Auto-fix watches PR #45')
-  expect(watched).toContain('--log-failed')
+  expect(watched).toContain('Auto-fix should report this failure on PR #45')
+  expect(watched).toContain('in 10 minutes')
+  expect(watched).not.toContain('push the fix')
+
+  // The late prompt, when Auto-fix stayed silent, is the usual failure prompt plus why it is late.
+  const late = ciNote('mickzijdel/dev-hooks', SHA, 'failure', [failed], undefined, { pr: 45, late: true })
+  expect(late).toContain('Auto-fix sent no event for PR #45 in 10 minutes')
+  expect(late).toContain('--log-failed')
 })
 
 test('parseHeadPrs keeps only open PRs whose head is the commit', async () => {
@@ -186,11 +193,16 @@ test('parseHeadPrs keeps only open PRs whose head is the commit', async () => {
   expect(parseHeadPrs('not json', SHA)).toEqual([])
 })
 
-test('autoFixPr reads the PR an Auto-fix event opens with, and nothing else', async () => {
+test('autoFixEvent reads the PR an Auto-fix event opens with, or that Auto-fix is on, and nothing else', async () => {
   const event = '<ci-monitor-event>"Auto-fix pull requests" is watching Eighty-Thousand-Hours/artemis PR #357 and detected the following.'
-  expect(autoFixPr(event)).toBe('eighty-thousand-hours/artemis#357')
-  expect(autoFixPr(`quoted: ${event}`)).toBeNull()
-  expect(autoFixPr('<ci-monitor-event>"Auto-fix pull requests" was just enabled for this session.')).toBeNull()
+  expect(autoFixEvent(event, 'sdk')).toBe('eighty-thousand-hours/artemis#357')
+  expect(autoFixEvent(event, 'auto-continuation')).toBe('eighty-thousand-hours/artemis#357')
+  expect(autoFixEvent('<ci-monitor-event>"Auto-fix pull requests" was just enabled for this session.', 'sdk')).toBe(AUTO_FIX_ON)
+  expect(autoFixEvent(`quoted: ${event}`, 'sdk')).toBeNull()
+  // Typed at the terminal, or sent by another session: not the desktop app's event.
+  expect(autoFixEvent(event, 'composer')).toBeNull()
+  expect(autoFixEvent(event, 'peer')).toBeNull()
+  expect(autoFixEvent('<ci-monitor-event>something else</ci-monitor-event>', 'sdk')).toBeNull()
 })
 
 test('a pass and a lookup error read as such', async () => {

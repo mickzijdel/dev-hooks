@@ -38,6 +38,12 @@ function world(on: On, options: { env?: Record<string, string>; workflows?: stri
     logs: [] as string[],
   }
   mock.env(on, options.env ?? {})
+  const state = new Map<string, unknown>()
+  on('state.get', (_$, e) => ({ value: { value: state.get(e.key), version: 1 } }))
+  on('state.set', (_$, e) => {
+    state.set(e.key, e.value)
+    return { value: { isSet: true as const, version: 2 } }
+  })
   on('session.cwd', () => ({ value: '/repo' }))
   on('fs.list', () => ({
     value: (options.workflows ?? ['ci.yml']).map(name => ({ name, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })),
@@ -132,37 +138,81 @@ test('a failed run wakes the session with a prompt naming the failure', async ($
 const autoFixEvent = (repo: string, pr: number) =>
   `<ci-monitor-event>"Auto-fix pull requests" is watching ${repo} PR #${pr} and detected the following. CI failed.</ci-monitor-event>`
 
-test('a failed run on a PR that Auto-fix watches is noted without waking the session', async ($, on) => {
+const AUTO_FIX_ON = '<ci-monitor-event>"Auto-fix pull requests" was just enabled for this session. No action needed right now.</ci-monitor-event>'
+const SDK = { kind: 'sdk' as const }
+const watchPrompts = (w: { prompts: string[] }) => w.prompts.filter(p => p.includes('CI watch'))
+
+test('with Auto-fix on, a failed run on an open PR is noted, and Auto-fix does the waking', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on)
   push(on)
   w.runs = [run({ conclusion: 'failure' })]
   w.prs = [45]
 
-  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  // The "enabled" event names no PR: Auto-fix being on in the session is enough.
+  await $.prompt.submit({ text: AUTO_FIX_ON, wait: false, origin: SDK })
   await $.tool.call({ tool: 'Bash', command: 'git push' })
   await clock.advance(3_000)
 
   expect(w.ghCalls.at(-1)).toEqual(['gh', 'api', `repos/mickzijdel/dev-hooks/commits/${SHA}/pulls`])
   expect(w.toasts).toEqual(['✗ CI failed · dev-hooks@762caa3: ci'])
-  expect(w.prompts.filter(p => p.includes('CI watch'))).toEqual([])
+  expect(watchPrompts(w)).toEqual([])
   expect(w.appended()).toBe(true)
+
+  // Auto-fix reports on the PR after the push, so the watch never wakes the session.
+  await $.prompt.submit({ text: autoFixEvent('MickZijdel/dev-hooks', 45), wait: false, origin: SDK })
+  await clock.advance(10 * 60_000)
+  expect(watchPrompts(w)).toEqual([])
 })
 
-test('a failed run still wakes the session when Auto-fix watches another PR', async ($, on) => {
+test('when Auto-fix sends no event for the PR, the watch wakes the session itself and stops standing down', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on)
   push(on)
   w.runs = [run({ conclusion: 'failure' })]
-  w.prs = [46]
+  w.prs = [45]
 
-  // An event-shaped block inside other text is data and records nothing.
-  await $.prompt.submit({ text: `see ${autoFixEvent('mickzijdel/dev-hooks', 46)}`, wait: false, origin: { kind: 'sdk' } })
-  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  // Named before the push: Auto-fix may have been turned off since.
+  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: SDK })
   await $.tool.call({ tool: 'Bash', command: 'git push' })
   await clock.advance(3_000)
+  expect(watchPrompts(w)).toEqual([])
 
-  expect(w.prompts.filter(p => p.includes('CI watch'))[0]).toContain('CI FAILED')
+  // An event about another PR says nothing about this one.
+  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 46), wait: false, origin: SDK })
+  await clock.advance(10 * 60_000)
+  expect(watchPrompts(w)).toHaveLength(1)
+  expect(watchPrompts(w)[0]).toContain('CI FAILED')
+  expect(watchPrompts(w)[0]).toContain('Auto-fix sent no event for PR #45')
+
+  // The next failure wakes the session at once, until Auto-fix sends an event again.
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+  expect(watchPrompts(w)).toHaveLength(2)
+})
+
+test('a failed run wakes the session when the commit heads no open PR, or no real Auto-fix event came', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on)
+  push(on)
+  w.runs = [run({ conclusion: 'failure' })]
+  w.prs = [45]
+
+  // An event inside other text, or one typed or sent by another session, records nothing.
+  await $.prompt.submit({ text: `see ${AUTO_FIX_ON}`, wait: false, origin: SDK })
+  await $.prompt.submit({ text: AUTO_FIX_ON, wait: false, origin: { kind: 'composer' } })
+  await $.prompt.submit({ text: autoFixEvent('mickzijdel/dev-hooks', 45), wait: false, origin: { kind: 'peer' } })
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+  expect(watchPrompts(w)).toHaveLength(1)
+  expect(w.ghCalls.every(argv => argv[1] === 'run')).toBe(true)
+
+  // Auto-fix is on, but the pushed commit is not the head of an open PR.
+  w.prs = []
+  await $.prompt.submit({ text: AUTO_FIX_ON, wait: false, origin: SDK })
+  await $.tool.call({ tool: 'Bash', command: 'git push' })
+  await clock.advance(3_000)
+  expect(watchPrompts(w)).toHaveLength(2)
   expect(w.appended()).toBe(false)
 })
 
@@ -173,12 +223,12 @@ test('a failed run still wakes the session when the PR lookup fails', async ($, 
   w.runs = [run({ conclusion: 'failure' })]
   w.prs = null
 
-  await $.prompt.submit({ text: autoFixEvent('MickZijdel/dev-hooks', 45), wait: false, origin: { kind: 'sdk' } })
+  await $.prompt.submit({ text: AUTO_FIX_ON, wait: false, origin: SDK })
   await $.tool.call({ tool: 'Bash', command: 'git push' })
   await clock.advance(3_000)
 
   expect(w.ghCalls.at(-1)?.[1]).toBe('api')
-  expect(w.prompts.filter(p => p.includes('CI watch'))[0]).toContain('CI FAILED')
+  expect(watchPrompts(w)[0]).toContain('CI FAILED')
   expect(w.appended()).toBe(false)
 })
 

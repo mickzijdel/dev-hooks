@@ -89,6 +89,8 @@ declare module 'claude-code' {
       contextBarSnapshot: Snapshot | null
       guardTimedOut: Record<string, string>
       emailsAllowedTo: Record<string, string[]>
+      // What the desktop app's Auto-fix events said, by when (ms): `owner/repo#N`, or `*`.
+      autoFixSeen: Record<string, number>
       statusPane: Shaped<StatusPaneState>
     }
   }

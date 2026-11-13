@@ -153,12 +153,21 @@ outside the dispatch (a timer's closure keeps using the hook's `$`). Elapsed tim
 `$.clock.now()`, not `Date.now()`, so `mock.clock` drives it in tests. The outcome reaches Claude
 two ways, both verified live: `$.session.append` (a user-role note, read at the running turn's
 next request, starting no turn) for a pass, and `$.prompt.submit` (queued until idle, then a turn
-of its own, even under `claude -p`) for a failure. A failure on a PR the desktop app's Auto-fix
-watches goes the append way instead, since Auto-fix starts that turn itself: the `prompt.submit`
-hook records the `owner/repo#N` each `<ci-monitor-event>` opens with (`autoFixPr`, anchored at the
-start, so a quoted event names nothing), and the watch asks `gh api repos/<repo>/commits/<sha>/pulls`
-which open PR has the commit as its head (`parseHeadPrs`). Recorded PRs are never dropped, so
-the note keeps the fix instruction for when no Auto-fix event follows. Not verified live: that the desktop app's events raise `prompt.submit`.
+of its own, even under `claude -p`) for a failure. With the desktop app's Auto-fix on, a
+failure on a commit that heads an open PR goes the append way first, since Auto-fix starts that
+turn itself: the `prompt.submit` hook records in `$.state` (`autoFixSeen`) what each
+`<ci-monitor-event>` opens with (`autoFixEvent`: the `owner/repo#N` it reports on, or `*` for
+"was just enabled", anchored at the start so a quoted event says nothing, and only from an `sdk`
+or `auto-continuation` origin, which is how transcripts record the app's events, so another
+session's message or a notification never counts; a prompt typed in an SDK host may still
+arrive as `sdk`), and the watch asks
+`gh api repos/<repo>/commits/<sha>/pulls` which open PR has the commit as its head
+(`parseHeadPrs`). The stand-down is a deferral, never a drop: `AUTO_FIX_GRACE_MS` after the note,
+`wakeIfAutoFixSilent` submits the failure as a prompt unless an Auto-fix event named that PR
+since the push, and marks the PR silent (`-1`) so its later failures wake the session at once
+until an event names it again. The fallback is a `$.clock.after` timer like the polls, so a
+reload inside the 10 minutes leaves only the note. Not verified live: that the desktop app's
+events raise `prompt.submit` with those origins.
 `session.start` sets
 `DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
 down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.

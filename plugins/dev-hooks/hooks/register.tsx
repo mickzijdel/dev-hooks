@@ -25,8 +25,9 @@ import type { EngineInterface, Register, ToolCallEnvelope } from 'claude-code'
 
 import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
+  AUTO_FIX_GRACE_MS,
+  autoFixEvent,
   autoFixKey,
-  autoFixPr,
   ciNote,
   ciStatusLine,
   ciToast,
@@ -604,8 +605,8 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
 // ── CI watch ────────────────────────────────────────────────────────────────────────
 // After a successful `git push` the module watches that push's GitHub Actions runs:
 // progress in the status line, a toast when they end, and the outcome handed to Claude
-// (a pass as a conversation note, a failure as a prompt that wakes the session, or as a
-// note too on a PR the desktop app's Auto-fix watches). It
+// (a pass as a conversation note, a failure as a prompt that wakes the session, or, with
+// the desktop app's Auto-fix on, as a note first and a prompt only if Auto-fix stays silent). It
 // marks the session with DEV_HOOKS_CI_WATCH_SESSION so ci-watch-reminder.sh stands down;
 // DEV_HOOKS_CI_WATCH=false turns both off. Watches live in module variables: a reload
 // of the module drops them.
@@ -679,23 +680,54 @@ async function pushTargets($: EngineInterface, command: string, output: string):
   return [...targets.values()]
 }
 
-// The PRs the desktop app's Auto-fix has reported on in this session (`owner/repo#N`),
-// from its <ci-monitor-event> prompts. Auto-fix wakes the session for a failure there,
-// so the watch only notes it. A module variable, like the watches.
-const autoFixPrs = new Set<string>()
+// The desktop app's Auto-fix wakes the session for a CI failure on a PR it watches, so
+// with Auto-fix on the watch only notes such a failure, then wakes the session itself if
+// Auto-fix stays silent. What Auto-fix's <ci-monitor-event> prompts said, by when: a PR
+// they named (`owner/repo#N`), or AUTO_FIX_ON for one that names none. Kept in $.state,
+// so a reload or a resumed session still knows.
+const AUTO_FIX = { plugin: 'dev-hooks', key: 'autoFixSeen' } as const
 
-function recordAutoFix(text: string) {
-  const pr = autoFixPr(text)
-  if (pr !== null) autoFixPrs.add(pr)
+async function recordAutoFix($: EngineInterface, text: string, origin: string) {
+  const said = autoFixEvent(text, origin)
+  if (said === null) return
+  const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+  await $.state.set(AUTO_FIX, { ...seen, [said]: await $.clock.now() })
 }
 
-// The Auto-fix PR the commit is on, if any. gh is asked only when Auto-fix has reported
-// on a PR in this repo; a failed lookup reads as none, so the failure still wakes the session.
+// The open PR the commit heads, when Auto-fix is on in this session. Anything that fails
+// on the way (the state, gh) reads as none, so the failure wakes the session as before.
 async function autoFixPrOf($: EngineInterface, repo: string, sha: string): Promise<number | undefined> {
-  if (![...autoFixPrs].some(pr => pr.startsWith(`${repo.toLowerCase()}#`))) return undefined
-  const run = await $.process.run(['gh', 'api', `repos/${repo}/commits/${sha}/pulls`], { timeoutMs: 30_000 }).catch(() => null)
-  if (run?.exitCode !== 0) return undefined
-  return parseHeadPrs(run.stdout, sha).find(n => autoFixPrs.has(autoFixKey(repo, n)))
+  try {
+    const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+    if (Object.keys(seen).length === 0) return undefined
+    const run = await $.process.run(['gh', 'api', `repos/${repo}/commits/${sha}/pulls`], { timeoutMs: 30_000 })
+    if (run.exitCode !== 0) return undefined
+    return parseHeadPrs(run.stdout, sha).find(pr => seen[autoFixKey(repo, pr)] !== AUTO_FIX_SILENT)
+  } catch {
+    return undefined
+  }
+}
+
+// Stored for a PR that Auto-fix stayed silent on: its failures wake the session at once
+// until an Auto-fix event names it again (which stores that event's time over this).
+const AUTO_FIX_SILENT = -1
+
+// AUTO_FIX_GRACE_MS after a failure was only noted: if no Auto-fix event has named the PR
+// since the push (Auto-fix is off for it, or was turned off), the watch sends the failure
+// as a prompt after all and marks the PR silent. Any event naming the PR counts, whatever
+// it reports: it shows Auto-fix still watches the PR, and only repo and number are read.
+async function wakeIfAutoFixSilent($: EngineInterface, w: Watch & { startedAt: number }, pr: number, runs: Run[]) {
+  try {
+    const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+    const key = autoFixKey(w.repo, pr)
+    if ((seen[key] ?? AUTO_FIX_SILENT) > w.startedAt) return
+    await $.state.set(AUTO_FIX, { ...seen, [key]: AUTO_FIX_SILENT })
+  } catch {
+    // Unreadable state: wake the session rather than lose the failure.
+  }
+  await $.prompt.submit({ text: ciNote(w.repo, w.sha, 'failure', runs, undefined, { pr, late: true }) }).catch(err => {
+    $.ui.log(`dev-hooks: CI watch could not report ${w.repo}@${w.sha}: ${String(err)}`)
+  })
 }
 
 async function startCiWatch($: EngineInterface, target: { repo: string; sha: string }) {
@@ -733,12 +765,14 @@ async function pollCi($: EngineInterface, key: string) {
     ciWatches.delete(key)
     showCiStatus($)
     $.ui.toast(ciToast(w.repo, w.sha, verdict, mine), { timeoutMs: verdict === 'success' ? 8_000 : 20_000 })
-    const autoFix = verdict === 'failure' ? await autoFixPrOf($, w.repo, w.sha) : undefined
-    const note = ciNote(w.repo, w.sha, verdict, mine, error, autoFix)
+    const pr = verdict === 'failure' ? await autoFixPrOf($, w.repo, w.sha) : undefined
+    const note = ciNote(w.repo, w.sha, verdict, mine, error, pr === undefined ? undefined : { pr })
     // A failure needs Claude to act, so it starts a turn (once the session is idle),
-    // unless Auto-fix watches the PR and starts that turn itself; anything else is read
-    // with Claude's next request without waking it.
-    if (verdict === 'failure' && autoFix === undefined) await $.prompt.submit({ text: note })
+    // unless Auto-fix is on and starts that turn itself; anything else is read with
+    // Claude's next request without waking it.
+    // The fallback is armed before the note, so a note that fails to append still gets its prompt.
+    if (pr !== undefined) $.clock.after(AUTO_FIX_GRACE_MS, () => void wakeIfAutoFixSilent($, w, pr, mine))
+    if (verdict === 'failure' && pr === undefined) await $.prompt.submit({ text: note })
     else await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: note }] } })
   } catch (err) {
     ciWatches.delete(key)
@@ -1154,7 +1188,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    recordAutoFix(e.text)
+    await recordAutoFix($, e.text, e.origin.kind).catch(() => undefined)
     if (e.turnId === undefined) nextOrigin = e.origin.kind
 
     return next(e)
