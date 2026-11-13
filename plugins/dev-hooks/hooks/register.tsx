@@ -326,6 +326,15 @@ async function markStopTakenOver($: EngineInterface, sessionId: string): Promise
   return false
 }
 
+// The mark is proof for one Stop, not for the session: each main-loop turn starts
+// unmarked, so a Stop sent past the module finds the command hooks running. Also clears
+// the mark an older version made at session start.
+async function clearStopMark($: EngineInterface) {
+  if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) === (await $.session.id())) {
+    await $.env.set('DEV_HOOKS_MOD_SESSION', undefined)
+  }
+}
+
 async function stopTakeoverAllowed($: EngineInterface): Promise<boolean> {
   const failedOn = await $.store.get(ORCHESTRATION_FAILED)
   return (await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))
@@ -1196,6 +1205,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
+      await clearStopMark($).catch(() => undefined)
       const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: typedFrom(nextOrigin, e.text), calls: 0, edits: 0 }
       nextOrigin = undefined
       await changePane($, (s, now) => ({

@@ -5,9 +5,9 @@ const HOOKS = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', comm
 
 // Answers what session start and Stop read, and records in order what the module
 // marks, when the hooks beneath it run, and which Stop commands it runs itself.
-function world(on: On, store: Record<string, unknown>, options: { version?: string; canMark?: boolean; breaksOrchestration?: boolean } = {}) {
+function world(on: On, store: Record<string, unknown>, options: { version?: string; canMark?: boolean; breaksOrchestration?: boolean; markedFor?: string } = {}) {
   const log: string[] = []
-  const env = new Map<string, string | undefined>()
+  const env = new Map<string, string | undefined>([['DEV_HOOKS_MOD_SESSION', options.markedFor]])
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('session.id', () => ({ value: 's1' }))
   on('store.keys', () => ({ value: Object.keys(store) }))
@@ -40,6 +40,7 @@ function world(on: On, store: Record<string, unknown>, options: { version?: stri
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('classic.Stop', () => {
     log.push('beneath')
     return {}
@@ -117,6 +118,37 @@ test('a failed orchestration hands Stop back for the rest of the session, even i
   await $.classic.Stop(stop)
 
   expect(log).toEqual(['beneath'])
+})
+
+const TURN = { text: 'go', turnId: 'u1' }
+
+// The mark is proof for one Stop only: a later Stop can be sent past the module, and a
+// session opened before this version still carries the mark its session start made.
+test('a turn start clears the mark a Stop or an older version left on this session', async ($, on) => {
+  const log = world(on, {}, { markedFor: 's1' })
+
+  await $.turn.start(TURN)
+  expect(log).toEqual(['mark:undefined'])
+  await $.classic.Stop(STOP)
+  await $.turn.start({ ...TURN, turnId: 'u2' })
+
+  expect(log).toEqual(['mark:undefined', 'mark:s1', 'beneath', 'run:bash a.sh', 'mark:undefined'])
+})
+
+test("a turn start leaves another session's mark alone", async ($, on) => {
+  const log = world(on, {}, { markedFor: 'some-parent-session' })
+
+  await $.turn.start(TURN)
+
+  expect(log).toEqual([])
+})
+
+test("a subagent's turn start leaves the mark in place", async ($, on) => {
+  const log = world(on, {}, { markedFor: 's1' })
+
+  await $.turn.start({ ...TURN, agentId: 'a1' })
+
+  expect(log).toEqual([])
 })
 
 test("a session the module can't mark keeps its command hooks and gets no second run", async ($, on) => {

@@ -237,3 +237,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   the guard's `$.ui.ask` dialog (a guard `ask` falls back to the plain permission flow, which
   auto mode answers by classifier) and skills in the session facts. Neither has a stand-down
   marker, so nothing is silenced; a fix needs a route that does not pass through `classic.*`.
+  `agent.spawn` is not affected: in a `claude -p` run that started one subagent the debug log has
+  `dev-hooks@inline agent.spawn settled`, and the only bypass lines are `classic.PreToolUse` and
+  `classic.Stop`, so subagent dispatches still reach the session facts.

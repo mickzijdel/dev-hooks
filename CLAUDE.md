@@ -86,7 +86,13 @@ hook started afterwards), which makes `reminder_stop_init` exit for the direct r
 made there and never in `session.start`, so it exists only where that hook runs: a plugin seated
 above can send `classic.*` past the module (the built-in `cc-plugin-sec-default` does in a team
 organization; Claude Code then logs "its classic.Stop hook was skipped"), and the command hooks
-must keep running there. The hook then runs each Stop
+must keep running there. The mark is proof for one Stop only: `turn.start` (which does reach the
+module there) clears it on every main-loop turn (`clearStopMark`), so a later Stop that is sent
+past the module, or a session an older version marked at session start, finds the command hooks
+running. Untested, since this module's `classic.Stop` can't run on a team-organization machine:
+that the `$.env.set` made before `next(e)` reaches the command hooks that same `next(e)` starts
+(if it doesn't, each Stop runs every hook twice), covered only by the call order in
+`tests/stop-takeover.test.ts`. The hook then runs each Stop
 command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
 answer the way Claude Code does (`stopReason`) and returns one merged `block`, closed once by
 the end-report footer (`mergeBlocks`; none when headless). It writes the
