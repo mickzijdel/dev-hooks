@@ -1,4 +1,4 @@
-"""dev-hooks' function-hook module (hooks/register.tsx) under Claude Code's own runner.
+"""The plugins' function-hook modules (hooks/register.tsx) under Claude Code's own runner.
 
 `claude plugin test` loads the plugin the way a session does and runs its *.test.ts(x)
 files against the engine; there is no other way to exercise a mod. CI installs a pinned
@@ -9,25 +9,14 @@ import shutil
 import subprocess
 
 import pytest
-from conftest import DEV_HOOKS
+from conftest import ASKS, DEV_HOOKS
 
 CLAUDE = shutil.which("claude")
 pytestmark = pytest.mark.skipif(CLAUDE is None, reason="no Claude CLI on PATH")
 
-
-def _claude(*args):
-    return subprocess.run(
-        [CLAUDE, "plugin", *args, str(DEV_HOOKS)],
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-
-
-def test_module_validates():
-    out = _claude("validate", "--strict")
-    assert out.returncode == 0, out.stdout + out.stderr
-    for hook in (
+# Each plugin that ships a mod, with hooks its module must register.
+MODS = {
+    DEV_HOOKS: (
         "command.run{command=context-bar}",
         "command.run{command=session-facts}",
         "skill.prompt",
@@ -37,12 +26,39 @@ def test_module_validates():
         "classic.PreToolUse",
         "session.end",
         "tool.call{tool=Bash}",
-    ):
+    ),
+    ASKS: (
+        "command.run{command=asks}",
+        "turn.complete",
+        "prompt.submit",
+        "session.end",
+        "tool.call{tool=AskUserQuestion}",
+        "ui.render{component=Pane, requestId=asks}",
+    ),
+}
+mods = pytest.mark.parametrize("plugin", MODS, ids=[p.name for p in MODS])
+
+
+def _claude(plugin, *args):
+    return subprocess.run(
+        [CLAUDE, "plugin", *args, str(plugin)],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
+@mods
+def test_module_validates(plugin):
+    out = _claude(plugin, "validate", "--strict")
+    assert out.returncode == 0, out.stdout + out.stderr
+    for hook in MODS[plugin]:
         assert hook in out.stdout, f"{hook} not registered:\n{out.stdout}"
 
 
-def test_module_tests_pass():
-    out = _claude("test")
+@mods
+def test_module_tests_pass(plugin):
+    out = _claude(plugin, "test")
     if "hooks modules are turned off" in out.stdout + out.stderr:
         pytest.skip("this Claude CLI has mods switched off")
     assert out.returncode == 0, out.stdout + out.stderr

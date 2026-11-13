@@ -228,3 +228,10 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **lint-on-edit.sh's `find_root` loops forever on a relative `file_path`** (2026-11-09).
   `dirname .` is `.`, never `/`. Claude Code sends absolute paths, so it has not bitten; stop when
   `dirname` returns its input.
+- **dev-hooks fails `claude plugin validate --strict` on Claude Code 2.1.323** (2026-11-13).
+  `plugins/dev-hooks/tests/context-bar-band.test.tsx` mounts `AbovePrompt` without the now-required
+  `isCollapsed` prop (three TS2345 warnings, lines 77, 86, 111), so `tests/test_mods.py` and the hk
+  `plugin-validate` step fail locally; CI's pinned 2.1.310 still passes. Add `isCollapsed: false`
+  once the CI pin is at a version that knows the prop.
+- **Each plugin README names its siblings** ("alongside `dev-hooks`, …") and none names `asks`
+  (2026-11-13). Left out of the asks commit, since each one-word edit costs a version bump.

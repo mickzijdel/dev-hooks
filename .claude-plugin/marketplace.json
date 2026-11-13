@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "dev-hooks",
-  "version": "2.1.0",
-  "description": "Mick's Claude Code plugins: dev-workflow hooks, coding onboarding, thinking tools, and writing skills.",
+  "version": "2.2.0",
+  "description": "Mick's Claude Code plugins: dev-workflow hooks, coding onboarding, thinking tools, writing skills, and a pane of what your sessions are waiting on you for.",
   "owner": {
     "name": "Mick Zijdel",
     "email": "claude@mickzijdel.com",
@@ -64,6 +64,20 @@
       },
       "homepage": "https://github.com/mickzijdel/dev-hooks",
       "keywords": ["writing", "readme", "readability", "humanizer", "docs"]
+    },
+    {
+      "name": "asks",
+      "displayName": "Asks",
+      "description": "One pane that lists what every local Claude Code session is waiting on you for, with the context to decide and one-key answers.",
+      "source": "./plugins/asks",
+      "category": "productivity",
+      "author": {
+        "name": "Mick Zijdel",
+        "email": "claude@mickzijdel.com",
+        "url": "https://github.com/mickzijdel"
+      },
+      "homepage": "https://github.com/mickzijdel/dev-hooks",
+      "keywords": ["mod", "pane", "asks", "decisions", "sessions"]
     }
   ]
 }

@@ -1,7 +1,8 @@
 This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
-root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
+root serves five plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing,asks}/`,
 each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks,
-writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below).
+writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below; asks ships only
+a mod — see "The asks mod").
 Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
@@ -45,7 +46,7 @@ when both exist) and only stable one-line descriptions; don't re-add either.
 `tests/test_marketplace.py` fails a description that names its plugin's skills, which drifts. The hk
 `plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
 plugin when plugin files are staged; CI runs the same validation through `tests/test_mods.py`
-on the dev-hooks plugin.
+on the two plugins that ship a mod, dev-hooks and asks.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
@@ -174,6 +175,39 @@ the engine skips a render hook whose tree holds a `Button` without `onPress`; pa
 has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its
 label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
 `tests/test_status_pane_parity.py`. Design and plan: `docs/superpowers/specs/2026-10-25-status-pane-design.md`.
+
+## The asks mod (`plugins/asks/hooks/register.tsx`)
+
+A plugin of its own, with no skills and no command hooks: `/asks` opens a pane that lists what
+every local session is waiting on the person for. Each session's copy parses its reply's
+`**Your move:**` block at `turn.complete` (`hooks/parse.ts`), and `hooks/describe.ts` derives
+the memo's kind, question, options and fact rows from it by plain code; both are pure and
+unit-tested directly, and `$` stays in `register.tsx`. Its tests are `plugins/asks/tests/`,
+run by `tests/test_mods.py`. It installs without dev-hooks, so it shares no code with the
+session-status pane, which reads the same end report for one session. Rules learned building it:
+- `$.store` is one file for every session of the plugin, which is what makes the pane
+  cross-session. Keys: `ask:<session>`, `here:<session>` (presence), and one
+  `send:<session>:<time>-<n>` per message for a session, read by that session's 3-second poll.
+  A message unread after `UNREAD_MS` is dropped by any session's `refresh` and its ask put
+  back; `deliver` leaves such a message alone, so the drop and the restore stay in one place.
+- It uses the `atom`/`read`/`update` state helpers, which `claude plugin validate --strict`
+  accepts on 2.1.310 and later when the atom is a const of the file, passed by name (a helper
+  that takes the atom as a parameter is refused).
+- `sessionLabel` greps the whole `projects` folder for the session's `customTitle` rows, so it
+  runs at session start and at the end of a turn only; `knownLabel` serves the rest from
+  module memory.
+- The memo is pinned (`pinned`, module memory) and a press answers only an ask that has been
+  the memo for `GUARD_MS` (`isRead`): the list is re-sorted on every poll, and without both a
+  key press could answer an ask the person never read. Keep every answering path behind `answer`
+  or `seen`.
+- The text a button sends is fixed in `SENDS`, never model-written, and is submitted
+  `asUser`; `answerText` appends the session's own question. The one model call (`addTopic`)
+  writes only the subject line.
+- The desktop draws each Button's `hotkey` as a chip beside the label, so labels carry no key;
+  a Box one cell high is a thick bar there, so the pane uses no separator Boxes. While an
+  Input is open (`mode` other than `view`) no Button gets a `hotkey`.
+- A hot reload runs new code only from the next turn: a reply's ask is recorded by the code
+  that was loaded when the turn ended, so a parser change shows one reply late.
 
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 

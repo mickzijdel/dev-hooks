@@ -8,9 +8,10 @@
 > [airtable-utils](https://github.com/mickzijdel/airtable-utils) (Airtable scripting and
 > schema tools).
 
-A Claude Code plugin marketplace serving four plugins from this one repo. Install only what
+A Claude Code plugin marketplace serving five plugins from this one repo. Install only what
 fits your use: the hook suite for day-to-day agent coding, the onboarding skills for someone
-new to coding, or the thinking/writing toolkits anywhere.
+new to coding, the thinking/writing toolkits anywhere, or the pane that gathers what your
+sessions are waiting on you for.
 
 ## Plugins
 
@@ -20,6 +21,7 @@ new to coding, or the thinking/writing toolkits anywhere.
 | [`coding-onboarding`](plugins/coding-onboarding/) | For people new to coding or AI-assisted coding: `getting-started` (idempotent machine setup — toolchain incl. modern CLI tools, VS Code, Docker, GitHub, the AGENTS.md/CLAUDE.md symlink convention; asks the user's experience level and calibrates the seeded Claude config to it, with a self-renewing monthly comfort check-in) and `starting-a-project` (a "what are you building?" stack decision tree with scaffold commands and deploy targets). |
 | [`thinking-tools`](plugins/thinking-tools/) | Critique and self-checking skills: `board`, `premortem`, `the-algorithm` (question requirements, delete, simplify, accelerate, automate — in that order, before building), `but-for-real`, `self-rate`, `code-simplifier`, `automation-review`, `retro` (log a session that went badly for that review), `commit-digest`, `adr`, `grill`, `domain-modeling`, `codebase-design`, `improve-codebase-architecture` (typed only: find shallow modules worth deepening), `wait-what` (re-pitch an answer you didn't follow, in plain words; those five adapted from [mattpocock/skills](https://github.com/mattpocock/skills)), `brief-back` (play a delegated task back as a contract and end with a report that stands alone: what changed, and what's left for you), `thinking-toolbox` (Adam Jones's 38 thinking tools) — plus a `thinking-tools-reminder` hook that nudges Claude to reach for the tools proactively rather than only when asked. |
 | [`writing`](plugins/writing/) | Writing/content skills: `github-readme`, `humanizer`, `readability` (adapted from [Nate Berkopec's dotfiles](https://github.com/nateberkopec/dotfiles)), `voice-profile` (match a person's writing voice from a profile of their own rules) and `first-reader` (simulate a target reader passage by passage to find where they'd bail) — plus a `readme-reminder` hook that audits READMEs and a four-stage voice chain (`voice-intent-reminder`, `voice-prewrite-reminder`, `voice-reminder`, `voice-stop-reminder`) that puts your profile in front of the first draft and refuses to end the turn on prose the skill never touched. |
+| [`asks`](plugins/asks/) | A mod, no skills: `/asks` opens one pane that lists what every local session is waiting on you for, read from each reply's "Your move" block. One ask in full with the context to decide, one-key answers that go to the session that asked, and a way to prompt any session from one place. |
 
 Each plugin's README documents its contents, env vars, and notes.
 
@@ -50,6 +52,7 @@ Add the marketplace once, then install the plugins you want:
 /plugin install coding-onboarding@dev-hooks
 /plugin install thinking-tools@dev-hooks
 /plugin install writing@dev-hooks
+/plugin install asks@dev-hooks
 ```
 
 ## Usage
@@ -86,7 +89,7 @@ ln -s ~/Stack/Programmeren/dev-hooks/plugins/dev-hooks ~/.claude/skills/dev-hook
 
 ## Development
 
-One repo-wide toolchain covers all four plugins: `mise` pins the tools, `hk` runs the
+One repo-wide toolchain covers all five plugins: `mise` pins the tools, `hk` runs the
 pre-commit checks (shellcheck, shfmt, ruff, vulture, jscpd, gitleaks, zizmor, actionlint, plus
 `claude plugin validate --strict` over the marketplace and every plugin when plugin files
 are staged), and CI mirrors the same checks (except plugin-validate, which needs the Claude
