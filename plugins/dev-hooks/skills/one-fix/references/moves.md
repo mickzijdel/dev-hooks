@@ -1,6 +1,6 @@
 # Moves that replace many guards with one rule
 
-Pick the first that fits the group. Each names where the rule lives afterwards.
+Pick the first that fits the group.
 
 | Move | When the guards look like | The one change |
 |---|---|---|

@@ -14,9 +14,8 @@ allowed-tools:
 # one-fix
 
 Replace a batch of point fixes with **one change that makes the whole class impossible**.
-A list of findings invites a list of patches; this skill puts a grouping step between the
-two and asks, per group: *what single rule, enforced in one place, makes all of these
-unreachable?*
+Per group of related fixes, the question is: *what single rule, enforced in one place,
+makes all of these unreachable?*
 
 **You gather the evidence yourself.** Never ask the person for commits, findings or file
 lists that `git`, `gh` and `rg` can give you.
@@ -32,45 +31,52 @@ Stop patching and run this skill when any of these is true of the work in hand:
 
 ## Steps
 
-1. **Pick the scope** from what was asked; default to the diff. In every scope, leave out
-   manifests, lockfiles, changelogs, docs and tests: they ride along with every commit
-   without holding the bug.
+1. **Pick the scope** from what was asked; default to the diff. The inventory covers
+   source files only: drop manifests, lockfiles, changelogs, docs and tests from the
+   file list.
 
-   | Scope | Files in scope |
-   |---|---|
-   | **diff** (default) | on a branch: `git diff --name-only $(git merge-base origin/HEAD HEAD)`, plus `git status --porcelain` for uncommitted and untracked files. On the default branch that range is empty: use this session's commits, or the range the person names |
-   | **PR** `<n>` | `gh pr diff <n> --name-only`; `gh pr view <n> --comments` and `gh api repos/{owner}/{repo}/pulls/<n>/comments` give the review findings |
-   | **repo** | the source files that fix commits touch most (command below); if the person named an area, that area |
+   - **diff** (default):
 
-   Repo scope, most-fixed files (adjust the exclusions to the repo's layout):
+     ```bash
+     base=$(git merge-base "$(git symbolic-ref -q --short refs/remotes/origin/HEAD || echo main)" HEAD); git diff --name-only "$base"; git status --porcelain
+     ```
+
+     When `$base` is HEAD (you are on the default branch), the range is this session's
+     commits.
+   - **PR** `<n>`: `gh pr diff <n> --name-only` for the files; `gh pr view <n> --comments`
+     and `gh api --paginate repos/{owner}/{repo}/pulls/<n>/comments` for the review
+     findings.
+   - **repo**: the source files that fix commits touch most, or the area the person
+     named.
+
+     ```bash
+     git log --since='12 months ago' --format='@%s' --name-only | awk '/^@/ { fix = tolower($0) ~ /^@(fix|revert)/; next } fix && NF' | sort | uniq -c | sort -rn | while read -r n f; do [ -f "$f" ] && echo "$n $f"; done | head -30
+     ```
+
+     Take the source files fixed three or more times. If the repo's subjects do not
+     start with `fix`, drop the `fix &&` condition and take the most-changed files.
+
+2. **Collect the fix history**, newest five per file in scope:
 
    ```bash
-   git log --since='12 months ago' -i -E --grep='^(fix|revert)' --name-only --format= -- . ':!*.md' ':!*.json' ':!*.lock' ':!*test*' ':!*spec*' | sort | uniq -c | sort -rn | head -15
-   ```
-
-   Take the files fixed three or more times.
-
-2. **Collect the fix history** of the files in scope: one list for all of them, matched
-   on the commit subject, newest 20.
-
-   ```bash
-   git log --format='%h %s' -- <files> | grep -iE '^[0-9a-f]+ (fix|revert)|bug|workaround|regress|edge case' | head -20
+   for f in <files>; do git log -5 --format='%h %s' -i -E --grep='^(fix|revert)|workaround|regress' -- "$f"; done | sort -u
    ```
 
    Read those diffs (`git show <hash> -- <files>`). Findings already in hand (a review, a
    bug list, the same-mistake search hits) join the evidence as they are.
-3. **Dispatch one subagent** with the brief below, filled in. The agent that wrote the
-   patches finds each one necessary; a fresh context does not.
+3. **Dispatch one subagent** with the brief below, filled in.
 4. **Check each proposal against the code** before passing it on. For a guard it says
    can go: open the line and confirm the stated path into it is closed by the change.
    For copies it says can merge: open each copy and confirm every difference between
    them is either accidental or kept by the merged version. Drop what you cannot
    confirm; drop a proposal that no longer replaces at least two rows.
-5. **Act or report.**
-   - Rows the diff in scope added or changed: make the one change instead of the
-     patches, delete what it replaces, run the tests.
-   - Rows outside the diff, and everything in repo scope: report the proposal and change
-     nothing. It restructures existing behaviour, which is the person's call.
+5. **Act or report.** Make the change, delete what it replaces and run the tests only
+   when all three hold:
+   - the place to enforce the rule and every line it removes are in the diff
+   - the diff is your own work on the branch that is checked out
+   - the proposal lists no behaviour change for callers
+
+   Otherwise report the proposal and change nothing. Repo scope always reports.
 
 Done when every row of the inventory names its group (or is marked a singleton), every
 group of two or more has either a proposal or a stated reason there is none, and every
@@ -97,7 +103,7 @@ METHOD
    starting sample: read the code around each one, where the older defences sit.
 2. Siblings. For each row, search the whole repo (rg) for the same defence, and for the
    same unguarded operation, outside the scope. Each hit is a row too, marked "outside
-   scope". This is where the unfixed copies of the bug are.
+   scope".
 3. Group the rows by the invariant they protect — the one sentence that, if always true
    at that point, would make the row unnecessary. Rows that defend against the same
    origin belong together even when the code looks different. Rows that only look alike
