@@ -1471,3 +1471,33 @@ PRs opened this run: none (no rails-toolkit candidates either)
 | Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+
+## 2026-11-13
+
+Sources scanned:
+- `nateberkopec/dotfiles`: 7 days (8 commits new since the 2026-11-09 run, `3dce8db` to `603d41f`)
+- Feeds: ai-productivity-digest (items 2026-11-09 to 2026-11-13), Claude Code changelog (2.1.321 to 2.1.323). Unreachable: upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: https://github.com/mickzijdel/dev-hooks/pull/46 (pin Claude Code 2.1.323 so `plugin validate --strict` type-checks the mods). No rails-toolkit candidates.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| hk steps write output to `.git/hk/<step>.log` and print only the last 40 lines on failure (`tailOnFailure`), so a failing test step doesn't flood agent context | dotfiles commit `06e9ef0` | Deferred | In the dev-env templates only `hk.ruby.pkl` has a test step, and `bin/rails test` failure output is already compact. Tailing would hide failures past line 40. Not worth a standard bump until a stack's hook output proves noisy. |
+| Move the slow lint and test hk steps from pre-commit to pre-push, so pre-commit fits hk's new hook timeout (~10 s) | dotfiles commit `1793e40` (and `e06678f` dropping global hk hooks) | Deferred | The dev-env standard deliberately gates every commit, and agents commit as they go. Revisit if hk's hook timeout is adopted, or if commit latency becomes a complaint. |
+| Dev-env templates still amend the hk 1.46.0 Pkl schema while upstream is on hk 2.11.1 | dotfiles hk.pkl (`06e9ef0` context) | Deferred | A breaking major version; it belongs in a dependency-upgrade / dev-env standard bump with its own migration notes, not a digest drive-by. |
+| Global git hooks as config-based `hook.<name>.command` entries, so a repo's own `core.hooksPath` no longer disables them | dotfiles commit `e06678f` | Out of scope | Personal global git config; dev-hooks ships per-repo hk and Claude Code hooks. |
+| Remaining dotfiles commits: Chrome outside Homebrew, Fable 5.2 in Pi/Paseo, aube under an overridden HOME, the gh-agent Executor pointer, the ZDR requirement in ADR 9 | dotfiles commits `603d41f`, `3dce8db`, `54ba07a`, `052df10`, `37d3e3e` | Out of scope | Personal machine, Pi and provider-policy config. |
+| `engines["claude-code"]` in plugin.json: plugins outside their stated version range are not installed or loaded | Claude Code changelog 2.1.323 | Deferred | dev-hooks degrades on CLIs without mods by design, so a floor would block those installs. It could fit asks (mod-only, 2.1.310+), but how pre-2.1.323 CLIs treat the key is unverified. Noted in PR #46. |
+| Other 2.1.321–2.1.323 items: Code Mode, long-hook heartbeat in `-p`, mods' own tool calls raise no prompt, `isPromptCovered` pane prop, unknown model IDs assumed 1M context, Bash allow-rule `*` warning | Claude Code changelog | Deferred | No action needed now. `isPromptCovered` could let the status pane and the asks pane hide when a dialog covers the prompt; revisit if overlap is reported. |
+| Scheduled daily agent that scans for new vulnerabilities affecting your tools | digest item https://x.com/kr0der/status/2120883750825538045 | Duplicate | `personal-security` ("am I affected by" a CVE) plus `/schedule`. |
+| Run an agent in a disposable container with one folder mounted read-only | digest item https://x.com/ivanfioravanti/status/2120654460003160455 | Deferred | Possible `personal-security` vetting recipe; no repeated need seen yet. |
+| Ask the AI to simplify and remove failed attempts after it writes something | digest item https://x.com/RayFernando1337/status/2120940203095343343 | Duplicate | `deslop`, `code-simplifier`, `compress-comments`. |
+| Primary model spawns subagents on a different model for tricky problems / simplification; cheap subagents do the bulk, expensive model reviews | digest items https://x.com/thdxr/status/2120222008093151392, https://x.com/thdxr/status/2119892078310064554 | Duplicate | `agent-brief` and `loop-oversight` cover model choice per dispatch. |
+| With each new model, have it read the whole project, fix what's clearly broken, list the rest | digest item https://x.com/alexalbert__/status/2119884951550386671 | Duplicate | `repo-review`. |
+| Retune skipped AI reports: cut filler, lead with stats, end with ranked recommendations | digest item https://x.com/chasing_next/status/2120182946598699458 | Duplicate | End-report rule and `readability`. |
+| Hard open questions: marshal data, test hypotheses, pressure-test against critics | digest item https://x.com/emollick/status/2120359214157603139 | Duplicate | `board`, `premortem`, `deep-research`. |
+| Remaining digest items (bank-statement subscription audit, Claude Meetings context, side-project learning path, automation mapping with spend caps, voice research docs, household second brain, expert-approach dataset reports, Slop Evader, ChatGPT org claiming, clickable mockups by voice, Fable 5.2 tips, recurring-decision agent) | digest items 2026-11-09 to 2026-11-13 | Out of scope / Duplicate | Personal productivity or non-dev; already-logged items (Markdown research library, `<details>`, second-model review loop) skipped by dedup. |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
