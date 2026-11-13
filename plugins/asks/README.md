@@ -8,7 +8,7 @@ or in your own words. The answer goes to the session that asked.
 
 Part of the [dev-hooks marketplace](../../README.md). It ships no skills and no command hooks,
 only the mod, so it needs a Claude Code with mods and does nothing on one without. Its tests
-run on 2.1.310, the version this repo's CI pins, and on 2.1.323.
+run on 2.1.323, the version this repo's CI pins, and on 2.1.310.
 
 ## Installation
 
