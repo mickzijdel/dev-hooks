@@ -69,6 +69,7 @@ import {
   paneView,
   parseCommits,
   parseEndReport,
+  plain,
   sinceLabel,
   typedFrom,
 } from './status-pane'
@@ -933,7 +934,6 @@ function tickPane($: EngineInterface) {
   $.clock.after(60_000, () => void tick())
 }
 
-const clamp = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 // ── end session-status pane ─────────────────────────────────────────────────────────
 
 async function guardNow($: EngineInterface): Promise<number> {
@@ -1143,69 +1143,66 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: STATUS_PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Markdown } = $.ui.resolve(e)
     tickPane($)
     const s = await loadPane($)
     const now = await $.clock.now()
     const v = paneView(s, ciBackground(), now, summarizing)
-    const width = Math.max(20, e.props.bodyColumns)
-    const section = (title: string, rows: string[], dim = false) => (
+    // Report text is drawn whole, as the markdown the reply wrote; a coloured row is a Text, so it
+    // gets the plain words.
+    const section = (title: string, markdown: string, dim = false) => (
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>{title}</Text>
-        {rows.map(row => (
-          <Text dimColor={dim}>{clamp(row, 2 * width)}</Text>
-        ))}
+        <Markdown text={markdown} dimColor={dim} />
       </Box>
     )
-    // Number the actions, not the "+N more" row after them.
+    const bullets = (rows: string[]) => rows.map(row => `- ${row}`).join('\n')
     const moves =
       v.yourMove.length === 0
-        ? ['nothing']
+        ? 'nothing'
         : v.yourMove.length === 1
-          ? v.yourMove
-          : v.yourMove.map((m, i) => (/^\+\d+ more$/.test(m) ? m : `${i + 1}. ${m}`))
+          ? (v.yourMove[0] ?? '')
+          : v.yourMove.map((m, i) => `${i + 1}. ${m}`).join('\n')
     const parts = [
       <Text dimColor>{`updated ${clockTime(s.updatedAt ?? s.startedAt)}`}</Text>,
       <Box>
         {v.tone === 'dim' ? <Text dimColor>{`● ${v.label}`}</Text> : <Text color={v.tone} bold>{`● ${v.label}`}</Text>}
         <Text dimColor>{` · ${sinceLabel(v.since, now)}`}</Text>
       </Box>,
-      ...(v.lastSaid ? [<Text dimColor>{`last said: "${clamp(v.lastSaid, width - 13)}"`}</Text>] : []),
+      ...(v.lastSaid ? [<Text dimColor>{`last said: "${plain(v.lastSaid)}"`}</Text>] : []),
       ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => summarizeTurn($)} />] : []),
       ...(v.summarizing ? [<Text dimColor>Summarizing…</Text>] : []),
       ...(v.summaryError ? [<Text color="red">{`summary failed: ${v.summaryError}`}</Text>] : []),
       section('Your move', moves, v.yourMove.length === 0),
-      ...(v.doing ? [section('Doing', [clamp(v.doing, 2 * width)])] : []),
+      ...(v.doing ? [section('Doing', v.doing)] : []),
       ...(v.doneWhen.length > 0
         ? [
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Done when</Text>
               {v.doneWhen.map(d =>
                 d.met === null ? (
-                  <Text dimColor>{`○ ${clamp(d.text, 2 * width)}`}</Text>
+                  <Text dimColor>{`○ ${plain(d.text)}`}</Text>
                 ) : (
-                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${clamp(d.text, 2 * width)}`}</Text>
+                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${plain(d.text)}`}</Text>
                 ),
               )}
-              {v.doneWhenNote ? <Text dimColor>{`report: ${clamp(v.doneWhenNote, 2 * width)}`}</Text> : <Text> </Text>}
+              {v.doneWhenNote ? <Text dimColor>{`report: ${plain(v.doneWhenNote)}`}</Text> : <Text> </Text>}
             </Box>,
           ]
         : []),
-      ...(v.running.length > 0 ? [section('Running', v.running)] : []),
+      ...(v.running.length > 0 ? [section('Running', bullets(v.running))] : []),
       ...(v.changed.length + v.repoLines.length > 0
         ? [
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Changed</Text>
-              {v.changed.map(row => (
-                <Text>{clamp(row, 2 * width)}</Text>
-              ))}
-              {v.repoLines.map(row => (
-                <Text dimColor>{clamp(row, width)}</Text>
-              ))}
+              {[
+                ...(v.changed.length > 0 ? [<Markdown text={bullets(v.changed)} />] : []),
+                ...v.repoLines.map(row => <Text dimColor>{row}</Text>),
+              ]}
             </Box>,
           ]
         : []),
-      ...(v.notChecked.length > 0 ? [section('Not checked', v.notChecked, true)] : []),
+      ...(v.notChecked.length > 0 ? [section('Not checked', bullets(v.notChecked), true)] : []),
       <Box marginTop={1}>
         <Text dimColor>{`${v.turnCount} turn${v.turnCount === 1 ? '' : 's'} · session ${sinceLabel(s.startedAt, now)}`}</Text>
       </Box>,

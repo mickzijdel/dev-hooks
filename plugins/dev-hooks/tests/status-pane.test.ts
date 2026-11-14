@@ -2,7 +2,6 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   answerFacts,
-  capped,
   EMPTY_PANE_STATE,
   endsOnQuestion,
   findBrief,
@@ -12,6 +11,7 @@ import {
   paneView,
   parseCommits,
   parseEndReport,
+  plain,
   sinceLabel,
   typedFrom,
 } from '../hooks/status-pane'
@@ -42,7 +42,7 @@ test('parseEndReport reads "What I changed this session" as Changed', async () =
 })
 
 test('parseEndReport joins a continuation line to the item above', async () => {
-  expect(parseEndReport('Your move:\n- start a\n  new session')?.yourMove).toEqual(['start a new session'])
+  expect(parseEndReport('Your move:\n- start a\n  new session')?.yourMove).toEqual(['start a  \nnew session'])
 })
 
 test('parseEndReport reads every label, numbered items too', async () => {
@@ -207,11 +207,27 @@ test('Done when ticks by position only when the counts match', async () => {
   expect(working.doing).toBe('x')
 })
 
-test('lists are capped with a "+N more" row', async () => {
-  expect(capped(['a', 'b', 'c', 'd', 'e', 'f'], 5)).toEqual(['a', 'b', 'c', 'd', '+2 more'])
-  expect(capped(['a', 'b'], 5)).toEqual(['a', 'b'])
-  const many = view(state([turn({ report: report({ yourMove: ['1', '2', '3', '4', '5', '6', '7'] }) })]))
-  expect(many.yourMove).toEqual(['1', '2', '3', '4', '+3 more'])
+test('no list is cut short', async () => {
+  const seven = ['1', '2', '3', '4', '5', '6', '7']
+  const v = view(state([turn({ report: report({ yourMove: seven, changed: seven, notChecked: seven }) })]))
+  expect([v.yourMove, v.changed, v.notChecked]).toEqual([seven, seven, seven])
+})
+
+test("a later report's move replaces an earlier one, so a repeated report shows once", async () => {
+  const v = view(
+    state([
+      turn({ report: report({ yourMove: ['Push the commit?'] }) }),
+      turn({ id: 'h', typed: false, report: report({ yourMove: ['Push the commit to main?'] }) }),
+      turn({ id: 'n', typed: false, report: report() }),
+    ]),
+  )
+  expect([v.state, v.yourMove]).toEqual(['waiting', ['Push the commit to main?']])
+})
+
+test('a move keeps its markdown and the lines under it', async () => {
+  const text = '**Your move:** Push to `main`?\n**Recommend:** Yes. See [the PR](https://example.com/1).\n\n**Changed:** x'
+  expect(parseEndReport(text)?.yourMove).toEqual(['Push to `main`?  \n**Recommend:** Yes. See [the PR](https://example.com/1).'])
+  expect(plain('**Recommend:** Yes, _now_.')).toBe('Recommend: Yes, now.')
 })
 
 test('since reads as a clock time and an age', async () => {
@@ -244,10 +260,11 @@ test('a label, a blank line, then prose: the prose is the value', async () => {
   expect(parseEndReport('**Your move:**\n\nMerge the branch.')?.yourMove).toEqual(['Merge the branch.'])
 })
 
-test('emphasis is stripped from values, but not from names', async () => {
+test('emphasis around a value never hides what it says', async () => {
   expect(parseEndReport('**Your move:** **nothing**.')?.yourMove).toEqual([])
   expect(parseEndReport('**Your move:** *nothing*')?.yourMove).toEqual([])
-  expect(parseEndReport('**Status:** **Blocked** on the key\n**Your move:** x')?.status).toBe('Blocked on the key')
+  expect(parseEndReport('**Status:** **Blocked** on the key\n**Your move:** x')?.status).toBe('**Blocked** on the key')
+  expect(view(state([turn({ report: report({ status: '**Blocked** on the key' }) })])).state).toBe('waiting')
   expect(parseEndReport('**Changed:** `a_b.py` and snake_case_names\n**Your move:** x')?.changed).toEqual([
     '`a_b.py` and snake_case_names',
   ])

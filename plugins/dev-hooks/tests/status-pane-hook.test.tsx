@@ -209,7 +209,7 @@ test('Your move numbers its items, and the Summarize button shows only without a
   world(on, { read: () => shaped(current) })
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect((await ui.find({ type: 'Text', text: /^1\. push$/ }))?.text).toBe('1. push')
+    expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['1. push\n2. merge'])
     expect(await ui.find({ key: 'summarize' })).toBeUndefined()
     await ui.unmount()
   }
@@ -221,14 +221,22 @@ test('Your move numbers its items, and the Summarize button shows only without a
   }
 })
 
-test('long lists end in "+N more" and a long Doing is clamped to two lines', async ($, on) => {
+test('nothing is cut: a long list and a long Doing are drawn whole, as markdown', async ($, on) => {
   const moves = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
-  const brief = { doing: 'x'.repeat(755), doneWhen: [] }
-  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: moves }) })], turnsTotal: 1, brief })) })
-  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /\+3 more/ }))?.text).toBe('+3 more')
-  expect((await ui.find({ type: 'Text', text: /^x+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
-  await ui.unmount()
+  const brief = { doing: 'x'.repeat(755), doneWhen: ['**tests** pass'] }
+  const report = rep({ yourMove: moves, changed: ['[the PR](https://example.com/1)', '`a.py`'], notChecked: ['the GUI'] })
+  world(on, { read: () => shaped(base({ turns: [ended({ report })], turnsTotal: 1, brief })) })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual([
+      moves.map((m, i) => `${i + 1}. ${m}`).join('\n'),
+      'x'.repeat(755),
+      '- [the PR](https://example.com/1)\n- `a.py`',
+      '- the GUI',
+    ])
+    expect((await ui.find({ type: 'Text', text: /tests pass/ }))?.text).toBe('○ tests pass')
+    await ui.unmount()
+  }
 })
 
 // What session.start reads, as stop-takeover.test.ts answers it, and every pane opened.
@@ -371,11 +379,11 @@ test('the stored record keeps a line of each answer, not the answer', async ($, 
   expect(w.pane()?.turns[0]?.asksQuestion).toBe(true)
 })
 
-test('every row is clamped, not only Doing', async ($, on) => {
-  const long = `do ${'y'.repeat(749)}`
-  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: [long] }) })], turnsTotal: 1 })) })
+test('one move is drawn as written, with no number', async ($, on) => {
+  const move = `Push to \`main\`?  \n**Recommend:** Yes. ${'y'.repeat(749)}`
+  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: [move] }) })], turnsTotal: 1 })) })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /^do y+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
+  expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(move)
   await ui.unmount()
 })
 

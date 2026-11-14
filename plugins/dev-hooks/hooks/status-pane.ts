@@ -33,8 +33,9 @@ const TAIL = String.raw`(?:\s+this\s+(?:turn|session))?`
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/
 const NOTHING = /^(?:nothing(?: yet)?|none)\.?$/i
 
-// Emphasis markers around words go; an underscore inside a name (snake_case, a_b.py) stays.
-const unmark = (text: string) =>
+// Values keep their markdown for the pane to draw; `plain` is the same text for a rule to read or
+// a coloured row to show. Emphasis markers around words go; an underscore inside a name stays.
+export const plain = (text: string) =>
   text
     .replace(/\*\*|__/g, '')
     .replace(/(^|\s)[*_](?=\S)/g, '$1')
@@ -62,7 +63,8 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
     if (fenced || /^\s*```/.test(line)) continue
     const label = /^\s*>/.test(line) ? undefined : matchers.flatMap(m => {
       const inline = m.inline.exec(line)
-      if (inline) return [{ key: m.key, rest: unmark(inline[1] ?? '') }]
+      // "**Changed:** x" leaves the label's closing "**" at the head of the value.
+      if (inline) return [{ key: m.key, rest: (inline[1] ?? '').replace(/^[*_]{1,3}(?=\s|$)/, '').trim() }]
       return m.heading.test(line) ? [{ key: m.key, rest: '' }] : []
     })[0]
     if (label) {
@@ -78,16 +80,17 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
       continue
     }
     const bullet = BULLET.exec(line)
-    if (bullet) items.push(unmark(bullet[1] ?? ''))
+    if (bullet) items.push((bullet[1] ?? '').trim())
     else if (gap && items.length > 0) current = null
-    else if (items.length > 0) items[items.length - 1] = `${items[items.length - 1]} ${line.trim()}`
-    else items.push(unmark(line))
+    // Two spaces then a newline: markdown's line break, so "Recommend:" stays on its own line.
+    else if (items.length > 0) items[items.length - 1] = `${items[items.length - 1]}  \n${line.trim()}`
+    else items.push(line.trim())
     gap = false
   }
   return found
 }
 
-const list = (items: string[] | undefined) => (items ?? []).filter(item => item && !NOTHING.test(item))
+const list = (items: string[] | undefined) => (items ?? []).filter(item => item && !NOTHING.test(plain(item)))
 
 export const parseEndReport = (text: string): EndReport | null => {
   const s = parseSections(text, REPORT_LABELS)
@@ -202,7 +205,6 @@ const LABEL: Record<PaneStateName, string> = {
   interrupted: 'Interrupted',
   'no-turns': 'No turns yet',
 }
-const CAPS = { yourMove: 5, changed: 4, running: 4, notChecked: 2 }
 const QUESTION_MOVE = 'answer the question in the chat'
 const NOT_TYPED = /^\s*(?:<task-notification>|<agent-message|<system-reminder>|\[dev-hooks CI watch\])/
 
@@ -234,9 +236,6 @@ export const keepTurns = (turns: TurnRecord[], cap = 20, hardCap = 200): TurnRec
   return turns.slice(Math.max(from, turns.length - hardCap))
 }
 
-export const capped = (items: string[], cap: number): string[] =>
-  items.length <= cap ? items : [...items.slice(0, cap - 1), `+${items.length - cap + 1} more`]
-
 const age = (ms: number): string => {
   const minutes = Math.floor(ms / 60_000)
   if (minutes < 1) return 'just now'
@@ -250,7 +249,7 @@ export const clockTime = (at: number, tz?: string): string =>
 export const sinceLabel = (at: number, now: number, tz?: string): string => `since ${clockTime(at, tz)} (${age(now - at)})`
 
 const reportOf = (t: TurnRecord) => t.summary ?? t.report ?? null
-const isBlocked = (r: EndReport | null) => /^blocked/i.test(r?.status ?? '')
+const isBlocked = (r: EndReport | null) => /^blocked/i.test(plain(r?.status ?? ''))
 // A report whose Your move line was there, even as "nothing".
 const hasMove = (r: EndReport | null): r is EndReport & { yourMove: string[] } => r?.yourMove !== undefined
 
@@ -283,9 +282,10 @@ const SAYS_MET = /^(?:(?:met|done|yes)\b|✓)/i
 const leadingVerdict = (text: string): boolean | null =>
   SAYS_NOT_MET.test(text) ? false : SAYS_MET.test(text) ? true : null
 const verdict = (item: string): boolean | null => {
-  const whole = leadingVerdict(item.trim())
-  const colon = item.indexOf(':')
-  return whole ?? (colon < 0 ? null : leadingVerdict(item.slice(colon + 1).trim()))
+  const text = plain(item)
+  const whole = leadingVerdict(text)
+  const colon = text.indexOf(':')
+  return whole ?? (colon < 0 ? null : leadingVerdict(text.slice(colon + 1).trim()))
 }
 
 // The turns since the person last typed a prompt: what the pane reads.
@@ -329,7 +329,12 @@ export const paneView = (
   const lastTurn = window.at(-1)
   const open = window.find(t => t.endedAt === undefined)
 
-  const moves = window.flatMap((t, i) => movesOf(t, perTurn[i] ?? null))
+  // The latest report that asks for something restates every open ask, so it replaces the moves
+  // before it: a report written again after a Stop hook would otherwise show twice. A later
+  // "nothing" replaces none.
+  const perMoves = window.map((t, i) => movesOf(t, perTurn[i] ?? null))
+  const restated = window.findLastIndex((t, i) => hasMove(reportOf(t)) && (perMoves[i] ?? []).length > 0)
+  const moves = perMoves.slice(Math.max(restated, 0)).flat()
   const criteria = s.brief?.doneWhen ?? []
   const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []
   const ticked = verdicts.length > 0 && verdicts.every(v => v !== null)
@@ -345,24 +350,21 @@ export const paneView = (
           ? 'Stopped: refused'
           : 'Stopped: API error',
     since: sinceOf(state, window, perTurn, background, s.startedAt),
-    yourMove: capped([...new Set(moves)], CAPS.yourMove),
+    yourMove: [...new Set(moves)],
     ...(s.brief ? { doing: s.brief.doing } : {}),
     doneWhen: criteria.map((text, i) => ({ text, met: ticked ? (verdicts[i] ?? null) : null })),
     ...(!open && !ticked && latest && latest.doneWhen.length > 0 && criteria.length > 0
       ? { doneWhenNote: latest.doneWhen.join('; ') }
       : {}),
-    running: capped(
-      background.map(b => `${b.label} (${age(now - b.since)})`),
-      CAPS.running,
-    ),
-    changed: capped(latest?.changed ?? [], CAPS.changed),
+    running: background.map(b => `${b.label} (${age(now - b.since)})`),
+    changed: latest?.changed ?? [],
     repoLines: s.repos.map(
       r =>
         `${r.repo}: ${r.commits} commit${r.commits === 1 ? '' : 's'}, ${
           (r.lastPushAt ?? 0) >= r.lastCommitAt ? 'pushed' : 'not pushed'
         }`,
     ),
-    notChecked: capped(latest?.notChecked ?? [], CAPS.notChecked),
+    notChecked: latest?.notChecked ?? [],
     ...(lastTurn?.lastSaid && !hasMove(reportOf(lastTurn)) ? { lastSaid: lastTurn.lastSaid } : {}),
     canSummarize: noReport !== undefined && noReport.id !== summarizing,
     summarizing: noReport !== undefined && noReport.id === summarizing,
