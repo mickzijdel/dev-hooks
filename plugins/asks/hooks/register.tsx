@@ -261,6 +261,16 @@ async function seen($: EngineInterface, ask: Ask) {
   await patch($, { mode: 'view', focus: null, receipt })
 }
 
+/** Sets an ask aside ("Not now"), or brings it back. Nothing is sent, and the session's next ask replaces it. */
+async function setAside($: EngineInterface, ask: Ask, isAside: boolean) {
+  if (!(await isRead($, ask))) return
+  const { later: _was, ...rest } = ask
+  await $.store.set(askKey(ask.session), isAside ? { ...rest, later: true } : rest)
+  await refresh($)
+  pinned = null
+  await patch($, { mode: 'view', focus: isAside ? null : ask.session, receipt: null })
+}
+
 async function putBack($: EngineInterface, ask: Ask) {
   await $.store.set(askKey(ask.session), ask)
   await refresh($)
@@ -376,16 +386,19 @@ export const register: Register = on => {
       $.session.id(),
       $.clock.now(),
     ])
-    const list = inOrder(all)
+    const every = inOrder(all)
+    const list = every.filter(a => !a.later)
     // The memo stays on the ask the person chose or was last shown; a more urgent ask that arrives waits in the list.
+    // An ask set aside is the memo only while the person has opened it.
     const memo =
-      list.find(a => a.session === state.focus) ?? list.find(a => a.session === pinned) ?? list[0]
+      every.find(a => a.session === state.focus) ?? list.find(a => a.session === pinned) ?? list[0]
+    const aside = every.filter(a => a.later && a !== memo)
     pinned = memo?.session ?? null
     if (!memo) shown = null
     else if (shown?.session !== memo.session || shown.at !== memo.at) shown = { session: memo.session, at: memo.at, since: now }
     const others = list.filter(a => a !== memo)
     const at = memo ? list.indexOf(memo) : -1
-    const waiting = new Set(list.map(a => a.session))
+    const waiting = new Set(every.map(a => a.session))
     // A session that has not been heard from for long has most likely been closed.
     const here = everyone.filter(s => now - s.at < (s.state === 'running' ? STUCK_MS : QUIET_MS))
     const quiet = here.filter(s => !waiting.has(s.session))
@@ -551,6 +564,18 @@ export const register: Register = on => {
       )
     }
 
+    const notNow = (ask: Ask) => {
+      if (!keys) return null
+      legend.push(ask.later ? 'l bring back' : 'l not now')
+      return (
+        <Box flexDirection="row">
+          <Button key={`later-${ask.session}`} plain {...key('l')} onPress={() => void setAside($, ask, !ask.later)}>
+            {ask.later ? 'Bring back' : 'Not now'}
+          </Button>
+        </Box>
+      )
+    }
+
     const memoBox = (ask: Ask) => {
       const d = describe(ask)
       const colour = COLOUR[d.kind]
@@ -589,6 +614,7 @@ export const register: Register = on => {
             </Text>
           )}
           {answers(ask, d)}
+          {notNow(ask)}
           {d.facts.length > 0 && (
             <Box flexDirection="column">
               {d.facts.map(f => {
@@ -730,6 +756,21 @@ export const register: Register = on => {
     )
     if (keys && others.length > 0) moves.push('j next', ...(others.length > 1 ? ['k previous'] : []))
 
+    const asideView = aside.length > 0 && (
+      <Box flexDirection="column">
+        <Text dimColor size="caption" weight="semibold">
+          SET ASIDE · {aside.length}
+        </Text>
+        {aside.map(a => (
+          <Box flexDirection="row">
+            <Button key={`aside-${a.session}`} plain onPress={() => focusOn(a.session)}>
+              {`${a.topic || describe(a).question} · ${a.label}`}
+            </Button>
+          </Box>
+        ))}
+      </Box>
+    )
+
     const quietLine = (s: Presence) => `${s.label} (${s.state === 'running' ? `running ${ago(now - s.at)}` : 'idle'})`
     const targets = here.map(s => ({ value: s.session, label: s.label }))
     const running = quiet.filter(s => s.state === 'running').length
@@ -809,6 +850,7 @@ export const register: Register = on => {
         {memoView}
         {receiptView}
         {also}
+        {asideView}
         {prompt}
         <Text dimColor size="caption">
           {!keys

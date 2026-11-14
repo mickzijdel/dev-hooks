@@ -76,6 +76,9 @@ drawn at full width under its label.
 - **Keys.** Each button shows its key; they work once the pane has the focus (click in it).
   `r` opens a field for another answer, `j`/`k` move between asks, `u` follows up on your last
   answer, `p` sends a new prompt to any session. While a field is open no button has a key.
+- **Not now.** `l` sets the ask in view aside when you can't act on it yet. It sends nothing, leaves the
+  count, and waits under "Set aside": click it there to open it, and `l` again brings it back. The
+  session's next ask replaces it.
 - **A receipt.** After an answer the pane shows what was sent and the stated way to undo it,
   then moves to the next ask.
 

@@ -238,6 +238,8 @@ session-status pane, which reads the same end report for one session. Rules lear
   the memo for `GUARD_MS` (`isRead`): the list is re-sorted on every poll, and without both a
   key press could answer an ask the person never read. Keep every answering path behind `answer`
   or `seen`.
+- "Not now" (`setAside`) keeps the ask in the store with `later: true`: out of the count and the
+  memo order, listed under "Set aside", and the memo again only while `view.focus` names it.
 - The text a button sends is fixed in `SENDS`, never model-written, and is submitted
   `asUser`; `answerText` appends the session's own question. The one model call (`addTopic`)
   writes only the subject line.

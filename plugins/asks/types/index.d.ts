@@ -16,6 +16,8 @@ export type Ask = {
   changed: string
   /** What else stands above the "Details (skippable)" line, as markdown. */
   context: string
+  /** The person set the ask aside: it is not counted as waiting, and is listed apart until brought back. */
+  later?: true
 }
 
 /** A session the mod runs in, whether or not it is waiting on the person. */

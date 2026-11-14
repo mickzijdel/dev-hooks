@@ -210,7 +210,7 @@ test('the memo is the ask that blocks other work; the other asks are listed unde
   // No separator bars: a Box one cell high is a thick bar on the desktop.
   expect((await ui.findAll({ type: 'Box' })).filter(b => b.props.height === 1)).toEqual([])
   // The keys that answer come first, then the keys that move about.
-  expect(await ui.find({ type: 'Text', text: /^y yes · n no · r other answer · j next · k previous · p prompt a session$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^y yes · n no · r other answer · l not now · j next · k previous · p prompt a session$/ })).toBeTruthy()
   await ui.unmount()
 })
 
@@ -290,7 +290,7 @@ test('an ask that is not a yes-or-no question has no Yes button, only an answer 
   expect(await ui.find({ type: 'Button', key: 'yes-shot' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^ANSWER$/ })).toBeTruthy()
   expect((await ui.find({ type: 'Button', key: 'other' }))?.props.variant).toBe('primary')
-  expect(await ui.find({ type: 'Text', text: /^r answer · e seen · p prompt a session$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^r answer · e seen · l not now · p prompt a session$/ })).toBeTruthy()
   await ui.press({ key: 'other' })
   await ui.input({ key: 'reply-shot', text: 'The title is cut off' })
   await ui.unmount()
@@ -405,4 +405,21 @@ test('the Done button says what it sends by its label alone', async ($, on) => {
   const { ui } = await pane($, on, task)
   expect(await ui.find({ key: 'done-gh' })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /Sends “done”/ })).toBeUndefined()
+})
+
+test('Not now sets the ask aside: nothing sent, out of the count, and it can be brought back', async ($, on) => {
+  const { ui, store } = await pane($, on, task, goAhead)
+
+  expect(await ui.find({ type: 'Text', text: /^2 waiting on you$/ })).toBeTruthy()
+  await ui.press({ key: 'next' })
+  await ui.press({ key: 'later-gh' })
+  expect(await ui.find({ type: 'Text', text: /^1 waiting on you$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^SET ASIDE · 1$/ })).toBeTruthy()
+  expect([(store.get('ask:gh') as Ask).later, sentTo(store, 'gh')]).toEqual([true, []])
+
+  await ui.press({ key: 'aside-gh' })
+  expect((await ui.find({ key: 'later-gh' }))?.props.hotkey).toBe('l')
+  await ui.press({ key: 'later-gh' })
+  await ui.unmount()
+  expect((store.get('ask:gh') as Ask).later).toBeUndefined()
 })
