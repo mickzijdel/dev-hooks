@@ -382,3 +382,27 @@ test('the pane opens by itself in the desktop app and VS Code, not in a terminal
   paneSwitch = undefined
   expect(opened).toEqual([])
 })
+
+/** How many label columns the memo draws for an ask whose Changed line is `changed`. */
+async function labelColumns($: Engine, on: On, changed: string) {
+  const { ui } = await pane($, on, ask('f', 'Facts', NOW - 500, 'Merge the branch?', '', changed))
+  expect(await ui.find({ type: 'Text', text: /^CHANGED$/ })).toBeTruthy()
+  const boxes = await ui.findAll({ type: 'Box' })
+  await ui.unmount()
+
+  return boxes.filter(b => b.props.width === 10).length
+}
+
+test('a short fact sits beside its label', async ($, on) => {
+  expect(await labelColumns($, on, 'The migration script.')).toBe(1)
+})
+
+test('a long fact is drawn under its label, at full width', async ($, on) => {
+  expect(await labelColumns($, on, 'Both checks are scheduled.\n\n| Task | Due |\n|---|---|\n| Check | Sun |')).toBe(0)
+})
+
+test('the Done button says what it sends by its label alone', async ($, on) => {
+  const { ui } = await pane($, on, task)
+  expect(await ui.find({ key: 'done-gh' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Sends “done”/ })).toBeUndefined()
+})

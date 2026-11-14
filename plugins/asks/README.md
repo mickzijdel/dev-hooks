@@ -66,7 +66,8 @@ The session's reply decides the shape of the memo:
 `**Kind:**` (go-ahead, choose, do, review, reply) overrides the guess. Write an option as
 `label — consequence` and the pane shows the consequence under the label. `**Blocks:**` sorts
 the ask first and is drawn in coral; `**Risk:**`, `**Undo:**`, `**Changed:**`,
-`**Not checked:**` and any other labelled line become fact rows under the answers.
+`**Not checked:**` and any other labelled line become fact rows under the answers; a long fact is
+drawn at full width under its label.
 
 ## What the pane does
 

@@ -20,6 +20,8 @@ const UNREAD_MS = 2 * 60_000
 /** An ask must have been the memo for this long before a press answers it. */
 const GUARD_MS = 600
 const ASKED_LENGTH = 120
+/** A fact longer than this, or of several lines, is drawn under its label, not beside it. */
+const FACT_ROW_LENGTH = 60
 
 /** `$.store` is one file for every session, so each record has the session in its key. */
 const askKey = (session: string) => `ask:${session}`
@@ -479,11 +481,10 @@ export const register: Register = on => {
                 </Button>
               </Box>
             )}
-            <Box flexDirection="row" gap={1} alignItems="center">
+            <Box flexDirection="row">
               <Button key={`done-${ask.session}`} variant="primary" {...key('d')} onPress={() => void answer($, ask, SENDS.done)}>
                 Done
               </Button>
-              {hint(`Sends “${SENDS.done}”.`)}
             </Box>
             {other}
           </Box>
@@ -590,18 +591,23 @@ export const register: Register = on => {
           {answers(ask, d)}
           {d.facts.length > 0 && (
             <Box flexDirection="column">
-              {d.facts.map(f => (
-                <Box flexDirection="row" gap={1} alignItems="flex-start">
-                  <Box width={10} flexShrink={0}>
-                    <Text dimColor size="caption" weight="semibold">
-                      {f.key}
-                    </Text>
+              {d.facts.map(f => {
+                // A long fact (a table, several paragraphs) gets the pane's full width under its label; a
+                // label column beside it would stay empty all the way down.
+                const isLong = f.value.includes('\n') || f.value.length > FACT_ROW_LENGTH
+                return (
+                  <Box flexDirection={isLong ? 'column' : 'row'} gap={isLong ? 0 : 1} alignItems="flex-start">
+                    <Box {...(isLong ? {} : { width: 10 })} flexShrink={0}>
+                      <Text dimColor size="caption" weight="semibold">
+                        {f.key}
+                      </Text>
+                    </Box>
+                    <Box flexGrow={1} flexShrink={1}>
+                      <Markdown text={f.value} />
+                    </Box>
                   </Box>
-                  <Box flexGrow={1} flexShrink={1}>
-                    <Markdown text={f.value} />
-                  </Box>
-                </Box>
-              ))}
+                )
+              })}
             </Box>
           )}
         </Box>

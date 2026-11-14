@@ -1,7 +1,7 @@
 {
   "name": "asks",
   "description": "A Claude Code mod (2.1.310+): one pane (open by itself in the desktop app and VS Code, /asks elsewhere) that lists what every local session is waiting on you for, read from each reply's \"Your move\" block, shows one ask at a time with the context to decide, and lets you answer it with one key or in words from any session.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Mick Zijdel"
   },
