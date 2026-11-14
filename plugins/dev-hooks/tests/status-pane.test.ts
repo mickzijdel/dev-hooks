@@ -224,6 +224,28 @@ test("a later report's move replaces an earlier one, so a repeated report shows 
   expect([v.state, v.yourMove]).toEqual(['waiting', ['Push the commit to main?']])
 })
 
+test('only a written move replaces earlier ones: not a blocked status, a question or a summary', async () => {
+  const ask = turn({ report: report({ yourMove: ['approve the deploy'] }) })
+  const moves = (later: Parameters<typeof turn>[0]) => view(state([ask, turn({ id: 'n', typed: false, ...later })])).yourMove
+  expect(moves({ report: report({ status: 'blocked on CI' }) })).toEqual(['approve the deploy', 'blocked on CI'])
+  expect(moves({ answer: 'Shall I?', report: report() })).toEqual(['approve the deploy', 'answer the question in the chat'])
+  expect(moves({ edits: 1, summary: report({ yourMove: ['read the CI log'] }) })).toEqual(['approve the deploy', 'read the CI log'])
+})
+
+test('emphasis that wraps a label and its value leaves no marker on the value', async () => {
+  const r = parseEndReport('**Your move: merge the PR**\n**Changed: x**')
+  expect([r?.yourMove, r?.changed]).toEqual([['merge the PR'], ['x']])
+  expect(parseEndReport('**Your move:** **Push** it')?.yourMove).toEqual(['**Push** it'])
+})
+
+test('a list or table under a value stays inside that value', async () => {
+  const choose = '**Your move:** Choose a route. I recommend 1.\n1. Copy — slow\n2. Rename — fast\n\n**Changed:** two files\n| File | Why |\n|---|---|\n| a.py | fix |'
+  const r = parseEndReport(choose)
+  expect(r?.yourMove).toEqual(['Choose a route. I recommend 1.\n1. Copy — slow\n2. Rename — fast'])
+  expect(r?.changed).toEqual(['two files\n| File | Why |\n|---|---|\n| a.py | fix |'])
+  expect(plain('tests  \npass')).toBe('tests pass')
+})
+
 test('a move keeps its markdown and the lines under it', async () => {
   const text = '**Your move:** Push to `main`?\n**Recommend:** Yes. See [the PR](https://example.com/1).\n\n**Changed:** x'
   expect(parseEndReport(text)?.yourMove).toEqual(['Push to `main`?  \n**Recommend:** Yes. See [the PR](https://example.com/1).'])

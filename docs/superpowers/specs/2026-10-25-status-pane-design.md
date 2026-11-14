@@ -92,7 +92,7 @@ Mockups: `.superpowers/brainstorm/2372219-1792925350/content/layout-combined.htm
 |---|---|---|
 | State | `turn.start` / `turn.complete` events; the Stop input's `background_tasks` and `session_crons`; CI watches the module already tracks | |
 | Your move, Done when (ticks), Changed, Not checked, Status | the final message (`turn.complete` text), parsed by label | the labels are new (end-report-reminder, 2.64.0), so older sessions show the no-report state |
-| Doing, Done when (criteria) | the latest assistant text in the session holding both `Doing:` and `Done when:`, from `$.session.messages()` | only 1% of work turns carry a brief (a brief comes once per task), so this block is usually hidden; Doing runs median 305, p90 755 characters, hence the clamp |
+| Doing, Done when (criteria) | the latest assistant text in the session holding both `Doing:` and `Done when:`, from `$.session.messages()` | only 1% of work turns carry a brief (a brief comes once per task), so this block is usually hidden; Doing runs median 305, p90 755 characters |
 | Per-repo commit lines | this session's own `git commit` / `git push` output in Bash results (`tool.call`, after `next`) | the session facts list only Edit/Write targets: they saw 8 of the 21 files this session changed, so they are not used for counts |
 | Footer | `$.session.turns()`, session start | |
 

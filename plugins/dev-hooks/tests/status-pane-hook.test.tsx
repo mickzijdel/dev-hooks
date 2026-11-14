@@ -232,7 +232,7 @@ test('nothing is cut: a long list and a long Doing are drawn whole, as markdown'
       moves.map((m, i) => `${i + 1}. ${m}`).join('\n'),
       'x'.repeat(755),
       '- [the PR](https://example.com/1)\n- `a.py`',
-      '- the GUI',
+      'the GUI',
     ])
     expect((await ui.find({ type: 'Text', text: /tests pass/ }))?.text).toBe('○ tests pass')
     await ui.unmount()

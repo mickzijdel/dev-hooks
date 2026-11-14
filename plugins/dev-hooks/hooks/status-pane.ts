@@ -40,7 +40,17 @@ export const plain = (text: string) =>
     .replace(/\*\*|__/g, '')
     .replace(/(^|\s)[*_](?=\S)/g, '$1')
     .replace(/(\S)[*_](?=\s|[.,;:!?)]|$)/g, '$1')
+    .replace(/\s*\n\s*/g, ' ')
     .trim()
+
+// The value after a label's colon, without the marker the label's own emphasis leaves on it:
+// the closing "**" at its head ("**Changed:** x") or at its end ("**Changed: x**").
+const labelRest = (line: string, rest: string) => {
+  const opened = /^[\s>|-]*([*_]{1,3})/.exec(line)?.[1]
+  const headless = rest.replace(/^[*_]{1,3}(?=\s|$)/, '')
+  const value = opened && headless === rest && rest.trimEnd().endsWith(opened) ? rest.trimEnd().slice(0, -opened.length) : headless
+  return value.trim()
+}
 
 type Labels = Record<string, string>
 type Sections<L extends Labels> = { [K in keyof L]?: string[] }
@@ -55,6 +65,9 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
   }))
   const found: Sections<L> = {}
   let current: keyof L | null = null
+  // The section opened with a value on the label's line: the bullets under it are that value's own
+  // list ("Choose a route. I recommend 1." and its options), not items beside it.
+  let lead = false
   let gap = false
   let fenced = false
   for (const line of text.split('\n')) {
@@ -63,13 +76,13 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
     if (fenced || /^\s*```/.test(line)) continue
     const label = /^\s*>/.test(line) ? undefined : matchers.flatMap(m => {
       const inline = m.inline.exec(line)
-      // "**Changed:** x" leaves the label's closing "**" at the head of the value.
-      if (inline) return [{ key: m.key, rest: (inline[1] ?? '').replace(/^[*_]{1,3}(?=\s|$)/, '').trim() }]
+      if (inline) return [{ key: m.key, rest: labelRest(line, inline[1] ?? '') }]
       return m.heading.test(line) ? [{ key: m.key, rest: '' }] : []
     })[0]
     if (label) {
       current = label.key
       found[current] = label.rest ? [label.rest] : []
+      lead = label.rest !== ''
       gap = false
       continue
     }
@@ -80,10 +93,13 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
       continue
     }
     const bullet = BULLET.exec(line)
-    if (bullet) items.push((bullet[1] ?? '').trim())
+    const last = items.length - 1
+    if (bullet && lead) items[last] = `${items[last]}\n${line.trim()}`
+    else if (bullet) items.push((bullet[1] ?? '').trim())
     else if (gap && items.length > 0) current = null
-    // Two spaces then a newline: markdown's line break, so "Recommend:" stays on its own line.
-    else if (items.length > 0) items[items.length - 1] = `${items[items.length - 1]}  \n${line.trim()}`
+    // A table row keeps its bare newline. Any other line gets markdown's line break (two spaces,
+    // then the newline), so "Recommend:" stays on its own line.
+    else if (items.length > 0) items[last] = `${items[last]}${/^\s*\|/.test(line) ? '' : '  '}\n${line.trim()}`
     else items.push(line.trim())
     gap = false
   }
@@ -333,7 +349,9 @@ export const paneView = (
   // before it: a report written again after a Stop hook would otherwise show twice. A later
   // "nothing" replaces none.
   const perMoves = window.map((t, i) => movesOf(t, perTurn[i] ?? null))
-  const restated = window.findLastIndex((t, i) => hasMove(reportOf(t)) && (perMoves[i] ?? []).length > 0)
+  // Only a move the session's own report wrote counts: not a question, a blocked status, or a
+  // Summarize answer, which covers one turn.
+  const restated = window.findLastIndex(t => !t.summary && (t.report?.yourMove ?? []).length > 0)
   const moves = perMoves.slice(Math.max(restated, 0)).flat()
   const criteria = s.brief?.doneWhen ?? []
   const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []

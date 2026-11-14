@@ -1156,7 +1156,8 @@ export const register: Register = on => {
         <Markdown text={markdown} dimColor={dim} />
       </Box>
     )
-    const bullets = (rows: string[]) => rows.map(row => `- ${row}`).join('\n')
+    // One row is drawn as written: it may hold a list or a table of its own.
+    const bullets = (rows: string[]) => (rows.length === 1 ? (rows[0] ?? '') : rows.map(row => `- ${row}`).join('\n'))
     const moves =
       v.yourMove.length === 0
         ? 'nothing'
