@@ -280,7 +280,23 @@ async function openLink($: EngineInterface, url: string) {
   if (opened?.exitCode !== 0) await $.process.run(['xdg-open', url], { timeoutMs: 10_000 }).catch(() => undefined)
 }
 
+// shortcut: a fullscreen terminal docks a pane too, but can't be told apart here; it gets /asks.
+const DOCKING_SURFACES = new Set(['vscode', 'desktop'])
+
+/** Unasked, the pane opens without taking the focus from the prompt. */
+async function openPaneUnasked($: EngineInterface, surface: string | null) {
+  if (surface === null || !DOCKING_SURFACES.has(surface)) return
+  if ((await $.env.get('ASKS_PANE')) === 'false') return
+  void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+}
+
 export const register: Register = on => {
+  on('session.attach', async ($, e, next) => {
+    await openPaneUnasked($, e.surface).catch(() => undefined)
+
+    return next(e)
+  })
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'asks', description: 'Show what every session is waiting on you for' })
     poll?.cancel()
@@ -289,6 +305,7 @@ export const register: Register = on => {
       void deliver($).catch(() => undefined)
     })
     await present($, 'idle').catch(() => undefined)
+    await openPaneUnasked($, e.surface).catch(() => undefined)
 
     return next(e)
   })

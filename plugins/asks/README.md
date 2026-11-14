@@ -2,8 +2,8 @@
 
 A Claude Code mod that answers one question: **what are my sessions waiting on me for?**
 
-`/asks` opens a pane, in any session, that lists the ask of every local session that runs this
-plugin. It shows one ask in full, with the context to decide, and lets you answer with one key
+A pane, in any session, lists the ask of every local session that runs this plugin. It opens
+by itself in the desktop app and VS Code; `/asks` opens it anywhere. It shows one ask in full, with the context to decide, and lets you answer with one key
 or in your own words. The answer goes to the session that asked.
 
 Part of the [dev-hooks marketplace](../../README.md). It ships no skills and no command hooks,
@@ -26,7 +26,9 @@ $ claude
 > /asks
 ```
 
-The pane opens beside the conversation. Click in it once so the keys work, then answer the
+The pane opens beside the conversation; in the desktop app and VS Code it is already open when
+a session starts (set `ASKS_PANE=false` in your settings' `env` to open it only with `/asks`).
+Click in it once so the keys work, then answer the
 ask in view: `y` or `n` for a go-ahead, a digit for a choice, `r` to answer in words.
 
 ## What an ask is

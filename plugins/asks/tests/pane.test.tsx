@@ -57,6 +57,9 @@ type Engine = Parameters<TestBody>[0]
 let clock = { now: NOW, step: 1000 }
 /** The prompts the mod submitted in this session. */
 let submitted: { text: string; origin: unknown }[] = []
+/** Every pane the mod opened, and what `ASKS_PANE` is set to. */
+let opened: string[] = []
+let paneSwitch: string | undefined
 
 /** Stands for the engine under the mod: one store shared by every session, and this session named `mine`. */
 function engine(
@@ -67,6 +70,7 @@ function engine(
 ) {
   clock = { now: NOW, step: 1000 }
   submitted = []
+  opened = []
   on('store.set', (_, e) => {
     store.set(e.key, e.value)
     onSet(e.value)
@@ -82,7 +86,12 @@ function engine(
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Fix the login page', toolUses: [] }] }))
   on('session.cwd', () => ({ value: '/work' }))
   on('clock.now', () => ({ value: (clock.now += clock.step) }))
-  on('env.get', () => ({ value: '/home/me' }))
+  on('env.get', (_, e) => ({ value: e.name === 'ASKS_PANE' ? paneSwitch : '/home/me' }))
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
   // What grep prints for the transcript's title rows; `title` is '' for a session the app has not named.
   on('process.run', () => ({
     value: {
@@ -355,4 +364,21 @@ test('a new prompt goes to the session picked, and with nothing waiting the pane
   await ui.unmount()
 
   expect(sentTo(store, 'quiet')).toEqual(['Summarise the open questions'])
+})
+
+test('the pane opens by itself in the desktop app and VS Code, not in a terminal, and not when switched off', async ($, on) => {
+  paneSwitch = undefined
+  engine(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual([])
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  expect(opened).toEqual(['asks', 'asks'])
+
+  paneSwitch = 'false'
+  opened = []
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  paneSwitch = undefined
+  expect(opened).toEqual([])
 })

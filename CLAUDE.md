@@ -218,6 +218,9 @@ the memo's kind, question, options and fact rows from it by plain code; both are
 unit-tested directly, and `$` stays in `register.tsx`. Its tests are `plugins/asks/tests/`,
 run by `tests/test_mods.py`. It installs without dev-hooks, so it shares no code with the
 session-status pane, which reads the same end report for one session. Rules learned building it:
+- The pane opens unasked at `session.start` and `session.attach` on a docking surface
+  (`openPaneUnasked`, without the focus; `ASKS_PANE=false` switches that off), the same rule as the
+  session-status pane's (`DEV_HOOKS_STATUS_PANE=false` switches that one off).
 - `$.store` is one file for every session of the plugin, which is what makes the pane
   cross-session. Keys: `ask:<session>`, `here:<session>` (presence), and one
   `send:<session>:<time>-<n>` per message for a session, read by that session's 3-second poll.
