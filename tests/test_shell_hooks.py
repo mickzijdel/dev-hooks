@@ -6569,6 +6569,166 @@ def test_end_report_footers_match():
     assert mod == _canon_footer()
 
 
+# ── closing-offer-reminder.sh (Stop) ─────────────────────────────────────────────────
+def _closing_offer(tmp_path, last, *, lines=None, active=False, **env):
+    transcript = tmp_path / "t.jsonl"
+    lines = _turn(["Read"]) if lines is None else lines
+    transcript.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    payload = {"transcript_path": str(transcript), "session_id": "co"}
+    if last is not None:
+        payload["last_assistant_message"] = last
+    if active:
+        payload["stop_hook_active"] = True
+    overrides = {"CLAUDE_CODE_ENTRYPOINT": None, "DEV_HOOKS_ORCHESTRATED": None}
+    overrides.update(env)
+    return run_hook(
+        "closing-offer-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(**overrides),
+    )
+
+
+@pytest.mark.parametrize(
+    "closing",
+    [
+        "Want me to add the same check to the other two callers?",
+        "Do you want me to write the tests as well?",
+        "Should I also update the README?",
+        "Shall I refactor the helper while I'm here?",
+        "Would you like me to run the full suite?",
+        "Let me know if you want the dark-mode variant too.",
+        "Let me know if you'd like me to wire it into the CLI.",
+        "Next steps could be adding a cache and a retry.",
+        "If you'd like, I can also add a dry-run flag.",
+        "Happy to add the fixtures if you want.",
+        "**Want me to** fix the remaining lint warnings?",
+    ],
+)
+def test_closing_offer_fires_on_an_offer_of_undone_work(tmp_path, closing):
+    r = _closing_offer(tmp_path, f"I fixed the parser.\n\n{closing}")
+    assert stop_blocked(r), closing
+    reason = _reason(r)
+    assert reason.startswith("[closing-offer]")
+    assert closing in reason
+    assert "which rule stops you" in reason
+
+
+def test_closing_offer_reads_the_your_move_ask_at_the_top(tmp_path):
+    last = (
+        "**Your move:** Want me to port the other three hooks too?\n"
+        "**Changed:** one hook.\n\nDetails (skippable)\n"
+        + "\n".join(f"- detail {i}" for i in range(12))
+    )
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_falls_back_to_the_transcript(tmp_path):
+    lines = _turn(["Edit"]) + [_said("Done.\n\nWant me to add tests?")]
+    assert stop_blocked(_closing_offer(tmp_path, None, lines=lines))
+    # An earlier turn's offer is not this turn's last message.
+    lines += _turn(["Edit"], prompt="yes") + [_said("Added the tests.")]
+    assert _closing_offer(tmp_path, None, lines=lines).stdout.strip() == ""
+
+
+def test_closing_offer_blocks_once_per_natural_stop(tmp_path):
+    last = "Fixed.\n\nWant me to also fix the other callers?"
+    assert stop_blocked(_closing_offer(tmp_path, last))
+    # The reply that block forced is not checked again, so it can't loop.
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+    # The next natural stop re-arms it.
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_checks_another_hooks_forced_reply_once(tmp_path):
+    # Another Stop hook blocked a clean message; the rewritten reply ends on an offer.
+    assert _closing_offer(tmp_path, "Fixed the parser.").stdout.strip() == ""
+    last = "Reviewed.\n\nWant me to also fix the other callers?"
+    assert stop_blocked(_closing_offer(tmp_path, last, active=True))
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        "Should I add tests for this?",
+        "I can also add a dry-run flag if you'd like.",
+        "Tell me if you'd like the tests added.",
+        "Would you prefer I refactor the helper first?",
+        "**Next steps:**\n- add a cache",
+        # The ask sits above the skippable details, or under a bare label or heading.
+        "Fixed.\n\nWant me to add tests?\n\nDetails (skippable)\n"
+        + "\n".join(f"- detail {i}" for i in range(8)),
+        "## Your move\n\nWant me to add tests?\n\n" + "\n".join("x" * 6),
+        "- **Your move:** Want me to add tests?\n\n" + "\n".join("x" * 6),
+        # A rule named far above the close is about something else.
+        "The old schema change was not reversible, so I rewrote it.\n\n"
+        + "\n".join(f"Line {i}." for i in range(6))
+        + "\nWant me to add tests?",
+    ],
+)
+def test_closing_offer_fires_on_other_shapes_of_offer(tmp_path, last):
+    assert stop_blocked(_closing_offer(tmp_path, last)), last
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        # The session-archive question.
+        "**Your move:** Archive this session?\n**Changed:** the hook.",
+        # One-way or outward-facing actions are the person's call.
+        "**Your move:** Merge the branch into main?\n**Recommend:** Yes.",
+        "All green.\n\nWant me to push the branch and open the PR?",
+        "**Your move:** Should I also send the summary to Brian?",
+        "Want me to deploy it to production?",
+        "Shall I delete the old backups?",
+        "Want me to message Sam about the schema change?",
+        "**Your move:** Should I also email the team?",
+        "Want me to run `git push origin main`?",
+        "Want me to drop the old table?",
+        # The one-way action is named in the ask's options, not on the question line.
+        "**Your move:** Want me to go ahead?\n1. Merge now — lands on main\n2. Wait",
+        "This cannot be reverted, so: want me to run it?",
+        "Want me to run it? It needs your 1Password sign in.",
+        # Not an offer.
+        "You said you did not want me to touch the fixtures, so I left them.",
+        "| Should I also add tests? | yes |",
+        # The message already names the rule that stopped it.
+        "The backfill writes to production, so I stopped.\n\nWant me to run it?",
+        "The migration can't be undone, so I left it.\n\nShould I also run it?",
+        "Let me know if you want it applied: that step needs your sign-in.",
+        # No offer at all.
+        "**Your move:** nothing.\n**Changed:** the parser handles empty input.",
+        "Which of the two layouts do you prefer?",
+        "Let me know if you hit any problems with it.",
+        # An offer the turn only quotes or shows as code.
+        'The hook matches "Want me to" in the closing lines.\n\nAll tests pass.',
+        "The copy now reads:\n\n```\nWant me to save this?\n```\n\nDone.",
+        "> Should I also update the docs?\n\nI did that as well.",
+        # Earlier in a long message, not the closing lines.
+        "I asked myself: should I also cover MultiEdit? Yes, so I did.\n\n"
+        + "\n".join(f"Line {i} of the report." for i in range(8)),
+    ],
+)
+def test_closing_offer_silent_on_a_legitimate_close(tmp_path, last):
+    assert _closing_offer(tmp_path, last).stdout.strip() == "", last
+
+
+def test_closing_offer_blocks_an_undoable_offer_beside_a_one_way_ask(tmp_path):
+    last = "Want me to add the tests?\n\n**Your move:** Merge the branch into main?"
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_silent_when_opted_out(tmp_path):
+    last = "Fixed.\n\nWant me to also fix the other callers?"
+    r = _closing_offer(tmp_path, last, DEV_HOOKS_CLOSING_OFFER="false")
+    assert r.stdout.strip() == ""
+
+
+def test_closing_offer_silent_without_a_message(tmp_path):
+    assert _closing_offer(tmp_path, None).stdout.strip() == ""
+
+
 def _emit_stop(lib, fn, **env):
     overrides = {"CLAUDE_CODE_ENTRYPOINT": None, "DEV_HOOKS_ORCHESTRATED": None}
     overrides.update(env)
