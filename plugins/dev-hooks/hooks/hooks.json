@@ -46,6 +46,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/migration-safety-reminder.sh\" prompt",
+            "statusMessage": "Checking whether the request is a schema change..."
+          },
+          {
+            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin-scope-reminder.sh\" prompt"
           }
         ]

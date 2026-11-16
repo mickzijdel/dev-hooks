@@ -41,9 +41,9 @@ def base_env(**overrides):
     return env
 
 
-def run_hook(name, *, stdin="", cwd=None, env=None, scripts=HOOKS):
+def run_hook(name, *, stdin="", cwd=None, env=None, scripts=HOOKS, args=()):
     return subprocess.run(
-        ["bash", str(scripts / name)],
+        ["bash", str(scripts / name), *args],
         input=stdin,
         cwd=str(cwd) if cwd else None,
         env=env,
@@ -3759,6 +3759,96 @@ def test_migration_silent_for_migrations_init(tmp_path):
 
 def test_migration_silent_for_ordinary_model(tmp_path):
     r = _migration_run(tmp_path, "app/models/user.rb", session="g5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── migration-safety-reminder.sh prompt (UserPromptSubmit) ──────────────────────────
+def _migration_prompt_run(tmp_path, prompt, session="mp", **env):
+    payload = {"prompt": prompt, "cwd": "/x/y", "session_id": session}
+    return run_hook(
+        "migration-safety-reminder.sh",
+        args=("prompt",),
+        stdin=json.dumps(payload),
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_FIRE_LOG=None, **env),
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Add a nullable archived_at column to the searches table",
+        'Add a "status" column to the users table',
+        "add `archived_at` column to searches",
+        "add an archived_at:datetime column to searches",
+        "add a page_count column to books",
+        "rename the airtable_id column to external_id",
+        "make the name column not null",
+        "change the type of the price column",
+        "create a users table",
+        "create table audit_logs with actor and action",
+        "can you write a Prisma migration for the new feedback model?",
+        "We need a database migration that splits name into first and last",
+        "write a migration that drops the legacy_id column",
+        "migrate the database to add archived_at",
+        "Drop the old index on candidates and rename the table",
+        "Backfill the hired_at column for every existing placement",
+        "this needs a schema change: status becomes an enum",
+        "please ALTER TABLE jobs so owner_id is not null",
+    ],
+)
+def test_migration_prompt_fires_on_a_typed_schema_change(tmp_path, prompt):
+    r = _migration_prompt_run(tmp_path, prompt)
+    assert r.returncode == 0
+    out = assert_json_with(r.stdout, "before you write code")
+    assert out["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+    assert "Reversible" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        # "migration" alone is a project name in some repos, not a schema change.
+        "What is left on the Artemis to Minerva migration this week?",
+        "Add a column to the comparison table in the README",
+        "add an index page for the docs",
+        "remove the table of contents from the report",
+        "Can you rename the Stop hook and update its tests?",
+        "write the migration status update for the team",
+        "add tests for the table component",
+        "rename the table header in the React component",
+        "add a column to the kanban board",
+        "Add the candidates table to the sidebar nav",
+        "make a table of the results per year",
+        "create index.ts",
+        "add an index signature to this type",
+        "add a constraint to the layout",
+        "backfill the missing tests",
+        "Update the JSON schema change log",
+        "schema migration for zod",
+        "<task-notification>\n<summary>add a column to the users table</summary>\n</task-notification>",
+        'review this: <pasted_content id="p1">ALTER TABLE jobs ADD COLUMN x</pasted_content id="p1">',
+    ],
+)
+def test_migration_prompt_silent_without_a_typed_schema_change(tmp_path, prompt):
+    r = _migration_prompt_run(tmp_path, prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_migration_prompt_fires_once_and_leaves_the_write_check_armed(tmp_path):
+    prompt = "Add a nullable archived_at column to the searches table"
+    assert _migration_prompt_run(tmp_path, prompt, session="g6").stdout.strip() != ""
+    assert _migration_prompt_run(tmp_path, prompt, session="g6").stdout.strip() == ""
+    # The after-write check is the safety net: the prompt-time fire must not use it up.
+    r = _migration_run(tmp_path, "db/migrate/20240101_add_users.rb", session="g6")
+    assert_json_with(r.stdout, "You just wrote a database migration")
+
+
+def test_migration_prompt_silent_when_opted_out(tmp_path):
+    r = _migration_prompt_run(
+        tmp_path, "Backfill the hired_at column", DEV_HOOKS_MIGRATION="false"
+    )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
