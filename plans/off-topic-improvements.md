@@ -253,3 +253,11 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   "Linked sessions now") arrive as prompts in that tag. Replaying the prompt log through the
   prompt-time migration check, 3 of its 5 fires in 5,966 prompts were such notes. The filter is
   mirrored in `voice-common.sh` (`test_typed_prompt_filters_match`), so both change together.
+- **closing-offer-reminder has no acted-on case in the nudge outcomes** (2026-11-16). It
+  resolves as `unknown` in `/session-facts nudges`. A case needs `closing_offer`'s patterns
+  mirrored in `nudge-outcomes.ts` with a parity test (acted: the next reply holds no offer).
+- **closing-offer-reminder's known misses** (2026-11-16). A one-way word used as a code noun
+  silences it ("add tests for the delete endpoint", "fix the send button"), as does a capital
+  after ask/tell ("tell Ruff to ignore it"). It blocks "Want me to commit this?" and asks about
+  Asana tasks, which name no one-way word. Replayed over 1,487 turn-ending messages in 200
+  transcripts it fires on 62 (4.2%); read a sample before tuning.
