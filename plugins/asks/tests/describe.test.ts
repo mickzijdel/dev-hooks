@@ -111,6 +111,18 @@ test('asks that block other work come first, then the oldest', async () => {
   expect(inOrder([a, c, b]).map(x => x.move[0])).toEqual(['B', 'A', 'C'])
 })
 
+test('the ask whose answer starts the most agent work comes first; one with no estimate keeps its place by Blocks', async () => {
+  const quick = { ...ask('Quick?\n**Blocks:** the push'), at: 1, work: 5 }
+  const long = { ...ask('Long?'), at: 4, work: 120 }
+  const unknown = { ...ask('Unknown?'), at: 2 }
+  const blocking = { ...ask('Blocking?\n**Blocks:** two sessions'), at: 3 }
+  expect(inOrder([quick, unknown, long, blocking]).map(x => x.move[0])).toEqual(['B', 'L', 'Q', 'U'])
+  // No estimate counts as no work started, and equal work falls to the oldest: also for two that block.
+  const none = { ...ask('None?'), at: 5, work: 0 }
+  const second = { ...ask('Second?\n**Blocks:** a push'), at: 1 }
+  expect(inOrder([none, unknown, blocking, second]).map(x => x.move[0])).toEqual(['S', 'B', 'U', 'N'])
+})
+
 test('a length of time is said in the fewest words', async () => {
   expect(ago(20_000)).toBe('now')
   expect(ago(12 * 60_000)).toBe('12 min')

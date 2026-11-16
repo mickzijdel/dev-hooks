@@ -60,6 +60,11 @@ let submitted: { text: string; origin: unknown }[] = []
 /** Every pane the mod opened, and what `ASKS_PANE` is set to. */
 let opened: string[] = []
 let paneSwitch: string | undefined
+/** What the desktop app calls this session, and what the small model answers. */
+let hostSession: string | undefined
+let modelText = 'Which login fix to ship.\n'
+/** Every program the mod ran, with its arguments. */
+let ran: string[][] = []
 
 /** Stands for the engine under the mod: one store shared by every session, and this session named `mine`. */
 function engine(
@@ -86,15 +91,19 @@ function engine(
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Fix the login page', toolUses: [] }] }))
   on('session.cwd', () => ({ value: '/work' }))
   on('clock.now', () => ({ value: (clock.now += clock.step) }))
-  on('env.get', (_, e) => ({ value: e.name === 'ASKS_PANE' ? paneSwitch : '/home/me' }))
+  on('env.get', (_, e) => ({
+    value: e.name === 'ASKS_PANE' ? paneSwitch : e.name === 'CLAUDE_CODE_HOST_SESSION_ID' ? hostSession : '/home/me',
+  }))
   on('ui.open', (_, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true as const } }
   })
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
   // What grep prints for the transcript's title rows; `title` is '' for a session the app has not named.
-  on('process.run', () => ({
+  ran = []
+  on('process.run', (_, e) => ({
     value: {
+      ...(ran.push([...e.argv]) && {}),
       exitCode: 0,
       stdout: title ? `"customTitle":"Old name"\n"customTitle":"${title}"\n` : '',
       stderr: '',
@@ -102,7 +111,7 @@ function engine(
       isStderrTruncated: false,
     },
   }))
-  on('model.complete', () => ({ value: { isAnswered: true, text: 'Which login fix to ship.\n', usage: {} } as never }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: modelText, usage: {} } as never }))
   on('clock.every', () => ({ value: undefined }))
   on('command.register', () => ({ value: { command: 'asks' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -148,6 +157,46 @@ test('a turn that ends with a move is saved, and the next prompt clears it', asy
 
   await $.prompt.submit({ text: 'A', origin: { kind: 'composer' }, wait: false })
   expect(store.has('ask:mine')).toBe(false)
+})
+
+test('in the desktop app the ask keeps the app’s id for its session and the work an answer starts', async ($, on) => {
+  let store = new Map<string, unknown>()
+  hostSession = 'local_1a2b-3c'
+  modelText = 'Which login fix to ship\n45\n'
+  const topicSaved = new Promise<void>(saved => {
+    store = engine(on, store, 'Login page work', value => (value as Ask).topic && saved())
+  })
+
+  await turnEnds($, '**Your move:** Choose A or B.\n\n**Changed:** One file.')
+  await topicSaved
+  hostSession = undefined
+  modelText = 'Which login fix to ship.\n'
+  const saved = store.get('ask:mine') as Ask
+  expect([saved.host, saved.topic, saved.work]).toEqual(['local_1a2b-3c', 'Which login fix to ship', 45])
+})
+
+test('an id that is not the desktop app’s is not kept, so nothing can be put into the link', async ($, on) => {
+  hostSession = 'local_1&x=2'
+  const store = engine(on)
+  await turnEnds($, '**Your move:** Choose A or B.')
+  hostSession = undefined
+  expect((store.get('ask:mine') as Ask).host).toBeUndefined()
+})
+
+test('a session name is a link to the session; the memo is the ask that starts the most agent work', async ($, on) => {
+  const long: Ask = { ...review, host: 'local_abc', work: 130 }
+  const { ui } = await pane($, on, { ...goAhead, work: 30 }, { ...choice, work: 10 }, long)
+
+  expect((await ui.find({ type: 'Text', text: /^Review the draft PR/ }))?.props.size).toBe('heading')
+  expect(await ui.find({ type: 'Text', text: /^Your answer starts about 2 h 10 min of agent work$/ })).toBeTruthy()
+  // Only a session the desktop app runs has a name that can be pressed.
+  expect((await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('open-')).map(b => [b.key, b.text])).toEqual([
+    ['open-pr', 'Formula sandbox'],
+  ])
+  await ui.press({ key: 'open-pr' })
+  expect(ran.at(-1)).toEqual(['open', 'claude://code/continue?session=local_abc'])
+  expect((await ui.findAll({ type: 'Text', text: /^starts \d+m · $/ })).map(t => t.text)).toEqual(['starts 30m · ', 'starts 10m · '])
+  await ui.unmount()
 })
 
 test('a session the app has not named is called by its first prompt', async ($, on) => {

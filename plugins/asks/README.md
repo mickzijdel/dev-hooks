@@ -64,15 +64,20 @@ The session's reply decides the shape of the memo:
 | Anything else | ANSWER | `r` answer in words, `e` Seen |
 
 `**Kind:**` (go-ahead, choose, do, review, reply) overrides the guess. Write an option as
-`label — consequence` and the pane shows the consequence under the label. `**Blocks:**` sorts
-the ask first and is drawn in coral; `**Risk:**`, `**Undo:**`, `**Changed:**`,
+`label — consequence` and the pane shows the consequence under the label. `**Blocks:**` is
+drawn in coral, and sorts the ask first until its estimate arrives; `**Risk:**`, `**Undo:**`, `**Changed:**`,
 `**Not checked:**` and any other labelled line become fact rows under the answers; a long fact is
 drawn at full width under its label.
 
 ## What the pane does
 
-- **One memo, then a list.** Asks that block other work come first, then the oldest. The memo
+- **One memo, then a list.** The ask whose answer starts the most agent work comes first, then
+  the oldest: an ask with an estimate above zero shows it ("Your answer starts about 40 min of
+  agent work"). An ask with no estimate goes first when it states what it blocks, else it
+  counts as starting no work. The memo
   stays on the ask you are reading: a more urgent ask that arrives waits under "Also waiting".
+- **Session names open the session.** In the desktop app a session's name on an ask is a link: a
+  press opens that session (macOS only).
 - **Keys.** Each button shows its key; they work once the pane has the focus (click in it).
   `r` opens a field for another answer, `j`/`k` move between asks, `u` follows up on your last
   answer, `p` sends a new prompt to any session. While a field is open no button has a key.
@@ -92,11 +97,15 @@ drawn at full width under its label.
   that every session reads. A session picks its messages up every 3 seconds. A message nobody
   picks up within 2 minutes is dropped and its ask put back, and the pane says "Not delivered".
 - **One model call per ask.** A Haiku call, on the session's own connection, writes a subject
-  line of at most nine words from the ask. Button labels and sent texts never come from a model.
+  line of at most nine words from the ask, and estimates the minutes of agent work an answer
+  starts, from the ask and the end of the reply it came from. The estimate is a guess that only
+  orders the list. Button labels and sent texts never come from a model.
 - **Programs.** `grep` searches your Claude Code `projects` folder for this session's
   transcript, to read the title the app gave the session; it runs when a session starts and
   at the end of each turn. `open <url>` (`xdg-open` where there is no `open`) runs when you
-  press Open on a review.
+  press Open on a review. `open claude://code/continue?session=<id>` runs when you press a
+  session's name; the id is the desktop app's own for that session, read from the session's
+  environment and kept only when it has the app's form.
 
 ## Safety rules in the code
 

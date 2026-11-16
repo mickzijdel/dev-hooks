@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer, UiPressArgument } from 'claude-c
 
 import type { Ask, PaneView, Presence, Receipt } from '../types'
 import { ago, describe, inOrder, type Described, type Kind } from './describe'
-import { parseAsk, questionText, sessionName, statesMove, titleFrom, topicPrompt } from './parse'
+import { parseAsk, questionText, sessionName, statesMove, titleFrom, topicFrom, topicPrompt } from './parse'
 
 const PANE = 'asks'
 const TITLE = 'Asks'
@@ -22,6 +22,8 @@ const GUARD_MS = 600
 const ASKED_LENGTH = 120
 /** A fact longer than this, or of several lines, is drawn under its label, not beside it. */
 const FACT_ROW_LENGTH = 60
+/** A desktop app session id, as the app's own deep link handler accepts it. */
+const HOST_ID = /^local_[A-Za-z0-9-]{1,64}$/
 
 /** `$.store` is one file for every session, so each record has the session in its key. */
 const askKey = (session: string) => `ask:${session}`
@@ -104,28 +106,39 @@ async function firstPrompt($: EngineInterface): Promise<string> {
   return cwd.split('/').filter(Boolean).pop() ?? 'session'
 }
 
-async function record($: EngineInterface, kind: Ask['kind'], parts: Pick<Ask, 'move' | 'changed' | 'context'>) {
-  const [session, at] = await Promise.all([$.session.id(), $.clock.now()])
-  const ask: Ask = { session, label: await knownLabel($, session), at, kind, ...parts }
-  await $.store.set(askKey(session), ask)
-  await refresh($)
-  if (kind === 'move') void addTopic($, ask).catch(() => undefined)
+/** Empty in any host but the desktop app. */
+async function hostId($: EngineInterface): Promise<string> {
+  const id = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID').catch(() => '')) ?? ''
+  return HOST_ID.test(id) ? id : ''
 }
 
-/** Heads the ask with its subject, from one small model call. The ask stays as it is when the call fails. */
-async function addTopic($: EngineInterface, ask: Ask) {
+async function record(
+  $: EngineInterface,
+  kind: Ask['kind'],
+  parts: Pick<Ask, 'move' | 'changed' | 'context'>,
+  reply = '',
+) {
+  const [session, at, host] = await Promise.all([$.session.id(), $.clock.now(), hostId($)])
+  const ask: Ask = { session, label: await knownLabel($, session), at, kind, ...parts, ...(host ? { host } : {}) }
+  await $.store.set(askKey(session), ask)
+  await refresh($)
+  if (kind === 'move') void addTopic($, ask, reply).catch(() => undefined)
+}
+
+/** Adds `topic` and `work` from one small model call. The ask stays as it is when the call fails. */
+async function addTopic($: EngineInterface, ask: Ask, reply: string) {
   const r = await $.model.complete({
     model: TOPIC_MODEL,
-    prompt: topicPrompt(ask.label, ask),
-    maxTokens: 40,
+    prompt: topicPrompt(ask.label, ask, reply),
+    maxTokens: 60,
     timeoutMs: 10_000,
   })
-  const topic = r.isAnswered ? r.text.trim().split('\n')[0]!.replace(/[."]+$/, '') : ''
-  if (!topic) return
+  const found = r.isAnswered ? topicFrom(r.text) : { topic: '' }
+  if (!found.topic) return
   // The ask may have been answered or replaced while the model wrote.
   const now = (await $.store.get(askKey(ask.session))) as Ask | undefined
   if (now?.at !== ask.at) return
-  await $.store.set(askKey(ask.session), { ...now, topic })
+  await $.store.set(askKey(ask.session), { ...now, ...found })
   await refresh($)
 }
 
@@ -292,6 +305,13 @@ async function openLink($: EngineInterface, url: string) {
   if (opened?.exitCode !== 0) await $.process.run(['xdg-open', url], { timeoutMs: 10_000 }).catch(() => undefined)
 }
 
+/** A pane's `Link` cannot do this: the desktop surface is sent `https:` links only. */
+// shortcut: `open` is macOS only, so elsewhere the press opens nothing; add `start` or `xdg-open` when someone needs it.
+async function openSession($: EngineInterface, host: string) {
+  if (!HOST_ID.test(host)) return
+  await $.process.run(['open', `claude://code/continue?session=${host}`], { timeoutMs: 10_000 }).catch(() => undefined)
+}
+
 // shortcut: a fullscreen terminal docks a pane too, but can't be told apart here; it gets /asks.
 const DOCKING_SURFACES = new Set(['vscode', 'desktop'])
 
@@ -357,7 +377,7 @@ export const register: Register = on => {
     await present($, 'idle').catch(() => undefined)
     if (e.reason !== 'answer') return r
     const parsed = parseAsk(e.answer)
-    if (parsed) await record($, 'move', parsed).catch(() => undefined)
+    if (parsed) await record($, 'move', parsed, e.answer).catch(() => undefined)
     // A stated move of "nothing" closes the ask. A reply that states no move leaves the ask open.
     else if (statesMove(e.answer)) await clear($, await $.session.id()).catch(() => undefined)
 
@@ -418,6 +438,19 @@ export const register: Register = on => {
     /** The keys that answer the memo, then the keys that move about: listed in that order under the pane. */
     const legend: string[] = []
     const moves: string[] = []
+
+    const sessionLink = (a: Pick<Ask, 'session' | 'label' | 'host'>) => {
+      const host = a.host
+      return host ? (
+        <Button key={`open-${a.session}`} plain onPress={() => void openSession($, host)}>
+          {a.label}
+        </Button>
+      ) : (
+        <Text dimColor size="caption">
+          {a.label}
+        </Text>
+      )
+    }
 
     const hint = (text: string) => (
       <Text dimColor size="footnote">
@@ -583,16 +616,17 @@ export const register: Register = on => {
         <Box flexDirection="column" borderStyle="round" borderColor={colour} paddingX={1} gap={1}>
           <Box flexDirection="column">
             <Box flexDirection="row" gap={1} justifyContent="space-between">
-              <Text size="caption">
-                <Text color={colour} weight="bold">
+              <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>
+                <Text color={colour} weight="bold" size="caption">
                   {KIND_WORD[d.kind]}
                 </Text>
-                <Text dimColor>
-                  {'  '}
-                  {ask.label}
-                  {ask.session === own ? ' · this session' : ''}
-                </Text>
-              </Text>
+                {sessionLink(ask)}
+                {ask.session === own && (
+                  <Text dimColor size="caption">
+                    · this session
+                  </Text>
+                )}
+              </Box>
               <Text dimColor size="caption">
                 {ago(now - ask.at)}
               </Text>
@@ -603,6 +637,11 @@ export const register: Register = on => {
             {d.blocks && (
               <Text color={CORAL} weight="semibold" size="footnote">
                 Blocks {d.blocks}
+              </Text>
+            )}
+            {!!ask.work && (
+              <Text color={CORAL} size="footnote">
+                Your answer starts about {ago(ask.work * 60_000)} of agent work
               </Text>
             )}
           </Box>
@@ -733,11 +772,9 @@ export const register: Register = on => {
                   {KIND_WORD[d.kind]}
                 </Text>
               </Box>
-              <Box flexGrow={1} flexShrink={1}>
-                <Text size="footnote">
-                  {a.topic || d.question}
-                  <Text dimColor> · {a.label}</Text>
-                </Text>
+              <Box flexDirection="column" flexGrow={1} flexShrink={1} alignItems="flex-start">
+                <Text size="footnote">{a.topic || d.question}</Text>
+                {sessionLink(a)}
               </Box>
               <Box flexShrink={0}>
                 <Text size="caption">
@@ -746,6 +783,7 @@ export const register: Register = on => {
                       blocks{' '}
                     </Text>
                   )}
+                  {!!a.work && <Text color={CORAL}>starts {ago(a.work * 60_000, true)} · </Text>}
                   <Text dimColor>{ago(now - a.at, true)}</Text>
                 </Text>
               </Box>
@@ -843,7 +881,7 @@ export const register: Register = on => {
           </Text>
           {list.length > 1 && (
             <Text dimColor size="caption">
-              blocking first, then oldest
+              most agent work started first
             </Text>
           )}
         </Box>

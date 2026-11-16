@@ -242,7 +242,12 @@ session-status pane, which reads the same end report for one session. Rules lear
   memo order, listed under "Set aside", and the memo again only while `view.focus` names it.
 - The text a button sends is fixed in `SENDS`, never model-written, and is submitted
   `asUser`; `answerText` appends the session's own question. The one model call (`addTopic`)
-  writes only the subject line.
+  writes only the subject line and `work`, the minutes of agent work an answer starts, which
+  `inOrder` sorts by (most first; no estimate: Blocks first, else as 0).
+- A pane's `Link` reaches the desktop only with an `https:` href, so a session's name is a plain
+  Button that runs `open claude://code/continue?session=<host>` (`openSession`). `host` is
+  `CLAUDE_CODE_HOST_SESSION_ID`, kept on the ask only when it matches `HOST_ID`, the form the
+  app's deep-link handler accepts.
 - The desktop draws each Button's `hotkey` as a chip beside the label, so labels carry no key;
   a Box one cell high is a thick bar there, so the pane uses no separator Boxes. While an
   Input is open (`mode` other than `view`) no Button gets a `hotkey`.

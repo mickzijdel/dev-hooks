@@ -1,6 +1,18 @@
 import { expect, test } from 'claude-code/testing'
 
-import { moveChoice, parseAsk, questionText, sessionName, statesMove, titleFrom } from '../hooks/parse'
+import { moveChoice, parseAsk, questionText, sessionName, statesMove, titleFrom, topicFrom } from '../hooks/parse'
+
+test('the model answers with a subject and the minutes of work; a missing number leaves the minutes out', async () => {
+  expect(topicFrom('Which login fix to ship.\n45\n')).toEqual({ topic: 'Which login fix to ship', work: 45 })
+  expect(topicFrom('Line 1: Rehearsal import\nLine 2: about 90 minutes')).toEqual({ topic: 'Rehearsal import', work: 90 })
+  expect(topicFrom('Which login fix to ship.')).toEqual({ topic: 'Which login fix to ship' })
+  expect(topicFrom('Rehearsal import\nIt depends on 2 things')).toEqual({ topic: 'Rehearsal import' })
+  expect(topicFrom('Here are the two lines:\nRehearsal import\n0')).toEqual({ topic: 'Rehearsal import', work: 0 })
+  // A number that is not a bare count of minutes is not read as one.
+  for (const second of ['2 hours', '1.5 hours', '1,200', '90-120', '123456'])
+    expect(topicFrom(`Rehearsal import\n${second}`)).toEqual({ topic: 'Rehearsal import' })
+  expect(topicFrom('Rehearsal import\n9999').work).toBe(1440)
+})
 
 const REPLY = [
   '**Your move:** Choose a route. I recommend route 1.',
