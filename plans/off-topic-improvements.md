@@ -244,3 +244,12 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   `agent.spawn` is not affected: in a `claude -p` run that started one subagent the debug log has
   `dev-hooks@inline agent.spawn settled`, and the only bypass lines are `classic.PreToolUse` and
   `classic.Stop`, so subagent dispatches still reach the session facts.
+- **migration-safety-reminder's after-write check has no Prisma or raw-SQL path** (2026-11-16).
+  It gates on Rails `db/migrate/*.rb`, Django `migrations/*.py` and Alembic `versions/*.py`, so
+  a `prisma/migrations/*/migration.sql` or a `schema.prisma` edit gets no reminder; its rules
+  are also worded for Rails and Django only. The prompt-time mode does match "Prisma migration".
+- **`reminder_prompt_typed` keeps a prompt that opens with `<system-reminder>`** (2026-11-16).
+  The desktop app's notes about linked sessions ("The session … you started finished a turn",
+  "Linked sessions now") arrive as prompts in that tag. Replaying the prompt log through the
+  prompt-time migration check, 3 of its 5 fires in 5,966 prompts were such notes. The filter is
+  mirrored in `voice-common.sh` (`test_typed_prompt_filters_match`), so both change together.
