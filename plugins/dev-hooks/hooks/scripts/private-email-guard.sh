@@ -8,10 +8,15 @@
 # fetched; other people's addresses leak the same way.
 #
 # Allowed addresses are DEV_HOOKS_ALLOWED_EMAILS (comma- or space-separated, in .claude
-# settings "env"), such as a public alias for bots; with none set, every address asks. Never
+# settings "env"), such as a public alias for bots; `*` in an entry stands for any text
+# ("ci-test-*@my-team.org" for made-up test addresses; never a whole domain of real people).
+# With none set, every address asks, and so does every address in a call that sets a
+# User-Agent or From header: the list is off there, since a variable can carry an allowed
+# address into the header unseen. Never
 # counted: reserved documentation and test domains (example.com/.org/.net, *.example, *.test,
-# *.invalid, *.localhost), systemd unit names (name@instance.service), a versioned launchd
-# file (name@15.plist), noreply addresses, git@ logins, Google Calendar and service-account
+# *.invalid, *.localhost), systemd unit names (name@instance.service), a versioned Homebrew
+# formula's files (name@15.plist, name@15.rb, name@15.json, name@15.log), noreply addresses,
+# git@ logins, Google Calendar and service-account
 # IDs (*.calendar.google.com, *.gserviceaccount.com, a Cloud SQL IAM user's name@project.iam),
 # a URL's user name and password, and in Bash an ssh/sftp/mosh target, an scp/rsync user@host:
 # path, or the account gcloud signs in as (auth login, config set account, --account).
@@ -100,7 +105,8 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
     payload = json.load(fh)
 tool = payload.get("tool_name") or ""
 args = payload.get("tool_input") or {}
-allowed = {a.lower() for a in re.split(r"[,\s]+", sys.argv[3]) if a}
+# Lowercased on both sides, never re.I: that folds "ſ" to "s", another mailbox.
+allowed = [re.compile(re.escape(a.lower()).replace(r"\*", ".*")) for a in re.split(r"[,\s]+", sys.argv[3]) if a]
 
 MARK = "Not on your allowed list (DEV_HOOKS_ALLOWED_EMAILS): "
 DEST_MARK = "Destination: "
@@ -122,9 +128,10 @@ SIGN_IN = re.compile(
 )
 # Calendar and service-account IDs look like addresses but name no person.
 NON_PERSON = re.compile(r"(?:^|\.)(?:calendar\.google\.com|gserviceaccount\.com)$")
-# name@15.plist (a versioned launchd file) and name@project.iam (a Cloud SQL IAM user): the
-# whole domain, so a real address with .plist or .iam appended still counts.
-NOT_A_DOMAIN = re.compile(r"^(?:\d[\d.]*\.plist|[a-z][a-z0-9-]*\.iam)$")
+# name@15.plist, name@15.rb, name@15.json, name@15.log (a versioned Homebrew formula's files)
+# and name@project.iam (a Cloud SQL IAM user): the whole domain, so a real address with one of
+# these appended still counts.
+NOT_A_DOMAIN = re.compile(r"^(?:\d[\d.]*\.(?:plist|rb|json|log)|[a-z][a-z0-9-]*\.iam)$")
 trusted_hosts = [h for h in re.split(r"[,\s]+", sys.argv[5]) if h]
 trusted_tools = [t for t in re.split(r"[,\s]+", sys.argv[6]) if t]
 SCRIPT = re.compile(r"script|eval", re.I)
@@ -249,7 +256,7 @@ def counted(raw):
         address = found.replace("%40", "@").lower()
         local, _, domain = address.rpartition("@")
         if (
-            address in allowed
+            any(entry.fullmatch(address) for entry in allowed)
             or RESERVED.search(domain)
             or UNIT.search(domain)
             or NON_PERSON.search(domain)
@@ -355,12 +362,14 @@ if tool == "Bash":
     command = SIGN_IN.sub(lambda m: m.group(0)[: m.start("addr") - m.start()], args.get("command") or "")
     text = readable(GIT_IDENTITY.sub(" ", command)).replace("file://", " ")
     headers = header_values(text)
+    allowed = [] if headers else allowed  # a variable can carry an allowed address into the header
     result = bash(text)
 elif tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
     parts = [args.get(k) for k in ("content", "new_string", "new_source")]
     parts += [e.get("new_string") for e in args.get("edits") or [] if isinstance(e, dict)]
     text = readable("\n".join(p for p in parts if isinstance(p, str)))
     headers = header_values(text)
+    allowed = [] if headers else allowed
     result = written(args.get("file_path") or args.get("notebook_path") or "", text)
 elif tool == "WebFetch":
     url = args.get("url") or ""

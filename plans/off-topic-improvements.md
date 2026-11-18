@@ -256,6 +256,10 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **closing-offer-reminder has no acted-on case in the nudge outcomes** (2026-11-16). It
   resolves as `unknown` in `/session-facts nudges`. A case needs `closing_offer`'s patterns
   mirrored in `nudge-outcomes.ts` with a parity test (acted: the next reply holds no offer).
+- **private-email-guard reads only part of an odd address** (2026-11-18). Its `EMAIL` pattern
+  stops at a character outside `[\w.+-]`, so `sam!bot@public-alias.org` is judged as
+  `bot@public-alias.org` and passes when that is allowed; a zero-width space cuts a domain the
+  same way. An allowlist entry of `*` or `*@domain` is also taken as written.
 - **closing-offer-reminder's known misses** (2026-11-16). A one-way word used as a code noun
   silences it ("add tests for the delete endpoint", "fix the send button"), as does a capital
   after ask/tell ("tell Ruff to ignore it"). It blocks "Want me to commit this?" and asks about

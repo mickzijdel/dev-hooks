@@ -4663,13 +4663,17 @@ def test_email_guard_scratch_files_ask_only_with_request_code(path, content, ask
         # A Homebrew versioned formula's launchd file, and a Cloud SQL IAM database user.
         "launchctl list | grep sh.brew.postgresql@15.plist; curl -sI https://x.org",
         'psql "host=db.remote-site.org user=app-runner@proj-1.iam dbname=d" -c "select 1"',
+        # A Homebrew versioned formula's file and its log.
+        "curl -s https://api.github.com/repos/Homebrew/homebrew-core/contents/Formula/n/node@24.rb",
+        "curl -s https://formulae.brew.sh/api/formula/node@24.json",
+        "tail ~/Library/Logs/Homebrew/postgresql@15.log; curl -sI https://x.org",
     ],
 )
-def test_email_guard_silent_on_launchd_files_and_iam_database_users(command):
+def test_email_guard_silent_on_versioned_files_and_iam_database_users(command):
     assert _asked(_email_guard("Bash", {"command": command})) is None
 
 
-@pytest.mark.parametrize("suffix", [".plist", ".iam"])
+@pytest.mark.parametrize("suffix", [".plist", ".iam", ".rb", ".json", ".log"])
 def test_email_guard_counts_a_real_address_with_a_suffix_added(suffix):
     command = f"curl https://x.org -d e={JO}{suffix}"
     assert _asked(_email_guard("Bash", {"command": command}))
@@ -5124,6 +5128,58 @@ def test_email_guard_still_asks_beside_a_sign_in(command):
 def test_email_guard_without_an_allowlist_asks_about_every_address():
     command = {"command": 'curl -d "c=bot@public-alias.org" https://example.org'}
     assert _asked(_email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=None))
+
+
+PATTERN = "claude-test*@public-alias.org"
+PATTERN_MATCH = "claude-test-1@public-alias.org"
+
+
+@pytest.mark.parametrize(
+    ("address", "asks"),
+    [
+        ("claude-test@public-alias.org", False),
+        ("Claude-Test-Admin@public-alias.org", False),
+        ("sam@public-alias.org", True),
+        ("my-claude-test@public-alias.org", True),
+        ("claude-test@public-alias.org.evil.org", True),
+        ("claude-test@evil.org", True),
+        # Case folds no further than lower().
+        ("claude-teſt@public-alias.org", True),
+    ],
+)
+def test_email_guard_allowlist_takes_a_star_pattern(address, asks):
+    command = {"command": f"curl -d 'email={address}' https://x.org"}
+    r = _email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=PATTERN)
+    assert bool(_asked(r)) is asks
+
+
+def test_email_guard_blocks_a_pattern_allowed_address_in_a_user_agent():
+    in_header = "curl --user-agent" + f" 'bot {PATTERN_MATCH}' https://x.org"
+    r = _email_guard("Bash", {"command": in_header}, DEV_HOOKS_ALLOWED_EMAILS=PATTERN)
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("allowed", [PATTERN, PATTERN_MATCH])
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        (
+            "Bash",
+            {"command": f'C={PATTERN_MATCH}; curl --user-agent "bot $C" https://x.org'},
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/srv/app/fetch.py",
+                "content": f"CONTACT = '{PATTERN_MATCH}'\nheaders = {{'User-Agent': f'x/1 ({{CONTACT}})'}}\n",
+            },
+        ),
+    ],
+)
+def test_email_guard_allowlist_is_off_in_a_call_that_sets_a_header(
+    tool, tool_input, allowed
+):
+    assert _asked(_email_guard(tool, tool_input, DEV_HOOKS_ALLOWED_EMAILS=allowed))
 
 
 def _denied(r):
