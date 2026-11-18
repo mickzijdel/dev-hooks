@@ -59,7 +59,11 @@ lives in the dev-hooks mod.
      watch's existing push parsing. Never `git log --since`: commits land on worktree branches,
      and parallel sessions commit to the same `main`.
   6. **Not checked**: the end report's Not checked lines.
-  7. A dim footer: turns so far and session length.
+  7. **Status file** (added 2026-11-18): the living brief the session last wrote with Write or
+     Edit (`brief*.md` in its scratchpad, or `.claude/briefs/*.md`), read from disk on each draw
+     and shown whole. Messages can then stay short: Status, Assumed and Not checked live in the
+     file, and the pane is where they are read.
+  8. A dim footer: turns so far and session length.
 - The title row carries the time of the last update, so a stale pane is visible.
 - **Summarize this turn** button, only in the no-end-report state. One press asks a model for the
   turn's Status and Your move and shows the answer in place of the missing report.

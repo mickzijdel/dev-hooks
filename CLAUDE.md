@@ -204,7 +204,9 @@ ask, and a later turn's report covers an earlier one that left none (a Stop hook
 is a turn of its own). Your move comes from the latest report that asks for something (a later "nothing" replaces none).
 Report values keep their markdown and are drawn whole with `Markdown`; rules and coloured `Text`
 rows read them through `plain`. It stores a line of each answer (`answerFacts`), never the answer: the
-value is read and written on every tool call. Rules learned building it:
+value is read and written on every tool call. A Write or Edit of a status file (`isStatusFile`:
+`brief*.md` in a scratchpad, or `.claude/briefs/*.md`) stores its path as `statusFile`, and the
+pane reads that file from disk on every draw and shows it whole. Rules learned building it:
 the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
 `terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
 has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its

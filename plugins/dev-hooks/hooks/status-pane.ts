@@ -135,6 +135,12 @@ export const findBrief = (texts: string[]): Brief | null => {
   return null
 }
 
+// The session's status file: the living brief a session rewrites as its state changes, kept in
+// its scratchpad as brief*.md or in a repo's .claude/briefs/.
+const STATUS_FILE = /\/(?:scratchpad\/brief[^/]*|\.claude\/briefs\/[^/]+)\.md$/
+
+export const isStatusFile = (path: string): boolean => STATUS_FILE.test(path)
+
 const COMMIT = /^\[([^\s\]]+)(?: \([^)]*\))? ([0-9a-f]{7,40})\]/gm
 
 export const parseCommits = (text: string): { branch: string; sha: string }[] =>

@@ -64,6 +64,7 @@ import {
   clockTime,
   EMPTY_PANE_STATE,
   findBrief,
+  isStatusFile,
   keepTurns,
   noReportTurn,
   paneView,
@@ -1103,9 +1104,11 @@ export const register: Register = on => {
     }
     if (e.agentId === undefined) {
       const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
-      await changePane($, s =>
-        changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
-      ).catch(() => undefined)
+      const statusFile = edited && 'file_path' in e && typeof e.file_path === 'string' && isStatusFile(e.file_path) ? e.file_path : undefined
+      await changePane($, s => ({
+        ...changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
+        ...(statusFile ? { statusFile } : {}),
+      })).catch(() => undefined)
     }
     if (ran.deny !== undefined || ran.isError || (e.tool !== 'Edit' && e.tool !== 'Write')) return ran
 
@@ -1148,6 +1151,8 @@ export const register: Register = on => {
     const s = await loadPane($)
     const now = await $.clock.now()
     const v = paneView(s, ciBackground(), now, summarizing)
+    // Read on every draw: the session rewrites the file between reports.
+    const statusText = s.statusFile ? ((await $.fs.read(s.statusFile).catch(() => '')) ?? '').trim() : ''
     // Report text is drawn whole, as the markdown the reply wrote; a coloured row is a Text, so it
     // gets the plain words.
     const section = (title: string, markdown: string, dim = false) => (
@@ -1204,6 +1209,7 @@ export const register: Register = on => {
           ]
         : []),
       ...(v.notChecked.length > 0 ? [section('Not checked', bullets(v.notChecked), true)] : []),
+      ...(statusText ? [section(`Status file · ${s.statusFile?.split('/').at(-1)}`, statusText)] : []),
       <Box marginTop={1}>
         <Text dimColor>{`${v.turnCount} turn${v.turnCount === 1 ? '' : 's'} · session ${sinceLabel(s.startedAt, now)}`}</Text>
       </Box>,

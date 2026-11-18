@@ -5,6 +5,7 @@ import {
   EMPTY_PANE_STATE,
   endsOnQuestion,
   findBrief,
+  isStatusFile,
   isTypedPrompt,
   isWorkTurn,
   keepTurns,
@@ -357,4 +358,17 @@ test('an ask survives however many turns follow it', async () => {
   expect(view(state(keepTurns([turn({ report: report({ yourMove: ['push'] }) }), ...notes]))).yourMove).toEqual(['push'])
   expect(keepTurns([turn({ id: 'old' }), turn({ id: 'new' }), ...notes]).map(t => t.id)[0]).toBe('new')
   expect(keepTurns(Array.from({ length: 30 }, (_, i) => turn({ id: `t${i}` }))).length).toBe(20)
+})
+
+test('isStatusFile takes a brief in a scratchpad or in .claude/briefs, and no other file', async () => {
+  expect(
+    [
+      '/tmp/claude-501/x/scratchpad/brief-pane.md',
+      '/tmp/claude-501/x/scratchpad/brief.md',
+      '/r/.claude/briefs/asks-ui.md',
+      '/r/docs/brief-pane.md',
+      '/tmp/claude-501/x/scratchpad/notes.md',
+      '/r/.claude/briefs/asks-ui.txt',
+    ].map(isStatusFile),
+  ).toEqual([true, true, true, false, false, false])
 })

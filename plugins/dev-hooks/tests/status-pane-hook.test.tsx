@@ -470,3 +470,42 @@ test('a refused redraw does not stop the minute tick', async ($, on) => {
 
   expect(redraws).toEqual(['ui.render'])
 })
+
+// ── The status file ──────────────────────────────────────────────────────────────────
+const BRIEF_PATH = '/tmp/claude-501/s1/scratchpad/brief-pane.md'
+const BRIEF_TEXT = '# Brief\n\n## Not checked\n- the terminal surface\n'
+
+test('writing the brief records its path, and another file does not', async ($, on) => {
+  const w = world(on)
+
+  await $.turn.start({ text: 'go', turnId: 'u1' })
+  await $.tool.call({ tool: 'Write', file_path: '/r/notes.md', content: 'x' })
+  expect(w.pane()?.statusFile).toBeUndefined()
+  await $.tool.call({ tool: 'Write', file_path: BRIEF_PATH, content: BRIEF_TEXT })
+  expect(w.pane()?.statusFile).toBe(BRIEF_PATH)
+})
+
+test('the pane draws the status file whole, as it is on disk now', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  const read: string[] = []
+  on('fs.read', (_$, e) => {
+    read.push(e.path)
+    return { value: BRIEF_TEXT }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(read).toEqual([BRIEF_PATH])
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing', BRIEF_TEXT.trim()])
+  await ui.unmount()
+})
+
+test('a status file that is gone draws no section', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing'])
+  await ui.unmount()
+})

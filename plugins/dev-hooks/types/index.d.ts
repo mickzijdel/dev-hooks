@@ -77,6 +77,8 @@ export type StatusPaneState = {
   repos: RepoCommits[]
   background: BackgroundItem[]
   startedAt: number
+  // The status file this session last wrote (isStatusFile); the pane draws it from disk.
+  statusFile?: string
   // When the record last changed: the pane shows it, so a stale pane is visible.
   updatedAt?: number
 }
