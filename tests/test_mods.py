@@ -63,3 +63,14 @@ def test_module_tests_pass(plugin):
         pytest.skip("this Claude CLI has mods switched off")
     assert out.returncode == 0, out.stdout + out.stderr
     assert " 0 fail" in out.stdout, out.stdout
+
+
+def test_validate_type_checks_the_module(tmp_path):
+    """CI's only TypeScript check of the mods is validate's own (2.1.323+): a type error fails it."""
+    copy = tmp_path / ASKS.name
+    shutil.copytree(ASKS, copy, ignore=shutil.ignore_patterns("node_modules"))
+    module = copy / "hooks" / "register.tsx"
+    module.write_text(module.read_text() + '\nconst _wrong: number = "not a number"\n')
+    out = _claude(copy, "validate", "--strict")
+    assert out.returncode != 0, out.stdout
+    assert "TS2322" in out.stdout + out.stderr, out.stdout + out.stderr

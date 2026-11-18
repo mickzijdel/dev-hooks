@@ -56,9 +56,9 @@ Do not include changelog or detective-work where it does not belong, such as in 
 state contract is `plugins/dev-hooks/types/index.d.ts` (named as `types` in plugin.json) and
 its tests are `plugins/dev-hooks/tests/*.test.ts(x)`, run by `claude plugin test
 plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI; CI's `test`
-job installs a pinned one, needing no login). tsc can't run in CI — only a logged-in session
-load writes `.claude-plugin/types/` — so type-check locally after a session has loaded the
-plugin (`npx -p typescript tsc -p plugins/dev-hooks`; the engine writes that `tsconfig.json`). Load the `plugin-authoring` skill before editing it. A Claude Code
+job installs a pinned one, needing no login). `claude plugin validate --strict` type-checks
+the module and its tests (2.1.323+, no login) and fails on any TypeScript error, so CI runs the
+type check too; it reports the line and column, not the file. Load the `plugin-authoring` skill before editing it. A Claude Code
 that predates mods, or has them switched off, skips the module and still runs every command
 hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
 bundled examples use; call `$.state.get`/`$.state.set` directly.
@@ -81,8 +81,8 @@ an event outside its `KNOWN` list is sent past the module. Rules learned buildin
   merge the shell Stop nudges from outside; that logic has to move into the module.
 - In `claude plugin test`, the test's own `$` has no `store`/`state` noun and `$.classic` is
   undefined: answer `session.id`/`store.*`/`process.run` from a Map via the test's `on`
-  (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
-  wrong call shape such as `$.process.run({ argv })`.
+  (`{ value: … }`), as `tests/session-facts.test.ts` does. A wrong call shape such as
+  `$.process.run({ argv })` passes `validate`'s own checks and is caught only by its type check.
 
 The module **orchestrates the Stop hooks**: its `classic.Stop` hook sets `DEV_HOOKS_MOD_SESSION`
 to the session id before it calls `next` (`markStopTakenOver`; `$.env.set` reaches every command
