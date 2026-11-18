@@ -62,6 +62,7 @@ import {
 import {
   answerFacts,
   clockTime,
+  drawable,
   EMPTY_PANE_STATE,
   findBrief,
   isStatusFile,
@@ -1158,7 +1159,7 @@ export const register: Register = on => {
     const section = (title: string, markdown: string, dim = false) => (
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>{title}</Text>
-        <Markdown text={markdown} dimColor={dim} />
+        <Markdown text={drawable(markdown)} dimColor={dim} />
       </Box>
     )
     // One row is drawn as written: it may hold a list or a table of its own.
@@ -1202,7 +1203,7 @@ export const register: Register = on => {
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Changed</Text>
               {[
-                ...(v.changed.length > 0 ? [<Markdown text={bullets(v.changed)} />] : []),
+                ...(v.changed.length > 0 ? [<Markdown text={drawable(bullets(v.changed))} />] : []),
                 ...v.repoLines.map(row => <Text dimColor>{row}</Text>),
               ]}
             </Box>,

@@ -481,8 +481,20 @@ test('writing the brief records its path, and another file does not', async ($, 
   await $.turn.start({ text: 'go', turnId: 'u1' })
   await $.tool.call({ tool: 'Write', file_path: '/r/notes.md', content: 'x' })
   expect(w.pane()?.statusFile).toBeUndefined()
-  await $.tool.call({ tool: 'Write', file_path: BRIEF_PATH, content: BRIEF_TEXT })
+  await $.tool.call({ tool: 'Write', file_path: BRIEF_PATH, content: BRIEF_TEXT, agentId: 'ag' })
+  expect(w.pane()?.statusFile).toBeUndefined()
+  await $.tool.call({ ...edit, file_path: BRIEF_PATH })
   expect(w.pane()?.statusFile).toBe(BRIEF_PATH)
+})
+
+test('a control character in the status file does not blank the pane', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  on('fs.read', () => ({ value: '# Brief\n\u001b[31mred\u001b[0m\n' }))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing', '# Brief\n[31mred[0m'])
+  expect((await ui.find({ type: 'Text', text: /Status file/ }))?.text).toBe('Status file · brief-pane.md')
+  await ui.unmount()
 })
 
 test('the pane draws the status file whole, as it is on disk now', async ($, on) => {

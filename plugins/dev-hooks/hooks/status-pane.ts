@@ -141,6 +141,10 @@ const STATUS_FILE = /\/(?:scratchpad\/brief[^/]*|\.claude\/briefs\/[^/]+)\.md$/
 
 export const isStatusFile = (path: string): boolean => STATUS_FILE.test(path)
 
+// Markdown refuses a control character other than tab and newline, and the engine then skips the
+// whole pane: a status file or a report can carry one (colour codes pasted from a terminal).
+export const drawable = (text: string): string => text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
+
 const COMMIT = /^\[([^\s\]]+)(?: \([^)]*\))? ([0-9a-f]{7,40})\]/gm
 
 export const parseCommits = (text: string): { branch: string; sha: string }[] =>
