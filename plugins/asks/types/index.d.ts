@@ -6,6 +6,10 @@ export type Ask = {
   label: string
   /** What the ask is about, in one phrase a small model wrote. Absent until that call answers, and when it fails. */
   topic?: string
+  /** The minutes of agent work an answer starts, as the same call judged it. Absent until that call answers, and when it fails. */
+  work?: number
+  /** The desktop app's id for the session (`local_…`), which its deep link takes. Absent outside the desktop app. */
+  host?: string
   /** When the ask was recorded, in `$.clock.now()` milliseconds. */
   at: number
   /** `move` is a "Your move" block at the end of a turn; `question` is an open AskUserQuestion dialog. */
@@ -16,6 +20,8 @@ export type Ask = {
   changed: string
   /** What else stands above the "Details (skippable)" line, as markdown. */
   context: string
+  /** The person set the ask aside: it is not counted as waiting, and is listed apart until brought back. */
+  later?: true
 }
 
 /** A session the mod runs in, whether or not it is waiting on the person. */

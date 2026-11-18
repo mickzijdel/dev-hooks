@@ -91,20 +91,44 @@ export function titleFrom(matches: string): string {
   }
 }
 
-/** What the small model is asked, to head an ask with its subject. */
-export function topicPrompt(session: string, parts: ParsedAsk): string {
+/** A reply says what comes next at its end. */
+const REPLY_TAIL = 6000
+
+/** What the small model is asked. `reply` is the whole reply: its details say what work is still to come. */
+export function topicPrompt(session: string, parts: ParsedAsk, reply = ''): string {
   return [
-    'An AI coding assistant ended its turn with a request to its user. Write the subject of that request as one',
-    'plain phrase of at most 9 words, so the user sees at a glance what the decision is about. Name the concrete',
-    'thing, not the act of deciding. No quotes, no full stop, no preamble.',
+    'An AI coding assistant ended its turn with a request to its user. Answer in exactly two lines, no preamble.',
+    'Line 1: the subject of that request as one plain phrase of at most 9 words, so the user sees at a glance what',
+    'the decision is about. Name the concrete thing, not the act of deciding. No quotes, no full stop.',
+    'Line 2: a whole number of minutes and nothing else: how long AI agents will then work without the user, once',
+    'the user answers. Count the work this assistant does next, and the work of other tasks or sessions the request',
+    'says are waiting on the answer. 0 when an answer starts no work, as for a finished task or a review to read.',
     '',
     `Session: ${session}`,
     `Request: ${parts.move}`,
     parts.changed && `What changed: ${parts.changed}`,
     parts.context && `Context: ${parts.context}`,
+    reply && `The whole reply, for what work remains:\n${reply.slice(-REPLY_TAIL)}`,
   ]
     .filter(line => line !== '')
     .join('\n')
+}
+
+/** Only a bare count of minutes is read: "2 hours" or "90-120" would be misread as 2 or 90. */
+const MINUTES = /^(?:about |around |~)?(\d{1,4})(?: ?min(?:ute)?s?)?\.?$/i
+/** No estimate ranks an ask above a day's work. */
+const MOST_MINUTES = 1440
+
+/** The small model's last two lines, so a preamble is passed over. A last line that is no count of minutes gives none. */
+export function topicFrom(text: string): { topic: string; work?: number } {
+  const lines = text
+    .split('\n')
+    .map(line => line.replace(/^\s*Line \d:\s*/i, '').trim())
+    .filter(Boolean)
+  const minutes = lines.length > 1 ? MINUTES.exec(lines.at(-1)!)?.[1] : undefined
+  const topic = (minutes ? lines.at(-2)! : (lines[0] ?? '')).replace(/[."]+$/, '')
+
+  return { topic, ...(minutes ? { work: Math.min(Number(minutes), MOST_MINUTES) } : {}) }
 }
 
 const TAGGED_BLOCK = /<([a-z][a-z-]*)\b[^>]*>[\s\S]*?<\/\1>/gi

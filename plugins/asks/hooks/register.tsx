@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer, UiPressArgument } from 'claude-c
 
 import type { Ask, PaneView, Presence, Receipt } from '../types'
 import { ago, describe, inOrder, type Described, type Kind } from './describe'
-import { parseAsk, questionText, sessionName, statesMove, titleFrom, topicPrompt } from './parse'
+import { parseAsk, questionText, sessionName, statesMove, titleFrom, topicFrom, topicPrompt } from './parse'
 
 const PANE = 'asks'
 const TITLE = 'Asks'
@@ -20,6 +20,10 @@ const UNREAD_MS = 2 * 60_000
 /** An ask must have been the memo for this long before a press answers it. */
 const GUARD_MS = 600
 const ASKED_LENGTH = 120
+/** A fact longer than this, or of several lines, is drawn under its label, not beside it. */
+const FACT_ROW_LENGTH = 60
+/** A desktop app session id, as the app's own deep link handler accepts it. */
+const HOST_ID = /^local_[A-Za-z0-9-]{1,64}$/
 
 /** `$.store` is one file for every session, so each record has the session in its key. */
 const askKey = (session: string) => `ask:${session}`
@@ -102,28 +106,39 @@ async function firstPrompt($: EngineInterface): Promise<string> {
   return cwd.split('/').filter(Boolean).pop() ?? 'session'
 }
 
-async function record($: EngineInterface, kind: Ask['kind'], parts: Pick<Ask, 'move' | 'changed' | 'context'>) {
-  const [session, at] = await Promise.all([$.session.id(), $.clock.now()])
-  const ask: Ask = { session, label: await knownLabel($, session), at, kind, ...parts }
-  await $.store.set(askKey(session), ask)
-  await refresh($)
-  if (kind === 'move') void addTopic($, ask).catch(() => undefined)
+/** Empty in any host but the desktop app. */
+async function hostId($: EngineInterface): Promise<string> {
+  const id = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID').catch(() => '')) ?? ''
+  return HOST_ID.test(id) ? id : ''
 }
 
-/** Heads the ask with its subject, from one small model call. The ask stays as it is when the call fails. */
-async function addTopic($: EngineInterface, ask: Ask) {
+async function record(
+  $: EngineInterface,
+  kind: Ask['kind'],
+  parts: Pick<Ask, 'move' | 'changed' | 'context'>,
+  reply = '',
+) {
+  const [session, at, host] = await Promise.all([$.session.id(), $.clock.now(), hostId($)])
+  const ask: Ask = { session, label: await knownLabel($, session), at, kind, ...parts, ...(host ? { host } : {}) }
+  await $.store.set(askKey(session), ask)
+  await refresh($)
+  if (kind === 'move') void addTopic($, ask, reply).catch(() => undefined)
+}
+
+/** Adds `topic` and `work` from one small model call. The ask stays as it is when the call fails. */
+async function addTopic($: EngineInterface, ask: Ask, reply: string) {
   const r = await $.model.complete({
     model: TOPIC_MODEL,
-    prompt: topicPrompt(ask.label, ask),
-    maxTokens: 40,
+    prompt: topicPrompt(ask.label, ask, reply),
+    maxTokens: 60,
     timeoutMs: 10_000,
   })
-  const topic = r.isAnswered ? r.text.trim().split('\n')[0]!.replace(/[."]+$/, '') : ''
-  if (!topic) return
+  const found = r.isAnswered ? topicFrom(r.text) : { topic: '' }
+  if (!found.topic) return
   // The ask may have been answered or replaced while the model wrote.
   const now = (await $.store.get(askKey(ask.session))) as Ask | undefined
   if (now?.at !== ask.at) return
-  await $.store.set(askKey(ask.session), { ...now, topic })
+  await $.store.set(askKey(ask.session), { ...now, ...found })
   await refresh($)
 }
 
@@ -259,6 +274,16 @@ async function seen($: EngineInterface, ask: Ask) {
   await patch($, { mode: 'view', focus: null, receipt })
 }
 
+/** Sets an ask aside ("Not now"), or brings it back. Nothing is sent, and the session's next ask replaces it. */
+async function setAside($: EngineInterface, ask: Ask, isAside: boolean) {
+  if (!(await isRead($, ask))) return
+  const { later: _was, ...rest } = ask
+  await $.store.set(askKey(ask.session), isAside ? { ...rest, later: true } : rest)
+  await refresh($)
+  pinned = null
+  await patch($, { mode: 'view', focus: isAside ? null : ask.session, receipt: null })
+}
+
 async function putBack($: EngineInterface, ask: Ask) {
   await $.store.set(askKey(ask.session), ask)
   await refresh($)
@@ -280,7 +305,30 @@ async function openLink($: EngineInterface, url: string) {
   if (opened?.exitCode !== 0) await $.process.run(['xdg-open', url], { timeoutMs: 10_000 }).catch(() => undefined)
 }
 
+/** A pane's `Link` cannot do this: the desktop surface is sent `https:` links only. */
+// shortcut: `open` is macOS only, so elsewhere the press opens nothing; add `start` or `xdg-open` when someone needs it.
+async function openSession($: EngineInterface, host: string) {
+  if (!HOST_ID.test(host)) return
+  await $.process.run(['open', `claude://code/continue?session=${host}`], { timeoutMs: 10_000 }).catch(() => undefined)
+}
+
+// shortcut: a fullscreen terminal docks a pane too, but can't be told apart here; it gets /asks.
+const DOCKING_SURFACES = new Set(['vscode', 'desktop'])
+
+/** Unasked, the pane opens without taking the focus from the prompt. */
+async function openPaneUnasked($: EngineInterface, surface: string | null) {
+  if (surface === null || !DOCKING_SURFACES.has(surface)) return
+  if ((await $.env.get('ASKS_PANE')) === 'false') return
+  void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+}
+
 export const register: Register = on => {
+  on('session.attach', async ($, e, next) => {
+    await openPaneUnasked($, e.surface).catch(() => undefined)
+
+    return next(e)
+  })
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'asks', description: 'Show what every session is waiting on you for' })
     poll?.cancel()
@@ -289,6 +337,7 @@ export const register: Register = on => {
       void deliver($).catch(() => undefined)
     })
     await present($, 'idle').catch(() => undefined)
+    await openPaneUnasked($, e.surface).catch(() => undefined)
 
     return next(e)
   })
@@ -328,7 +377,7 @@ export const register: Register = on => {
     await present($, 'idle').catch(() => undefined)
     if (e.reason !== 'answer') return r
     const parsed = parseAsk(e.answer)
-    if (parsed) await record($, 'move', parsed).catch(() => undefined)
+    if (parsed) await record($, 'move', parsed, e.answer).catch(() => undefined)
     // A stated move of "nothing" closes the ask. A reply that states no move leaves the ask open.
     else if (statesMove(e.answer)) await clear($, await $.session.id()).catch(() => undefined)
 
@@ -357,16 +406,19 @@ export const register: Register = on => {
       $.session.id(),
       $.clock.now(),
     ])
-    const list = inOrder(all)
+    const every = inOrder(all)
+    const list = every.filter(a => !a.later)
     // The memo stays on the ask the person chose or was last shown; a more urgent ask that arrives waits in the list.
+    // An ask set aside is the memo only while the person has opened it.
     const memo =
-      list.find(a => a.session === state.focus) ?? list.find(a => a.session === pinned) ?? list[0]
+      every.find(a => a.session === state.focus) ?? list.find(a => a.session === pinned) ?? list[0]
+    const aside = every.filter(a => a.later && a !== memo)
     pinned = memo?.session ?? null
     if (!memo) shown = null
     else if (shown?.session !== memo.session || shown.at !== memo.at) shown = { session: memo.session, at: memo.at, since: now }
     const others = list.filter(a => a !== memo)
     const at = memo ? list.indexOf(memo) : -1
-    const waiting = new Set(list.map(a => a.session))
+    const waiting = new Set(every.map(a => a.session))
     // A session that has not been heard from for long has most likely been closed.
     const here = everyone.filter(s => now - s.at < (s.state === 'running' ? STUCK_MS : QUIET_MS))
     const quiet = here.filter(s => !waiting.has(s.session))
@@ -386,6 +438,19 @@ export const register: Register = on => {
     /** The keys that answer the memo, then the keys that move about: listed in that order under the pane. */
     const legend: string[] = []
     const moves: string[] = []
+
+    const sessionLink = (a: Pick<Ask, 'session' | 'label' | 'host'>) => {
+      const host = a.host
+      return host ? (
+        <Button key={`open-${a.session}`} plain onPress={() => void openSession($, host)}>
+          {a.label}
+        </Button>
+      ) : (
+        <Text dimColor size="caption">
+          {a.label}
+        </Text>
+      )
+    }
 
     const hint = (text: string) => (
       <Text dimColor size="footnote">
@@ -462,11 +527,10 @@ export const register: Register = on => {
                 </Button>
               </Box>
             )}
-            <Box flexDirection="row" gap={1} alignItems="center">
+            <Box flexDirection="row">
               <Button key={`done-${ask.session}`} variant="primary" {...key('d')} onPress={() => void answer($, ask, SENDS.done)}>
                 Done
               </Button>
-              {hint(`Sends “${SENDS.done}”.`)}
             </Box>
             {other}
           </Box>
@@ -533,6 +597,18 @@ export const register: Register = on => {
       )
     }
 
+    const notNow = (ask: Ask) => {
+      if (!keys) return null
+      legend.push(ask.later ? 'l bring back' : 'l not now')
+      return (
+        <Box flexDirection="row">
+          <Button key={`later-${ask.session}`} plain {...key('l')} onPress={() => void setAside($, ask, !ask.later)}>
+            {ask.later ? 'Bring back' : 'Not now'}
+          </Button>
+        </Box>
+      )
+    }
+
     const memoBox = (ask: Ask) => {
       const d = describe(ask)
       const colour = COLOUR[d.kind]
@@ -540,16 +616,17 @@ export const register: Register = on => {
         <Box flexDirection="column" borderStyle="round" borderColor={colour} paddingX={1} gap={1}>
           <Box flexDirection="column">
             <Box flexDirection="row" gap={1} justifyContent="space-between">
-              <Text size="caption">
-                <Text color={colour} weight="bold">
+              <Box flexDirection="row" gap={1} alignItems="center" flexShrink={1}>
+                <Text color={colour} weight="bold" size="caption">
                   {KIND_WORD[d.kind]}
                 </Text>
-                <Text dimColor>
-                  {'  '}
-                  {ask.label}
-                  {ask.session === own ? ' · this session' : ''}
-                </Text>
-              </Text>
+                {sessionLink(ask)}
+                {ask.session === own && (
+                  <Text dimColor size="caption">
+                    · this session
+                  </Text>
+                )}
+              </Box>
               <Text dimColor size="caption">
                 {ago(now - ask.at)}
               </Text>
@@ -562,6 +639,11 @@ export const register: Register = on => {
                 Blocks {d.blocks}
               </Text>
             )}
+            {!!ask.work && (
+              <Text color={CORAL} size="footnote">
+                Your answer starts about {ago(ask.work * 60_000)} of agent work
+              </Text>
+            )}
           </Box>
           {d.body && <Markdown text={d.body} />}
           {d.recommend && (
@@ -571,20 +653,26 @@ export const register: Register = on => {
             </Text>
           )}
           {answers(ask, d)}
+          {notNow(ask)}
           {d.facts.length > 0 && (
             <Box flexDirection="column">
-              {d.facts.map(f => (
-                <Box flexDirection="row" gap={1} alignItems="flex-start">
-                  <Box width={10} flexShrink={0}>
-                    <Text dimColor size="caption" weight="semibold">
-                      {f.key}
-                    </Text>
+              {d.facts.map(f => {
+                // A long fact (a table, several paragraphs) gets the pane's full width under its label; a
+                // label column beside it would stay empty all the way down.
+                const isLong = f.value.includes('\n') || f.value.length > FACT_ROW_LENGTH
+                return (
+                  <Box flexDirection={isLong ? 'column' : 'row'} gap={isLong ? 0 : 1} alignItems="flex-start">
+                    <Box {...(isLong ? {} : { width: 10 })} flexShrink={0}>
+                      <Text dimColor size="caption" weight="semibold">
+                        {f.key}
+                      </Text>
+                    </Box>
+                    <Box flexGrow={1} flexShrink={1}>
+                      <Markdown text={f.value} />
+                    </Box>
                   </Box>
-                  <Box flexGrow={1} flexShrink={1}>
-                    <Markdown text={f.value} />
-                  </Box>
-                </Box>
-              ))}
+                )
+              })}
             </Box>
           )}
         </Box>
@@ -684,11 +772,9 @@ export const register: Register = on => {
                   {KIND_WORD[d.kind]}
                 </Text>
               </Box>
-              <Box flexGrow={1} flexShrink={1}>
-                <Text size="footnote">
-                  {a.topic || d.question}
-                  <Text dimColor> · {a.label}</Text>
-                </Text>
+              <Box flexDirection="column" flexGrow={1} flexShrink={1} alignItems="flex-start">
+                <Text size="footnote">{a.topic || d.question}</Text>
+                {sessionLink(a)}
               </Box>
               <Box flexShrink={0}>
                 <Text size="caption">
@@ -697,6 +783,7 @@ export const register: Register = on => {
                       blocks{' '}
                     </Text>
                   )}
+                  {!!a.work && <Text color={CORAL}>starts {ago(a.work * 60_000, true)} · </Text>}
                   <Text dimColor>{ago(now - a.at, true)}</Text>
                 </Text>
               </Box>
@@ -706,6 +793,21 @@ export const register: Register = on => {
       </Box>
     )
     if (keys && others.length > 0) moves.push('j next', ...(others.length > 1 ? ['k previous'] : []))
+
+    const asideView = aside.length > 0 && (
+      <Box flexDirection="column">
+        <Text dimColor size="caption" weight="semibold">
+          SET ASIDE · {aside.length}
+        </Text>
+        {aside.map(a => (
+          <Box flexDirection="row">
+            <Button key={`aside-${a.session}`} plain onPress={() => focusOn(a.session)}>
+              {`${a.topic || describe(a).question} · ${a.label}`}
+            </Button>
+          </Box>
+        ))}
+      </Box>
+    )
 
     const quietLine = (s: Presence) => `${s.label} (${s.state === 'running' ? `running ${ago(now - s.at)}` : 'idle'})`
     const targets = here.map(s => ({ value: s.session, label: s.label }))
@@ -779,13 +881,14 @@ export const register: Register = on => {
           </Text>
           {list.length > 1 && (
             <Text dimColor size="caption">
-              blocking first, then oldest
+              most agent work started first
             </Text>
           )}
         </Box>
         {memoView}
         {receiptView}
         {also}
+        {asideView}
         {prompt}
         <Text dimColor size="caption">
           {!keys

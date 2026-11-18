@@ -1,6 +1,6 @@
 ---
 name: one-fix
-description: Use when several bugs, review findings or edge cases look related and are about to be patched one by one, when a fix adds the same check in a second place or a third special case, before wrapping up a diff or PR, or on "one fix for all of these", "find the root fix", "stop patching edge cases", "why do we keep fixing this". Takes a diff, a PR or the whole repo. Not for one isolated bug (systematic-debugging) or module depth (codebase-design).
+description: Use when several bugs, review findings or edge cases look related and are about to be patched one by one, when a fix adds the same check in a second place or a third special case, when the fix for a bug or alert only changes a message, adds a retry or repairs one record, before wrapping up a diff or PR, or on "one fix for all of these", "find the root fix", "stop patching edge cases", "why do we keep fixing this". Takes a diff, a PR or the whole repo. Not for one isolated bug (systematic-debugging) or module depth (codebase-design).
 allowed-tools:
   - Bash
   - Read
@@ -27,6 +27,8 @@ Stop patching and run this skill when any of these is true of the work in hand:
 - the same guard is about to exist in two places
 - a third conditional is going in for what is one bug
 - the fix is a fix to an earlier fix
+- the fix changes only what the fault looks like (a message, a retry, one repaired record) and
+  leaves the cause in place
 - the "search the codebase for the same mistake" pass returned two or more hits
 
 ## Steps

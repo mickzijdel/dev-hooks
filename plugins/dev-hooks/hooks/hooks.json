@@ -46,6 +46,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/migration-safety-reminder.sh\" prompt",
+            "statusMessage": "Checking whether the request is a schema change..."
+          },
+          {
+            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin-scope-reminder.sh\" prompt"
           }
         ]
@@ -240,6 +245,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
             "statusMessage": "Checking for reusable one-off scripts to save..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/closing-offer-reminder.sh\"",
+            "statusMessage": "Checking the last message ends on finished work..."
           },
           {
             "type": "command",

@@ -244,3 +244,24 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   `agent.spawn` is not affected: in a `claude -p` run that started one subagent the debug log has
   `dev-hooks@inline agent.spawn settled`, and the only bypass lines are `classic.PreToolUse` and
   `classic.Stop`, so subagent dispatches still reach the session facts.
+- **migration-safety-reminder's after-write check has no Prisma or raw-SQL path** (2026-11-16).
+  It gates on Rails `db/migrate/*.rb`, Django `migrations/*.py` and Alembic `versions/*.py`, so
+  a `prisma/migrations/*/migration.sql` or a `schema.prisma` edit gets no reminder; its rules
+  are also worded for Rails and Django only. The prompt-time mode does match "Prisma migration".
+- **`reminder_prompt_typed` keeps a prompt that opens with `<system-reminder>`** (2026-11-16).
+  The desktop app's notes about linked sessions ("The session … you started finished a turn",
+  "Linked sessions now") arrive as prompts in that tag. Replaying the prompt log through the
+  prompt-time migration check, 3 of its 5 fires in 5,966 prompts were such notes. The filter is
+  mirrored in `voice-common.sh` (`test_typed_prompt_filters_match`), so both change together.
+- **closing-offer-reminder has no acted-on case in the nudge outcomes** (2026-11-16). It
+  resolves as `unknown` in `/session-facts nudges`. A case needs `closing_offer`'s patterns
+  mirrored in `nudge-outcomes.ts` with a parity test (acted: the next reply holds no offer).
+- **private-email-guard reads only part of an odd address** (2026-11-18). Its `EMAIL` pattern
+  stops at a character outside `[\w.+-]`, so `sam!bot@public-alias.org` is judged as
+  `bot@public-alias.org` and passes when that is allowed; a zero-width space cuts a domain the
+  same way. An allowlist entry of `*` or `*@domain` is also taken as written.
+- **closing-offer-reminder's known misses** (2026-11-16). A one-way word used as a code noun
+  silences it ("add tests for the delete endpoint", "fix the send button"), as does a capital
+  after ask/tell ("tell Ruff to ignore it"). It blocks "Want me to commit this?" and asks about
+  Asana tasks, which name no one-way word. Replayed over 1,487 turn-ending messages in 200
+  transcripts it fires on 62 (4.2%); read a sample before tuning.

@@ -33,8 +33,10 @@ lives in the dev-hooks mod.
 
 - **Which turns count:** every turn since your last typed prompt, not only the latest. Task
   notifications, CI prompts and wake-ups start turns of their own; a later turn ending "Your
-  move: nothing" must not wipe an ask from the turn before, so Your move gathers the items of
-  every ended turn since your last prompt, and the state is the worst of them. Typing a prompt
+  move: nothing" must not wipe an ask from the turn before, so Your move reads the
+  latest report since your last prompt that asks for something (it restates every open ask, and
+  gathering every report showed a report rewritten after a Stop hook twice), plus any question
+  asked after it, and the state is the worst of the turns. Typing a prompt
   starts over. A prompt counts as typed by its origin (`prompt.submit`: Enter at the prompt, the
   Remote Control bridge, or an SDK host such as VS Code), not its text. A later turn's report
   covers an earlier turn that left none, since a Stop hook's continuation is a turn of its own. A
@@ -44,7 +46,7 @@ lives in the dev-hooks mod.
 
 - Below it, in this order, each section hidden when it has nothing to show (except Your move):
   1. **Your move**: the end report's Your move items, or "nothing".
-  2. **Doing**: the session's latest brief, clamped to two lines.
+  2. **Doing**: the session's latest brief, drawn whole.
   3. **Done when**: the brief's criteria, open circles while a turn runs. Once a turn ends, tick
      them by position only when the end report's Done when has as many items as the brief, each
      reading met or not; otherwise show the report's Done when text under them, unticked. Both
@@ -57,7 +59,11 @@ lives in the dev-hooks mod.
      watch's existing push parsing. Never `git log --since`: commits land on worktree branches,
      and parallel sessions commit to the same `main`.
   6. **Not checked**: the end report's Not checked lines.
-  7. A dim footer: turns so far and session length.
+  7. **Status file** (added 2026-11-18): the living brief the session last wrote with Write or
+     Edit (`brief*.md` in its scratchpad, or `.claude/briefs/*.md`), read from disk on each draw
+     and shown whole. Messages can then stay short: Status, Assumed and Not checked live in the
+     file, and the pane is where they are read.
+  8. A dim footer: turns so far and session length.
 - The title row carries the time of the last update, so a stale pane is visible.
 - **Summarize this turn** button, only in the no-end-report state. One press asks a model for the
   turn's Status and Your move and shows the answer in place of the missing report.
@@ -80,8 +86,9 @@ Mockups: `.superpowers/brainstorm/2372219-1792925350/content/layout-combined.htm
 - Green while I'm needed: a pane that says Done while Your move has an item, or while a question
   is open in the chat, is worse than no pane.
 - Spending tokens while nothing happens: the only model call is the button.
-- A wall of text: lists are capped (Your move 5, Changed 4, Running 4, Not checked 2), each cap
-  ending in "+N more".
+- Cut text (changed 2026-11-14, Mick: "doesn't truncate"): no list is capped and no row is clamped;
+  the pane scrolls. Report rows are drawn by the `Markdown` element, so links and code read as in
+  the reply.
 
 ## Where the data comes from
 
@@ -89,7 +96,7 @@ Mockups: `.superpowers/brainstorm/2372219-1792925350/content/layout-combined.htm
 |---|---|---|
 | State | `turn.start` / `turn.complete` events; the Stop input's `background_tasks` and `session_crons`; CI watches the module already tracks | |
 | Your move, Done when (ticks), Changed, Not checked, Status | the final message (`turn.complete` text), parsed by label | the labels are new (end-report-reminder, 2.64.0), so older sessions show the no-report state |
-| Doing, Done when (criteria) | the latest assistant text in the session holding both `Doing:` and `Done when:`, from `$.session.messages()` | only 1% of work turns carry a brief (a brief comes once per task), so this block is usually hidden; Doing runs median 305, p90 755 characters, hence the clamp |
+| Doing, Done when (criteria) | the latest assistant text in the session holding both `Doing:` and `Done when:`, from `$.session.messages()` | only 1% of work turns carry a brief (a brief comes once per task), so this block is usually hidden; Doing runs median 305, p90 755 characters |
 | Per-repo commit lines | this session's own `git commit` / `git push` output in Bash results (`tool.call`, after `next`) | the session facts list only Edit/Write targets: they saw 8 of the 21 files this session changed, so they are not used for counts |
 | Footer | `$.session.turns()`, session start | |
 

@@ -170,10 +170,15 @@ function rank(key: string): number {
   return at < 0 ? FACT_ORDER.length : at
 }
 
-/** Asks in the order the pane works through them: those that block other work first, then the oldest. */
-export function inOrder<A extends Pick<Ask, 'move' | 'changed' | 'context' | 'at'>>(asks: readonly A[]): A[] {
-  const blocks = (a: A) => (describe(a).blocks ? 0 : 1)
-  return [...asks].sort((a, b) => blocks(a) - blocks(b) || a.at - b.at)
+/**
+ * Asks in the order the pane works through them: the one whose answer starts the most agent work first, then the
+ * oldest. An ask with no estimate goes first when it states what it blocks; else it counts as starting no work, so
+ * an open question dialog, which never gets an estimate, keeps its place by age.
+ */
+export function inOrder<A extends Pick<Ask, 'move' | 'changed' | 'context' | 'at' | 'work'>>(asks: readonly A[]): A[] {
+  const work = (a: A) => a.work ?? (describe(a).blocks ? Infinity : 0)
+  // Infinity - Infinity is NaN, which falls through to the oldest.
+  return [...asks].sort((a, b) => work(b) - work(a) || a.at - b.at)
 }
 
 /** A length of time in the fewest words: "now", "12 min", "2 h 10 min", "3 d"; `short` gives "12m", "2h", "3d". */

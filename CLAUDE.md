@@ -201,8 +201,12 @@ value is declined rather than misread. The view reads every turn since the last 
 (`typedFrom`: the origin `prompt.submit` names before `turn.start`, `composer`, `bridge` or `sdk`;
 the text only when no origin arrived), so a notification or scheduled turn can't clear an earlier
 ask, and a later turn's report covers an earlier one that left none (a Stop hook's continuation
-is a turn of its own). It stores a line of each answer (`answerFacts`), never the answer: the
-value is read and written on every tool call. Rules learned building it:
+is a turn of its own). Your move comes from the latest report that asks for something (a later "nothing" replaces none).
+Report values keep their markdown and are drawn whole with `Markdown`; rules and coloured `Text`
+rows read them through `plain`. It stores a line of each answer (`answerFacts`), never the answer: the
+value is read and written on every tool call. A Write or Edit of a status file (`isStatusFile`:
+`brief*.md` in a scratchpad, or `.claude/briefs/*.md`) stores its path as `statusFile`, and the
+pane reads that file from disk on every draw and shows it whole. Rules learned building it:
 the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
 `terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
 has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its
@@ -218,6 +222,9 @@ the memo's kind, question, options and fact rows from it by plain code; both are
 unit-tested directly, and `$` stays in `register.tsx`. Its tests are `plugins/asks/tests/`,
 run by `tests/test_mods.py`. It installs without dev-hooks, so it shares no code with the
 session-status pane, which reads the same end report for one session. Rules learned building it:
+- The pane opens unasked at `session.start` and `session.attach` on a docking surface
+  (`openPaneUnasked`, without the focus; `ASKS_PANE=false` switches that off), the same rule as the
+  session-status pane's (`DEV_HOOKS_STATUS_PANE=false` switches that one off).
 - `$.store` is one file for every session of the plugin, which is what makes the pane
   cross-session. Keys: `ask:<session>`, `here:<session>` (presence), and one
   `send:<session>:<time>-<n>` per message for a session, read by that session's 3-second poll.
@@ -233,9 +240,16 @@ session-status pane, which reads the same end report for one session. Rules lear
   the memo for `GUARD_MS` (`isRead`): the list is re-sorted on every poll, and without both a
   key press could answer an ask the person never read. Keep every answering path behind `answer`
   or `seen`.
+- "Not now" (`setAside`) keeps the ask in the store with `later: true`: out of the count and the
+  memo order, listed under "Set aside", and the memo again only while `view.focus` names it.
 - The text a button sends is fixed in `SENDS`, never model-written, and is submitted
   `asUser`; `answerText` appends the session's own question. The one model call (`addTopic`)
-  writes only the subject line.
+  writes only the subject line and `work`, the minutes of agent work an answer starts, which
+  `inOrder` sorts by (most first; no estimate: Blocks first, else as 0).
+- A pane's `Link` reaches the desktop only with an `https:` href, so a session's name is a plain
+  Button that runs `open claude://code/continue?session=<host>` (`openSession`). `host` is
+  `CLAUDE_CODE_HOST_SESSION_ID`, kept on the ask only when it matches `HOST_ID`, the form the
+  app's deep-link handler accepts.
 - The desktop draws each Button's `hotkey` as a chip beside the label, so labels carry no key;
   a Box one cell high is a thick bar there, so the pane uses no separator Boxes. While an
   Input is open (`mode` other than `view`) no Button gets a `hotkey`.

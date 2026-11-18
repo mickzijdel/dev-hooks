@@ -57,6 +57,14 @@ type Engine = Parameters<TestBody>[0]
 let clock = { now: NOW, step: 1000 }
 /** The prompts the mod submitted in this session. */
 let submitted: { text: string; origin: unknown }[] = []
+/** Every pane the mod opened, and what `ASKS_PANE` is set to. */
+let opened: string[] = []
+let paneSwitch: string | undefined
+/** What the desktop app calls this session, and what the small model answers. */
+let hostSession: string | undefined
+let modelText = 'Which login fix to ship.\n'
+/** Every program the mod ran, with its arguments. */
+let ran: string[][] = []
 
 /** Stands for the engine under the mod: one store shared by every session, and this session named `mine`. */
 function engine(
@@ -67,6 +75,7 @@ function engine(
 ) {
   clock = { now: NOW, step: 1000 }
   submitted = []
+  opened = []
   on('store.set', (_, e) => {
     store.set(e.key, e.value)
     onSet(e.value)
@@ -82,10 +91,19 @@ function engine(
   on('session.messages', () => ({ value: [{ role: 'user', text: 'Fix the login page', toolUses: [] }] }))
   on('session.cwd', () => ({ value: '/work' }))
   on('clock.now', () => ({ value: (clock.now += clock.step) }))
-  on('env.get', () => ({ value: '/home/me' }))
+  on('env.get', (_, e) => ({
+    value: e.name === 'ASKS_PANE' ? paneSwitch : e.name === 'CLAUDE_CODE_HOST_SESSION_ID' ? hostSession : '/home/me',
+  }))
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
   // What grep prints for the transcript's title rows; `title` is '' for a session the app has not named.
-  on('process.run', () => ({
+  ran = []
+  on('process.run', (_, e) => ({
     value: {
+      ...(ran.push([...e.argv]) && {}),
       exitCode: 0,
       stdout: title ? `"customTitle":"Old name"\n"customTitle":"${title}"\n` : '',
       stderr: '',
@@ -93,7 +111,7 @@ function engine(
       isStderrTruncated: false,
     },
   }))
-  on('model.complete', () => ({ value: { isAnswered: true, text: 'Which login fix to ship.\n', usage: {} } as never }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: modelText, usage: {} } as never }))
   on('clock.every', () => ({ value: undefined }))
   on('command.register', () => ({ value: { command: 'asks' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -139,6 +157,46 @@ test('a turn that ends with a move is saved, and the next prompt clears it', asy
 
   await $.prompt.submit({ text: 'A', origin: { kind: 'composer' }, wait: false })
   expect(store.has('ask:mine')).toBe(false)
+})
+
+test('in the desktop app the ask keeps the app’s id for its session and the work an answer starts', async ($, on) => {
+  let store = new Map<string, unknown>()
+  hostSession = 'local_1a2b-3c'
+  modelText = 'Which login fix to ship\n45\n'
+  const topicSaved = new Promise<void>(saved => {
+    store = engine(on, store, 'Login page work', value => (value as Ask).topic && saved())
+  })
+
+  await turnEnds($, '**Your move:** Choose A or B.\n\n**Changed:** One file.')
+  await topicSaved
+  hostSession = undefined
+  modelText = 'Which login fix to ship.\n'
+  const saved = store.get('ask:mine') as Ask
+  expect([saved.host, saved.topic, saved.work]).toEqual(['local_1a2b-3c', 'Which login fix to ship', 45])
+})
+
+test('an id that is not the desktop app’s is not kept, so nothing can be put into the link', async ($, on) => {
+  hostSession = 'local_1&x=2'
+  const store = engine(on)
+  await turnEnds($, '**Your move:** Choose A or B.')
+  hostSession = undefined
+  expect((store.get('ask:mine') as Ask).host).toBeUndefined()
+})
+
+test('a session name is a link to the session; the memo is the ask that starts the most agent work', async ($, on) => {
+  const long: Ask = { ...review, host: 'local_abc', work: 130 }
+  const { ui } = await pane($, on, { ...goAhead, work: 30 }, { ...choice, work: 10 }, long)
+
+  expect((await ui.find({ type: 'Text', text: /^Review the draft PR/ }))?.props.size).toBe('heading')
+  expect(await ui.find({ type: 'Text', text: /^Your answer starts about 2 h 10 min of agent work$/ })).toBeTruthy()
+  // Only a session the desktop app runs has a name that can be pressed.
+  expect((await ui.findAll({ type: 'Button' })).filter(b => b.key?.startsWith('open-')).map(b => [b.key, b.text])).toEqual([
+    ['open-pr', 'Formula sandbox'],
+  ])
+  await ui.press({ key: 'open-pr' })
+  expect(ran.at(-1)).toEqual(['open', 'claude://code/continue?session=local_abc'])
+  expect((await ui.findAll({ type: 'Text', text: /^starts \d+m · $/ })).map(t => t.text)).toEqual(['starts 30m · ', 'starts 10m · '])
+  await ui.unmount()
 })
 
 test('a session the app has not named is called by its first prompt', async ($, on) => {
@@ -201,7 +259,7 @@ test('the memo is the ask that blocks other work; the other asks are listed unde
   // No separator bars: a Box one cell high is a thick bar on the desktop.
   expect((await ui.findAll({ type: 'Box' })).filter(b => b.props.height === 1)).toEqual([])
   // The keys that answer come first, then the keys that move about.
-  expect(await ui.find({ type: 'Text', text: /^y yes · n no · r other answer · j next · k previous · p prompt a session$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^y yes · n no · r other answer · l not now · j next · k previous · p prompt a session$/ })).toBeTruthy()
   await ui.unmount()
 })
 
@@ -281,7 +339,7 @@ test('an ask that is not a yes-or-no question has no Yes button, only an answer 
   expect(await ui.find({ type: 'Button', key: 'yes-shot' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^ANSWER$/ })).toBeTruthy()
   expect((await ui.find({ type: 'Button', key: 'other' }))?.props.variant).toBe('primary')
-  expect(await ui.find({ type: 'Text', text: /^r answer · e seen · p prompt a session$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^r answer · e seen · l not now · p prompt a session$/ })).toBeTruthy()
   await ui.press({ key: 'other' })
   await ui.input({ key: 'reply-shot', text: 'The title is cut off' })
   await ui.unmount()
@@ -355,4 +413,62 @@ test('a new prompt goes to the session picked, and with nothing waiting the pane
   await ui.unmount()
 
   expect(sentTo(store, 'quiet')).toEqual(['Summarise the open questions'])
+})
+
+test('the pane opens by itself in the desktop app and VS Code, not in a terminal, and not when switched off', async ($, on) => {
+  paneSwitch = undefined
+  engine(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  expect(opened).toEqual([])
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  expect(opened).toEqual(['asks', 'asks'])
+
+  paneSwitch = 'false'
+  opened = []
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.session.attach({ surface: 'vscode', clientId: 'c1' })
+  paneSwitch = undefined
+  expect(opened).toEqual([])
+})
+
+/** How many label columns the memo draws for an ask whose Changed line is `changed`. */
+async function labelColumns($: Engine, on: On, changed: string) {
+  const { ui } = await pane($, on, ask('f', 'Facts', NOW - 500, 'Merge the branch?', '', changed))
+  expect(await ui.find({ type: 'Text', text: /^CHANGED$/ })).toBeTruthy()
+  const boxes = await ui.findAll({ type: 'Box' })
+  await ui.unmount()
+
+  return boxes.filter(b => b.props.width === 10).length
+}
+
+test('a short fact sits beside its label', async ($, on) => {
+  expect(await labelColumns($, on, 'The migration script.')).toBe(1)
+})
+
+test('a long fact is drawn under its label, at full width', async ($, on) => {
+  expect(await labelColumns($, on, 'Both checks are scheduled.\n\n| Task | Due |\n|---|---|\n| Check | Sun |')).toBe(0)
+})
+
+test('the Done button says what it sends by its label alone', async ($, on) => {
+  const { ui } = await pane($, on, task)
+  expect(await ui.find({ key: 'done-gh' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Sends “done”/ })).toBeUndefined()
+})
+
+test('Not now sets the ask aside: nothing sent, out of the count, and it can be brought back', async ($, on) => {
+  const { ui, store } = await pane($, on, task, goAhead)
+
+  expect(await ui.find({ type: 'Text', text: /^2 waiting on you$/ })).toBeTruthy()
+  await ui.press({ key: 'next' })
+  await ui.press({ key: 'later-gh' })
+  expect(await ui.find({ type: 'Text', text: /^1 waiting on you$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^SET ASIDE · 1$/ })).toBeTruthy()
+  expect([(store.get('ask:gh') as Ask).later, sentTo(store, 'gh')]).toEqual([true, []])
+
+  await ui.press({ key: 'aside-gh' })
+  expect((await ui.find({ key: 'later-gh' }))?.props.hotkey).toBe('l')
+  await ui.press({ key: 'later-gh' })
+  await ui.unmount()
+  expect((store.get('ask:gh') as Ask).later).toBeUndefined()
 })
