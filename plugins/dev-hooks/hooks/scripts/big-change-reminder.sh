@@ -1,7 +1,7 @@
 #!/bin/bash
 # bet: model won't pause on a huge session diff to suggest smaller commits / a review
 # sunset: model proactively proposes splitting large changes
-# Stop: when the session ends with a very large uncommitted change in the working tree,
+# Stop: when the session's own change is very large, committed and uncommitted together,
 # nudge Claude (blocks the stop) to slow down — commit in smaller pieces, get a review, and consider
 # plan mode for the next chunk. Aimed at people new to coding, for whom a 2000-line
 # uncommitted diff is hard to review and easy to lose. Inherited dirt counts once the
