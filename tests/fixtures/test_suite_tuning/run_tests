@@ -1,0 +1,3 @@
+#!/bin/sh
+# Test runner for the fixture: loads every test file given, like `bin/rails test FILES`.
+exec ruby -e 'ARGV.each { |f| require File.expand_path(f) }' "$@"
