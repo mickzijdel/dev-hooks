@@ -176,7 +176,7 @@ ensure
   restore.call
 end
 counts = results.group_by { |r| r[:status] }.transform_values(&:size)
-puts "summary: #{counts}"
+puts "summary: {#{counts.map { |k, v| "#{k}: #{v}" }.join(", ")}}" # not Hash#inspect: its format changed in Ruby 3.4
 if out
   # --only merges into an existing matrix by mutant id instead of replacing it
   old = only && File.exist?(out) ? JSON.parse(File.read(out), symbolize_names: true)[:results] : []
