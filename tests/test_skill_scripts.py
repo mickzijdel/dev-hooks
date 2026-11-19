@@ -1629,3 +1629,29 @@ def test_readme_audit_still_demands_a_license_without_the_marker(tmp_path):
     result = run_readme_audit(readme)
     assert "[FAIL] License section" in result.stdout
     assert result.returncode == 2
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+def test_readme_audit_ignores_shell_comments_in_fenced_blocks(tmp_path, fence):
+    """`# step 1` inside a code block is a comment, not a heading."""
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# tool\n\nA tool.\n\n## Usage\n\n"
+        f"{fence}sh\n# 1. fetch\n./pull.sh\n# License\n{fence}\n"
+    )
+    out = run_readme_audit(readme).stdout
+    assert "[PASS] Exactly one H1 — 1 found" in out
+    assert "[FAIL] License section" in out
+
+
+def test_readme_audit_reads_a_fence_shown_inside_a_longer_fence(tmp_path):
+    """A four-backtick block showing a three-backtick one stays open until its own close,
+    and headings after it still count."""
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# tool\n\nA tool.\n\n````md\n```sh\n# 1. fetch\n```\n# still code\n````\n\n"
+        "## License\n\nMIT\n"
+    )
+    out = run_readme_audit(readme).stdout
+    assert "[PASS] Exactly one H1 — 1 found" in out
+    assert "[PASS] License section" in out

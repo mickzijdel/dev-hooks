@@ -48,7 +48,8 @@ not instead of it.
    `.config/mise.toml` and the other paths mise supports (safe — it's a worktree of a repo you
    already trust, so
    this does **not** contradict [[dev-env-setup]]'s "never auto-trust unknown configs" rule),
-   copies the gitignored files, and re-marks shebang scripts executable. For a worktree in a
+   copies the gitignored files, and re-marks shebang scripts executable (only where
+   `core.fileMode` is false; elsewhere git already checks out the recorded modes). For a worktree in a
    gitignored dir inside the repo (`.worktrees/`, `.claude/worktrees/`) it also writes a
    `.miserc.toml` there that makes that dir mise's config ceiling: without it, mise in the
    worktree loads the main checkout's config too, and `mise install`, `mise upgrade` or an

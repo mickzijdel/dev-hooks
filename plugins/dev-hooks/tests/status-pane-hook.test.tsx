@@ -209,7 +209,7 @@ test('Your move numbers its items, and the Summarize button shows only without a
   world(on, { read: () => shaped(current) })
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect((await ui.find({ type: 'Text', text: /^1\. push$/ }))?.text).toBe('1. push')
+    expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['1. push\n2. merge'])
     expect(await ui.find({ key: 'summarize' })).toBeUndefined()
     await ui.unmount()
   }
@@ -221,14 +221,22 @@ test('Your move numbers its items, and the Summarize button shows only without a
   }
 })
 
-test('long lists end in "+N more" and a long Doing is clamped to two lines', async ($, on) => {
+test('nothing is cut: a long list and a long Doing are drawn whole, as markdown', async ($, on) => {
   const moves = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
-  const brief = { doing: 'x'.repeat(755), doneWhen: [] }
-  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: moves }) })], turnsTotal: 1, brief })) })
-  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /\+3 more/ }))?.text).toBe('+3 more')
-  expect((await ui.find({ type: 'Text', text: /^x+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
-  await ui.unmount()
+  const brief = { doing: 'x'.repeat(755), doneWhen: ['**tests** pass'] }
+  const report = rep({ yourMove: moves, changed: ['[the PR](https://example.com/1)', '`a.py`'], notChecked: ['the GUI'] })
+  world(on, { read: () => shaped(base({ turns: [ended({ report })], turnsTotal: 1, brief })) })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual([
+      moves.map((m, i) => `${i + 1}. ${m}`).join('\n'),
+      'x'.repeat(755),
+      '- [the PR](https://example.com/1)\n- `a.py`',
+      'the GUI',
+    ])
+    expect((await ui.find({ type: 'Text', text: /tests pass/ }))?.text).toBe('○ tests pass')
+    await ui.unmount()
+  }
 })
 
 // What session.start reads, as stop-takeover.test.ts answers it, and every pane opened.
@@ -371,11 +379,11 @@ test('the stored record keeps a line of each answer, not the answer', async ($, 
   expect(w.pane()?.turns[0]?.asksQuestion).toBe(true)
 })
 
-test('every row is clamped, not only Doing', async ($, on) => {
-  const long = `do ${'y'.repeat(749)}`
-  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: [long] }) })], turnsTotal: 1 })) })
+test('one move is drawn as written, with no number', async ($, on) => {
+  const move = `Push to \`main\`?  \n**Recommend:** Yes. ${'y'.repeat(749)}`
+  world(on, { read: () => shaped(base({ turns: [ended({ report: rep({ yourMove: [move] }) })], turnsTotal: 1 })) })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-  expect((await ui.find({ type: 'Text', text: /^do y+…$/ }))?.text?.length).toBeLessThanOrEqual(120)
+  expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(move)
   await ui.unmount()
 })
 
@@ -386,7 +394,7 @@ test("the pane's opening can't cut session start short", async ($, on) => {
     return { value: undefined }
   })
   on('env.set', (_$, e) => {
-    if (e.name === 'DEV_HOOKS_MOD_SESSION') marked.push(e.value)
+    if (e.name === 'DEV_HOOKS_CI_WATCH_SESSION') marked.push(e.value)
     return { value: {} }
   })
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -461,4 +469,55 @@ test('a refused redraw does not stop the minute tick', async ($, on) => {
   await second.unmount()
 
   expect(redraws).toEqual(['ui.render'])
+})
+
+// ── The status file ──────────────────────────────────────────────────────────────────
+const BRIEF_PATH = '/tmp/claude-501/s1/scratchpad/brief-pane.md'
+const BRIEF_TEXT = '# Brief\n\n## Not checked\n- the terminal surface\n'
+
+test('writing the brief records its path, and another file does not', async ($, on) => {
+  const w = world(on)
+
+  await $.turn.start({ text: 'go', turnId: 'u1' })
+  await $.tool.call({ tool: 'Write', file_path: '/r/notes.md', content: 'x' })
+  expect(w.pane()?.statusFile).toBeUndefined()
+  await $.tool.call({ tool: 'Write', file_path: BRIEF_PATH, content: BRIEF_TEXT, agentId: 'ag' })
+  expect(w.pane()?.statusFile).toBeUndefined()
+  await $.tool.call({ ...edit, file_path: BRIEF_PATH })
+  expect(w.pane()?.statusFile).toBe(BRIEF_PATH)
+})
+
+test('a control character in the status file does not blank the pane', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  on('fs.read', () => ({ value: '# Brief\n\u001b[31mred\u001b[0m\n' }))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing', '# Brief\n[31mred[0m'])
+  expect((await ui.find({ type: 'Text', text: /Status file/ }))?.text).toBe('Status file · brief-pane.md')
+  await ui.unmount()
+})
+
+test('the pane draws the status file whole, as it is on disk now', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  const read: string[] = []
+  on('fs.read', (_$, e) => {
+    read.push(e.path)
+    return { value: BRIEF_TEXT }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(read).toEqual([BRIEF_PATH])
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing', BRIEF_TEXT.trim()])
+  await ui.unmount()
+})
+
+test('a status file that is gone draws no section', async ($, on) => {
+  world(on, { pane: shaped(base({ statusFile: BRIEF_PATH })) })
+  on('fs.read', () => {
+    throw new Error('ENOENT')
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect((await ui.findAll({ type: 'Markdown' })).map(m => m.props.text)).toEqual(['nothing'])
+  await ui.unmount()
 })

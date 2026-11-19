@@ -18,6 +18,30 @@ Noticed 2026-07-02 while reviewing mattpocock/skills for vendoring:
   issues (each slice cuts through all layers, demoable on its own) — useful language for
   plan-writing guidance.
 
+Noticed 2026-11-13 by the `one-fix` skill's two test runs on this repo (subagent findings,
+not verified by hand):
+
+- **Two parsers for "which git command, in which directory".** `reminder_runs_git` (awk
+  segments) and `git_target_dir` in `hook_helpers.py` (shlex) disagree: `timeout 5 git -C
+  /other push` matches in awk while `git_target_dir` returns the session cwd, and a `cd`
+  inside a quoted heredoc body moves the python answer. Proposal: `reminder_runs_git` also
+  tracks `cd`/`-C` and returns the directory and operands, so the python function, the
+  tokeniser in `worktree-provision-reminder.sh` and the loop in `dangerous-command-guard.sh`
+  go.
+- **python3 is required in practice but guarded as optional.** The jq mirror of
+  `session_start` and the over-report fallbacks in `reminder-common.sh` only run when
+  python3 is missing, while other paths fail silently without it. One check at source time
+  would let about 80 lines and `test_jq_stamp_mirror_agrees_with_python` go. Behaviour
+  change: Stop hooks go silent without python3.
+- **`timeout` → `gtimeout` → perl ladder exists once** (`verify-work.sh`), with weaker copies
+  in `worktree-setup/scripts/setup-worktree.sh` and none in
+  `dev-env-setup/scripts/fleet_roster.sh` (`bounded` has no fallback on a bare macOS).
+- **`github_readme_audit.py` has three fence readers**: `heading_lines` got a fix and a fix
+  to that fix; `fenced_code_blocks` and `first_non_heading_paragraph` still have the old
+  behaviour.
+- **No macOS CI job**: every job runs `ubuntu-latest`, and the recent portability fixes
+  (BSD sed, no `/proc`, no `timeout`, bash 3.2) are one class a macOS job would catch.
+
 Noticed 2026-09-22 while shipping the `deslop` skill:
 
 - **`slop_scan.py`'s `is_code()` miscounts C-family block comments.** A line inside a
@@ -82,11 +106,6 @@ Noticed 2026-10-22 during the dev-env v28 fleet backfill:
 
 Noticed 2026-10-25 while draining this backlog:
 
-- **docs-context lists no docs inside any `.worktrees/<branch>` worktree**.
-  Its `find "$DOCS_DIR" … -not -path '*/.*'` is meant to skip hidden files, but it tests the
-  whole path, so a project under any hidden directory (`.worktrees/x/docs/a.md`, a repo in
-  `~/.config/…`) has every doc filtered out. Match hidden names below `$DOCS_DIR` only (e.g.
-  `-not -path "$DOCS_DIR/*/.*" -not -name '.*'`), with a test in a `.worktrees/` checkout.
 - **verify-work never runs ESLint in a repo with only one config style**
   (found while capping the linters). Its gate is `ls .eslintrc* eslint.config.* >/dev/null 2>&1`, and
   `ls` exits non-zero when either glob matches nothing, so ESLint runs only where both a legacy
@@ -111,24 +130,14 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   checkout's cwd, with BL's `lockfile = true`. Reproduce with a scratch worktree and
   `git status` on main before and after.
 
-- **github_readme_audit.py counts shell comments as H1s** (2026-10-28, found while writing
-  vicinae-updater's README). `heading_lines()` in
-  `plugins/writing/skills/github-readme/scripts/github_readme_audit.py` matches `^#{1,6}\s+` on
-  every line, including inside fenced code blocks, so a `# step 1` comment in a ```sh block counts
-  as an extra H1 (5 found for a README with one). Strip fenced blocks before matching headings.
-  Also: SETUP/USAGE_COMMAND_HINTS only know package managers, so an ops README for a private tool
-  (systemd units, a CLI on PATH) always fails both. Either skip those checks when the README has
-  no package manifest next to it, or accept any fenced command under the Installation/Usage heading.
-
-- **lint-on-edit.sh reformats Python in repos that configure no formatter** (2026-10-28, found
-  while patching HartreeWorks/skill--fact-check). The `*.py` branch of
-  `plugins/dev-hooks/hooks/scripts/lint-on-edit.sh` falls back to the global `ruff check --fix`
-  and `ruff format` when the project has no `.venv/bin/ruff`, so one Edit to a third-party script
-  (no pyproject, no ruff config) rewrote the whole file into ruff style: 62 lines of noise around a
-  6-line fix, unusable as an upstream patch. The header says it uses "the linter that THIS project
-  actually configures". Gate the global fallback on a ruff/black config being present
-  (`pyproject.toml` with `[tool.ruff]`/`[tool.black]`, `ruff.toml`, `.ruff.toml`), as the Ruby
-  branch does with Gemfile.lock.
+- **github_readme_audit.py's command-example checks only know package managers** (2026-10-28,
+  found while writing vicinae-updater's README). SETUP/USAGE_COMMAND_HINTS in
+  `plugins/writing/skills/github-readme/scripts/github_readme_audit.py` match package managers and
+  script runs, so an ops README for a private tool (systemd units, a CLI on PATH) fails both
+  though its sections have ```sh blocks. Either skip those checks when the README has no package
+  manifest next to it, or accept any fenced command under the Installation/Usage heading, and say
+  in the failure which commands the checks look for. The PostToolUse hook re-raises these on
+  every README edit.
 
 - **The dev-env standard's floating jscpd breaks `audit` across ERB repos** (2026-10-28, found
   while triaging Dependabot PRs). `run-jscpd.sh` (root and the dev-env-setup template) runs the
@@ -159,20 +168,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   move, but `resolveNudge`'s verify-work case only knows passed / still failing, so that reply
   scores as ignored. A remedy that reads the next reply for the failing check's name (from the
   block's `=== name ===` sections) would make the acted-on rate mean something again.
-- **Nested-run detection is Linux-only** (2026-10-29). `reminder_is_nested_run` and
-  `voice_is_nested_run` read `/proc/$CLAUDE_PID/environ`; on macOS a fan-out's `claude -p` runs
-  still log as typed prompts. `ps eww -p "$CLAUDE_PID"` shows the same environment there.
-- **reminder-common.sh's fire-telemetry comment sits on the wrong function** (2026-10-29). The
-  "Opt-in fire telemetry" paragraph is above `reminder_is_probe_session`, not
-  `_reminder_log_fire`, which it describes.
-- **fleet_roster.sh misses repos that keep the stamp in `mise/config.toml`** (2026-10-29, found
-  during the fleet dependency sweep). `plugins/dev-hooks/skills/dev-env-setup/scripts/fleet_roster.sh`
-  finds repos by a `mise.toml` file (`find -name mise.toml`, line ~90) and reads `origin_version` from
-  `<upstream>:mise.toml` (line 76). EUTC black_lightning (`~/Stack/Programmeren/BlackLightning`) keeps
-  `DEV_ENV_VERSION` in `mise/config.toml`, so it never shows in the roster. It sat on v23 while the
-  standard reached v28, and no backfill noticed. Match `mise/config.toml` and `.mise.toml` too. Also
-  read the stamp from the remote that the repo pushes to (here `upstream`, since `origin` is a fork),
-  not from the tracking branch.
 - **The standards-sweep routine covers 6 of ~20 dev-env repos** (2026-10-29). Cloud routine
   "Maintain dev-hook standards" (`trig_01AShWmktsvqAUydEJWduzaN`) attaches only dev-hooks,
   black_lightning (now the EUTC repo, fixed 2026-10-29), vischeck, booking-overview, fringe-chat and
@@ -184,8 +179,7 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   deslop 300. Either the trim measured differently (quotes, folded YAML) or these regrew. Pick one
   measure, add it to `tests/test_marketplace.py` (or a skills test) as a hard cap, and trim these.
 - **dev-env-setup tooling assumes a root `mise.toml`/`mise.lock`** (2026-10-29, found upgrading EUTC
-  black_lightning from v23 to v28, which keeps both under `mise/`). Three gaps, besides the fleet_roster
-  one above: (1) the `check_version_sync.sh` template reads only inline `[tools]` entries, not
+  black_lightning from v23 to v28, which keeps both under `mise/`). Three gaps (fleet_roster.sh already reads all of these locations): (1) the `check_version_sync.sh` template reads only inline `[tools]` entries, not
   `[tools.ruby]` tables with `version =`, so BL carries its own patched reader. (2) The same template
   hardcodes a root `mise.lock`, so with `mise/config.toml` it silently skips `mise/mise.lock`, and v27's
   "mise.lock always joins the comparison" doesn't hold. (3) `dev_env_check.sh` reads neither
@@ -199,7 +193,12 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   Separately, jscpd run inside that worktree scanned 0 files in 130 ms and passed (a `git archive`
   copy found the real result, 0 clones of 1,428 files), so a worktree's jscpd pass can be vacuous.
   spotify-tools' worktree did scan normally, so check BL's `.jscpd.json` / gitignore handling. Make
-  `run-jscpd.sh` fail when it scanned 0 files.
+  `run-jscpd.sh` fail when it scanned 0 files. Checked 2026-11-09 (jscpd 5.4.3, a dev-hooks
+  worktree under `.claude/worktrees/`, which scanned all 90 files): the `ai` and `threshold`
+  reporters that `.jscpd.json` sets print no file count, so the runner needs one from elsewhere
+  (add the `console` reporter and read its "Files analyzed" total, or a second `-r json` run).
+  Passing `-r` overrides each repo's configured reporters, and the runner is a standard template,
+  so this lands with a standard version bump.
 - **`setup-worktree.sh` line ~149 prints "command substitution: ignored null byte in input"**
   (2026-10-29, seen provisioning a mick-zijdel-website worktree). A `$(…)` there reads a file or
   command output containing a NUL byte. Find which input (likely a binary file matched by a copy
@@ -214,11 +213,6 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
   `mickzijdel/dev-hooks@75f605b` (the session cwd's repo and HEAD) instead of spotify-tools@d73a3ca.
   When the push output is empty, resolve the repo from the command's own `cd`/`-C` target (as
   `reminder_git_target_dir` does) and its pushed ref, or say nothing; never fall back to the cwd repo.
-- **README audit counts shell comments as H1s** (2026-10-29). `writing/skills/github-readme/scripts/github_readme_audit.py`
-  flagged vicinae-updater's README with "Exactly one H1: 6 found". Five of them were `# 1. ...` comments
-  inside a fenced `sh` block. It also failed "Setup/Usage command example missing in fenced code block"
-  though both sections have ```sh blocks. Skip lines inside fences when counting headings, and say which
-  commands the example checks look for. The PostToolUse hook re-raises these on every README edit.
 - **dev-env Ruby hk template: the `test` step bypasses the `t` queue** (2026-10-29, v29 backfill). In the Ruby repos' `hk.pkl` (booking-overview, spotify-tools, scav-hunt, from the Ruby template) the pre-commit `test` step runs `bin/rails test` directly, so a commit staging `.rb` files starts a full parallel suite outside `~/.local/bin/t`'s machine-wide queue. With parallel agents that swapped the laptop before. Make the template call `t` when it's on PATH (falling back to `bin/rails test` in CI).
 - **v28 → v29 guide step 5: the `shfmt -w` rule retabs 2-space repos** (2026-10-29). "Run `shfmt -w` in a repo without an `.editorconfig`" would reindent the whole re-copied script to tabs in repos with no shfmt gate whose committed copy is 2-space (booking-overview, spotify-tools, prose-arena, scav-hunt, impamp-3); the agents skipped it there. Say "where the repo lints shell with shfmt" instead.
 - **worktree-setup: a worktree shares the main checkout's uv venv when `UV_PROJECT_ENVIRONMENT` is set** (2026-10-29, readwise-digest v29 backfill). readwise-digest's `mise.toml` points `UV_PROJECT_ENVIRONMENT` at `~/.local/share/readwise-digest/venv`, the venv its live daily timer runs from, so `uv run` in a worktree re-pointed that venv's editable install at the worktree (repaired by `uv sync --frozen` from the main checkout). Have `setup-worktree.sh` give each worktree its own `UV_PROJECT_ENVIRONMENT` (e.g. `<worktree>/.venv`) in the env it writes, when the repo sets one outside the checkout.
@@ -230,3 +224,47 @@ Noticed 2026-10-28 while provisioning a BlackLightning worktree:
 - **save-script-reminder has no outcome case** (2026-11-12, weekly review). All 21 of its nudges in `stop-nudges.json`'s last 30 days are `unknown`, because `resolveNudge` (`hooks/nudge-outcomes.ts`) has no case for it. Its remedy is one the facts can show: a `dev-hooks:script-library` skill run after the fire. Add the case so the review gets a real acted-on rate.
 - **`REMINDER_CODE_EXTS` misses common code files** (2026-11-12, review of the error-swallow fix). It lists `rb erb rake py js ts jsx tsx vue mjs cjs sh`, so every hook gated on `reminder_is_code_file` skips `.mts`, `.cts`, `.svelte`, `.astro`, `.pyw`, `.gemspec`, `.ru`, `.jbuilder`, `Rakefile`, `Gemfile` and extensionless `bin/*` scripts. Widen it, and check each hook that uses it still wants the wider set.
 - **Write-detection misses NotebookEdit and MultiEdit** (2026-11-12, same review). `hook_helpers.path_written` reads `input.file_path`, but NotebookEdit's field is `notebook_path`; and the mod's facts record only Edit and Write edits, not MultiEdit or NotebookEdit. memory-reminder and skill-candidate-reminder go through `path_written`.
+
+- **CI runs Linux only, so BSD breakage ships silently** (2026-11-08). plan-reminder's GNU-only
+  `stat -c %Y` never fired on macOS, and nested-run detection read `/proc` only (both fixed
+  2026-11-09). Consider a macOS CI job.
+- **lint-on-edit.sh's `find_root` loops forever on a relative `file_path`** (2026-11-09).
+  `dirname .` is `.`, never `/`. Claude Code sends absolute paths, so it has not bitten; stop when
+  `dirname` returns its input.
+- **Each plugin README names its siblings** ("alongside `dev-hooks`, …") and none names `asks`
+  (2026-11-13). Left out of the asks commit, since each one-word edit costs a version bump.
+- **In a team organization the mod's `classic.PreToolUse` and `skill.prompt` hooks never run**
+  (2026-11-13): the built-in `cc-plugin-sec-default` sits in the outermost tier and sends
+  `classic.*` and `skill.prompt` past user-tier mods (debug log: `classic.Stop bypassed by
+  cc-plugin-sec-default`). Stop is fixed (the mark moved into `classic.Stop`), and skills are
+  recorded from the Skill tool call (`recordSkill`). Still lost there: the guard's `$.ui.ask`
+  dialog, so no "Allow for this session", timeout or late answer; the guard's `ask` goes to
+  Claude Code's own permission prompt. It can't move to `tool.check`: probed 2026-11-13, a
+  user-tier hook there sees the ask (`{ decision: 'ask', reason, hook: 'PreToolUse' }`) but may
+  only tighten it; answering `allow` gets the hook itself skipped, and handing up a
+  `$.tool.check` query's verdict leaves the ask standing. To give the session allow-list back
+  there, the shell guard would have to read a list the person fills (a slash command).
+  `agent.spawn` is not affected: in a `claude -p` run that started one subagent the debug log has
+  `dev-hooks@inline agent.spawn settled`, and the only bypass lines are `classic.PreToolUse` and
+  `classic.Stop`, so subagent dispatches still reach the session facts.
+- **migration-safety-reminder's after-write check has no Prisma or raw-SQL path** (2026-11-16).
+  It gates on Rails `db/migrate/*.rb`, Django `migrations/*.py` and Alembic `versions/*.py`, so
+  a `prisma/migrations/*/migration.sql` or a `schema.prisma` edit gets no reminder; its rules
+  are also worded for Rails and Django only. The prompt-time mode does match "Prisma migration".
+- **`reminder_prompt_typed` keeps a prompt that opens with `<system-reminder>`** (2026-11-16).
+  The desktop app's notes about linked sessions ("The session … you started finished a turn",
+  "Linked sessions now") arrive as prompts in that tag. Replaying the prompt log through the
+  prompt-time migration check, 3 of its 5 fires in 5,966 prompts were such notes. The filter is
+  mirrored in `voice-common.sh` (`test_typed_prompt_filters_match`), so both change together.
+- **closing-offer-reminder has no acted-on case in the nudge outcomes** (2026-11-16). It
+  resolves as `unknown` in `/session-facts nudges`. A case needs `closing_offer`'s patterns
+  mirrored in `nudge-outcomes.ts` with a parity test (acted: the next reply holds no offer).
+- **private-email-guard reads only part of an odd address** (2026-11-18). Its `EMAIL` pattern
+  stops at a character outside `[\w.+-]`, so `sam!bot@public-alias.org` is judged as
+  `bot@public-alias.org` and passes when that is allowed; a zero-width space cuts a domain the
+  same way. An allowlist entry of `*` or `*@domain` is also taken as written.
+- **closing-offer-reminder's known misses** (2026-11-16). A one-way word used as a code noun
+  silences it ("add tests for the delete endpoint", "fix the send button"), as does a capital
+  after ask/tell ("tell Ruff to ignore it"). It blocks "Want me to commit this?" and asks about
+  Asana tasks, which name no one-way word. Replayed over 1,487 turn-ending messages in 200
+  transcripts it fires on 62 (4.2%); read a sample before tuning.

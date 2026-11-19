@@ -20,7 +20,8 @@ reminder_stop_init ""
 
 [ -f .claude/current_plan.md ] || exit 0
 
-last_mod=$(stat -c %Y .claude/current_plan.md 2>/dev/null) || exit 0
+# GNU stat first: BSD stat rejects -c without output, while GNU `stat -f` prints file-system info.
+last_mod=$(stat -c %Y .claude/current_plan.md 2>/dev/null || stat -f %m .claude/current_plan.md 2>/dev/null) || exit 0
 [ -n "$last_mod" ] || exit 0
 [ $(($(date +%s) - last_mod)) -gt 120 ] || exit 0
 

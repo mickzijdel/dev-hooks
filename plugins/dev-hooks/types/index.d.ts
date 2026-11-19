@@ -77,6 +77,8 @@ export type StatusPaneState = {
   repos: RepoCommits[]
   background: BackgroundItem[]
   startedAt: number
+  // The status file this session last wrote (isStatusFile); the pane draws it from disk.
+  statusFile?: string
   // When the record last changed: the pane shows it, so a stale pane is visible.
   updatedAt?: number
 }
@@ -89,6 +91,8 @@ declare module 'claude-code' {
       contextBarSnapshot: Snapshot | null
       guardTimedOut: Record<string, string>
       emailsAllowedTo: Record<string, string[]>
+      // What the desktop app's Auto-fix events said, by when (ms): `owner/repo#N`, or `*`.
+      autoFixSeen: Record<string, number>
       statusPane: Shaped<StatusPaneState>
     }
   }

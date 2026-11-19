@@ -29,11 +29,22 @@ voice_payload() {
 
 # A `claude` started from another session's shell, whose prompts a program wrote: a copy of
 # dev-hooks' reminder_is_nested_run, pinned equal by test_nested_run_checks_match.
-# shortcut: reads /proc, so on macOS a nested run still looks typed; read `ps eww` there if needed.
+# Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command
+# line, which is cut off first: an argument may quote the variable.
+# The two copies must stay equal and can't be shared across plugins.
+# jscpd:ignore-start
 voice_is_nested_run() {
-  [ -r "/proc/${CLAUDE_PID:-none}/environ" ] &&
+  case "${CLAUDE_PID:-}" in '' | *[!0-9]*) return 1 ;; esac
+  if [ -r "/proc/$CLAUDE_PID/environ" ]; then
     grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
+  else
+    local args all
+    args=$(ps ww -o command= -p "$CLAUDE_PID" 2>/dev/null) || return 1
+    all=$(ps eww -o command= -p "$CLAUDE_PID" 2>/dev/null)
+    [[ ${all#"$args"} == *' CLAUDE_CODE_CHILD_SESSION='* ]]
+  fi
 }
+# jscpd:ignore-end
 
 # Echo one jq field from INPUT ("" when absent).
 voice_field() {
@@ -216,7 +227,7 @@ voice_fire_once() {
   return 0
 }
 
-# Opt-in fire telemetry, mirroring dev-hooks' DEV_HOOKS_FIRE_LOG so weekly-automation-review
+# Opt-in fire telemetry, mirroring dev-hooks' DEV_HOOKS_FIRE_LOG so automation-review
 # can see these hooks at all. They previously hand-rolled their own jq emit and so never
 # reached hook-fires.jsonl — their "0 fires" was undecidable rather than informative.
 # OFF by default; best-effort, never fails the hook.

@@ -105,13 +105,39 @@ def test_reapplies_exec_bit_on_shebang_scripts(tmp_path):
     _make_source_repo(src)
     wt = src / ".worktrees" / "wt"
     _add_worktree(src, wt)
-    # Simulate a checkout that dropped the executable bit.
+    # Only a core.fileMode=false repo checks a script out without the bit it needs.
+    subprocess.run(
+        ["git", "config", "core.fileMode", "false"], cwd=str(src), check=True
+    )
     os.chmod(wt / "bin" / "run.sh", 0o644)
 
     out, _ = run_setup(wt)
 
     assert os.access(wt / "bin" / "run.sh", os.X_OK)
     assert int(out["exec_fixed"]) >= 1
+
+
+def test_leaves_modes_alone_when_git_tracks_them(tmp_path):
+    """With core.fileMode=true the checkout already has the recorded modes; a chmod on a
+    100644 shebang file would show it as modified (101 files in one real repo)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    _make_source_repo(src)
+    wt = src / ".worktrees" / "wt"
+    _add_worktree(src, wt)
+    subprocess.run(["git", "config", "core.fileMode", "true"], cwd=str(src), check=True)
+
+    out, _ = run_setup(wt)
+
+    assert int(out["exec_fixed"]) == 0
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=str(wt),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert status.stdout == ""
 
 
 def test_sets_baseref_to_head(tmp_path):

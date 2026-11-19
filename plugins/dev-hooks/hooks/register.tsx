@@ -10,10 +10,11 @@
 // the command hooks returned. The Stop orchestration below hands it to the Stop hooks.
 //
 // Stop orchestration: the module runs dev-hooks' own Stop command hooks itself and
-// returns their reasons as one block. It marks the session with DEV_HOOKS_MOD_SESSION,
-// which makes the copies Claude Code runs directly stand down (reminder_stop_init), and
-// runs its own copies with DEV_HOOKS_ORCHESTRATED set. Without this module (an older
-// Claude Code, mods off) nothing is marked and the command hooks run as before.
+// returns their reasons as one block. Its classic.Stop hook marks the session with
+// DEV_HOOKS_MOD_SESSION, which makes the copies Claude Code runs directly stand down
+// (reminder_stop_init), and runs its own copies with DEV_HOOKS_ORCHESTRATED set. Where
+// that hook doesn't run (an older Claude Code, mods off, a plugin above that sends the
+// event past it) nothing is marked and the command hooks run as before.
 //
 // Stop-nudge outcomes: each reason the orchestration returns is resolved at the next
 // Stop as acted on or not (nudge-outcomes.ts), shown by /session-facts nudges.
@@ -24,6 +25,9 @@ import type { EngineInterface, Register, ToolCallEnvelope } from 'claude-code'
 
 import type { BackgroundItem, Facts, Nudge, NudgeRecord, Segment, Snapshot, StatusPaneState, TurnRecord } from '../types'
 import {
+  AUTO_FIX_GRACE_MS,
+  autoFixEvent,
+  autoFixKey,
   ciNote,
   ciStatusLine,
   ciToast,
@@ -33,6 +37,7 @@ import {
   isDryRun,
   isGitPush,
   isQuietPush,
+  parseHeadPrs,
   parsePushOutput,
   parseRuns,
   pushDir,
@@ -57,13 +62,16 @@ import {
 import {
   answerFacts,
   clockTime,
+  drawable,
   EMPTY_PANE_STATE,
   findBrief,
+  isStatusFile,
   keepTurns,
   noReportTurn,
   paneView,
   parseCommits,
   parseEndReport,
+  plain,
   sinceLabel,
   typedFrom,
 } from './status-pane'
@@ -309,6 +317,36 @@ async function pluginVersion($: EngineInterface): Promise<string> {
   return manifest.version ?? 'unknown'
 }
 
+// Takes this session's Stop hooks over by marking it, once their config reads cleanly
+// and not on a version whose orchestration already failed. False leaves the session
+// unmarked, so the command hooks keep running directly.
+async function markStopTakenOver($: EngineInterface, sessionId: string): Promise<boolean> {
+  const willing = !stopHandedBack.has(sessionId) && (await stopTakeoverAllowed($).catch(() => false))
+  if (willing && (await $.env.set('DEV_HOOKS_MOD_SESSION', sessionId).then(() => true, () => false))) return true
+  // A mark left by an earlier Stop would silence the direct runs with nothing orchestrating.
+  const marked = await $.env.get('DEV_HOOKS_MOD_SESSION').catch(() => undefined)
+  if (marked === sessionId) await $.env.set('DEV_HOOKS_MOD_SESSION', undefined).catch(() => undefined)
+  return false
+}
+
+// The mark is proof for one Stop, not for the session: each main-loop turn starts
+// unmarked, so a Stop sent past the module finds the command hooks running. Also clears
+// the mark an older version made at session start.
+async function clearStopMark($: EngineInterface) {
+  if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) === (await $.session.id())) {
+    await $.env.set('DEV_HOOKS_MOD_SESSION', undefined)
+  }
+}
+
+async function stopTakeoverAllowed($: EngineInterface): Promise<boolean> {
+  const failedOn = await $.store.get(ORCHESTRATION_FAILED)
+  return (await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))
+}
+
+// Sessions whose orchestration failed: Stop stays with their command hooks even if the
+// failure never reached the store.
+const stopHandedBack = new Set<string>()
+
 // Runs dev-hooks' Stop commands as Claude Code would and merges their reasons after
 // `below` (any block from hooks beneath the module).
 async function orchestrateStop(
@@ -493,7 +531,7 @@ async function guardTimeoutSeconds($: EngineInterface, command: string): Promise
 // Each reason the orchestration returns is a nudge in this session's facts; the next
 // Stop resolves the pending ones as acted/ignored/declined/unknown (nudge-outcomes.ts
 // holds the remedy per hook), and the resolved ones go to a cross-session log in the
-// store (`nudgeOutcomes`), exported for the weekly automation review.
+// store (`nudgeOutcomes`), exported for the automation review.
 
 type StopInput = { session_id: string; cwd: string; last_assistant_message?: string }
 
@@ -579,7 +617,8 @@ async function logNudges($: EngineInterface, records: NudgeRecord[]) {
 // ── CI watch ────────────────────────────────────────────────────────────────────────
 // After a successful `git push` the module watches that push's GitHub Actions runs:
 // progress in the status line, a toast when they end, and the outcome handed to Claude
-// (a pass as a conversation note, a failure as a prompt that wakes the session). It
+// (a pass as a conversation note, a failure as a prompt that wakes the session, or, with
+// the desktop app's Auto-fix on, as a note first and a prompt only if Auto-fix stays silent). It
 // marks the session with DEV_HOOKS_CI_WATCH_SESSION so ci-watch-reminder.sh stands down;
 // DEV_HOOKS_CI_WATCH=false turns both off. Watches live in module variables: a reload
 // of the module drops them.
@@ -653,6 +692,56 @@ async function pushTargets($: EngineInterface, command: string, output: string):
   return [...targets.values()]
 }
 
+// The desktop app's Auto-fix wakes the session for a CI failure on a PR it watches, so
+// with Auto-fix on the watch only notes such a failure, then wakes the session itself if
+// Auto-fix stays silent. What Auto-fix's <ci-monitor-event> prompts said, by when: a PR
+// they named (`owner/repo#N`), or AUTO_FIX_ON for one that names none. Kept in $.state,
+// so a reload or a resumed session still knows.
+const AUTO_FIX = { plugin: 'dev-hooks', key: 'autoFixSeen' } as const
+
+async function recordAutoFix($: EngineInterface, text: string, origin: string) {
+  const said = autoFixEvent(text, origin)
+  if (said === null) return
+  const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+  await $.state.set(AUTO_FIX, { ...seen, [said]: await $.clock.now() })
+}
+
+// The open PR the commit heads, when Auto-fix is on in this session. Anything that fails
+// on the way (the state, gh) reads as none, so the failure wakes the session as before.
+async function autoFixPrOf($: EngineInterface, repo: string, sha: string): Promise<number | undefined> {
+  try {
+    const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+    if (Object.keys(seen).length === 0) return undefined
+    const run = await $.process.run(['gh', 'api', `repos/${repo}/commits/${sha}/pulls`], { timeoutMs: 30_000 })
+    if (run.exitCode !== 0) return undefined
+    return parseHeadPrs(run.stdout, sha).find(pr => seen[autoFixKey(repo, pr)] !== AUTO_FIX_SILENT)
+  } catch {
+    return undefined
+  }
+}
+
+// Stored for a PR that Auto-fix stayed silent on: its failures wake the session at once
+// until an Auto-fix event names it again (which stores that event's time over this).
+const AUTO_FIX_SILENT = -1
+
+// AUTO_FIX_GRACE_MS after a failure was only noted: if no Auto-fix event has named the PR
+// since the push (Auto-fix is off for it, or was turned off), the watch sends the failure
+// as a prompt after all and marks the PR silent. Any event naming the PR counts, whatever
+// it reports: it shows Auto-fix still watches the PR, and only repo and number are read.
+async function wakeIfAutoFixSilent($: EngineInterface, w: Watch & { startedAt: number }, pr: number, runs: Run[]) {
+  try {
+    const seen = (await $.state.get(AUTO_FIX)).value ?? {}
+    const key = autoFixKey(w.repo, pr)
+    if ((seen[key] ?? AUTO_FIX_SILENT) > w.startedAt) return
+    await $.state.set(AUTO_FIX, { ...seen, [key]: AUTO_FIX_SILENT })
+  } catch {
+    // Unreadable state: wake the session rather than lose the failure.
+  }
+  await $.prompt.submit({ text: ciNote(w.repo, w.sha, 'failure', runs, undefined, { pr, late: true }) }).catch(err => {
+    $.ui.log(`dev-hooks: CI watch could not report ${w.repo}@${w.sha}: ${String(err)}`)
+  })
+}
+
 async function startCiWatch($: EngineInterface, target: { repo: string; sha: string }) {
   const key = `${target.repo}@${target.sha}`
   if (ciWatches.has(key)) return
@@ -688,10 +777,14 @@ async function pollCi($: EngineInterface, key: string) {
     ciWatches.delete(key)
     showCiStatus($)
     $.ui.toast(ciToast(w.repo, w.sha, verdict, mine), { timeoutMs: verdict === 'success' ? 8_000 : 20_000 })
-    const note = ciNote(w.repo, w.sha, verdict, mine, error)
-    // A failure needs Claude to act, so it starts a turn (once the session is idle);
-    // anything else is read with Claude's next request without waking it.
-    if (verdict === 'failure') await $.prompt.submit({ text: note })
+    const pr = verdict === 'failure' ? await autoFixPrOf($, w.repo, w.sha) : undefined
+    const note = ciNote(w.repo, w.sha, verdict, mine, error, pr === undefined ? undefined : { pr })
+    // A failure needs Claude to act, so it starts a turn (once the session is idle),
+    // unless Auto-fix is on and starts that turn itself; anything else is read with
+    // Claude's next request without waking it.
+    // The fallback is armed before the note, so a note that fails to append still gets its prompt.
+    if (pr !== undefined) $.clock.after(AUTO_FIX_GRACE_MS, () => void wakeIfAutoFixSilent($, w, pr, mine))
+    if (verdict === 'failure' && pr === undefined) await $.prompt.submit({ text: note })
     else await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: note }] } })
   } catch (err) {
     ciWatches.delete(key)
@@ -843,7 +936,6 @@ function tickPane($: EngineInterface) {
   $.clock.after(60_000, () => void tick())
 }
 
-const clamp = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 // ── end session-status pane ─────────────────────────────────────────────────────────
 
 async function guardNow($: EngineInterface): Promise<number> {
@@ -868,6 +960,22 @@ async function lateGuardAnswer(
   await $.prompt.submit({ text: lateAnswerNote(command, answer) }).catch(() => undefined)
 }
 
+// One run can arrive twice: as the Skill call and as its skill.prompt expansion. Either can be
+// the only one (a team organization skips skill.prompt; a slash command makes no Skill call).
+const SKILL_SEEN_TWICE_MS = 10_000
+
+async function recordSkill($: EngineInterface, skill: string) {
+  const at = Date.now()
+  await changeFacts($, f => {
+    const last = f.skills.findLastIndex(s => s.skill === skill)
+    const seen = f.skills[last]
+    // The later time is kept, so a nudge fired between two close runs still sees the second.
+    return seen && at - seen.at < SKILL_SEEN_TWICE_MS
+      ? { ...f, skills: f.skills.with(last, { skill, at }) }
+      : { ...f, skills: [...f.skills, { skill, at }].slice(-200) }
+  })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     isInteractive = e.isInteractive
@@ -886,13 +994,6 @@ export const register: Register = on => {
     const kept = await pruneFacts($)
     await sweepNudges($, kept, await $.session.id()).catch(() => undefined)
     if ((await $.state.get(isShown)).value) await refresh($)
-    // Only take the Stop hooks over once their config reads cleanly, and not on a
-    // version whose orchestration already failed; otherwise leave the session unmarked
-    // so the command hooks keep running directly.
-    const failedOn = await $.store.get(ORCHESTRATION_FAILED)
-    if ((await ownStopHooks($)).length > 0 && failedOn !== (await pluginVersion($))) {
-      await $.env.set('DEV_HOOKS_MOD_SESSION', await $.session.id())
-    }
     await claimCiWatch($)
     await openPaneUnasked($, e.surface).catch(() => undefined)
 
@@ -982,8 +1083,7 @@ export const register: Register = on => {
   })
 
   on('skill.prompt', async ($, e, next) => {
-    const at = Date.now()
-    await changeFacts($, f => ({ ...f, skills: [...f.skills, { skill: e.skill, at }].slice(-200) }))
+    await recordSkill($, e.skill)
 
     return next(e)
   })
@@ -1000,11 +1100,16 @@ export const register: Register = on => {
     if (asks) await setAsking($, true)
     const ran = await next(e)
     if (asks) await setAsking($, false)
+    if (e.tool === 'Skill' && typeof e.skill === 'string' && ran.deny === undefined && !ran.isError) {
+      await recordSkill($, e.skill).catch(() => undefined)
+    }
     if (e.agentId === undefined) {
       const edited = EDIT_TOOLS.has(e.tool) && ran.deny === undefined && !ran.isError
-      await changePane($, s =>
-        changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
-      ).catch(() => undefined)
+      const statusFile = edited && 'file_path' in e && typeof e.file_path === 'string' && isStatusFile(e.file_path) ? e.file_path : undefined
+      await changePane($, s => ({
+        ...changeOpenTurn(s, t => ({ ...t, calls: t.calls + 1, edits: t.edits + (edited ? 1 : 0) })),
+        ...(statusFile ? { statusFile } : {}),
+      })).catch(() => undefined)
     }
     if (ran.deny !== undefined || ran.isError || (e.tool !== 'Edit' && e.tool !== 'Write')) return ran
 
@@ -1042,69 +1147,70 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: STATUS_PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Markdown } = $.ui.resolve(e)
     tickPane($)
     const s = await loadPane($)
     const now = await $.clock.now()
     const v = paneView(s, ciBackground(), now, summarizing)
-    const width = Math.max(20, e.props.bodyColumns)
-    const section = (title: string, rows: string[], dim = false) => (
+    // Read on every draw: the session rewrites the file between reports.
+    const statusText = s.statusFile ? ((await $.fs.read(s.statusFile).catch(() => '')) ?? '').trim() : ''
+    // Report text is drawn whole, as the markdown the reply wrote; a coloured row is a Text, so it
+    // gets the plain words.
+    const section = (title: string, markdown: string, dim = false) => (
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>{title}</Text>
-        {rows.map(row => (
-          <Text dimColor={dim}>{clamp(row, 2 * width)}</Text>
-        ))}
+        <Markdown text={drawable(markdown)} dimColor={dim} />
       </Box>
     )
-    // Number the actions, not the "+N more" row after them.
+    // One row is drawn as written: it may hold a list or a table of its own.
+    const bullets = (rows: string[]) => (rows.length === 1 ? (rows[0] ?? '') : rows.map(row => `- ${row}`).join('\n'))
     const moves =
       v.yourMove.length === 0
-        ? ['nothing']
+        ? 'nothing'
         : v.yourMove.length === 1
-          ? v.yourMove
-          : v.yourMove.map((m, i) => (/^\+\d+ more$/.test(m) ? m : `${i + 1}. ${m}`))
+          ? (v.yourMove[0] ?? '')
+          : v.yourMove.map((m, i) => `${i + 1}. ${m}`).join('\n')
     const parts = [
       <Text dimColor>{`updated ${clockTime(s.updatedAt ?? s.startedAt)}`}</Text>,
       <Box>
         {v.tone === 'dim' ? <Text dimColor>{`● ${v.label}`}</Text> : <Text color={v.tone} bold>{`● ${v.label}`}</Text>}
         <Text dimColor>{` · ${sinceLabel(v.since, now)}`}</Text>
       </Box>,
-      ...(v.lastSaid ? [<Text dimColor>{`last said: "${clamp(v.lastSaid, width - 13)}"`}</Text>] : []),
+      ...(v.lastSaid ? [<Text dimColor>{`last said: "${plain(v.lastSaid)}"`}</Text>] : []),
       ...(v.canSummarize ? [<Button key="summarize" label="Summarize this turn" onPress={() => summarizeTurn($)} />] : []),
       ...(v.summarizing ? [<Text dimColor>Summarizing…</Text>] : []),
       ...(v.summaryError ? [<Text color="red">{`summary failed: ${v.summaryError}`}</Text>] : []),
       section('Your move', moves, v.yourMove.length === 0),
-      ...(v.doing ? [section('Doing', [clamp(v.doing, 2 * width)])] : []),
+      ...(v.doing ? [section('Doing', v.doing)] : []),
       ...(v.doneWhen.length > 0
         ? [
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Done when</Text>
               {v.doneWhen.map(d =>
                 d.met === null ? (
-                  <Text dimColor>{`○ ${clamp(d.text, 2 * width)}`}</Text>
+                  <Text dimColor>{`○ ${plain(d.text)}`}</Text>
                 ) : (
-                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${clamp(d.text, 2 * width)}`}</Text>
+                  <Text color={d.met ? 'green' : 'red'}>{`${d.met ? '✓' : '✗'} ${plain(d.text)}`}</Text>
                 ),
               )}
-              {v.doneWhenNote ? <Text dimColor>{`report: ${clamp(v.doneWhenNote, 2 * width)}`}</Text> : <Text> </Text>}
+              {v.doneWhenNote ? <Text dimColor>{`report: ${plain(v.doneWhenNote)}`}</Text> : <Text> </Text>}
             </Box>,
           ]
         : []),
-      ...(v.running.length > 0 ? [section('Running', v.running)] : []),
+      ...(v.running.length > 0 ? [section('Running', bullets(v.running))] : []),
       ...(v.changed.length + v.repoLines.length > 0
         ? [
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>Changed</Text>
-              {v.changed.map(row => (
-                <Text>{clamp(row, 2 * width)}</Text>
-              ))}
-              {v.repoLines.map(row => (
-                <Text dimColor>{clamp(row, width)}</Text>
-              ))}
+              {[
+                ...(v.changed.length > 0 ? [<Markdown text={drawable(bullets(v.changed))} />] : []),
+                ...v.repoLines.map(row => <Text dimColor>{row}</Text>),
+              ]}
             </Box>,
           ]
         : []),
-      ...(v.notChecked.length > 0 ? [section('Not checked', v.notChecked, true)] : []),
+      ...(v.notChecked.length > 0 ? [section('Not checked', bullets(v.notChecked), true)] : []),
+      ...(statusText ? [section(`Status file · ${s.statusFile?.split('/').at(-1)}`, statusText)] : []),
       <Box marginTop={1}>
         <Text dimColor>{`${v.turnCount} turn${v.turnCount === 1 ? '' : 's'} · session ${sinceLabel(s.startedAt, now)}`}</Text>
       </Box>,
@@ -1114,6 +1220,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    await recordAutoFix($, e.text, e.origin.kind).catch(() => undefined)
     if (e.turnId === undefined) nextOrigin = e.origin.kind
 
     return next(e)
@@ -1121,6 +1228,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
+      await clearStopMark($).catch(() => undefined)
       const turn: TurnRecord = { id: e.turnId, startedAt: 0, typed: typedFrom(nextOrigin, e.text), calls: 0, edits: 0 }
       nextOrigin = undefined
       await changePane($, (s, now) => ({
@@ -1189,9 +1297,13 @@ export const register: Register = on => {
   // Sees the command hooks' Stop verdict folded last-write-wins: with several
   // blocking, only the last reason arrives here (Claude still gets them all).
   on('classic.Stop', async ($, e, next) => {
+    // Marked here, not at session start: a plugin seated above can send this event past
+    // the module, and a mark made earlier would then silence the command hooks with
+    // nothing running them. Before `next`, so this Stop's direct runs already stand down.
+    const takesOver = await markStopTakenOver($, e.session_id).catch(() => false)
     const below = await next(e)
     await recordBackground($, e).catch(() => undefined)
-    if ((await $.env.get('DEV_HOOKS_MOD_SESSION')) !== e.session_id) return below
+    if (!takesOver) return below
 
     try {
       const block = await orchestrateStop($, e, below.block)
@@ -1199,6 +1311,7 @@ export const register: Register = on => {
     } catch (error) {
       // The command hooks stood down for this session, so a failure here would
       // silence every later Stop too: hand Stop back to them from the next turn.
+      stopHandedBack.add(e.session_id)
       await $.env.set('DEV_HOOKS_MOD_SESSION', undefined)
       await $.store.set(ORCHESTRATION_FAILED, await pluginVersion($).catch(() => 'unknown')).catch(() => undefined)
       $.ui.log(`dev-hooks: Stop orchestration failed, the Stop hooks run directly from now on: ${String(error)}`)

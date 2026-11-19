@@ -33,13 +33,24 @@ const TAIL = String.raw`(?:\s+this\s+(?:turn|session))?`
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/
 const NOTHING = /^(?:nothing(?: yet)?|none)\.?$/i
 
-// Emphasis markers around words go; an underscore inside a name (snake_case, a_b.py) stays.
-const unmark = (text: string) =>
+// Values keep their markdown for the pane to draw; `plain` is the same text for a rule to read or
+// a coloured row to show. Emphasis markers around words go; an underscore inside a name stays.
+export const plain = (text: string) =>
   text
     .replace(/\*\*|__/g, '')
     .replace(/(^|\s)[*_](?=\S)/g, '$1')
     .replace(/(\S)[*_](?=\s|[.,;:!?)]|$)/g, '$1')
+    .replace(/\s*\n\s*/g, ' ')
     .trim()
+
+// The value after a label's colon, without the marker the label's own emphasis leaves on it:
+// the closing "**" at its head ("**Changed:** x") or at its end ("**Changed: x**").
+const labelRest = (line: string, rest: string) => {
+  const opened = /^[\s>|-]*([*_]{1,3})/.exec(line)?.[1]
+  const headless = rest.replace(/^[*_]{1,3}(?=\s|$)/, '')
+  const value = opened && headless === rest && rest.trimEnd().endsWith(opened) ? rest.trimEnd().slice(0, -opened.length) : headless
+  return value.trim()
+}
 
 type Labels = Record<string, string>
 type Sections<L extends Labels> = { [K in keyof L]?: string[] }
@@ -54,6 +65,9 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
   }))
   const found: Sections<L> = {}
   let current: keyof L | null = null
+  // The section opened with a value on the label's line: the bullets under it are that value's own
+  // list ("Choose a route. I recommend 1." and its options), not items beside it.
+  let lead = false
   let gap = false
   let fenced = false
   for (const line of text.split('\n')) {
@@ -62,12 +76,13 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
     if (fenced || /^\s*```/.test(line)) continue
     const label = /^\s*>/.test(line) ? undefined : matchers.flatMap(m => {
       const inline = m.inline.exec(line)
-      if (inline) return [{ key: m.key, rest: unmark(inline[1] ?? '') }]
+      if (inline) return [{ key: m.key, rest: labelRest(line, inline[1] ?? '') }]
       return m.heading.test(line) ? [{ key: m.key, rest: '' }] : []
     })[0]
     if (label) {
       current = label.key
       found[current] = label.rest ? [label.rest] : []
+      lead = label.rest !== ''
       gap = false
       continue
     }
@@ -78,16 +93,20 @@ const parseSections = <L extends Labels>(text: string, labels: L): Sections<L> =
       continue
     }
     const bullet = BULLET.exec(line)
-    if (bullet) items.push(unmark(bullet[1] ?? ''))
+    const last = items.length - 1
+    if (bullet && lead) items[last] = `${items[last]}\n${line.trim()}`
+    else if (bullet) items.push((bullet[1] ?? '').trim())
     else if (gap && items.length > 0) current = null
-    else if (items.length > 0) items[items.length - 1] = `${items[items.length - 1]} ${line.trim()}`
-    else items.push(unmark(line))
+    // A table row keeps its bare newline. Any other line gets markdown's line break (two spaces,
+    // then the newline), so "Recommend:" stays on its own line.
+    else if (items.length > 0) items[last] = `${items[last]}${/^\s*\|/.test(line) ? '' : '  '}\n${line.trim()}`
+    else items.push(line.trim())
     gap = false
   }
   return found
 }
 
-const list = (items: string[] | undefined) => (items ?? []).filter(item => item && !NOTHING.test(item))
+const list = (items: string[] | undefined) => (items ?? []).filter(item => item && !NOTHING.test(plain(item)))
 
 export const parseEndReport = (text: string): EndReport | null => {
   const s = parseSections(text, REPORT_LABELS)
@@ -115,6 +134,16 @@ export const findBrief = (texts: string[]): Brief | null => {
   }
   return null
 }
+
+// The session's status file: the living brief a session rewrites as its state changes, kept in
+// its scratchpad as brief*.md or in a repo's .claude/briefs/.
+const STATUS_FILE = /\/(?:scratchpad\/brief[^/]*|\.claude\/briefs\/[^/]+)\.md$/
+
+export const isStatusFile = (path: string): boolean => STATUS_FILE.test(path)
+
+// Markdown refuses a control character other than tab and newline, and the engine then skips the
+// whole pane: a status file or a report can carry one (colour codes pasted from a terminal).
+export const drawable = (text: string): string => text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
 
 const COMMIT = /^\[([^\s\]]+)(?: \([^)]*\))? ([0-9a-f]{7,40})\]/gm
 
@@ -202,7 +231,6 @@ const LABEL: Record<PaneStateName, string> = {
   interrupted: 'Interrupted',
   'no-turns': 'No turns yet',
 }
-const CAPS = { yourMove: 5, changed: 4, running: 4, notChecked: 2 }
 const QUESTION_MOVE = 'answer the question in the chat'
 const NOT_TYPED = /^\s*(?:<task-notification>|<agent-message|<system-reminder>|\[dev-hooks CI watch\])/
 
@@ -234,9 +262,6 @@ export const keepTurns = (turns: TurnRecord[], cap = 20, hardCap = 200): TurnRec
   return turns.slice(Math.max(from, turns.length - hardCap))
 }
 
-export const capped = (items: string[], cap: number): string[] =>
-  items.length <= cap ? items : [...items.slice(0, cap - 1), `+${items.length - cap + 1} more`]
-
 const age = (ms: number): string => {
   const minutes = Math.floor(ms / 60_000)
   if (minutes < 1) return 'just now'
@@ -250,7 +275,7 @@ export const clockTime = (at: number, tz?: string): string =>
 export const sinceLabel = (at: number, now: number, tz?: string): string => `since ${clockTime(at, tz)} (${age(now - at)})`
 
 const reportOf = (t: TurnRecord) => t.summary ?? t.report ?? null
-const isBlocked = (r: EndReport | null) => /^blocked/i.test(r?.status ?? '')
+const isBlocked = (r: EndReport | null) => /^blocked/i.test(plain(r?.status ?? ''))
 // A report whose Your move line was there, even as "nothing".
 const hasMove = (r: EndReport | null): r is EndReport & { yourMove: string[] } => r?.yourMove !== undefined
 
@@ -283,9 +308,10 @@ const SAYS_MET = /^(?:(?:met|done|yes)\b|✓)/i
 const leadingVerdict = (text: string): boolean | null =>
   SAYS_NOT_MET.test(text) ? false : SAYS_MET.test(text) ? true : null
 const verdict = (item: string): boolean | null => {
-  const whole = leadingVerdict(item.trim())
-  const colon = item.indexOf(':')
-  return whole ?? (colon < 0 ? null : leadingVerdict(item.slice(colon + 1).trim()))
+  const text = plain(item)
+  const whole = leadingVerdict(text)
+  const colon = text.indexOf(':')
+  return whole ?? (colon < 0 ? null : leadingVerdict(text.slice(colon + 1).trim()))
 }
 
 // The turns since the person last typed a prompt: what the pane reads.
@@ -329,7 +355,14 @@ export const paneView = (
   const lastTurn = window.at(-1)
   const open = window.find(t => t.endedAt === undefined)
 
-  const moves = window.flatMap((t, i) => movesOf(t, perTurn[i] ?? null))
+  // The latest report that asks for something restates every open ask, so it replaces the moves
+  // before it: a report written again after a Stop hook would otherwise show twice. A later
+  // "nothing" replaces none.
+  const perMoves = window.map((t, i) => movesOf(t, perTurn[i] ?? null))
+  // Only a move the session's own report wrote counts: not a question, a blocked status, or a
+  // Summarize answer, which covers one turn.
+  const restated = window.findLastIndex(t => !t.summary && (t.report?.yourMove ?? []).length > 0)
+  const moves = perMoves.slice(Math.max(restated, 0)).flat()
   const criteria = s.brief?.doneWhen ?? []
   const verdicts = !open && latest && latest.doneWhen.length === criteria.length ? latest.doneWhen.map(verdict) : []
   const ticked = verdicts.length > 0 && verdicts.every(v => v !== null)
@@ -345,24 +378,21 @@ export const paneView = (
           ? 'Stopped: refused'
           : 'Stopped: API error',
     since: sinceOf(state, window, perTurn, background, s.startedAt),
-    yourMove: capped([...new Set(moves)], CAPS.yourMove),
+    yourMove: [...new Set(moves)],
     ...(s.brief ? { doing: s.brief.doing } : {}),
     doneWhen: criteria.map((text, i) => ({ text, met: ticked ? (verdicts[i] ?? null) : null })),
     ...(!open && !ticked && latest && latest.doneWhen.length > 0 && criteria.length > 0
       ? { doneWhenNote: latest.doneWhen.join('; ') }
       : {}),
-    running: capped(
-      background.map(b => `${b.label} (${age(now - b.since)})`),
-      CAPS.running,
-    ),
-    changed: capped(latest?.changed ?? [], CAPS.changed),
+    running: background.map(b => `${b.label} (${age(now - b.since)})`),
+    changed: latest?.changed ?? [],
     repoLines: s.repos.map(
       r =>
         `${r.repo}: ${r.commits} commit${r.commits === 1 ? '' : 's'}, ${
           (r.lastPushAt ?? 0) >= r.lastCommitAt ? 'pushed' : 'not pushed'
         }`,
     ),
-    notChecked: capped(latest?.notChecked ?? [], CAPS.notChecked),
+    notChecked: latest?.notChecked ?? [],
     ...(lastTurn?.lastSaid && !hasMove(reportOf(lastTurn)) ? { lastSaid: lastTurn.lastSaid } : {}),
     canSummarize: noReport !== undefined && noReport.id !== summarizing,
     summarizing: noReport !== undefined && noReport.id === summarizing,

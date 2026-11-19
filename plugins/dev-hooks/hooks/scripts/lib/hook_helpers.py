@@ -693,3 +693,111 @@ def end_report_missing(text):
             re.IGNORECASE | re.MULTILINE,
         )
     ]
+
+
+def last_turn_text(transcript_path):
+    """The main thread's last text message since the current turn opened ("" when none)."""
+    last = ""
+    for line in _transcript_lines(transcript_path):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rec, dict) or rec.get("isSidechain"):
+            continue
+        if _opens_turn(rec):
+            last = ""
+        elif rec.get("type") == "assistant":
+            content = (rec.get("message") or {}).get("content")
+            blocks = content if isinstance(content, list) else []
+            texts = [b.get("text", "") for b in blocks if isinstance(b, dict)]
+            last = "\n".join(t for t in texts if t) or last
+    return last
+
+
+# An offer of work Claude could have done: "Want me to…?", "Should I also…?", "Shall I…?",
+# "Would you like me to…?", "Let me know if you want…", "Next steps could be…".
+_OFFER_RE = re.compile(
+    r"(?<!not )(?<!n['’]t )(?<!never )\b(?:want|like) me to\b"
+    r"|\bshall i\b|\bwould you prefer i\b|\bwould it help if i\b"
+    r"|\bshould i (?:also|go ahead|proceed|continue|now|add|update|fix|write|run|create"
+    r"|implement|refactor)\b"
+    r"|\b(?:let me know|tell me|say so) (?:if|whether)"
+    r" (?:you(?:['’]d| would)? (?:want|like|prefer|need)|i should)\b"
+    r"|\bjust say the word\b"
+    r"|\bnext steps? (?:could|might|would) (?:be|include)\b|\bnext steps?\s*:"
+    r"|\bif you(?:['’]d| would)? (?:like|want|prefer),? i (?:can|could|will|['’]ll)\b"
+    r"|\bi (?:can|could) (?:also )?\b.{0,80}\bif you(?:['’]d| would)? (?:like|want|prefer)\b"
+    r"|\b(?:happy|glad) to (?!say|report|confirm|see|hear)\b.{0,80}\bif you\b",
+    re.IGNORECASE,
+)
+# The offer is the person's call: a one-way or outward-facing action, or the archive question.
+_ONE_WAY_RE = re.compile(
+    r"\b(?:merg(?:e|ing)|push(?:ing)?|send(?:ing)?|deploy(?:ing)?|delet(?:e|ing)|spend(?:ing)?"
+    r"|pay|buy|purchase|publish|release|ship|overwrite|archive|production|prod"
+    r"|prs?|pull requests?|emails?|slack|truncate|rotate|submit|invite|airtable"
+    r"|post(?:ing)? (?:it|this|that|the|a|to|in|on)"
+    r"|drop (?:the |that |this |old )*(?:table|database|column|index)"
+    r"|live (?:database|db|data|site|system|base))\b",
+    re.IGNORECASE,
+)
+# A person as the object ("message Sam", "ask them"): the capital is the name.
+_TO_A_PERSON_RE = re.compile(
+    r"\b(?i:message|notify|ping|tag|dm|ask|tell|reply)\s+"
+    r"(?:him|her|them|@|[A-Z]|(?i:(?:to|in) )?the (?i:team|channel|thread))"
+)
+# The close already says which rule stopped the work.
+_RULE_NAMED_RE = re.compile(
+    r"\bone-way\b|\birreversible\b|\bnot reversible\b|\boutward-facing\b|\bshared branch\b"
+    r"|\b(?:can['’]?t|cannot|can not) be (?:undone|reverted)\b"
+    r"|\b(?:writes?|writing|written) to prod(?:uction)?\b|\bproduction (?:write|data|database)\b"
+    r"|\b(?:spends?|costs?) money\b|\b(?:messages?|tags?) a person\b"
+    r"|\bneeds? (?:your|the person['’]s|the user['’]s)(?: \S+){0,2}"
+    r" (?:sign-?in|sign in|login|password|decision|approval|go-ahead|hands|credentials)\b"
+    r"|\b(?:is|it['’]s|that['’]s) your (?:call|decision)\b",
+    re.IGNORECASE,
+)
+_YOUR_MOVE_RE = re.compile(
+    rf"[\s>*_|#-]*{_END_REPORT_LINES['Your move']}[*_\s]*(?::|$)", re.IGNORECASE
+)
+_DETAILS_RE = re.compile(r"[\s*_#-]*details \(skippable\)", re.IGNORECASE)
+_QUOTED_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
+CLOSING_LINES = 5
+
+
+def closing_offer(text):
+    """The line in `text`'s close that offers undone work, or "". The close is the Your
+    move block (judged as one ask: its options can name the one-way action) plus the
+    last CLOSING_LINES prose lines of the message and of the part above "Details
+    (skippable)". Code blocks, block quotes, table rows and quoted or inline-code spans
+    are not Claude offering. Silent when the ask is the person's call (one-way,
+    outward-facing, to a person, archive) or the close names the rule that stopped the
+    work."""
+    prose = re.sub(
+        r"^\s*(```|~~~).*?^\s*\1[^\n]*$", "", text, flags=re.DOTALL | re.MULTILINE
+    )
+    lines = [ln.strip() for ln in prose.splitlines()]
+    lines = ["" if ln.startswith((">", "|")) else ln for ln in lines]
+    asks = []
+    for i, ln in enumerate(lines):
+        if _YOUR_MOVE_RE.match(ln):
+            rest = lines[i:]
+            # A bare label or heading: the ask follows a blank line.
+            if rest[1:2] == [""] and ln.rstrip("*_ ").lower().endswith(("move", ":")):
+                rest = rest[:1] + rest[2:]
+            asks = [rest[: rest.index("")] if "" in rest else rest]
+    cut = next((i for i, ln in enumerate(lines) if _DETAILS_RE.match(ln)), len(lines))
+    in_move = set(asks[0]) if asks else set()
+    for part in (lines[:cut], lines):
+        tail = [ln for ln in part if ln][-CLOSING_LINES:]
+        asks += [[ln] for ln in tail if ln not in in_move]
+    if _RULE_NAMED_RE.search("\n".join(ln for ask in asks for ln in ask)):
+        return ""
+    for ask in asks:
+        whole = "\n".join(ask)
+        if _ONE_WAY_RE.search(whole) or _TO_A_PERSON_RE.search(whole):
+            continue
+        for ln in ask:
+            if _OFFER_RE.search(_QUOTED_RE.sub("", ln).replace("*", "")):
+                return ln[:300]
+    return ""

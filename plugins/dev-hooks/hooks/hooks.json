@@ -32,7 +32,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/prompt-log.sh\"",
-            "statusMessage": "Logging prompt for the weekly automation review..."
+            "statusMessage": "Logging prompt for the automation review..."
           },
           {
             "type": "command",
@@ -43,6 +43,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/data-before-design-reminder.sh\"",
             "statusMessage": "Checking whether the data was looked at first..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/migration-safety-reminder.sh\" prompt",
+            "statusMessage": "Checking whether the request is a schema change..."
           },
           {
             "type": "command",
@@ -240,6 +245,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/save-script-reminder.sh\"",
             "statusMessage": "Checking for reusable one-off scripts to save..."
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/closing-offer-reminder.sh\"",
+            "statusMessage": "Checking the last message ends on finished work..."
           },
           {
             "type": "command",

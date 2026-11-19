@@ -175,7 +175,7 @@ export const resolvePending = (f: Facts, ev: NudgeEvidence, now: number): { fact
   return { facts: resolved.length > 0 ? { ...f, nudges } : f, resolved }
 }
 
-// A throwaway session whose nudges would skew the weekly review: the mirror of
+// A throwaway session whose nudges would skew the automation review: the mirror of
 // reminder_is_probe_session in reminder-common.sh, pinned by test_nudge_parity.py. `nested`
 // is CLAUDE_CODE_CHILD_SESSION as this claude process got it, set only when another
 // session's shell started it (reminder_is_nested_run).
@@ -250,11 +250,11 @@ export const formatNudgeStats = (log: NudgeRecord[], now: number, days = 7): str
       r => `${r.hook.padEnd(width)} ${cell(r.fired)} ${cell(r.acted)} ${cell(r.ignored)} ${cell(r.declined)} ${cell(r.unknown)}  ${pct(r)}`,
     ),
     '',
-    '/session-facts nudges 30 widens the window; the weekly review reads ~/.claude/automation-review/stop-nudges.json.',
+    '/session-facts nudges 30 widens the window; the automation review reads ~/.claude/automation-review/stop-nudges.json.',
   ].join('\n')
 }
 
-// The export the weekly automation review reads.
+// The export the automation review reads.
 export const nudgeExport = (log: NudgeRecord[], now: number) => ({
   generatedAt: new Date(now).toISOString(),
   retentionDays: LOG_DAYS,

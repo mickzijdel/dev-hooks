@@ -127,6 +127,44 @@ export const parseRuns = (stdout: string): Run[] => {
   }
 }
 
+// What a desktop-app Auto-fix event says: the PR it reports on, as `owner/repo#N` in lower
+// case, or AUTO_FIX_ON for one that names none ("was just enabled for this session"). The
+// event's text is data: only its fixed opening is read, and only at the very start, so an
+// event quoted inside another prompt says nothing. Nor does one of an origin the desktop
+// app's events don't have: transcripts record them as `sdk` or `auto_continuation` turns
+// (the kinds `sdk` and `auto-continuation` here), so another session's message, a channel's
+// or a notification never counts. A prompt typed in an SDK host may also arrive as `sdk`.
+const AUTO_FIX_EVENT = /^<ci-monitor-event>"Auto-fix pull requests" (?:is watching ([\w.-]+\/[\w.-]+) PR #(\d+) )?/
+const AUTO_FIX_ORIGINS = new Set(['sdk', 'auto-continuation'])
+
+export const AUTO_FIX_ON = '*'
+// How long the watch waits for Auto-fix's own event before it wakes the session itself.
+export const AUTO_FIX_GRACE_MS = 10 * 60_000
+
+export const autoFixKey = (repo: string, pr: number): string => `${repo.toLowerCase()}#${pr}`
+
+export const autoFixEvent = (text: string, origin: string): string | null => {
+  const m = AUTO_FIX_ORIGINS.has(origin) ? AUTO_FIX_EVENT.exec(text) : null
+  if (!m) return null
+  return m[1] && m[2] ? autoFixKey(m[1], Number(m[2])) : AUTO_FIX_ON
+}
+
+// The open PRs whose head is the commit, from `gh api repos/<repo>/commits/<sha>/pulls`.
+// Head only: Auto-fix reports a PR's head checks, so a PR that merely contains the
+// commit (a stacked PR, an older push) gets no Auto-fix event for it.
+export const parseHeadPrs = (stdout: string, sha: string): number[] => {
+  try {
+    const rows = JSON.parse(stdout) as unknown
+    if (!Array.isArray(rows)) return []
+    return (rows as { number?: unknown; state?: unknown; head?: { sha?: unknown } }[])
+      .filter(r => r.state === 'open' && r.head?.sha === sha)
+      .map(r => r.number)
+      .filter((n): n is number => typeof n === 'number')
+  } catch {
+    return []
+  }
+}
+
 export type Verdict = 'none' | 'pending' | 'success' | 'failure' | 'cancelled'
 
 const FAILED = new Set(['failure', 'timed_out', 'startup_failure', 'action_required'])
@@ -177,7 +215,17 @@ export const ciToast = (repo: string, sha: string, verdict: Verdict, runs: Run[]
 }
 
 // What the model reads. A failure arrives as a prompt of its own, so it says what to do.
-export const ciNote = (repo: string, sha: string, verdict: Verdict, runs: Run[], error?: string): string => {
+// With Auto-fix on (`autoFix`, the PR the commit heads) it is first a note that leaves the
+// fix to Auto-fix's own event, then, `late`, the prompt sent when no such event came.
+export const ciNote = (
+  repo: string,
+  sha: string,
+  verdict: Verdict,
+  runs: Run[],
+  error?: string,
+  autoFix?: { pr: number; late?: true },
+): string => {
+  const grace = `${AUTO_FIX_GRACE_MS / 60_000} minutes`
   const head = `[dev-hooks CI watch] ${repo}@${short(sha)}`
   const lines = runs.map(runLine)
   switch (verdict) {
@@ -188,7 +236,10 @@ export const ciNote = (repo: string, sha: string, verdict: Verdict, runs: Run[],
       return [
         `${head}: CI FAILED on the commit you pushed.`,
         ...lines,
-        `Find the cause (\`gh run view ${failed?.databaseId ?? '<id>'} --repo ${repo} --log-failed\`), fix it, and push the fix.`,
+        ...(autoFix?.late ? [`Auto-fix sent no event for PR #${autoFix.pr} in ${grace}, so this watch reports the failure.`] : []),
+        autoFix && !autoFix.late
+          ? `Auto-fix should report this failure on PR #${autoFix.pr} in its own event: act on that event, not on this note. If none comes in ${grace}, this watch wakes you with the failure.`
+          : `Find the cause (\`gh run view ${failed?.databaseId ?? '<id>'} --repo ${repo} --log-failed\`), fix it, and push the fix.`,
       ].join('\n')
     }
     case 'cancelled':

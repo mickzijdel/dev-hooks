@@ -4,15 +4,15 @@
 # Stop hook: once per substantial session, ask Claude whether the session worked out a
 # procedure it expects to repeat in another session or repo, or hit a mistake an existing
 # skill should have prevented, and if so to append a proposal to the skill-candidate queue,
-# which weekly-automation-review triages. A one-off's facts go to a memory instead.
+# which automation-review triages. A one-off's facts go to a memory instead.
 # The queue lives outside ~/.claude, whose files Claude Code always asks before writing, even
 # with an allow rule; an allow rule for the queue's folder makes the write prompt-free.
-# It only proposes: creating or editing the skill is the weekly review's call, so the queue
+# It only proposes: creating or editing the skill is the automation review's call, so the queue
 # collects candidates without piling up untested skills.
 #
 # Gates, all must pass or we stay silent (exit 0):
 #   1. The automation-review dir exists (~/.claude/automation-review: the prompt log and
-#      weekly review are in use).
+#      automation review are in use).
 #   2. Substantial session: >= DEV_HOOKS_SKILL_CANDIDATE_MIN_TURNS (default 6) human turns.
 #   3. Once per session: the sentinel embedded in the reminder isn't in the transcript yet.
 #   4. Nothing proposed yet: no Write/Edit to the queue, nor a Bash redirect or tee into it
@@ -61,6 +61,6 @@ MSG="${SENTINEL}. Before finishing, ask: did this session work out a procedure y
 - Evidence: <what this session did or got wrong that the skill would capture>
 - Status: open
 
-Prefer amending an existing skill to a new one. A one-off errand is not a candidate: save its facts as a memory instead. Propose only: do NOT create or edit a skill now, the weekly review decides. If nothing qualifies, say 'nothing to propose' in one line and stop."
+Prefer amending an existing skill to a new one. A one-off errand is not a candidate: save its facts as a memory instead. Propose only: do NOT create or edit a skill now, the automation review decides. If nothing qualifies, say 'nothing to propose' in one line and stop."
 
 reminder_emit_stop "$MSG"

@@ -199,7 +199,11 @@ machine_guard() {
   local v=""
   [ -f "$2" ] && v="$(sed -nE "s/$4/\1/p" "$2" | tail -n1)"
   [ -n "$v" ] && { [ -z "${5:-}" ] || [ "$v" -ge "$5" ]; } && return 0
-  machine_gaps+=("$1 (${2/#"$HOME"/\~} $3)")
+  # Not a ${2/#…/\~} substitution: bash 3.2 (macOS /bin/bash) keeps that backslash.
+  local shown=$2
+  # shellcheck disable=SC2088 # a literal ~ for display
+  [ "${2#"$HOME"/}" != "$2" ] && shown="~/${2#"$HOME"/}"
+  machine_gaps+=("$1 ($shown $3)")
 }
 xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}"
 machine_guard npm "$HOME/.npmrc" "min-release-age=3" '^min-release-age[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$' 3

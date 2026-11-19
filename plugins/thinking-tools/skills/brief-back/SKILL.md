@@ -34,11 +34,19 @@ Depth: <Quick | Solid | Deep>, what that means here, and where you'll stop to ch
 Done when: <an end state the person can check in under a minute>
 Need from you: <blocking questions with your recommended answers, or a check-in you want> or "nothing"
 Assuming: <defaults you will proceed on; they correct you if wrong>
+Risk: <code tasks only> migration: <yes | no> · size: <your estimate, as ~N files, ~M lines>
 ```
 
 Then start work in the same reply, unless a "Need from you" item truly blocks. Always include
 Need from you, even as "nothing": knowing nothing is needed is the point. Drop Not doing or
 Assuming when empty.
+
+**Risk** is for a task that changes code; drop it otherwise. It puts the two late surprises at
+the start, where a change of approach is still free. "migration: yes" covers any database
+migration or schema change. When it is yes, or the size estimate passes about 25 files or 800
+added lines, put the approach under Need from you now (how the migration stays reversible and
+lock-safe, or how the change splits into reviewable pieces) and wait for the answer before
+the first edit. The one-line contract carries Risk only when one of those two holds.
 
 Depth caps how far down you go; **Not doing** caps how far sideways. Over-delivery is usually
 sideways: extra options, extra sections, a tangent nobody asked for.
@@ -82,8 +90,9 @@ Block on a question only when both hold:
   (sending, buying, deleting, publishing, anything outward-facing).
 
 Everything else goes under **Assuming**, with the default you picked. Most questions belong there.
-One exception: a default about personal data, access rights, money or security goes under Need
-from you as a confirm-this item, even when nothing is irreversible yet.
+Two exceptions go under Need from you as a confirm-this item, even when nothing is irreversible
+yet: a default about personal data, access rights, money or security, and the approach when the
+Risk line says migration: yes or a size past its threshold.
 
 This skill relies on asking the blocking questions, including in modes that otherwise discourage
 asking.
@@ -152,7 +161,7 @@ Assuming: ~20 users with few paid seats; budget not a hard cap; the current mail
 ## Don'ts
 
 - Don't ask questions instead of starting when nothing blocks.
-- Don't let the contract run past six lines; it is a header, not a plan.
+- Don't let the contract run past its seven lines; it is a header, not a plan.
 - Don't default to Deep. Don't treat "thorough" as "longer".
 - Don't end with "let me know if you want more"; end with the end report.
 

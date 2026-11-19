@@ -2,16 +2,17 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   answerFacts,
-  capped,
   EMPTY_PANE_STATE,
   endsOnQuestion,
   findBrief,
+  isStatusFile,
   isTypedPrompt,
   isWorkTurn,
   keepTurns,
   paneView,
   parseCommits,
   parseEndReport,
+  plain,
   sinceLabel,
   typedFrom,
 } from '../hooks/status-pane'
@@ -42,7 +43,7 @@ test('parseEndReport reads "What I changed this session" as Changed', async () =
 })
 
 test('parseEndReport joins a continuation line to the item above', async () => {
-  expect(parseEndReport('Your move:\n- start a\n  new session')?.yourMove).toEqual(['start a new session'])
+  expect(parseEndReport('Your move:\n- start a\n  new session')?.yourMove).toEqual(['start a  \nnew session'])
 })
 
 test('parseEndReport reads every label, numbered items too', async () => {
@@ -207,11 +208,49 @@ test('Done when ticks by position only when the counts match', async () => {
   expect(working.doing).toBe('x')
 })
 
-test('lists are capped with a "+N more" row', async () => {
-  expect(capped(['a', 'b', 'c', 'd', 'e', 'f'], 5)).toEqual(['a', 'b', 'c', 'd', '+2 more'])
-  expect(capped(['a', 'b'], 5)).toEqual(['a', 'b'])
-  const many = view(state([turn({ report: report({ yourMove: ['1', '2', '3', '4', '5', '6', '7'] }) })]))
-  expect(many.yourMove).toEqual(['1', '2', '3', '4', '+3 more'])
+test('no list is cut short', async () => {
+  const seven = ['1', '2', '3', '4', '5', '6', '7']
+  const v = view(state([turn({ report: report({ yourMove: seven, changed: seven, notChecked: seven }) })]))
+  expect([v.yourMove, v.changed, v.notChecked]).toEqual([seven, seven, seven])
+})
+
+test("a later report's move replaces an earlier one, so a repeated report shows once", async () => {
+  const v = view(
+    state([
+      turn({ report: report({ yourMove: ['Push the commit?'] }) }),
+      turn({ id: 'h', typed: false, report: report({ yourMove: ['Push the commit to main?'] }) }),
+      turn({ id: 'n', typed: false, report: report() }),
+    ]),
+  )
+  expect([v.state, v.yourMove]).toEqual(['waiting', ['Push the commit to main?']])
+})
+
+test('only a written move replaces earlier ones: not a blocked status, a question or a summary', async () => {
+  const ask = turn({ report: report({ yourMove: ['approve the deploy'] }) })
+  const moves = (later: Parameters<typeof turn>[0]) => view(state([ask, turn({ id: 'n', typed: false, ...later })])).yourMove
+  expect(moves({ report: report({ status: 'blocked on CI' }) })).toEqual(['approve the deploy', 'blocked on CI'])
+  expect(moves({ answer: 'Shall I?', report: report() })).toEqual(['approve the deploy', 'answer the question in the chat'])
+  expect(moves({ edits: 1, summary: report({ yourMove: ['read the CI log'] }) })).toEqual(['approve the deploy', 'read the CI log'])
+})
+
+test('emphasis that wraps a label and its value leaves no marker on the value', async () => {
+  const r = parseEndReport('**Your move: merge the PR**\n**Changed: x**')
+  expect([r?.yourMove, r?.changed]).toEqual([['merge the PR'], ['x']])
+  expect(parseEndReport('**Your move:** **Push** it')?.yourMove).toEqual(['**Push** it'])
+})
+
+test('a list or table under a value stays inside that value', async () => {
+  const choose = '**Your move:** Choose a route. I recommend 1.\n1. Copy — slow\n2. Rename — fast\n\n**Changed:** two files\n| File | Why |\n|---|---|\n| a.py | fix |'
+  const r = parseEndReport(choose)
+  expect(r?.yourMove).toEqual(['Choose a route. I recommend 1.\n1. Copy — slow\n2. Rename — fast'])
+  expect(r?.changed).toEqual(['two files\n| File | Why |\n|---|---|\n| a.py | fix |'])
+  expect(plain('tests  \npass')).toBe('tests pass')
+})
+
+test('a move keeps its markdown and the lines under it', async () => {
+  const text = '**Your move:** Push to `main`?\n**Recommend:** Yes. See [the PR](https://example.com/1).\n\n**Changed:** x'
+  expect(parseEndReport(text)?.yourMove).toEqual(['Push to `main`?  \n**Recommend:** Yes. See [the PR](https://example.com/1).'])
+  expect(plain('**Recommend:** Yes, _now_.')).toBe('Recommend: Yes, now.')
 })
 
 test('since reads as a clock time and an age', async () => {
@@ -244,10 +283,11 @@ test('a label, a blank line, then prose: the prose is the value', async () => {
   expect(parseEndReport('**Your move:**\n\nMerge the branch.')?.yourMove).toEqual(['Merge the branch.'])
 })
 
-test('emphasis is stripped from values, but not from names', async () => {
+test('emphasis around a value never hides what it says', async () => {
   expect(parseEndReport('**Your move:** **nothing**.')?.yourMove).toEqual([])
   expect(parseEndReport('**Your move:** *nothing*')?.yourMove).toEqual([])
-  expect(parseEndReport('**Status:** **Blocked** on the key\n**Your move:** x')?.status).toBe('Blocked on the key')
+  expect(parseEndReport('**Status:** **Blocked** on the key\n**Your move:** x')?.status).toBe('**Blocked** on the key')
+  expect(view(state([turn({ report: report({ status: '**Blocked** on the key' }) })])).state).toBe('waiting')
   expect(parseEndReport('**Changed:** `a_b.py` and snake_case_names\n**Your move:** x')?.changed).toEqual([
     '`a_b.py` and snake_case_names',
   ])
@@ -318,4 +358,17 @@ test('an ask survives however many turns follow it', async () => {
   expect(view(state(keepTurns([turn({ report: report({ yourMove: ['push'] }) }), ...notes]))).yourMove).toEqual(['push'])
   expect(keepTurns([turn({ id: 'old' }), turn({ id: 'new' }), ...notes]).map(t => t.id)[0]).toBe('new')
   expect(keepTurns(Array.from({ length: 30 }, (_, i) => turn({ id: `t${i}` }))).length).toBe(20)
+})
+
+test('isStatusFile takes a brief in a scratchpad or in .claude/briefs, and no other file', async () => {
+  expect(
+    [
+      '/tmp/claude-501/x/scratchpad/brief-pane.md',
+      '/tmp/claude-501/x/scratchpad/brief.md',
+      '/r/.claude/briefs/asks-ui.md',
+      '/r/docs/brief-pane.md',
+      '/tmp/claude-501/x/scratchpad/notes.md',
+      '/r/.claude/briefs/asks-ui.txt',
+    ].map(isStatusFile),
+  ).toEqual([true, true, true, false, false, false])
 })

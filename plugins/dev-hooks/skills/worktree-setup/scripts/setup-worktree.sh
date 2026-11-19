@@ -14,7 +14,8 @@
 #                 the main checkout, since git never put them in the worktree. Everything
 #                 gitignored is copied EXCEPT known-heavy build/dependency dirs (node_modules,
 #                 .venv, vendor/bundle, caches, …) and the worktree dir itself.
-#   3. exec bits: re-applies +x to tracked shebang scripts the checkout may have dropped.
+#   3. exec bits: in a core.fileMode=false repo, re-applies +x to tracked shebang scripts the
+#                 checkout may have dropped.
 #
 # It does NOT create the worktree (only the harness can switch the session into one) and never
 # mutates the git index or commits anything.
@@ -163,7 +164,9 @@ fi
 
 # ── 3. re-apply exec bits to tracked shebang scripts (working tree only) ──────────────
 exec_fixed=0
-while IFS= read -r -d '' line; do
+# Only where git ignores modes (core.fileMode=false): elsewhere the checkout already has the
+# recorded modes, and a chmod would show every 100644 shebang file as modified.
+[ "$(git -C "$WT" config --type=bool core.fileMode 2>/dev/null)" = false ] && while IFS= read -r -d '' line; do
   [ -n "$line" ] || continue
   mode="${line%% *}"
   path="${line#*$'\t'}"
@@ -206,8 +209,17 @@ if [ "$isolated" != no ] || [ -f "$WT/.worktree-isolate.conf" ]; then
     else
       runner=(bash -c "$POST_CMD")
     fi
+    # shortcut: uncapped where neither coreutils timeout nor Homebrew's gtimeout exists (a
+    # bare macOS); add a fallback if a hung seed there ever matters.
+    cap=()
+    for t in timeout gtimeout; do
+      if command -v "$t" >/dev/null 2>&1; then
+        cap=("$t" "${WT_POST_SETUP_TIMEOUT:-600}")
+        break
+      fi
+    done
     post_rc=0
-    (cd "$WT" && timeout "${WT_POST_SETUP_TIMEOUT:-600}" "${runner[@]}") || post_rc=$?
+    (cd "$WT" && ${cap[@]+"${cap[@]}"} "${runner[@]}") || post_rc=$?
     if [ "$post_rc" -eq 0 ]; then
       post_setup=ok
     else

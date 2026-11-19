@@ -318,18 +318,24 @@ reminder_fire_once() {
 # starts CLAUDE_CODE_CHILD_SESSION, this hook included, so only the claude process's own
 # environment tells: one a person started has none. Mirrored by voice_is_nested_run and by the
 # mod, which reads that environment as $.env.
-# shortcut: reads /proc, so on macOS a nested run still looks typed; read `ps eww` there if needed.
+# Linux reads /proc; macOS has none, so there `ps e` prints the environment after the command
+# line, which is cut off first: an argument may quote the variable.
+# The two copies must stay equal and can't be shared across plugins.
+# jscpd:ignore-start
 reminder_is_nested_run() {
-  [ -r "/proc/${CLAUDE_PID:-none}/environ" ] &&
+  case "${CLAUDE_PID:-}" in '' | *[!0-9]*) return 1 ;; esac
+  if [ -r "/proc/$CLAUDE_PID/environ" ]; then
     grep -qz '^CLAUDE_CODE_CHILD_SESSION=' "/proc/$CLAUDE_PID/environ"
+  else
+    local args all
+    args=$(ps ww -o command= -p "$CLAUDE_PID" 2>/dev/null) || return 1
+    all=$(ps eww -o command= -p "$CLAUDE_PID" 2>/dev/null)
+    [[ ${all#"$args"} == *' CLAUDE_CODE_CHILD_SESSION='* ]]
+  fi
 }
+# jscpd:ignore-end
 
-# Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
-# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so weekly-automation-
-# review's Retire pass can see which hooks actually fire (and which never do). OFF by default —
-# no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
-# fails the hook. $1 = firing hook's basename.
-# A throwaway session whose fires and prompts would skew weekly-automation-review's counts:
+# A throwaway session whose fires and prompts would skew automation-review's counts:
 # a made-up id (a hand-run smoke test), a `claude -p` probe run from Claude Code's
 # scratchpad, a replay harness (DEV_HOOKS_PROBE set, or a disposable clone under
 # ~/.cache), or a nested run. Mirrored by _voice_log_fire in the writing plugin, which can't
@@ -343,6 +349,11 @@ reminder_is_probe_session() {
   return 1
 }
 
+# Opt-in fire telemetry: when DEV_HOOKS_FIRE_LOG is explicitly enabled, append one JSONL line
+# per emitted reminder to ~/.claude/automation-review/hook-fires.jsonl, so automation-review's
+# Retire pass can see which hooks actually fire (and which never do). OFF by default —
+# no surprise writes, and the test suite (which shares $HOME) stays clean. Best-effort: never
+# fails the hook. $1 = firing hook's basename.
 _reminder_log_fire() {
   case "${DEV_HOOKS_FIRE_LOG:-}" in 1 | true | yes | on) ;; *) return 0 ;; esac
   reminder_is_probe_session && return 0
@@ -571,20 +582,24 @@ reminder_mktemp() {
 # leak found in the log), then one assignment rule reusing the secret-name vocabulary from
 # dangerous-command-guard.sh. The assignment rule requires the value to start with an
 # alphanumeric, which is what keeps "$(cat …)" command substitutions and ../relative paths
-# readable — the log is only useful to the weekly review if ordinary text survives intact.
+# readable — the log is only useful to the automation review if ordinary text survives intact.
 # The vendor prefixes deliberately carry NO leading \b: a real leak in the log was typed
 # glued to the previous word ("…here api key to fix" + "ptr_845Hk…"), so requiring a word
-# boundary there silently missed it. Only the loose generic sk- rule keeps its \b.
+# boundary there silently missed it. Only the loose generic sk- rule keeps a left boundary.
 reminder_redact_secrets() {
+  # Portable to BSD (macOS) sed: the c\ text sits on its own line (one-line `c\text` is an
+  # error there, and the empty output blanked every prompt-log line), and word boundaries are
+  # spelled as character classes because BSD ERE has no \b.
   REPLY=$(printf '%s' "$1" | sed -E \
-    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\[REDACTED PRIVATE KEY]' \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
+[REDACTED PRIVATE KEY]' \
     -e 's|(github_pat_)[A-Za-z0-9_]{20,}|\1[REDACTED]|g' \
     -e 's|(gh[pousr]_)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
     -e 's|(ptr_)[A-Za-z0-9+/=_-]{20,}|\1[REDACTED]|g' \
     -e 's|(sk-ant-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
-    -e 's|\b(sk-)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
+    -e 's#(^|[^A-Za-z0-9_])(sk-)[A-Za-z0-9_-]{20,}#\1\2[REDACTED]#g' \
     -e 's|(xox[baprs]-)[A-Za-z0-9-]{10,}|\1[REDACTED]|g' \
-    -e 's|AKIA[0-9A-Z]{16}\b|AKIA[REDACTED]|g' \
+    -e 's#AKIA[0-9A-Z]{16}([^A-Za-z0-9_]|$)#AKIA[REDACTED]\1#g' \
     -e 's|(glpat-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
     -e 's|(bws_)[A-Za-z0-9._-]{20,}|\1[REDACTED]|g' \
     -e 's|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|[REDACTED JWT]|g' \

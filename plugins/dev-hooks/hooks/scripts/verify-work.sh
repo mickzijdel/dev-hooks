@@ -102,11 +102,26 @@ run_check() {
   run_test "$@"
 }
 
-# Cap a command with the soft timeout when `timeout` is available (coreutils; absent on a
-# bare macOS). A timed-out command exits 124, which run_test turns into the slow-suite advice.
+# Cap a command with the soft timeout. A timed-out command exits 124, which run_test turns
+# into the slow-suite advice. coreutils' `timeout` does it; a bare macOS has none, so without
+# it (or Homebrew's gtimeout) perl stands in: like timeout, it stops the command's
+# whole process group, or a child holding the output pipe would keep the hook waiting.
+# shellcheck disable=SC2016
+PERL_TIMEOUT='my $t = shift; my $pid = fork();
+if (!$pid) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
+$SIG{ALRM} = sub { kill "TERM", -$pid; exit 124 };
+$SIG{TERM} = $SIG{INT} = $SIG{HUP} = sub { kill "TERM", -$pid; exit 143 };
+alarm $t; waitpid $pid, 0;
+exit($? & 127 ? 128 + ($? & 127) : $? >> 8)'
 _capped() {
-  if [ "$TEST_TIMEOUT" != 0 ] && command -v timeout >/dev/null 2>&1; then
+  if [ "$TEST_TIMEOUT" = 0 ]; then
+    "$@"
+  elif command -v timeout >/dev/null 2>&1; then
     timeout "$TEST_TIMEOUT" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$TEST_TIMEOUT" "$@"
+  elif command -v perl >/dev/null 2>&1; then
+    perl -e "$PERL_TIMEOUT" "$TEST_TIMEOUT" "$@"
   else
     "$@"
   fi

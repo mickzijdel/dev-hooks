@@ -15,9 +15,8 @@ ENTRIES = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
 @pytest.mark.parametrize("entry", ENTRIES, ids=[e["name"] for e in ENTRIES])
 def test_marketplace_description_is_a_stable_line(entry):
     text = entry["description"]
-    skills = [
-        p.name for p in (ROOT / entry["source"] / "skills").iterdir() if p.is_dir()
-    ]
+    # A plugin that ships only a mod, as asks does, has no skills folder.
+    skills = [p.name for p in (ROOT / entry["source"]).glob("skills/*") if p.is_dir()]
     named = [
         s for s in skills if re.search(rf"(?<![\w-]){re.escape(s)}(?![\w-])", text)
     ]

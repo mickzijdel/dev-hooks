@@ -56,7 +56,8 @@ load-bearing: seeding without it prepares the main checkout's database under the
 
 Failure is reported (`post_setup=failed`, plus a line on stderr) but never fatal — a worktree
 with unseeded databases is still a usable worktree, and aborting would strand it
-half-provisioned. Cap a slow seed with `WT_POST_SETUP_TIMEOUT` (seconds, default 600).
+half-provisioned. Cap a slow seed with `WT_POST_SETUP_TIMEOUT` (seconds, default 600); the cap needs `timeout`
+or Homebrew's `gtimeout`, and a macOS with neither runs the command uncapped.
 
 ## Rails (host-native)
 

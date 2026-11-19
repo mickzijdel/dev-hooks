@@ -39,7 +39,7 @@ because you're not there when it runs.
 - **Bound:** the routine does one bounded batch per run; don't let a single run loop unbounded.
 - **Async oversight is mandatory:** **one PR per unit, never auto-merge to `main`.** You review
   on your clock, not the agent's. Emit a digest/report each run. This is exactly what
-  [[commit-digest]] does (a PR per adopted change) and what [[weekly-automation-review]] produces
+  [[commit-digest]] does (a PR per adopted change) and what [[automation-review]] produces
   (a report you read Monday).
 - **Best for:** recurring maintenance — watch upstream repos, drain a backlog weekly, re-run a
   health check.
