@@ -54,10 +54,12 @@ def test_kill_matrix_lists_zero_kill_and_subsumed_tests(tmp_path):
         check=True,
     )
     _, subsumed = out.stdout.split("every kill also made")
+    # older's kills {0} are a subset of adult's: the line names the test to read first
     assert (
-        "src/gate.test.ts > older" in subsumed
-    )  # older's kills {0} are a subset of adult's
-    assert "adult" not in subsumed and "child" not in subsumed
+        "src/gate.test.ts > older\n      kills 1; all also killed by: src/gate.test.ts > adult"
+        in subsumed
+    )
+    assert "\n  src/gate.test.ts > adult" not in subsumed and "child" not in subsumed
     assert "warning" not in out.stderr
 
 
@@ -111,3 +113,60 @@ def test_kill_matrix_keeps_same_mutant_ids_in_different_files_apart(tmp_path):
     )
     zero, subsumed = out.stdout.split("every kill also made")
     assert "older" not in zero and "older" not in subsumed
+
+
+def _run(report, *args):
+    return subprocess.run(
+        ["node", str(SCRIPTS / "kill_matrix.mjs"), *args, str(report)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def test_kill_matrix_separates_shared_kills_from_one_test_that_makes_them_all(tmp_path):
+    # older kills mutants 0 and 1; adult also kills 0, child also kills 1: no single stand-in
+    report = _stryker_report(tmp_path, [["0", "2"], ["1", "2"], ["0"], ["1"]])
+    _, rest = _run(report).split("every kill also made by one other test")
+    subsumed, shared = rest.split("no unique kill")
+    assert "older" not in subsumed
+    assert "src/gate.test.ts > older\n      kills 2" in shared
+
+
+def test_kill_matrix_says_what_it_left_out(tmp_path):
+    report = _stryker_report(tmp_path, [["0", "2"], ["0"], ["1"]])
+    data = json.loads(report.read_text())
+    mutants = data["files"]["src/gate.ts"]["mutants"]
+    mutants[0]["static"] = True
+    wide = [str(i) for i in range(10)]
+    mutants.append(
+        {"id": "9", "status": "Killed", "killedBy": wide[:6], "coveredBy": wide}
+    )
+    report.write_text(json.dumps(data))
+    out = _run(report)
+    assert "static mutants: 1" in out
+    assert "left out as broad: 1 killed mutants" in out
+
+
+def test_kill_matrix_judges_only_the_test_files_asked_for(tmp_path):
+    report = _stryker_report(tmp_path, [["0"], ["0", "3"]])
+    data = json.loads(report.read_text())
+    data["testFiles"]["src/page.test.tsx"] = {"tests": [{"id": "3", "name": "renders"}]}
+    for m in data["files"]["src/gate.ts"]["mutants"]:
+        m["coveredBy"].append("3")
+    report.write_text(json.dumps(data))
+    assert "tests from 2 files cover these mutants" in _run(report)
+    scoped = _run(report, "--tests", r"gate\.test")
+    assert "not judged: 1 tests" in scoped
+    assert "\n  src/page.test.tsx > renders" not in scoped
+    assert "\n  src/page.test.tsx > renders" in _run(report)
+
+
+def test_kill_matrix_refuses_tests_without_a_regex(tmp_path):
+    report = _stryker_report(tmp_path, [["0"]])
+    done = subprocess.run(
+        ["node", str(SCRIPTS / "kill_matrix.mjs"), str(report), "--tests"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2 and "--tests needs" in done.stderr
