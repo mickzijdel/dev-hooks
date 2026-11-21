@@ -73,6 +73,9 @@ take one action" (merge once CI/main settles, confirm a deploy went live):
 - **The bound lives where you write it.** A Stop hook can't hard-cap a `/loop` (it can only nudge
   the next turn) and can't see token counts. The real ceiling is `max iterations` /
   `until-N-empty` in the prompt, or `budget.remaining()` in the Workflow tool.
+- **An unattended run stalls on a skill that declares `allowed-tools` or `hooks`**: it asks
+  first, and nobody answers. Add `Skill(<name>)` to `permissions.allow` before scheduling it —
+  see the `/schedule` section of [substrate-selection.md](references/substrate-selection.md).
 - For a batch sweep across many targets, the `dev-env-setup` **fleet mode** (canary first → one
   isolated agent per target → verify each) is the supervised template — reuse that shape.
 - Related: [[multi-session-plans]] owns the `.claude/current_plan.md` phased checkpoint this

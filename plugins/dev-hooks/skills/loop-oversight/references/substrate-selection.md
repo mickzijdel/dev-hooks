@@ -41,6 +41,13 @@ because you're not there when it runs.
   on your clock, not the agent's. Emit a digest/report each run. This is exactly what
   [[commit-digest]] does (a PR per adopted change) and what [[automation-review]] produces
   (a report you read Monday).
+- **Unattended skills need an allow rule.** A routine or `/loop` asks before it runs a skill
+  whose frontmatter declares `allowed-tools` or `hooks` (Claude Code 2.1.325+), and with nobody
+  there the run waits or is refused. Add `Skill(<name>)` to `permissions.allow` for each such
+  skill the routine loads, or pick one that declares neither. Dry-run the routine once while you
+  watch, so a prompt shows up before the first unattended run.
+- **Lifetime:** a recurring task runs for up to 30 days while its session keeps running (7 days
+  before 2.1.330), so a routine meant to outlive that is a cloud routine, not a session cron.
 - **Best for:** recurring maintenance — watch upstream repos, drain a backlog weekly, re-run a
   health check.
 
