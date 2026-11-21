@@ -1501,3 +1501,30 @@ PRs opened this run: https://github.com/mickzijdel/dev-hooks/pull/46 (pin Claude
 | Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+
+## 2026-11-21
+
+Sources scanned:
+- `nateberkopec/dotfiles`: 27 commits since the 2026-11-13 run (`318a6eb` to `cfa24af`)
+- Feeds: Claude Code changelog (2.1.325 to 2.1.330). Unreachable: ai-productivity-digest (proxy 403 this run), upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: https://github.com/mickzijdel/dev-hooks/pull/49 (loop-oversight: unattended runs stall on skills that declare `allowed-tools`; repo-review follows `/code-review`'s new scope). No rails-toolkit candidates.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Secret scan with `gitleaks git` (history) plus `gitleaks git --pre-commit --staged` instead of `gitleaks dir`, so ignored scratch files can't block commits | dotfiles commit `e20b232` | Duplicate | The dev-env CI templates already run `gitleaks git`, and hk's gitleaks builtin scans only staged changes. |
+| Always pass an explicit `timeout` on shell tool calls (a harness hook defaults them to 10 s) | dotfiles commits `318a6eb`, `e017c5c` | Out of scope | Depends on Nate's own timeout hook. Claude Code's Bash tool already has a default timeout. |
+| Disable Claude Code auto-memory with `CLAUDE_CODE_DISABLE_AUTO_MEMORY`, since `--setting-sources ""` ignores `autoMemoryEnabled` | dotfiles commit `b0bb68b` | Out of scope | Personal setting; dev-hooks relies on memory capture. |
+| Stop GPG-signing by default and drop `--no-gpg-sign` agent instructions | dotfiles commit `3a83bfd` | Out of scope | Personal git config. |
+| Remaining dotfiles commits: Homebrew in noninteractive shells, aube trust age, 1Password homelab SSH, vendor-signed app installs, Spotlight/Time Machine exclusions, woodblock wallpapers, Pi model picks, inference-provider policy, llm CLI removal, Wispr Flow to Hex, eMudhra CA, dependency refreshes, ADR 0008 | dotfiles commits `fb3bc30`, `746f9e4`, `64ce074`, `db72f3f`, `98babdf`, `cfa24af`, `2ebd7a4`, `0b0f4ce`, `da6e35d`, `d3a85ba`, `b59bd24`, `a8c478d`, `ab9687e`, `cdbaa4f`, `556ea2e`, `c6da637`, `7993486`, `ef6ad45`, `608998f`, `a40fe47` | Out of scope | Personal macOS, Pi and package-manager config. |
+| Mod `Text` gains `maxLines` and `wrap="clip"`; `Box` gains `overflowX="scroll"` | Claude Code changelog 2.1.326 | Deferred | Could cap long report values in the session-status and asks panes. Nobody has reported overflow yet, and it would raise the mods' version floor. |
+| A hook's `"decision": "block"` now holds in more cases | Claude Code changelog 2.1.326 | Deferred | dev-hooks prints `block` only from Stop hooks, where blocking is the point. Recheck if a PostToolUse hook starts blocking. |
+| Stop hooks list a Monitor as `monitor` in `background_tasks` | Claude Code changelog 2.1.329 | Rejected | `recordBackground` keeps every running or pending task whatever its type, so nothing changes. |
+| Saved scheduled tasks from earlier versions need scheduling again in new signed-in sessions | Claude Code changelog 2.1.329 | Deferred | Affects the user's own routines (this digest, automation-review), not the plugin. Worth checking that both still fire. |
+| easel built-in chart mod | Claude Code changelog 2.1.330 | Deferred | Overlaps `practical-charts` only loosely. Revisit if its charts get posted outside Claude. |
+| Prompt hooks accept model aliases; `"onFailure": "block"` for mcp_tool hooks; Code Mode hook changes; self-hosted runner and VS Code items | Claude Code changelog 2.1.325 to 2.1.330 | Out of scope | dev-hooks ships no prompt or mcp_tool hooks, and the rest is host or admin config. |
+| Feed https://epoch-research.github.io/ai-productivity-digest/feed.xml | fetch failed: proxy 403 | Problem | Blocked by network policy this run (reachable on 2026-11-13). |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
