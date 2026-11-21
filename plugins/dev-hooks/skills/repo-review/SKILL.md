@@ -82,11 +82,11 @@ skill — run the quick detection, then note the handoff (shown as "→ [[skill]
 ### Always
 
 **1. Correctness / bugs → `/code-review`**
-The `/code-review` command is the authoritative bug finder. It is diff-scoped by design, so to
-cover a whole repo either run it against the full history range (`/code-review` after staging a
-review of the working tree) or, for an unfamiliar repo with no meaningful diff, spot-review the
-riskiest modules by hand and note that a diff-scoped pass should run on future changes. Record
-its high-confidence findings here.
+The `/code-review` command is the authoritative bug finder. It is diff-scoped by design (with
+no target it reviews the current branch against the default branch), so to cover a whole repo
+either point it at a long-lived branch or range, or, for an unfamiliar repo with no meaningful
+diff, spot-review the riskiest modules by hand and note that a diff-scoped pass should run on
+future changes. Record its Important and Pre-existing findings here; its Nits belong to axis 2.
 
 **2. Code smells / refactor → `/simplify`**
 Duplication, dead code, over-complex functions, poor naming. `/simplify` is the authoritative
