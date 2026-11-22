@@ -16,7 +16,7 @@ Override defaults via `.claude/settings.local.json` `"env"`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COMMIT_DIGEST_REPOS` | `nateberkopec/dotfiles` | Space-separated `owner/repo` list to watch |
+| `COMMIT_DIGEST_REPOS` | `nateberkopec/dotfiles benthamite/dotfiles` | Space-separated `owner/repo` list to watch |
 | `COMMIT_DIGEST_FEEDS` | `https://epoch-research.github.io/ai-productivity-digest/feed.xml https://upliftai.substack.com/feed https://code.claude.com/docs/en/changelog/rss.xml https://claude.dev/rss.xml` | Space-separated Atom/RSS feed URLs to include |
 | `COMMIT_DIGEST_PAGES` | `https://ai-automations-db.vercel.app/database` | Space-separated web pages without a feed (curated lists, databases) to include |
 | `COMMIT_DIGEST_DAYS` | `7` | Look-back window in days |
