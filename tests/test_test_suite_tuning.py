@@ -178,7 +178,16 @@ def test_restores_the_file_on_sigterm_mid_run(app):
     sleepers = subprocess.run(
         ["pgrep", "-fx", "sleep 29.71"], capture_output=True, text=True
     ).stdout.split()
-    assert not sleepers, "the mutant's test run was left running"
+    # by cwd: a concurrent run elsewhere has its own sleepers
+    ours = [p for p in sleepers if _cwd_of(p) == str(app.resolve())]
+    assert not ours, "the mutant's test run was left running"
+
+
+def _cwd_of(pid):
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return None
 
 
 def test_refuses_to_start_over_a_leftover_backup(app):

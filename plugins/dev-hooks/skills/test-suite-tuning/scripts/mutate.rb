@@ -111,7 +111,6 @@ def kill_tree(pid)
   (descendants(pid) + [pid]).each { |p| Process.kill("KILL", p) rescue nil }
 end
 
-$child = nil
 def run_tests(recs, timeout)
   FileUtils.mkdir_p(File.dirname(NAMES_FILE))
   files = recs.map { |r| r["loc"].split(":").first }.uniq
@@ -122,15 +121,10 @@ def run_tests(recs, timeout)
           "DISABLE_BOOTSNAP_COMPILE_CACHE" => "1" } # same-size mutants written in one second
   out = +""
   Open3.popen2e(env, *RUNNER, *files, pgroup: true) do |_in, io, th|
-    $child = th.pid
-    begin
-      Timeout.timeout(timeout) { out = io.read; th.value }
-    rescue Timeout::Error
-      kill_tree(th.pid)
-      return [:timeout, []]
-    ensure
-      $child = nil
-    end
+    Timeout.timeout(timeout) { out = io.read; th.value }
+  rescue Timeout::Error
+    kill_tree(th.pid)
+    return [:timeout, []]
   end
   # Rails prints "Failure:", plain Minitest "  1) Failure:"
   failed = out.scan(/^\s*(?:\d+\) )?(?:Failure|Error):\r?\n\s*(.+?#.+?)(?: \[|:\r?$)/).flatten.uniq
@@ -148,7 +142,8 @@ end
 File.write(BACKUP, src)
 restore = -> { File.write(file, src); File.delete(BACKUP) if File.exist?(BACKUP); File.delete(NAMES_FILE) if File.exist?(NAMES_FILE) }
 %w[INT TERM].each do |sig|
-  trap(sig) { kill_tree($child) if $child; restore.call; exit!(130) }
+  # all descendants: a signal can land after spawn, before popen2e yields the pid
+  trap(sig) { descendants(Process.pid).each { Process.kill("KILL", _1) rescue nil }; restore.call; exit!(130) }
 end
 
 results = []
