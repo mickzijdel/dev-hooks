@@ -87,12 +87,21 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/private-email-guard.sh\"",
-        "onFailure": "block"
+            "onFailure": "block"
           }
         ]
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/redact-tool-output.sh\""
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [

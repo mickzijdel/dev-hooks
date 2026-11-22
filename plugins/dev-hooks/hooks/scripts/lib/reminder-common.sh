@@ -285,6 +285,16 @@ reminder_emit_decision() {
   exit 0
 }
 
+# Replace a PostToolUse tool result with the JSON in file $2, then exit 0. $1 is the tool
+# name: an MCP tool's result goes in updatedMCPToolOutput, any other in updatedToolOutput.
+reminder_emit_tool_output() {
+  _reminder_log_fire "${BASH_SOURCE[1]##*/}"
+  local field=updatedToolOutput
+  case "$1" in mcp__*) field=updatedMCPToolOutput ;; esac
+  jq -c --arg f "$field" '{hookSpecificOutput: {hookEventName: "PostToolUse", ($f): .}}' "$2"
+  exit 0
+}
+
 # Per-session state file, keyed on hook name + $SESSION (+ an optional extra key), under
 # $XDG_STATE_HOME/dev-hooks: not $TMPDIR, which a reboot empties while a resumed session keeps
 # its id. Sets REPLY to the path. reminder_fire_once tracks bare existence through it;
@@ -606,6 +616,12 @@ reminder_redact_secrets() {
     -e 's#([A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_)[A-Za-z0-9_]*)([[:space:]]*[=:][[:space:]]*)['"'"'"]?[A-Za-z0-9_+][A-Za-z0-9_+/=.~-]{19,}['"'"'"]?#\1\3[REDACTED]#g' \
     2>/dev/null)
 }
+
+# Text that reminder_redact_secrets could change contains one of these: a cheap first
+# test, so a hook on every tool result spawns no sed for output with nothing to mask.
+# Keep it a superset of the rules above.
+# shellcheck disable=SC2034  # read by redact-tool-output.sh
+REMINDER_SECRET_HINT_RE='PRIVATE KEY-----|github_pat_|gh[pousr]_|ptr_|sk-|xox[baprs]-|AKIA|glpat-|bws_|eyJ|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_'
 
 # Frontend markup/script/style files where inline-UI hooks apply. One list for every hook
 # (*.html.erb ends in .erb).

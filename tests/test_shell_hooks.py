@@ -8672,3 +8672,107 @@ def test_sfw_alert_registered_on_both_bash_result_events():
             for h in group["hooks"]
         ]
         assert any("sfw-alert-reminder.sh" in c for c in commands), event
+
+
+# ── redact-tool-output.sh (PostToolUse, every tool) ──────────────────────────────────
+# Built at run time, so no literal token sits in this file for gitleaks to flag.
+GH_TOKEN_SHAPE = "ghp_" + "A1b2C3d4E5" * 4
+KEY_VALUE = "Zx9" + "q8W7e6R5t4Y3u2I1o0P" * 2
+
+
+def _redact(tool, response, **env):
+    payload = {
+        "tool_name": tool,
+        "tool_input": {},
+        "tool_response": response,
+        "session_id": "r1",
+    }
+    r = run_hook(
+        "redact-tool-output.sh", stdin=json.dumps(payload), env=base_env(**env)
+    )
+    assert r.returncode == 0, r.stderr
+    if not r.stdout.strip():
+        return None
+    return json.loads(r.stdout)["hookSpecificOutput"]
+
+
+def test_redact_masks_a_token_in_bash_output_and_keeps_the_shape():
+    out = _redact(
+        "Bash",
+        {"stdout": f"token: {GH_TOKEN_SHAPE}\nok", "stderr": "", "interrupted": False},
+    )
+    assert out["hookEventName"] == "PostToolUse"
+    masked = out["updatedToolOutput"]
+    assert GH_TOKEN_SHAPE not in json.dumps(masked)
+    assert masked["stdout"] == "token: ghp_[REDACTED]\nok"
+    assert masked["interrupted"] is False and masked["stderr"] == ""
+
+
+def test_redact_masks_an_assignment_in_a_read_file():
+    content = f'API_KEY="{KEY_VALUE}"\nNAME=web\n'
+    out = _redact(
+        "Read", {"type": "text", "file": {"filePath": "/x/.env", "content": content}}
+    )
+    file = out["updatedToolOutput"]["file"]
+    assert KEY_VALUE not in file["content"] and file["content"].endswith("NAME=web\n")
+    assert file["filePath"] == "/x/.env"
+
+
+def test_redact_masks_a_private_key_block_only():
+    key = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA\n-----END OPENSSH PRIVATE KEY-----"
+    out = _redact("Bash", {"stdout": f"before\n{key}\nafter", "stderr": "warn"})
+    masked = out["updatedToolOutput"]
+    assert masked["stdout"] == "before\n[REDACTED PRIVATE KEY]\nafter"
+    assert masked["stderr"] == "warn"
+    # a key that ends one string leaves the next one alone
+    out = _redact("Bash", {"stdout": key, "stderr": "warn"})
+    assert out["updatedToolOutput"] == {
+        "stdout": "[REDACTED PRIVATE KEY]",
+        "stderr": "warn",
+    }
+
+
+def test_redact_answers_mcp_tools_with_the_mcp_field():
+    out = _redact("mcp__x__get", [{"type": "text", "text": f"key {GH_TOKEN_SHAPE}"}])
+    assert "updatedToolOutput" not in out
+    assert out["updatedMCPToolOutput"] == [
+        {"type": "text", "text": "key ghp_[REDACTED]"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"stdout": "all tests passed", "stderr": ""},
+        # names only: a TOKEN mention without a value
+        {"stdout": "set GITHUB_TOKEN in settings", "stderr": ""},
+        # an image's base64 is data, not text to mask
+        [
+            {
+                "type": "image",
+                "source": {"type": "base64", "data": "AKIA" + "ABCDEFGHIJKLMNOP" + "x"},
+            }
+        ],
+    ],
+)
+def test_redact_is_silent_on_clean_output(response):
+    assert _redact("Bash", response) is None
+
+
+def test_redact_withholds_everything_when_it_cannot_mask(tmp_path):
+    # Claude Code keeps the original output when a PostToolUse hook fails, so a redactor
+    # that cannot run replaces every string rather than passing the secret through.
+    out = _redact(
+        "Bash",
+        {"stdout": f"token: {GH_TOKEN_SHAPE}", "stderr": "", "interrupted": False},
+        PATH=_broken_tool(tmp_path, "sed"),
+    )
+    masked = out["updatedToolOutput"]
+    assert GH_TOKEN_SHAPE not in json.dumps(masked)
+    assert masked["stdout"].startswith("[output withheld")
+    assert masked["interrupted"] is False
+
+
+def test_redact_respects_its_opt_out():
+    response = {"stdout": f"token: {GH_TOKEN_SHAPE}", "stderr": ""}
+    assert _redact("Bash", response, DEV_HOOKS_REDACT_OUTPUT="false") is None

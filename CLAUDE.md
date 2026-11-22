@@ -404,7 +404,9 @@ session-status pane, which reads the same end report for one session. Rules lear
   counts as headless; copied as `voice_is_nested_run`, pinned by
   `test_nested_run_checks_match`),
   `reminder_redact_secrets` (strip credential-shaped values from text before it is
-  persisted — used on the prompt-log write path; vendor prefixes carry no leading `\b`
+  persisted — used on the prompt-log write path and, string by string, by
+  `redact-tool-output.sh`, which answers through `reminder_emit_tool_output`; keep
+  `REMINDER_SECRET_HINT_RE`, its one-grep first test, a superset of the rules; vendor prefixes carry no leading `\b`
   on purpose, so a secret pasted with no space before it still matches),
   `reminder_is_frontend_file`,
   and `reminder_is_test_path`. Shared embedded-python helpers (`git()`, `is_test_path()`,
