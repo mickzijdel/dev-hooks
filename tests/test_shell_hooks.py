@@ -5796,6 +5796,28 @@ SECRET_ASK_COMMANDS = [
     "ps aux e",
     "ps -auxe",
     "bws secret get x -o none -o json",
+    # a second review's cases: filters that let whole lines through
+    "env | grep -oE '^[[:print:]]+'",
+    "env | rg -o '^[[:graph:]]+'",
+    "env | rg -o '^[!-~]+'",
+    "env | grep -o -e '^A' -e '.*'",
+    "env | rg -o '^X' --passthru",
+    "env | grep -E '^HOME|='",
+    "env | rg '^|HOME='",
+    "env | grep -E '^(HOME|)='",
+    "env | grep -i '^api_token='",
+    "env | cut -d= -f1 --complement",
+    "env | sed -n '/=.*/p'",
+    "env | sed 's/x=.*//'",
+    "env | sed 'h;s/=.*//;G'",
+    # a middle stage that writes elsewhere
+    "env | cat >&2 | wc -l",
+    "env | awk '{print > \"/dev/stderr\"}' | wc -l",
+    "env | sort -o /dev/stderr | wc -l",
+    # bws run's string after --, and a glob
+    "bws run -- 'sh -c env'",
+    "bws run -- 'echo $API_TOKEN'",
+    "cat /proc/self/env*",
 ]
 
 
@@ -8867,3 +8889,32 @@ def test_redact_withholds_rather_than_misplace_a_string_holding_the_separator():
     masked = out["updatedToolOutput"]
     assert KEY_VALUE not in json.dumps(masked)
     assert masked["stdout"].startswith("[output withheld")
+
+
+def _writeback(tool, tool_input, tmp_path=None):
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "w1"}
+    r = run_hook(
+        "redacted-writeback-guard.sh", stdin=json.dumps(payload), env=base_env()
+    )
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)["hookSpecificOutput"] if r.stdout.strip() else None
+
+
+def test_writeback_asks_before_the_marker_enters_a_file(tmp_path):
+    f = tmp_path / "config.rb"
+    f.write_text("TOKEN = ENV.fetch('X')\n")
+    out = _writeback(
+        "Write", {"file_path": str(f), "content": "API_KEY = [REDACTED]\n"}
+    )
+    assert out["permissionDecision"] == "ask"
+    assert out["permissionDecisionReason"].startswith(GUARD_PREFIX)
+    edit = {"file_path": str(f), "old_string": "a", "new_string": "k: [REDACTED JWT]"}
+    assert _writeback("Edit", edit)["permissionDecision"] == "ask"
+
+
+def test_writeback_is_silent_without_the_marker_or_where_it_already_is(tmp_path):
+    f = tmp_path / "test_redact.py"
+    f.write_text('assert out == "ghp_[REDACTED]"\n')
+    assert _writeback("Write", {"file_path": str(f), "content": "x = 1\n"}) is None
+    edit = {"file_path": str(f), "old_string": "x", "new_string": "y = '[REDACTED]'"}
+    assert _writeback("Edit", edit) is None

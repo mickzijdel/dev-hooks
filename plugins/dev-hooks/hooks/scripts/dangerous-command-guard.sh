@@ -303,63 +303,102 @@ dumps_env() {
   done
 }
 
-# Does segment $1, the command a dump is piped into, print no secret value? A count (`wc`,
-# `grep -c`), `rg -o` with an anchored pattern that cannot run past a name (`^X_[A-Z_]+=`),
-# a grep for named variables none of which is secret-shaped (`^(DISPLAY|PATH)=`),
-# `cut -d= -f1`, and a sed that drops everything after `=` do; anything else (`cat`,
-# `grep TOKEN`, `tr`) passes values through. Sets NAME and ARGS, so the caller parses its
-# own segment again.
+# Does segment $1, the command a dump is piped into, print no secret value? Only these
+# exact forms, since a looser reading of regex or sed lets whole lines through:
+#   - a count or a yes/no: `wc`, `grep -c|-l|-q`;
+#   - `rg -o`/`grep -o` with one anchored pattern built from literal names, groups of them
+#     and the classes [A-Z_]-style, ending at most in `=` (`^(GIT_[A-Z_]+|DEV_HOOKS[A-Z_]*)=`);
+#   - a grep for named variables, `^NAME=` or `^(A|B)=`, none secret-shaped or a URL;
+#   - `cut -d= -f1`;
+#   - `sed 's/=.*//'` (any plain replacement) or `sed -n 's/^\(NAME_[A-Z_]*\)=.*/\1/p'`.
+# Sets NAME, ARGS and REDIRS, so the caller parses its own segment again.
+NAME_ITEM='([A-Za-z0-9_]+|\[(A-Z|a-z|0-9|_)+\][*+]?)'
+NAMES_RE="^\\^(${NAME_ITEM}|\\(${NAME_ITEM}+(\\|${NAME_ITEM}+)*\\))+=?\$"
+LITERAL_NAMES_RE='^\^([A-Za-z0-9_]+|\([A-Za-z0-9_]+(\|[A-Za-z0-9_]+)*\))=$'
 names_only_filter() {
-  local a pat="" o="" s names n
+  local a pat="" npat=0 o="" count="" i_flag="" s n
   seg_parse "$1"
   # rtk's proxy runs the filter as it is, only compressing its output.
   if [ "$NAME" = rtk ] && [ "${ARGS[0]:-}" = proxy ]; then
     NAME=${ARGS[1]:-}
     ARGS=("${ARGS[@]:2}")
   fi
+  for a in "${REDIRS[@]}"; do
+    [ "$a" = =piped ] || return 1
+  done
   case "$NAME" in
     wc) return 0 ;;
     rg | grep | egrep)
       for a in "${ARGS[@]}"; do
         case "$a" in
-          --count | --quiet | --files-with-matches) return 0 ;;
+          --count | --quiet | --files-with-matches) count=1 ;;
           --only-matching) o=1 ;;
-          --*) ;;
-          -*[clq]*) return 0 ;;
-          -*o*) o=1 ;;
-          -*) ;;
-          *) [ -z "$pat" ] && pat=$a ;;
+          --extended-regexp | --perl-regexp | --no-messages) ;;
+          --ignore-case) i_flag=1 ;;
+          --*) return 1 ;;
+          -*)
+            printf '%s' "$a" | grep -Eq '^-[cloqiEPs]+$' || return 1
+            case "$a" in *[clq]*) count=1 ;; esac
+            case "$a" in *o*) o=1 ;; esac
+            case "$a" in *i*) i_flag=1 ;; esac
+            ;;
+          *)
+            pat=$a
+            npat=$((npat + 1))
+            ;;
         esac
       done
-      [ "${pat#^}" = "$pat" ] && return 1
+      [ -n "$count" ] && return 0
+      [ "$npat" = 1 ] || return 1
       if [ -n "$o" ]; then
-        ! printf '%s' "${pat%=}" | grep -Eq '[.=]|\\[SsWw]|\[\^'
+        printf '%s' "$pat" | grep -Eq "$NAMES_RE"
         return
       fi
-      # Literal names only, as `^NAME=` or `^(A|B)=`: those variables' values are printed,
-      # so none may be secret-shaped or a URL that can carry a password.
-      names=$(printf '%s' "$pat" | sed -nE 's/^\^\(?([A-Za-z0-9_|]+)\)?=$/\1/p')
-      [ -n "$names" ] || return 1
-      for n in ${names//|/ }; do
+      [ -z "$i_flag" ] && printf '%s' "$pat" | grep -Eq "$LITERAL_NAMES_RE" || return 1
+      s=$(printf '%s' "$pat" | tr -d '^()=')
+      for n in ${s//|/ }; do
         is_secret_var name "$n" && return 1
-        case "$n" in *URL | *URI | *DSN | *url) return 1 ;; esac
+        case "$n" in *URL | *URI | *DSN) return 1 ;; esac
       done
       return 0
       ;;
     cut)
-      s=" ${ARGS[*]} "
-      case "$s" in *" -d= "* | *" -d = "*) ;; *) return 1 ;; esac
-      case "$s" in *" -f1 "* | *" -f 1 "*) return 0 ;; esac
+      case " ${ARGS[*]} " in
+        " -d= -f1 " | " -f1 -d= " | " -d = -f1 " | " -d = -f 1 " | " -d= -f 1 " | " -f 1 -d= " | " -f1 -d = ") return 0 ;;
+      esac
       return 1
       ;;
     sed)
-      for a in "${ARGS[@]}"; do
-        case "$a" in *'=.*'*) return 0 ;; esac
-      done
+      case "${ARGS[*]}" in
+        's/=.*/'* | '-E s/=.*/'* | '-r s/=.*/'*)
+          s=${ARGS[${#ARGS[@]} - 1]}
+          printf '%s' "$s" | grep -Eq '^s/=\.\*/[^\\&/]*/$'
+          return
+          ;;
+        "-n s/^\\("*)
+          printf '%s' "${ARGS[1]:-}" | grep -Eq '^s/\^\\\(([A-Za-z0-9_]+|\[(A-Z|a-z|0-9|_)+\][*+]?)+\\\)=\.\*/\\1/p$' &&
+            [ "${#ARGS[@]}" = 2 ]
+          return
+          ;;
+      esac
       return 1
       ;;
     *) return 1 ;;
   esac
+}
+
+# Does the parsed stage (NAME, ARGS, REDIRS) only pass lines on to its stdout? Then a
+# names-only filter after it still decides; anything that can write elsewhere (`tee`,
+# `sort -o`, `awk`, `sed w`, a redirection, a /dev path) ends the walk.
+passthrough_stage() {
+  local a
+  case "$NAME" in grep | rg | egrep | head | tail | tr | uniq | cut) ;; *) return 1 ;; esac
+  for a in "${REDIRS[@]}"; do
+    [ "$a" = =piped ] || return 1
+  done
+  for a in "${ARGS[@]}"; do
+    case "$a" in */dev/*) return 1 ;; esac
+  done
 }
 
 # ── catastrophic, irreversible system damage ─────────────────────────────────────
@@ -466,7 +505,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
               filtered=1
               break
             fi
-            [ "$NAME" = tee ] && break
+            passthrough_stage || break
             case "${SEGS[$sj]}" in *"$RDM=piped"*) ;; *) break ;; esac
           done
           seg_parse "$seg"
@@ -478,7 +517,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
       for a in "${ARGS[@]}" "${REDIRS[@]}"; do
         unquote "${a#<}"
         case "$UQ" in
-          /proc/*/environ)
+          /proc/*/env*)
             [ -n "$filtered" ] && continue
             SECRET_ASK="\`$NAME $UQ\` prints a process's environment, where \`fnox exec\` and \`bws run\` put secret values."
             break
@@ -554,7 +593,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
                 esac
               done
               child=""
-              if [ "$NAME" = bws ] && [ -z "$dashes" ] && [ $((i + 1)) -eq "${#ARGS[@]}" ]; then
+              if [ "$NAME" = bws ] && [ $((i + 1)) -eq "${#ARGS[@]}" ]; then
                 child=${ARGS[$i]//$'\036'/$'\n'}
               else
                 for a in "${ARGS[@]:$i}"; do
