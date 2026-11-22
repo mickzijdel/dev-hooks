@@ -285,8 +285,7 @@ reminder_emit_decision() {
   exit 0
 }
 
-# Replace a PostToolUse tool result with the JSON in file $2, then exit 0. $1 is the tool
-# name: an MCP tool's result goes in updatedMCPToolOutput, any other in updatedToolOutput.
+# PostToolUse result <- JSON file $2. MCP tools ($1) use updatedMCPToolOutput, others updatedToolOutput.
 reminder_emit_tool_output() {
   _reminder_log_fire "${BASH_SOURCE[1]##*/}"
   local field=updatedToolOutput
@@ -619,9 +618,7 @@ reminder_redact_secrets() {
     2>/dev/null)
 }
 
-# Text that reminder_redact_secrets could change contains one of these: a cheap first
-# test, so a hook on every tool result spawns no sed for output with nothing to mask.
-# Keep it a superset of the rules above.
+# prefilter for reminder_redact_secrets; keep it a superset of its rules
 # shellcheck disable=SC2034  # read by redact-tool-output.sh
 REMINDER_SECRET_HINT_RE='PRIVATE KEY|github_pat_|gh[pousr]_|ptr_|sk-|xox[baprs]-|AKIA|glpat-|bws_|eyJ|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_|[Tt]oken|[Ss]ecret|[Pp]assw|credential|api_?key|access_key|private_key|://[^/[:space:]:@]+:[^@/[:space:]]+@'
 

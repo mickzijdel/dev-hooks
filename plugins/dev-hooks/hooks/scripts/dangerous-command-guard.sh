@@ -79,7 +79,7 @@ cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 # shell and a runner's command (`docker exec c …`, `watch …`) are split out as commands
 # of their own. On a parse failure (an unbalanced quote)
 # the awk falls back to the old quote-blind split, which over-matches rather than hides.
-# A parser that cannot run must not let the command through unchecked: ask the person.
+# parser failed: ask, never pass the command unchecked
 if ! SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk"); then
   reminder_emit_decision ask "dev-hooks guard — please confirm: the command-safety check could not run (its awk parser failed), so it cannot tell whether this command wipes data or prints a secret. Allow only if you have read it, then fix the guard: \`bash $0 < payload.json\` shows the error."
 fi
@@ -258,9 +258,8 @@ is_secret_var() {
   printf '%s' "$2" | grep -Eq "$bare|$braced"
 }
 
-# The subcommand of a CLI with global options in front (`fnox -P prod exec`): SUB is the
-# first operand, SUB_I its index in ARGS, and SUB=--help when a help or version flag comes
-# first. $1 is a regex of the options that take the next word as their value.
+# SUB: first operand past global options (`fnox -P prod exec`), SUB_I its ARGS index;
+# SUB=--help when a help or version flag comes first. $1: value-taking options regex.
 seg_sub() {
   SUB="" SUB_I=-1
   local i=0 n=${#ARGS[@]}
@@ -283,9 +282,8 @@ seg_sub() {
   done
 }
 
-# Does `$1 ARGS[$2…]` print environment values? `printenv` always does here (pass
-# $3=any, for a runner's child, where every variable may be a secret); otherwise only
-# the forms that name nothing: bare `env`, `printenv`, `set`, `export -p`, `declare -x`.
+# Does `$1 ARGS[$2…]` print env values? Only forms naming nothing: bare `env`, `printenv`,
+# `set`, `export -p`, `declare -x`. $3=any counts every printenv, for a runner's child.
 dumps_env() {
   local name=$1 i=$2 a
   [ "$name" = printenv ] && [ "${3:-}" = any ] && return 0
@@ -303,22 +301,22 @@ dumps_env() {
   done
 }
 
-# Does segment $1, the command a dump is piped into, print no secret value? Only these
-# exact forms, since a looser reading of regex or sed lets whole lines through:
+# Does segment $1, a dump's reader, print names only? Exact forms only; looser regex or
+# sed readings let whole lines through:
 #   - a count or a yes/no: `wc`, `grep -c|-l|-q`;
 #   - `rg -o`/`grep -o` with one anchored pattern built from literal names, groups of them
 #     and the classes [A-Z_]-style, ending at most in `=` (`^(GIT_[A-Z_]+|DEV_HOOKS[A-Z_]*)=`);
 #   - a grep for named variables, `^NAME=` or `^(A|B)=`, none secret-shaped or a URL;
 #   - `cut -d= -f1`;
 #   - `sed 's/=.*//'` (any plain replacement) or `sed -n 's/^\(NAME_[A-Z_]*\)=.*/\1/p'`.
-# Sets NAME, ARGS and REDIRS, so the caller parses its own segment again.
+# clobbers NAME, ARGS, REDIRS: the caller re-parses its segment
 NAME_ITEM='([A-Za-z0-9_]+|\[(A-Z|a-z|0-9|_)+\][*+]?)'
 NAMES_RE="^\\^(${NAME_ITEM}|\\(${NAME_ITEM}+(\\|${NAME_ITEM}+)*\\))+=?\$"
 LITERAL_NAMES_RE='^\^([A-Za-z0-9_]+|\([A-Za-z0-9_]+(\|[A-Za-z0-9_]+)*\))=$'
 names_only_filter() {
   local a pat="" npat=0 o="" count="" i_flag="" s n
   seg_parse "$1"
-  # rtk's proxy runs the filter as it is, only compressing its output.
+  # rtk proxy runs the filter unchanged
   if [ "$NAME" = rtk ] && [ "${ARGS[0]:-}" = proxy ]; then
     NAME=${ARGS[1]:-}
     ARGS=("${ARGS[@]:2}")
@@ -387,9 +385,8 @@ names_only_filter() {
   esac
 }
 
-# Does the parsed stage (NAME, ARGS, REDIRS) only pass lines on to its stdout? Then a
-# names-only filter after it still decides; anything that can write elsewhere (`tee`,
-# `sort -o`, `awk`, `sed w`, a redirection, a /dev path) ends the walk.
+# Does the stage only pass lines to stdout? Then a later names-only filter still decides.
+# tee, sort -o, awk, sed w, a redirect or a /dev path write elsewhere and end the walk.
 passthrough_stage() {
   local a
   case "$NAME" in grep | rg | egrep | head | tail | tr | uniq | cut) ;; *) return 1 ;; esac
@@ -479,8 +476,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
     SEG_CWD="${CWD:-.}"
-    # A secret runner's child is parsed like any command and appended here, with
-    # RUNNER[i] naming the runner, so a dump inside it is judged in turn.
+    # a runner's child is appended here, RUNNER[i] naming the runner
     mapfile -t SEGS <<<"$SEGMENTS"
     RUNNER=()
     for ((si = 0; si < ${#SEGS[@]}; si++)); do
@@ -493,13 +489,11 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
       fi
       # Output that goes nowhere can't reach the transcript.
       seg_stdout_discarded && continue
-      # Piped into a filter that prints names only, a dump is how a check lists variable
-      # names (`env | rg -o '^REIMBURSEMENTS_[A-Z_]+'`), so it passes.
+      # a dump piped into a names-only filter passes: `env | rg -o '^APP_[A-Z_]+'`
       filtered=""
       for r in "${REDIRS[@]}"; do
         if [ "$r" = =piped ]; then
-          # Down the pipe chain: once one stage keeps names only, later ones can't
-          # bring values back; `tee` copies them to the screen, so the walk stops there.
+          # later stages can't bring values back once one keeps names only
           for ((sj = si + 1; sj < ${#SEGS[@]}; sj++)); do
             if names_only_filter "${SEGS[$sj]}"; then
               filtered=1
@@ -512,8 +506,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
           break
         fi
       done
-      # Another process's environment, by operand or input redirection, whatever reads it:
-      # `fnox exec` and `bws run` put the secrets there.
+      # /proc/*/environ by operand or redirect: `fnox exec` and `bws run` put secrets there
       for a in "${ARGS[@]}" "${REDIRS[@]}"; do
         unquote "${a#<}"
         case "$UQ" in
@@ -534,9 +527,8 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
         break
       fi
       case "$NAME" in
-        # BSD-style `e` (`ps e`, `auxe`, `aux e`, `-auxe`) adds every process's environment;
-        # `ps -e` and `-ef` only mean "every process", and an option's value (`-C name`,
-        # `-o etime`) is skipped.
+        # BSD `e` (`ps e`, `auxe`, `-auxe`) adds environments; `-e`/`-ef` only mean every process.
+        # Option values such as `-C name` are skipped.
         ps)
           skip=""
           for a in "${ARGS[@]}"; do
@@ -556,8 +548,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             fi
           done
           ;;
-        # An allowlist, not a denylist: a new or overlooked subcommand that prints values
-        # (fnox's env, export, edit, tui, mcp, lease) is refused until it is listed here.
+        # allowlist: unlisted subcommands that print values (env, export, edit, tui, mcp, lease) are refused
         fnox | bws)
           if [ "$NAME" = fnox ]; then
             seg_sub '-c|--config|-P|--profile|--if-missing|--write-profile'
@@ -575,8 +566,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
               fnox:remove | fnox:rm | fnox:delete | fnox:set | fnox:s | fnox:sync | fnox:sponsors | \
               fnox:version | fnox:v | fnox:help | bws:project | bws:config | bws:completions | bws:help) ;;
             fnox:exec | fnox:x | fnox:run | bws:run)
-              # The child: after `--`, else after the runner's own options (bws run also
-              # takes it as one string). It is parsed like any command and judged in turn.
+              # child: after `--`, else after the runner's options; bws run also takes one string
               i=$((SUB_I + 1)) dashes=""
               for ((j = i; j < ${#ARGS[@]}; j++)); do
                 if [ "${ARGS[$j]}" = -- ]; then
@@ -610,7 +600,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             bws:secret)
               seg_words
               case "$WORDS" in 'secret delete '*) continue ;; esac
-              # The last -o wins, as with any repeated option.
+              # last -o wins
               out=""
               for ((j = 0; j < ${#ARGS[@]}; j++)); do
                 case "${ARGS[$j]}" in

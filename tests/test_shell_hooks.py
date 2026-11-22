@@ -5763,7 +5763,7 @@ SECRET_ASK_COMMANDS = [
     "cat /proc/1234/environ",
     "strings /proc/self/environ",
     "tr '\\0' '\\n' < /proc/1/environ",
-    # a bypass review's cases: a piped dump elsewhere, or a filter that passes values on
+    # a piped dump elsewhere, or a filter that passes values on
     "env | wc -l; env",
     "env | cat",
     "env |& cat",
@@ -5796,7 +5796,7 @@ SECRET_ASK_COMMANDS = [
     "ps aux e",
     "ps -auxe",
     "bws secret get x -o none -o json",
-    # a second review's cases: filters that let whole lines through
+    # filters that let whole lines through
     "env | grep -oE '^[[:print:]]+'",
     "env | rg -o '^[[:graph:]]+'",
     "env | rg -o '^[!-~]+'",
@@ -8146,9 +8146,7 @@ def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
 
 
 def test_guard_smoke():
-    # Merging dev-hooks deploys its hooks live, and a blocking guard that crashes refuses
-    # every call it matches (onFailure: block), editing the guard included. hk runs this
-    # at commit (step guard-smoke), so a broken guard never reaches main.
+    # hk step guard-smoke: a crashing guard with onFailure: block refuses every call, its fix included
     def run(hook, tool, tool_input):
         payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "smoke"}
         r = run_hook(hook, stdin=json.dumps(payload), env=base_env(DEV_HOOKS_PROBE="1"))
@@ -8198,7 +8196,6 @@ def _broken_tool(tmp_path, name):
     ],
 )
 def test_guard_asks_when_its_check_cannot_run(tmp_path, hook, tool, tool_input, broken):
-    # A check that cannot run must not allow: the call goes to the person instead.
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "e1"}
     env = base_env(PATH=_broken_tool(tmp_path, broken))
     env.setdefault("DEV_HOOKS_ALLOWED_EMAILS", ALLOWED)
@@ -8826,8 +8823,6 @@ def test_redact_is_silent_on_clean_output(response):
 
 
 def test_redact_withholds_everything_when_it_cannot_mask(tmp_path):
-    # Claude Code keeps the original output when a PostToolUse hook fails, so a redactor
-    # that cannot run replaces every string rather than passing the secret through.
     out = _redact(
         "Bash",
         {"stdout": f"token: {GH_TOKEN_SHAPE}", "stderr": "", "interrupted": False},
@@ -8847,7 +8842,7 @@ def test_redact_respects_its_opt_out():
 @pytest.mark.parametrize(
     "text",
     [
-        # a bypass review's cases: JSON and repr quoting, lowercase names, a URL password
+        # JSON and repr quoting, lowercase names, a URL password
         '{"API_TOKEN": "' + KEY_VALUE + '"}',
         "{'API_TOKEN': '" + KEY_VALUE + "'}",
         "password: " + KEY_VALUE,
@@ -8878,7 +8873,7 @@ def test_redact_masks_a_pgp_key_and_a_bare_string_result():
 
 
 def test_redact_masks_a_large_result():
-    # Above 128 KB a single command-line argument is refused (MAX_ARG_STRLEN).
+    # MAX_ARG_STRLEN: one argv string over 128 KB is refused
     big = "x" * 200_000 + f"\nTOKEN={KEY_VALUE}\n"
     out = _redact("Bash", {"stdout": big, "stderr": ""})["updatedToolOutput"]
     assert KEY_VALUE not in out["stdout"] and out["stdout"].startswith("xxx")

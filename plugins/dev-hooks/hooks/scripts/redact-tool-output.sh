@@ -2,10 +2,8 @@
 # bet: none (L5 — output-side half of the secret guard: a command guard cannot see what a
 #   file, an API, a script's print or an MCP call will return)
 # sunset: never (safety)
-# PostToolUse(every tool): mask credential-shaped values (reminder_redact_secrets' rules) in
-# the tool result before Claude sees it, string by string, keeping the result's shape.
-# Claude Code keeps the original output when a PostToolUse hook fails, so when masking
-# cannot run every string is withheld instead. Images are left alone.
+# PostToolUse(every tool): mask credential-shaped values in each string of the result.
+# A failed hook keeps the original output, so when masking can't run every string is withheld.
 #
 # Opt out with DEV_HOOKS_REDACT_OUTPUT=false in settings env.
 
@@ -24,11 +22,8 @@ printf '%s' "$INPUT" | jq '.tool_response // empty' >"$RESPONSE" 2>/dev/null || 
 [ -s "$RESPONSE" ] || exit 0
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)
 
-# Every string outside an image block, in path order, joined by a record separator on a
-# line of its own (so a private-key rule, which replaces whole lines, never eats one) and
-# closed by a unit separator (command substitution would strip a trailing newline). The
-# masked text is split back on them, so a changed count (or a string that holds either
-# byte itself) withholds rather than misplacing a string.
+# separators on lines of their own: the private-key rule replaces whole lines.
+# \x1f closes the text, since $() strips a trailing newline. A changed count withholds.
 # shellcheck disable=SC2016  # jq programs, not shell expansions
 DEFS='def text_paths: . as $r | ((if type == "string" then [[]] else [] end) + [paths(strings)]) | map(. as $p | select(
   [range(0; $p | length) as $i | $r | getpath($p[:$i]) | objects | select(.type == "image")]

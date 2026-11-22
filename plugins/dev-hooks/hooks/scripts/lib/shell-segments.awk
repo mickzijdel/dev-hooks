@@ -70,8 +70,7 @@ function takes_value(wrapper, opt) {
 
 # Drop assignments, wrappers and reserved words in front of the command; move the
 # redirections to the end. Returns "" when no command word is left.
-# With `final` set, a bare `env` (or `sudo env -0`) comes back as the command `env`: it runs
-# nothing and prints the environment.
+# final: a bare `env` (`sudo env -0`) is returned as `env`, which prints the environment
 function finish(seg, final,    a, n, i, w, words, redirs, wrapper, cw) {
   n = split(seg, a, US)
   words = ""
@@ -90,7 +89,7 @@ function finish(seg, final,    a, n, i, w, words, redirs, wrapper, cw) {
         wrapper = basename(w)
         continue
       }
-      # `command -v X` looks X up; it runs nothing.
+      # `command -v X` runs nothing
       if (wrapper == "command" && (w == "-v" || w == "-V")) return ""
       if (wrapper != "" && substr(w, 1, 1) == "-") {
         if (takes_value(wrapper, w)) i++
@@ -125,8 +124,7 @@ function naive(s,    out, lines, n, i, ws, m, j, seg, f) {
 }
 
 function add(x) {
-  # A newline inside a word (a multi-line `bash -c` script) is kept as \036, so the word
-  # stays on its segment's line and `nl` can give the script its lines back.
+  # newline in a word kept as \036 so a multi-line `bash -c` stays one segment; nl restores it
   gsub(/\n/, "\036", x)
   SG[D] = (NWD[D]++) ? SG[D] US x : x
 }
@@ -477,8 +475,7 @@ function tokenize(s,    n, i, c, nx, j, op, fd) {
       flushseg()
       i = (NH[D] > 0) ? heredocs(s, i + 1) : i + 1
     } else if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")") {
-      # A single `|` (or `|&`) pipes this command's output on: mark it, so a check can
-      # look at what reads it. `||` is a condition, not a pipe.
+      # `|`/`|&` marks =piped so a check can see the reader; `||` is no pipe
       if (c == "|" && substr(s, i + 1, 1) != "|" && substr(s, i - 1, 1) != "|") {
         flushw()
         add(RD "=piped")

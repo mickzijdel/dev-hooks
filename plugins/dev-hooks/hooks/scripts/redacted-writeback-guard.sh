@@ -2,10 +2,8 @@
 # bet: none (L5 — companion of redact-tool-output.sh: a masked read written back into a
 #   file replaces the real value with the marker)
 # sunset: never (safety)
-# PreToolUse(Write|Edit|MultiEdit|NotebookEdit): ask before new text carries the
-# redactor's marker ([REDACTED…] or its withheld notice) into a file that does not
-# already hold it. Claude saw that text masked, so writing it back would destroy the
-# value, or a line of code that only looked like one.
+# PreToolUse(Write|Edit|MultiEdit|NotebookEdit): ask before new text carries the redactor's
+# marker into a file that lacks it; writing masked text back destroys the real value.
 #
 # Opt out with DEV_HOOKS_REDACT_OUTPUT=false (the redactor's own switch) in settings env.
 
