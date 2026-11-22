@@ -30,17 +30,21 @@ TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)
 # masked text is split back on them, so a changed count (or a string that holds either
 # byte itself) withholds rather than misplacing a string.
 # shellcheck disable=SC2016  # jq programs, not shell expansions
-DEFS='def text_paths: . as $r | [paths(strings)] | map(. as $p | select(
+DEFS='def text_paths: . as $r | ((if type == "string" then [[]] else [] end) + [paths(strings)]) | map(. as $p | select(
   [range(0; $p | length) as $i | $r | getpath($p[:$i]) | objects | select(.type == "image")]
   | length == 0));'
 reminder_mktemp
 MASKED=$REPLY
+reminder_mktemp
+REDACTED=$REPLY
 if TEXT=$(jq -j "$DEFS"' . as $r | text_paths | map(. as $p | $r | getpath($p))
     | join("\n\u001e\n") + "\n\u001f"' "$RESPONSE" 2>/dev/null) &&
   reminder_redact_secrets "$TEXT" && [ "${REPLY: -1}" = $'\037' ] &&
   [ "$(printf '%s' "$REPLY" | tr -cd '\036\037' | wc -c)" = "$(printf '%s' "$TEXT" | tr -cd '\036\037' | wc -c)" ] &&
-  jq --arg m "${REPLY%$'\n\037'}" "$DEFS"' . as $r | ($m | split("\n\u001e\n")) as $v
-    | reduce (text_paths | to_entries[]) as $e ($r; setpath($e.value; $v[$e.key]))' \
+  printf '%s' "${REPLY%$'\n\037'}" >"$REDACTED" &&
+  jq --rawfile m "$REDACTED" "$DEFS"' . as $r | ($m | split("\n\u001e\n")) as $v
+    | if ($v | length) != (text_paths | length) then error("string count changed") else
+      reduce (text_paths | to_entries[]) as $e ($r; setpath($e.value; $v[$e.key])) end' \
     "$RESPONSE" >"$MASKED" 2>/dev/null; then
   [ "$TEXT" = "$REPLY" ] && exit 0
 else

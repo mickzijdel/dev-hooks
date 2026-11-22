@@ -601,7 +601,7 @@ reminder_redact_secrets() {
   # error there, and the empty output blanked every prompt-log line), and word boundaries are
   # spelled as character classes because BSD ERE has no \b.
   REPLY=$(printf '%s' "$1" | sed -E \
-    -e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----/,/-----END [A-Z ]*PRIVATE KEY( BLOCK)?-----/c\
 [REDACTED PRIVATE KEY]' \
     -e 's|(github_pat_)[A-Za-z0-9_]{20,}|\1[REDACTED]|g' \
     -e 's|(gh[pousr]_)[A-Za-z0-9]{20,}|\1[REDACTED]|g' \
@@ -613,7 +613,9 @@ reminder_redact_secrets() {
     -e 's|(glpat-)[A-Za-z0-9_-]{20,}|\1[REDACTED]|g' \
     -e 's|(bws_)[A-Za-z0-9._-]{20,}|\1[REDACTED]|g' \
     -e 's|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|[REDACTED JWT]|g' \
-    -e 's#([A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_)[A-Za-z0-9_]*)([[:space:]]*[=:][[:space:]]*)['"'"'"]?[A-Za-z0-9_+][A-Za-z0-9_+/=.~-]{19,}['"'"'"]?#\1\3[REDACTED]#g' \
+    -e 's#([A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_)[A-Za-z0-9_]*)(['"'"'"]?[[:space:]]*[=:][[:space:]]*)['"'"'"]?[A-Za-z0-9_+][A-Za-z0-9_+/=.~-]{19,}['"'"'"]?#\1\3[REDACTED]#g' \
+    -e 's#([A-Za-z0-9_]*(token|secret|password|passwd|credential|api_?key|access_key|private_key|Token|Secret|Password)[A-Za-z0-9_]*)(['"'"'"]?[[:space:]]*[=:][[:space:]]*)['"'"'"]?[A-Za-z0-9_+][A-Za-z0-9_+/=.~-]{7,}[0-9][A-Za-z0-9_+/=.~-]{7,}['"'"'"]?#\1\3[REDACTED]#g' \
+    -e 's#([a-z][a-z0-9+.-]*://[^:/@[:space:]]+:)[^@/[:space:]]{3,}@#\1[REDACTED]@#g' \
     2>/dev/null)
 }
 
@@ -621,7 +623,7 @@ reminder_redact_secrets() {
 # test, so a hook on every tool result spawns no sed for output with nothing to mask.
 # Keep it a superset of the rules above.
 # shellcheck disable=SC2034  # read by redact-tool-output.sh
-REMINDER_SECRET_HINT_RE='PRIVATE KEY-----|github_pat_|gh[pousr]_|ptr_|sk-|xox[baprs]-|AKIA|glpat-|bws_|eyJ|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_'
+REMINDER_SECRET_HINT_RE='PRIVATE KEY|github_pat_|gh[pousr]_|ptr_|sk-|xox[baprs]-|AKIA|glpat-|bws_|eyJ|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|KEY_|[Tt]oken|[Ss]ecret|[Pp]assw|credential|api_?key|access_key|private_key|://[^/[:space:]:@]+:[^@/[:space:]]+@'
 
 # Frontend markup/script/style files where inline-UI hooks apply. One list for every hook
 # (*.html.erb ends in .erb).

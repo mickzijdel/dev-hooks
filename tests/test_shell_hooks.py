@@ -5763,6 +5763,39 @@ SECRET_ASK_COMMANDS = [
     "cat /proc/1234/environ",
     "strings /proc/self/environ",
     "tr '\\0' '\\n' < /proc/1/environ",
+    # a bypass review's cases: a piped dump elsewhere, or a filter that passes values on
+    "env | wc -l; env",
+    "env | cat",
+    "env |& cat",
+    "env | grep TOKEN",
+    "env | grep -i '^GIT_'",
+    "env | rg -o '^DEBUGINFOD_URLS=.*'",
+    "env | rg '^DATABASE_URL='",
+    "env | rg '^(DISPLAY|GITHUB_TOKEN)='",
+    "env | tee /dev/stderr | wc -l",
+    # rg without -o prints each matching variable with its value
+    "tr '\\0' '\\n' < /proc/$(pgrep -x gnome-shell | head -1)/environ 2>&1 | rg '^DBUS_'",
+    "cat /proc/1/environ | wc -c; cat /proc/1/environ",
+    "cat /proc/self/environ | tr '\\0' '\\n'",
+    'echo "; env | wc"; env',
+    # the runner's child through a shell, a wrapper, a path or an option value
+    "fnox exec -- sh -c env",
+    "fnox exec -- /usr/bin/env",
+    "fnox exec -- nice env",
+    "fnox exec -- declare -px",
+    "fnox exec -P prod env",
+    "fnox exec --profile prod env",
+    "bws run -- sh -c env",
+    "bws run 'true; env'",
+    "bws run 'env|cat'",
+    "bws run --project-id x env",
+    # combined flags, separate ps options, and a later -o winning
+    "declare -px",
+    "typeset -xp",
+    "export -pn",
+    "ps aux e",
+    "ps -auxe",
+    "bws secret get x -o none -o json",
 ]
 
 
@@ -5985,8 +6018,19 @@ SECRET_SILENT_COMMANDS = [
     "cat /proc/1234/status",
     "ps -o etime= -C beepertexts",
     "command -v fnox bws",
-    "tr '\\0' '\\n' < /proc/$(pgrep -x gnome-shell | head -1)/environ 2>&1 | rg '^DBUS_'",
     # piped into a filter: how a check lists variable names
+    "env | rg -c '^REIMBURSEMENTS_'",
+    "env | rtk proxy rg -c '^(PORT|VITE_RUBY_PORT)='",
+    "fnox exec -- sh -c 'env | cut -d= -f1 | grep -i fnox'",
+    "env | rg -o '^(CLAUDE[A-Z_]*|DEV_HOOKS[A-Z_]*)=' | sort",
+    "env | rg -i proxy | sed 's/=.*/=<set>/'",
+    "env | grep -E '^(XDG_SESSION_TYPE|WAYLAND_DISPLAY|DISPLAY)='",
+    "tr '\\0' '\\n' < /proc/$pid/environ | rg '^PATH=' | tr ':' '\\n' | rg -c shims",
+    "env | sed -n 's/^\\(GIT_[A-Z_]*\\)=.*/\\1/p'",
+    "true || env | wc -l",
+    "set --",
+    "ps -o pid,etime -C beeper",
+    "ps -ouser,etime -p 1",
     "env | rg -o '^REIMBURSEMENTS_[A-Z_]+'",
     "env $(env | rg -o '^X_[A-Z_]+' | sed 's/^/-u /') bin/rails test",
     "env | cut -d= -f1 | sort",
@@ -8776,3 +8820,50 @@ def test_redact_withholds_everything_when_it_cannot_mask(tmp_path):
 def test_redact_respects_its_opt_out():
     response = {"stdout": f"token: {GH_TOKEN_SHAPE}", "stderr": ""}
     assert _redact("Bash", response, DEV_HOOKS_REDACT_OUTPUT="false") is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # a bypass review's cases: JSON and repr quoting, lowercase names, a URL password
+        '{"API_TOKEN": "' + KEY_VALUE + '"}',
+        "{'API_TOKEN': '" + KEY_VALUE + "'}",
+        "password: " + KEY_VALUE,
+        "secret_key=" + KEY_VALUE,
+        "DATABASE_URL=postgres://app:" + KEY_VALUE + "@db.internal/app",
+    ],
+)
+def test_redact_masks_other_value_shapes(text):
+    out = _redact("Bash", {"stdout": text, "stderr": ""})
+    assert KEY_VALUE not in json.dumps(out["updatedToolOutput"])
+
+
+def test_redact_leaves_code_that_only_names_a_secret_alone():
+    code = (
+        "secret_key: Rails.application.credentials.secret_key_base\npassword: hunter2\n"
+    )
+    assert _redact("Read", {"type": "text", "file": {"content": code}}) is None
+
+
+def test_redact_masks_a_pgp_key_and_a_bare_string_result():
+    key = "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----"
+    assert _redact("Bash", {"stdout": key})["updatedToolOutput"] == {
+        "stdout": "[REDACTED PRIVATE KEY]"
+    }
+    assert _redact("mcp__x__y", f"key {GH_TOKEN_SHAPE}")["updatedMCPToolOutput"] == (
+        "key ghp_[REDACTED]"
+    )
+
+
+def test_redact_masks_a_large_result():
+    # Above 128 KB a single command-line argument is refused (MAX_ARG_STRLEN).
+    big = "x" * 200_000 + f"\nTOKEN={KEY_VALUE}\n"
+    out = _redact("Bash", {"stdout": big, "stderr": ""})["updatedToolOutput"]
+    assert KEY_VALUE not in out["stdout"] and out["stdout"].startswith("xxx")
+
+
+def test_redact_withholds_rather_than_misplace_a_string_holding_the_separator():
+    out = _redact("Bash", {"a": "p\n\x1e\nq", "stdout": f"TOKEN={KEY_VALUE}"})
+    masked = out["updatedToolOutput"]
+    assert KEY_VALUE not in json.dumps(masked)
+    assert masked["stdout"].startswith("[output withheld")

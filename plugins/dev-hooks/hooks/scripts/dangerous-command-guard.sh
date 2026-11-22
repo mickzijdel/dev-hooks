@@ -296,11 +296,70 @@ dumps_env() {
     case "$name:$a" in
       env:-u | env:-C | env:-S) i=$((i + 1)) ;;
       env:*=*) ;;
-      env:-i | env:-0 | env:--null | printenv:-0 | printenv:--null | *:--) ;;
-      export:-p | declare:-p | declare:-x | typeset:-p | typeset:-x) ;;
+      env:-i | env:-0 | env:--null | printenv:-0 | printenv:--null | env:-- | printenv:--) ;;
+      export:-* | declare:-* | typeset:-*) case "$a" in *[px]*) ;; *) return 1 ;; esac ;;
       *) return 1 ;;
     esac
   done
+}
+
+# Does segment $1, the command a dump is piped into, print no secret value? A count (`wc`,
+# `grep -c`), `rg -o` with an anchored pattern that cannot run past a name (`^X_[A-Z_]+=`),
+# a grep for named variables none of which is secret-shaped (`^(DISPLAY|PATH)=`),
+# `cut -d= -f1`, and a sed that drops everything after `=` do; anything else (`cat`,
+# `grep TOKEN`, `tr`) passes values through. Sets NAME and ARGS, so the caller parses its
+# own segment again.
+names_only_filter() {
+  local a pat="" o="" s names n
+  seg_parse "$1"
+  # rtk's proxy runs the filter as it is, only compressing its output.
+  if [ "$NAME" = rtk ] && [ "${ARGS[0]:-}" = proxy ]; then
+    NAME=${ARGS[1]:-}
+    ARGS=("${ARGS[@]:2}")
+  fi
+  case "$NAME" in
+    wc) return 0 ;;
+    rg | grep | egrep)
+      for a in "${ARGS[@]}"; do
+        case "$a" in
+          --count | --quiet | --files-with-matches) return 0 ;;
+          --only-matching) o=1 ;;
+          --*) ;;
+          -*[clq]*) return 0 ;;
+          -*o*) o=1 ;;
+          -*) ;;
+          *) [ -z "$pat" ] && pat=$a ;;
+        esac
+      done
+      [ "${pat#^}" = "$pat" ] && return 1
+      if [ -n "$o" ]; then
+        ! printf '%s' "${pat%=}" | grep -Eq '[.=]|\\[SsWw]|\[\^'
+        return
+      fi
+      # Literal names only, as `^NAME=` or `^(A|B)=`: those variables' values are printed,
+      # so none may be secret-shaped or a URL that can carry a password.
+      names=$(printf '%s' "$pat" | sed -nE 's/^\^\(?([A-Za-z0-9_|]+)\)?=$/\1/p')
+      [ -n "$names" ] || return 1
+      for n in ${names//|/ }; do
+        is_secret_var name "$n" && return 1
+        case "$n" in *URL | *URI | *DSN | *url) return 1 ;; esac
+      done
+      return 0
+      ;;
+    cut)
+      s=" ${ARGS[*]} "
+      case "$s" in *" -d= "* | *" -d = "*) ;; *) return 1 ;; esac
+      case "$s" in *" -f1 "* | *" -f 1 "*) return 0 ;; esac
+      return 1
+      ;;
+    sed)
+      for a in "${ARGS[@]}"; do
+        case "$a" in *'=.*'*) return 0 ;; esac
+      done
+      return 1
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # ── catastrophic, irreversible system damage ─────────────────────────────────────
@@ -377,12 +436,16 @@ fi
 # SECRET_KIND=cred marks a credential probe (a git credential helper's `get`, gh's
 # token, the desktop keyring), whose block message names the isolated way to test one.
 SECRET_ASK="" SECRET_KIND=""
-PIPED_DUMP_RE='(^|[;&|({]|\$\()[[:space:]]*(sudo[[:space:]]+)?(env|printenv|set|export|declare|typeset)([[:space:]]+-[-A-Za-z0-9]+)*[[:space:]]*\|[^|]'
 case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
     SEG_CWD="${CWD:-.}"
-    while IFS= read -r seg; do
+    # A secret runner's child is parsed like any command and appended here, with
+    # RUNNER[i] naming the runner, so a dump inside it is judged in turn.
+    mapfile -t SEGS <<<"$SEGMENTS"
+    RUNNER=()
+    for ((si = 0; si < ${#SEGS[@]}; si++)); do
+      seg=${SEGS[$si]}
       seg_parse "$seg"
       [ -z "$NAME" ] && continue
       if [ "$NAME" = cd ]; then
@@ -391,35 +454,68 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
       fi
       # Output that goes nowhere can't reach the transcript.
       seg_stdout_discarded && continue
+      # Piped into a filter that prints names only, a dump is how a check lists variable
+      # names (`env | rg -o '^REIMBURSEMENTS_[A-Z_]+'`), so it passes.
+      filtered=""
+      for r in "${REDIRS[@]}"; do
+        if [ "$r" = =piped ]; then
+          # Down the pipe chain: once one stage keeps names only, later ones can't
+          # bring values back; `tee` copies them to the screen, so the walk stops there.
+          for ((sj = si + 1; sj < ${#SEGS[@]}; sj++)); do
+            if names_only_filter "${SEGS[$sj]}"; then
+              filtered=1
+              break
+            fi
+            [ "$NAME" = tee ] && break
+            case "${SEGS[$sj]}" in *"$RDM=piped"*) ;; *) break ;; esac
+          done
+          seg_parse "$seg"
+          break
+        fi
+      done
       # Another process's environment, by operand or input redirection, whatever reads it:
-      # `fnox exec` and `bws run` put the secrets there. Piped into a filter, it is how a
-      # hook or a check lists variable *names* (`tr '\0' '\n' </proc/$PID/environ | rg -o
-      # '^CLAUDE[A-Z_]*'`), so only an unfiltered read is refused.
-      # shortcut: the pipe is read from the raw text, so `env | grep TOKEN` still passes;
-      # judge the filter if a replay of real commands ever shows one.
+      # `fnox exec` and `bws run` put the secrets there.
       for a in "${ARGS[@]}" "${REDIRS[@]}"; do
         unquote "${a#<}"
         case "$UQ" in
           /proc/*/environ)
-            cmd_has '/environ([^;&|]|>&)*\|[^|]' && continue
+            [ -n "$filtered" ] && continue
             SECRET_ASK="\`$NAME $UQ\` prints a process's environment, where \`fnox exec\` and \`bws run\` put secret values."
             break
             ;;
         esac
       done
       [ -n "$SECRET_ASK" ] && break
-      if dumps_env "$NAME" 0 && ! cmd_has "$PIPED_DUMP_RE"; then
-        SECRET_ASK="\`$NAME\` with no name prints the whole environment, which can hold tokens."
+      if [ -z "$filtered" ] && dumps_env "$NAME" 0 "${RUNNER[$si]:+any}"; then
+        if [ -n "${RUNNER[$si]:-}" ]; then
+          SECRET_ASK="\`$NAME\` inside \`${RUNNER[$si]}\` prints the environment that holds the injected secrets."
+        else
+          SECRET_ASK="\`$NAME\` with no name prints the whole environment, which can hold tokens."
+        fi
         break
       fi
       case "$NAME" in
-        # BSD-style `ps e`/`auxe`/`eww` (options first, no dash) adds every process's
-        # environment; `ps -e` only means "every process", and `ps -C name` names one.
+        # BSD-style `e` (`ps e`, `auxe`, `aux e`, `-auxe`) adds every process's environment;
+        # `ps -e` and `-ef` only mean "every process", and an option's value (`-C name`,
+        # `-o etime`) is skipped.
         ps)
-          a=${ARGS[0]:-}
-          if printf '%s' "$a" | grep -Eq '^[A-Za-z]*e[A-Za-z]*$'; then
-            SECRET_ASK="\`ps $a\` prints other processes' environments, where \`fnox exec\` puts secret values. Use \`ps -o pid,ppid,comm,etime\` instead."
-          fi
+          skip=""
+          for a in "${ARGS[@]}"; do
+            if [ -n "$skip" ]; then
+              skip=""
+              continue
+            fi
+            case "$a" in
+              -[CpuUgGoOstq] | --pid | --ppid | --user | --group | --format | --sort | --tty) skip=1 ;;
+              --*) ;;
+              -*) printf '%s' "$a" | grep -Eq '^-[auxwe]*e[auxwe]*$' && [ "$a" != -e ] && SECRET_ASK=1 ;;
+              *) printf '%s' "$a" | grep -Eq '^[A-Za-z]*e[A-Za-z]*$' && SECRET_ASK=1 ;;
+            esac
+            if [ -n "$SECRET_ASK" ]; then
+              SECRET_ASK="\`ps $a\` prints other processes' environments, where \`fnox exec\` puts secret values. Use \`ps -o pid,ppid,comm,etime\` instead."
+              break
+            fi
+          done
           ;;
         # An allowlist, not a denylist: a new or overlooked subcommand that prints values
         # (fnox's env, export, edit, tui, mcp, lease) is refused until it is listed here.
@@ -440,29 +536,51 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
               fnox:remove | fnox:rm | fnox:delete | fnox:set | fnox:s | fnox:sync | fnox:sponsors | \
               fnox:version | fnox:v | fnox:help | bws:project | bws:config | bws:completions | bws:help) ;;
             fnox:exec | fnox:x | fnox:run | bws:run)
-              # The child after `--`, or bws run's command string.
-              i=$((SUB_I + 1))
+              # The child: after `--`, else after the runner's own options (bws run also
+              # takes it as one string). It is parsed like any command and judged in turn.
+              i=$((SUB_I + 1)) dashes=""
               for ((j = i; j < ${#ARGS[@]}; j++)); do
-                [ "${ARGS[$j]}" = -- ] && i=$((j + 1)) && break
+                if [ "${ARGS[$j]}" = -- ]; then
+                  i=$((j + 1)) dashes=1
+                  break
+                fi
               done
-              while [ "$i" -lt "${#ARGS[@]}" ] && [ "${ARGS[$i]#-}" != "${ARGS[$i]}" ] && [ "${ARGS[$i]}" != -- ]; do
-                i=$((i + 1))
+              while [ -z "$dashes" ] && [ "$i" -lt "${#ARGS[@]}" ]; do
+                case "${ARGS[$i]}" in
+                  -P | --profile | -c | --config | --if-missing | --write-profile | --project-id | \
+                    -o | --output | -t | --access-token | -f | --config-file | -p | -u | --server-url) i=$((i + 2)) ;;
+                  -*) i=$((i + 1)) ;;
+                  *) break ;;
+                esac
               done
-              unquote "${ARGS[$i]:-}"
-              child=${UQ%% *}
-              if dumps_env "$child" $((i + 1)) any; then
-                SECRET_ASK="\`$NAME $SUB … $child\` prints the environment that holds the injected secrets."
+              child=""
+              if [ "$NAME" = bws ] && [ -z "$dashes" ] && [ $((i + 1)) -eq "${#ARGS[@]}" ]; then
+                child=${ARGS[$i]//$'\036'/$'\n'}
+              else
+                for a in "${ARGS[@]:$i}"; do
+                  a=${a//$'\036'/$'\n'}
+                  child+="'${a//\'/\'\\\'\'}' "
+                done
               fi
+              while IFS= read -r c; do
+                [ -z "$c" ] && continue
+                SEGS+=("$c")
+                RUNNER[${#SEGS[@]} - 1]="$NAME $SUB"
+              done < <(printf '%s' "$child" | awk -f "$SELF_DIR/lib/shell-segments.awk")
               ;;
             bws:secret)
               seg_words
               case "$WORDS" in 'secret delete '*) continue ;; esac
-              for a in "${ARGS[@]}"; do
-                case "$a" in --output=none | -onone) continue 2 ;; esac
+              # The last -o wins, as with any repeated option.
+              out=""
+              for ((j = 0; j < ${#ARGS[@]}; j++)); do
+                case "${ARGS[$j]}" in
+                  -o | --output) out=${ARGS[$((j + 1))]:-} ;;
+                  --output=*) out=${ARGS[$j]#--output=} ;;
+                  -o?*) out=${ARGS[$j]#-o} ;;
+                esac
               done
-              for ((j = 0; j + 1 < ${#ARGS[@]}; j++)); do
-                case "${ARGS[$j]}:${ARGS[$((j + 1))]}" in -o:none | --output:none) continue 2 ;; esac
-              done
+              [ "$out" = none ] && continue
               SECRET_ASK="\`bws ${WORDS% }\` prints secret values to stdout."
               case "$WORDS" in 'secret create '* | 'secret edit '*) SECRET_ASK="${SECRET_ASK%.}; add \`-o none\` when only the write matters." ;; esac
               ;;
@@ -593,7 +711,7 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
           ;;
       esac
       [ -n "$SECRET_ASK" ] && break
-    done <<<"$SEGMENTS"
+    done
     ;;
 esac
 

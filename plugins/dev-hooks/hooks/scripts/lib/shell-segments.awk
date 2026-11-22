@@ -125,7 +125,9 @@ function naive(s,    out, lines, n, i, ws, m, j, seg, f) {
 }
 
 function add(x) {
-  gsub(/\n/, " ", x)
+  # A newline inside a word (a multi-line `bash -c` script) is kept as \036, so the word
+  # stays on its segment's line and `nl` can give the script its lines back.
+  gsub(/\n/, "\036", x)
   SG[D] = (NWD[D]++) ? SG[D] US x : x
 }
 
@@ -209,14 +211,14 @@ function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
     for (k = 2; k < n; k++)
       if (a[k] ~ /^-[A-Za-z]*c[A-Za-z]*$/) {
         CAPNEXT = CAP[D]
-        tokenize(a[k + 1])
+        tokenize(nl(a[k + 1]))
         return
       }
   } else if (name == "eval") {
     rest = ""
     for (k = 2; k <= n; k++) rest = rest " " a[k]
     CAPNEXT = CAP[D]
-    tokenize(rest)
+    tokenize(nl(rest))
   } else if (name == "ssh") {
     host = 0
     rest = ""
@@ -229,7 +231,7 @@ function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
       rest = rest " " a[k]
     }
     CAPNEXT = CAP[D]
-    if (rest != "") tokenize(rest)
+    if (rest != "") tokenize(nl(rest))
   } else if (name in RUNNERS) {
     k = exec_start(a, n, name !~ /^(docker|podman)$/)
     if (k) emit(join(a, k, n, US) redirs)
@@ -245,7 +247,7 @@ function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
     if (ex) emit(join(a, k, n, US) redirs)
     else {
       CAPNEXT = CAP[D]
-      tokenize(join(a, k, n, " ") raw)
+      tokenize(nl(join(a, k, n, " ")) raw)
     }
   } else if (name == "script") {
     for (k = 2; k <= n; k++) {
@@ -254,7 +256,7 @@ function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
       else if (k < n && (a[k] ~ /^-[A-Za-z]*c$/ || a[k] == "--command")) rest = a[k + 1]
       if (rest != "") {
         CAPNEXT = CAP[D]
-        tokenize(rest raw)
+        tokenize(nl(rest) raw)
         return
       }
     }
@@ -380,6 +382,11 @@ function heredocs(s, p,    n, h, lend, line, t, body, savewb) {
   return p
 }
 
+function nl(x) {
+  gsub(/\036/, "\n", x)
+  return x
+}
+
 function tokenize(s,    n, i, c, nx, j, op, fd) {
   D++
   CAP[D] = CAPNEXT
@@ -470,6 +477,12 @@ function tokenize(s,    n, i, c, nx, j, op, fd) {
       flushseg()
       i = (NH[D] > 0) ? heredocs(s, i + 1) : i + 1
     } else if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")") {
+      # A single `|` (or `|&`) pipes this command's output on: mark it, so a check can
+      # look at what reads it. `||` is a condition, not a pipe.
+      if (c == "|" && substr(s, i + 1, 1) != "|" && substr(s, i - 1, 1) != "|") {
+        flushw()
+        add(RD "=piped")
+      }
       flushseg()
       i++
     } else {
