@@ -79,7 +79,10 @@ cmd_has() { printf '%s' "$COMMAND" | grep -Eqi "$1"; }
 # shell and a runner's command (`docker exec c …`, `watch …`) are split out as commands
 # of their own. On a parse failure (an unbalanced quote)
 # the awk falls back to the old quote-blind split, which over-matches rather than hides.
-SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk")
+# A parser that cannot run must not let the command through unchecked: ask the person.
+if ! SEGMENTS=$(printf '%s' "$COMMAND" | awk -f "$SELF_DIR/lib/shell-segments.awk"); then
+  reminder_emit_decision ask "dev-hooks guard — please confirm: the command-safety check could not run (its awk parser failed), so it cannot tell whether this command wipes data or prints a secret. Allow only if you have read it, then fix the guard: \`bash $0 < payload.json\` shows the error."
+fi
 
 # Does the segment's stdout stay out of the transcript? It does when it goes to
 # /dev/null or a file, or is captured into a variable (`v=$(fnox get X)`, marked
@@ -255,6 +258,51 @@ is_secret_var() {
   printf '%s' "$2" | grep -Eq "$bare|$braced"
 }
 
+# The subcommand of a CLI with global options in front (`fnox -P prod exec`): SUB is the
+# first operand, SUB_I its index in ARGS, and SUB=--help when a help or version flag comes
+# first. $1 is a regex of the options that take the next word as their value.
+seg_sub() {
+  SUB="" SUB_I=-1
+  local i=0 n=${#ARGS[@]}
+  while [ "$i" -lt "$n" ]; do
+    unquote "${ARGS[$i]}"
+    case "$UQ" in
+      -h | --help | -V | --version)
+        SUB=--help
+        return
+        ;;
+      -*)
+        printf '%s' "$UQ" | grep -Eq "^($1)$" && i=$((i + 1))
+        ;;
+      *)
+        SUB=$UQ SUB_I=$i
+        return
+        ;;
+    esac
+    i=$((i + 1))
+  done
+}
+
+# Does `$1 ARGS[$2…]` print environment values? `printenv` always does here (pass
+# $3=any, for a runner's child, where every variable may be a secret); otherwise only
+# the forms that name nothing: bare `env`, `printenv`, `set`, `export -p`, `declare -x`.
+dumps_env() {
+  local name=$1 i=$2 a
+  [ "$name" = printenv ] && [ "${3:-}" = any ] && return 0
+  case "$name" in env | printenv | set | export | declare | typeset) ;; *) return 1 ;; esac
+  while [ "$i" -lt "${#ARGS[@]}" ]; do
+    a=${ARGS[$i]}
+    i=$((i + 1))
+    case "$name:$a" in
+      env:-u | env:-C | env:-S) i=$((i + 1)) ;;
+      env:*=*) ;;
+      env:-i | env:-0 | env:--null | printenv:-0 | printenv:--null | *:--) ;;
+      export:-p | declare:-p | declare:-x | typeset:-p | typeset:-x) ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
 # ── catastrophic, irreversible system damage ─────────────────────────────────────
 DENY=""
 if cmd_has ':\(\)[[:space:]]*\{[[:space:]]*:[[:space:]]*\|[[:space:]]*:'; then
@@ -329,6 +377,7 @@ fi
 # SECRET_KIND=cred marks a credential probe (a git credential helper's `get`, gh's
 # token, the desktop keyring), whose block message names the isolated way to test one.
 SECRET_ASK="" SECRET_KIND=""
+PIPED_DUMP_RE='(^|[;&|({]|\$\()[[:space:]]*(sudo[[:space:]]+)?(env|printenv|set|export|declare|typeset)([[:space:]]+-[-A-Za-z0-9]+)*[[:space:]]*\|[^|]'
 case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
   allow | ALLOW | off | OFF | false | FALSE | False | 0 | no | NO) ;;
   *)
@@ -342,7 +391,88 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
       fi
       # Output that goes nowhere can't reach the transcript.
       seg_stdout_discarded && continue
+      # Another process's environment, by operand or input redirection, whatever reads it:
+      # `fnox exec` and `bws run` put the secrets there. Piped into a filter, it is how a
+      # hook or a check lists variable *names* (`tr '\0' '\n' </proc/$PID/environ | rg -o
+      # '^CLAUDE[A-Z_]*'`), so only an unfiltered read is refused.
+      # shortcut: the pipe is read from the raw text, so `env | grep TOKEN` still passes;
+      # judge the filter if a replay of real commands ever shows one.
+      for a in "${ARGS[@]}" "${REDIRS[@]}"; do
+        unquote "${a#<}"
+        case "$UQ" in
+          /proc/*/environ)
+            cmd_has '/environ([^;&|]|>&)*\|[^|]' && continue
+            SECRET_ASK="\`$NAME $UQ\` prints a process's environment, where \`fnox exec\` and \`bws run\` put secret values."
+            break
+            ;;
+        esac
+      done
+      [ -n "$SECRET_ASK" ] && break
+      if dumps_env "$NAME" 0 && ! cmd_has "$PIPED_DUMP_RE"; then
+        SECRET_ASK="\`$NAME\` with no name prints the whole environment, which can hold tokens."
+        break
+      fi
       case "$NAME" in
+        # BSD-style `ps e`/`auxe`/`eww` (options first, no dash) adds every process's
+        # environment; `ps -e` only means "every process", and `ps -C name` names one.
+        ps)
+          a=${ARGS[0]:-}
+          if printf '%s' "$a" | grep -Eq '^[A-Za-z]*e[A-Za-z]*$'; then
+            SECRET_ASK="\`ps $a\` prints other processes' environments, where \`fnox exec\` puts secret values. Use \`ps -o pid,ppid,comm,etime\` instead."
+          fi
+          ;;
+        # An allowlist, not a denylist: a new or overlooked subcommand that prints values
+        # (fnox's env, export, edit, tui, mcp, lease) is refused until it is listed here.
+        fnox | bws)
+          if [ "$NAME" = fnox ]; then
+            seg_sub '-c|--config|-P|--profile|--if-missing|--write-profile'
+          else
+            seg_sub '-o|--output|-c|--color|-t|--access-token|-f|--config-file|-p|--profile|-u|--server-url'
+          fi
+          for a in "${ARGS[@]}"; do
+            case "$a" in --) break ;; -h | --help) SUB=--help ;; esac
+          done
+          case "$NAME:$SUB" in
+            *:--help | *: | fnox:check | fnox:c | fnox:list | fnox:ls | fnox:secrets | \
+              fnox:config-files | fnox:profiles | fnox:doctor | fnox:dr | fnox:scan | fnox:audit | \
+              fnox:completion | fnox:daemon | fnox:activate | fnox:deactivate | fnox:import | fnox:im | \
+              fnox:init | fnox:i | fnox:plugin | fnox:provider | fnox:proxy | fnox:reencrypt | \
+              fnox:remove | fnox:rm | fnox:delete | fnox:set | fnox:s | fnox:sync | fnox:sponsors | \
+              fnox:version | fnox:v | fnox:help | bws:project | bws:config | bws:completions | bws:help) ;;
+            fnox:exec | fnox:x | fnox:run | bws:run)
+              # The child after `--`, or bws run's command string.
+              i=$((SUB_I + 1))
+              for ((j = i; j < ${#ARGS[@]}; j++)); do
+                [ "${ARGS[$j]}" = -- ] && i=$((j + 1)) && break
+              done
+              while [ "$i" -lt "${#ARGS[@]}" ] && [ "${ARGS[$i]#-}" != "${ARGS[$i]}" ] && [ "${ARGS[$i]}" != -- ]; do
+                i=$((i + 1))
+              done
+              unquote "${ARGS[$i]:-}"
+              child=${UQ%% *}
+              if dumps_env "$child" $((i + 1)) any; then
+                SECRET_ASK="\`$NAME $SUB … $child\` prints the environment that holds the injected secrets."
+              fi
+              ;;
+            bws:secret)
+              seg_words
+              case "$WORDS" in 'secret delete '*) continue ;; esac
+              for a in "${ARGS[@]}"; do
+                case "$a" in --output=none | -onone) continue 2 ;; esac
+              done
+              for ((j = 0; j + 1 < ${#ARGS[@]}; j++)); do
+                case "${ARGS[$j]}:${ARGS[$((j + 1))]}" in -o:none | --output:none) continue 2 ;; esac
+              done
+              SECRET_ASK="\`bws ${WORDS% }\` prints secret values to stdout."
+              case "$WORDS" in 'secret create '* | 'secret edit '*) SECRET_ASK="${SECRET_ASK%.}; add \`-o none\` when only the write matters." ;; esac
+              ;;
+            *)
+              ex="exec"
+              [ "$NAME" = bws ] && ex=run
+              SECRET_ASK="\`$NAME $SUB\` can print secret values: only $NAME commands known not to (such as \`$NAME $ex\`) pass this guard."
+              ;;
+          esac
+          ;;
         cat | head | tail | less | more | bat | batcat | strings | xxd | od | jq | yq | grep | rg | ag)
           # A grep that reports whether, not what, prints no values.
           skip=""
@@ -372,12 +502,10 @@ case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
             fi
           done
           ;;
-        bws | fnox | op | vault | gh | glab | aws | az | gcloud | doppler | kubectl | pass | secret-tool | security)
+        op | vault | gh | glab | aws | az | gcloud | doppler | kubectl | pass | secret-tool | security)
           seg_words
           case "$NAME:$WORDS" in
-            bws:'secret get '* | bws:'secret list '* | \
-              fnox:'get '* | fnox:'show '* | \
-              op:'read '* | op:'item get '* | \
+            op:'read '* | op:'item get '* | \
               vault:'kv get '* | vault:'read '* | \
               aws:'secretsmanager get-secret-value '* | aws:'ssm get-parameter '* | \
               doppler:'secrets get '* | doppler:'secrets download '* | \
@@ -479,7 +607,7 @@ if [ -n "$SECRET_ASK" ]; then
     # tried to judge them would be one more thing to get wrong.
     REASON="$REASON To test credential plumbing, cut it off from the real stores — a temp \`HOME\`, \`GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1\`, a temp \`GH_CONFIG_DIR\`, empty \`GH_TOKEN\`/\`GITHUB_TOKEN\`/\`SSH_AUTH_SOCK\`, and a PATH with a fake \`gh\` first — and never print the helper's output (count its bytes or redact it). Setting those variables inline here is not trusted, since a repo's own .git/config, a helper named by absolute path and the desktop keyring survive them: write the probe into a test script that builds that isolation, or ask the user to run it outside the agent."
   else
-    REASON="$REASON Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox run\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
+    REASON="$REASON Use a form that doesn't print the value: \`\${VAR:+SET}\` or \`\${#VAR}\` for a presence check (\`\${VAR:-UNSET}\` prints the value — it is NOT a presence check), \`fnox exec\`/\`bws run\` to inject it, \`--output\` to a gitignored file, or ask the user to check it themselves."
   fi
   case "${DEV_HOOKS_GUARD_SECRETS:-deny}" in
     ask | ASK | Ask)

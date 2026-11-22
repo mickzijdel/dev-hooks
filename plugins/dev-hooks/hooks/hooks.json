@@ -86,7 +86,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/private-email-guard.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/private-email-guard.sh\"",
+        "onFailure": "block"
           }
         ]
       }

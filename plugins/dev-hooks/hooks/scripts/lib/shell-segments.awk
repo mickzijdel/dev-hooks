@@ -70,7 +70,9 @@ function takes_value(wrapper, opt) {
 
 # Drop assignments, wrappers and reserved words in front of the command; move the
 # redirections to the end. Returns "" when no command word is left.
-function finish(seg,    a, n, i, w, words, redirs, wrapper, cw) {
+# With `final` set, a bare `env` (or `sudo env -0`) comes back as the command `env`: it runs
+# nothing and prints the environment.
+function finish(seg, final,    a, n, i, w, words, redirs, wrapper, cw) {
   n = split(seg, a, US)
   words = ""
   redirs = ""
@@ -88,6 +90,8 @@ function finish(seg,    a, n, i, w, words, redirs, wrapper, cw) {
         wrapper = basename(w)
         continue
       }
+      # `command -v X` looks X up; it runs nothing.
+      if (wrapper == "command" && (w == "-v" || w == "-V")) return ""
       if (wrapper != "" && substr(w, 1, 1) == "-") {
         if (takes_value(wrapper, w)) i++
         continue
@@ -100,7 +104,7 @@ function finish(seg,    a, n, i, w, words, redirs, wrapper, cw) {
     }
     words = words US w
   }
-  if (!cw) return ""
+  if (!cw) return (final && wrapper == "env") ? "env" redirs : ""
   return words redirs
 }
 
@@ -114,7 +118,7 @@ function naive(s,    out, lines, n, i, ws, m, j, seg, f) {
     seg = ""
     for (j = 1; j <= m; j++)
       if (ws[j] != "") seg = (seg == "") ? ws[j] : seg US ws[j]
-    f = finish(seg)
+    f = finish(seg, 1)
     if (f != "") out = out f "\n"
   }
   return out
@@ -187,7 +191,7 @@ function exec_start(a, n, dashdash,    k, j, target) {
 
 # Record one simple command, then tokenize any command string it hands to a shell.
 function emit(seg,    f, a, n, all, name, k, host, rest, redirs, raw, ex) {
-  f = finish(seg)
+  f = finish(seg, 1)
   if (f == "") return
   OUT = OUT f (CAP[D] ? US RD "=captured" : "") "\n"
   if (D > 8) return

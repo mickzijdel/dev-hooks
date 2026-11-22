@@ -73,6 +73,12 @@ local linters = new Mapping<String, Step> {
         glob = List("plugins/dev-hooks/skills/dev-env-setup/**", "tests/test_dev_env_templates.py")
         check = "uv run pytest -q -n 0 tests/test_dev_env_templates.py"
     }
+    // The blocking guards (onFailure: block) still run and still decide. A guard that
+    // crashes after a merge would refuse every call it matches, so check before commit.
+    ["guard-smoke"] {
+        glob = List("plugins/dev-hooks/hooks/**")
+        check = "uv run pytest -q -n 0 tests/test_shell_hooks.py -k test_guard_smoke"
+    }
     // Marketplace + per-plugin manifest validation via the Claude CLI, whenever plugin
     // files are staged. Local-only (CI doesn't install the Claude CLI); scans the whole
     // tree, not {{ files }}.

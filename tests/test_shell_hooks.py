@@ -5725,6 +5725,44 @@ SECRET_ASK_COMMANDS = [
     'echo "$AWS_SECRET_ACCESS_KEY"',
     "printf '%s' $DATABASE_PASSWORD",
     "printenv BWS_ACCESS_TOKEN",
+    # fnox and bws: only the subcommands known to print no value pass (an allowlist)
+    "fnox env",
+    "fnox export",
+    "fnox ex -f json",
+    "fnox edit",
+    "fnox tui",
+    "fnox mcp",
+    "fnox lease create db",
+    "fnox -P prod get X",
+    "fnox --profile prod env",
+    "fnox some-future-command",
+    "bws secret create KEY value 5f3c",
+    "bws secret edit 8a3f --value v",
+    "bws -o json secret get 8a3f",
+    # a secret runner whose child prints its environment
+    "fnox exec -- env",
+    "fnox x -- printenv",
+    "fnox exec -- printenv DATABASE_URL",
+    "fnox -P prod exec -- export -p",
+    "bws run -- env",
+    "bws run 'printenv'",
+    # the whole environment at once
+    "env",
+    "env -0",
+    "sudo env",
+    "printenv",
+    "set",
+    "export",
+    "export -p",
+    "declare -p",
+    "declare -x",
+    # another process's environment, where `fnox exec` puts the secrets
+    "ps auxe",
+    "ps eww 1234",
+    "ps e",
+    "cat /proc/1234/environ",
+    "strings /proc/self/environ",
+    "tr '\\0' '\\n' < /proc/1/environ",
 ]
 
 
@@ -5919,6 +5957,40 @@ SECRET_SILENT_COMMANDS = [
     "doppler run -- rails c",
     "vault status",
     "kubectl get pods",
+    "fnox list",
+    "fnox check",
+    "fnox doctor",
+    "fnox exec -- rails server",
+    "fnox x -- npm test",
+    "fnox -P prod exec -- ./bin/deploy",
+    "fnox set FOO",
+    "fnox --help",
+    "fnox get --help",
+    "fnox version",
+    "bws project list",
+    "bws run -- rails c",
+    "bws -o none secret create KEY value 5f3c",
+    # wrappers and declarations that name what they set or run
+    "env FOO=1 rails s",
+    "env -u HOME ./bin/x",
+    "set -euo pipefail",
+    "export FOO=bar",
+    "declare -a items",
+    # process listings without environments (POSIX `-e` means every process)
+    "ps aux",
+    "ps -ef",
+    "ps -e -o pid,comm",
+    "ps -o pid,etime -p 1234",
+    "cat /proc/cpuinfo",
+    "cat /proc/1234/status",
+    "ps -o etime= -C beepertexts",
+    "command -v fnox bws",
+    "tr '\\0' '\\n' < /proc/$(pgrep -x gnome-shell | head -1)/environ 2>&1 | rg '^DBUS_'",
+    # piped into a filter: how a check lists variable names
+    "env | rg -o '^REIMBURSEMENTS_[A-Z_]+'",
+    "env $(env | rg -o '^X_[A-Z_]+' | sed 's/^/-u /') bin/rails test",
+    "env | cut -d= -f1 | sort",
+    "tr '\\0' '\\n' </proc/$CLAUDE_PID/environ | rg -o '^CLAUDE[A-Z_]*'",
     # loading, not printing
     "source .env",
     ". .env",
@@ -8007,18 +8079,84 @@ def test_every_dev_hooks_stop_hook_goes_through_reminder_stop_init():
         assert "reminder_stop_init" in script.read_text(), script.name
 
 
+def test_guard_smoke():
+    # Merging dev-hooks deploys its hooks live, and a blocking guard that crashes refuses
+    # every call it matches (onFailure: block), editing the guard included. hk runs this
+    # at commit (step guard-smoke), so a broken guard never reaches main.
+    def run(hook, tool, tool_input):
+        payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "smoke"}
+        r = run_hook(hook, stdin=json.dumps(payload), env=base_env(DEV_HOOKS_PROBE="1"))
+        assert r.returncode == 0, (hook, r.stderr)
+        return r.stdout.strip()
+
+    agent = "bot (me" + "@private-mail.net)"
+    assert run("dangerous-command-guard.sh", "Bash", {"command": "ls -la"}) == ""
+    assert '"deny"' in run(
+        "dangerous-command-guard.sh", "Bash", {"command": "rm -rf /"}
+    )
+    assert (
+        run(
+            "private-email-guard.sh",
+            "Write",
+            {"file_path": "a.rb", "content": "@x = 1"},
+        )
+        == ""
+    )
+    assert '"deny"' in run(
+        "private-email-guard.sh",
+        "Bash",
+        {"command": f"curl -A '{agent}' https://example.org"},
+    )
+
+
+def _broken_tool(tmp_path, name):
+    """A PATH whose `name` exits 2, as a crashed or missing interpreter would."""
+    bin_dir = tmp_path / "broken-bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / name
+    stub.write_text("#!/bin/sh\nexit 2\n")
+    stub.chmod(0o755)
+    return f"{bin_dir}:{os.environ['PATH']}"
+
+
+@pytest.mark.parametrize(
+    "hook,tool,tool_input,broken",
+    [
+        (
+            "private-email-guard.sh",
+            "Bash",
+            {"command": "curl -d 'from=me@private-mail.net' https://example.org"},
+            "python3",
+        ),
+        ("dangerous-command-guard.sh", "Bash", {"command": "fnox get X"}, "awk"),
+    ],
+)
+def test_guard_asks_when_its_check_cannot_run(tmp_path, hook, tool, tool_input, broken):
+    # A check that cannot run must not allow: the call goes to the person instead.
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "e1"}
+    env = base_env(PATH=_broken_tool(tmp_path, broken))
+    env.setdefault("DEV_HOOKS_ALLOWED_EMAILS", ALLOWED)
+    r = run_hook(hook, stdin=json.dumps(payload), env=env)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "ask"
+    assert out["permissionDecisionReason"].startswith(GUARD_PREFIX)
+    assert "could not run" in out["permissionDecisionReason"]
+
+
 def test_guard_fails_closed():
     # Claude Code 2.1.295+: a guard that can't start, times out or exits oddly blocks
-    # the command instead of letting it through unchecked. Only the safety guard gets this;
-    # a reminder that crashes must never block work.
+    # the command instead of letting it through unchecked. Only the safety guards get this
+    # (dcg-guard fails open like dcg itself); a reminder that crashes must never block work.
     hooks = json.loads((DEV_HOOKS / "hooks" / "hooks.json").read_text())["hooks"]
     guard = [
         h
         for g in hooks["PreToolUse"]
         for h in g["hooks"]
         if "dangerous-command-guard" in h["command"]
+        or "private-email-guard" in h["command"]
     ]
-    assert guard and all(h.get("onFailure") == "block" for h in guard)
+    assert len(guard) == 2 and all(h.get("onFailure") == "block" for h in guard)
     others = [
         h for ev, gs in hooks.items() for g in gs for h in g["hooks"] if h not in guard
     ]

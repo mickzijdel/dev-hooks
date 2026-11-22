@@ -414,8 +414,11 @@ elif personal or result:
     destination = None if personal or not result else result[2]
     print("ask\n" + " ".join(parts) + (f" {DEST_MARK}{destination}" if destination else ""))
 PYEOF
-)
+) || REASON=failed
 case "$REASON" in
+  # A check that cannot run must not allow. Asking, not denying: every Write of code with
+  # a decorator or @ivar reaches this step, so a deny would lock the session out of editing.
+  failed) reminder_emit_decision ask "dev-hooks guard — please confirm: the email check could not run (its python3 step failed), so it cannot tell whether this call sends an email address or personal details. Allow only if you know it sends none, then fix the guard: \`bash $0 < payload.json\` shows the error." ;;
   deny$'\n'*) reminder_emit_decision deny "${REASON#*$'\n'}" ;;
   ask$'\n'*) reminder_emit_decision ask "dev-hooks guard — please confirm: ${REASON#*$'\n'}" ;;
 esac

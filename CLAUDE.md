@@ -425,6 +425,11 @@ session-status pane, which reads the same end report for one session. Rules lear
   copy drifts doesn't error, it silently sees empty content and never fires. The bash
   `reminder_is_test_path` and python `is_test_path` deliberately mirror each other — change
   both or neither.
+- **A check that cannot run must not allow.** A guard whose own step fails (a python
+  heredoc or the awk parser exiting non-zero, which leaves its answer empty) asks through
+  the guard dialog, never stays silent; the blocking guards also carry `onFailure: "block"`
+  (`test_guard_fails_closed`), and hk's `guard-smoke` step runs them before each commit, since
+  a merge deploys them live and a crashed blocking guard refuses its own repair.
 - **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
   telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq, `echo`,
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for
