@@ -432,6 +432,9 @@ session-status pane, which reads the same end report for one session. Rules lear
   the guard dialog, never stays silent; the blocking guards also carry `onFailure: "block"`
   (`test_guard_fails_closed`), and hk's `guard-smoke` step runs them before each commit, since
   a merge deploys them live and a crashed blocking guard refuses its own repair.
+- **A Bash guard also sits on `PreSkillShellCommand`** (2.1.332+, the payload PreToolUse's):
+  a skill's injected `` !`cmd` `` never reaches PreToolUse, and there an `ask` blocks.
+  `test_skill_injected_commands_meet_the_bash_guards` keeps the two lists equal.
 - **Every emission goes through a `reminder_emit_*` helper** — that is where the opt-in fire
   telemetry (`DEV_HOOKS_FIRE_LOG`) is recorded, so a hook that hand-rolls its own jq, `echo`,
   or `printf >&2` never reaches `hook-fires.jsonl`, and its "0 fires" becomes undecidable for

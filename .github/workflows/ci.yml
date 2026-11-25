@@ -61,7 +61,8 @@ jobs:
       # .github/claude-cli/package-lock.json (mods need >= 2.1.287, the ci-watch tests >= 2.1.293 for mock.session, validate's
       # TypeScript check of the modules >= 2.1.323; first taken on 2026-10-03, two days
       # into its release, as a deliberate exception to the 3-day dependency cooldown — later bumps
-      # follow the cooldown). --ignore-scripts skips the
+      # follow the cooldown, except 2.1.332, taken on its release day because validate --strict on
+      # older pins fails the PreSkillShellCommand hook event). --ignore-scripts skips the
       # wrapper's postinstall, which only copies the platform package's native binary into place,
       # so PATH gets that package's directory instead.
       - name: Install Claude Code CLI
