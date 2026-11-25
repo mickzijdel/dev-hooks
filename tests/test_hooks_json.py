@@ -44,3 +44,21 @@ def test_a_prompt_hook_on_stop_is_caught():
         }
     }
     assert misplaced(config) == ["Stop: prompt"]
+
+
+def _bash_hooks(config, event):
+    return [
+        hook
+        for group in config["hooks"].get(event, [])
+        if group.get("matcher") == "Bash"
+        for hook in group["hooks"]
+    ]
+
+
+def test_skill_injected_commands_meet_the_bash_guards():
+    """A skill's `!`cmd`` runs without PreToolUse, so each Bash-only guard also sits on
+    PreSkillShellCommand, failing the same way (a crashed blocking guard must still block)."""
+    config = json.loads((ROOT / "plugins/dev-hooks/hooks/hooks.json").read_text())
+    assert _bash_hooks(config, "PreSkillShellCommand") == _bash_hooks(
+        config, "PreToolUse"
+    )
