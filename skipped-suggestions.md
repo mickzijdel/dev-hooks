@@ -1528,3 +1528,26 @@ PRs opened this run: https://github.com/mickzijdel/dev-hooks/pull/49 (loop-overs
 | Feed https://upliftai.substack.com/feed | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Feed https://claude.dev/rss.xml | fetch failed: proxy 403 | Problem | Blocked by network policy. |
 | Page https://ai-automations-db.vercel.app/database | fetch failed: proxy 403 | Problem | Blocked by network policy. |
+
+## 2026-11-25
+
+Sources scanned:
+- `nateberkopec/dotfiles`: no commits since the 2026-11-21 run (latest is still `cfa24af`)
+- Feeds: Claude Code changelog (2.1.331 and 2.1.332). Unreachable: ai-productivity-digest, upliftai Substack, claude.dev RSS.
+- Pages: ai-automations-db.vercel.app/database unreachable.
+
+PRs opened this run: https://github.com/mickzijdel/dev-hooks/pull/50. It registers dangerous-command-guard and dcg-guard on the new PreSkillShellCommand event, so a skill's injected `` !`cmd` `` is guarded too, and it moves the CI CLI pin to 2.1.332. No rails-toolkit candidates.
+
+| Suggestion | Source | Decision | Reasoning |
+|---|---|---|---|
+| Plugin manifests' `optionalDependencies`, e.g. coding-onboarding pulling in thinking-tools and dev-hooks, or dev-hooks pulling in thinking-tools for the end report its hooks ask for | Claude Code changelog 2.1.331 | Deferred | Deciding what a beginner's install brings along is a product call. It also raises the Claude Code floor for every install. Worth raising once the 2.1.332 pin (PR #50) has settled. |
+| SDK and `claude -p` mid-turn messages now count as the user's from Opus 4.8 on; relayed text should be marked `isSynthetic: true` | Claude Code changelog 2.1.332 | Deferred | Could change what `reminder_prompt_typed` and the status pane's `typedFrom` treat as typed. Recheck the next time a false "typed" fire shows up in the fire log. |
+| `CLAUDE_CODE_OAUTH_TOKEN` can start with `sk-ant-oat02-` | Claude Code changelog 2.1.332 | Duplicate | `reminder_redact_secrets` already masks any `sk-ant-` value, whatever the suffix. |
+| `/schedule` and `/loop` now say "cloud scheduled task" instead of "routine" | Claude Code changelog 2.1.332 | Deferred | loop-oversight's description still says "a /schedule routine". It's a small trigger-wording change; make it when that description is next edited, along with a trigger probe. |
+| `computer-use` becomes a reserved skill name on Macs | Claude Code changelog 2.1.332 | Rejected | None of the five plugins ships a skill with that name. |
+| A mod's PromptHint hook gets less text when the footer has a right-hand label | Claude Code changelog 2.1.332 | Rejected | Neither mod registers a PromptHint hook. |
+| PermissionDenied `retry: true` wording; managed marketplaces auto-update from Nov 30; skills from MCP servers; "Always deliver" for held messages; OTel, provider model aliases, self-hosted runner, gateway, voice and VS Code items | Claude Code changelog 2.1.331, 2.1.332 | Out of scope | dev-hooks has no PermissionDenied hooks, and the rest is host, admin or provider config. |
+| Feed https://epoch-research.github.io/ai-productivity-digest/feed.xml | fetch failed: proxy | Problem | Blocked by network policy. |
+| Feed https://upliftai.substack.com/feed | fetch failed: proxy | Problem | Blocked by network policy. |
+| Feed https://claude.dev/rss.xml | fetch failed: proxy | Problem | Blocked by network policy. |
+| Page https://ai-automations-db.vercel.app/database | fetch failed: proxy | Problem | Blocked by network policy. |
